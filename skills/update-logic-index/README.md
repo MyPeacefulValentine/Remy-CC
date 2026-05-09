@@ -7,30 +7,30 @@ Logic Indexer is a semantic indexing tool based on multi-language source code pa
 The system operates on three layers:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  logic_tree.md (injected into CLAUDE.md)                │
+┌──────────────────────────────────────────────────────────┐
+│  logic_tree.md (injected into CLAUDE.md)                 │
 │  ├── Architecture layer grouping (files grouped by layer)│
 │  ├── File-level summaries + imports annotations          │
 │  └── Symbol-level signatures + summaries                 │
 │  Purpose: Baseline cognition (structure, roles, deps)    │
-└─────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────┐
 │  logic_index.json (disk cache, not injected)             │
 │  ├── Symbol hashes + summary cache                       │
 │  ├── File-level imports list                             │
 │  ├── File layer assignment                               │
 │  └── Function-level CALLS edges (with callee resolution) │
 │  Purpose: Hook query source + incremental build cache    │
-└─────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────┐
 │  PreToolUse Hook (passive enrichment)                    │
 │  Trigger: Claude Code executes Read/Grep/Glob            │
 │  Behavior: Queries logic_index.json for target file's    │
-│           callers/callees/layer, appends to hook output   │
+│           callers/callees/layer, appends to hook output  │
 │  Purpose: On-demand relationship info without MCP        │
-└─────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## Supported Languages
