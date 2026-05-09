@@ -74,9 +74,12 @@
 ### 5. Logic Index &ensp;[📖 Doc](skills/update-logic-index/README.md)
 
 - **Update Mechanism (`/update-logic-index`)**:
-    - **Core Function**: Generates cross-file semantic summaries and data-flow tags (`[Source]`/`[Sink]`) using source code parsing and LLM inference.
+    - **Core Function**: Generates architecture-layered semantic summaries with call graph data using source code parsing and LLM inference.
+    - **Architecture Layering**: Groups files by architectural layer (API, Service, Data, Utility, etc.) based on directory path patterns. User-customizable via `@layer:` directives in `.claude/logic_index_config`.
+    - **Call Graph**: Extracts function-level caller→callee relationships (Python AST, C/C++/TypeScript tree-sitter) and resolves callees to qualified cross-file references via import maps.
     - **Multi-Language**: Python (AST), C/C++ (regex fallback + optional tree-sitter), TypeScript/TSX (regex fallback + optional tree-sitter).
-    - **Context Injection**: Auto-injects `.claude/logic_tree.md` into `CLAUDE.md`, enabling the AI to understand project logic without reading source code.
+    - **Context Injection**: Auto-injects `.claude/logic_tree.md` into `CLAUDE.md` with layer-grouped output and per-file import annotations.
+    - **Passive Enrichment**: A dedicated PreToolUse hook (`logic_enrichment_hook.py`) automatically appends caller/callee/layer context when Claude Code reads project files.
     - **Incremental Updates**: Dependency-aware hashing with **Usage-Aware** filtering — only re-analyzes substantially affected files.
     - **Version-Aware**: Records Git commit hash and timestamp for strict version correspondence.
 - **Manual Trigger**: Run `/update-logic-index` to refresh the logic index on demand.
@@ -190,6 +193,7 @@ Skipping `/deep-plan` means `/code-modification` runs without boundary constrain
     ├── doc_manager/                # Document manager
     │   └── injector.py             # CLAUDE.md reference injector
     ├── pre_tool_guard.py           # Pre-tool interceptor (paths, naming, environment)
+    ├── logic_enrichment_hook.py    # Logic context enrichment (callers/callees/layer)
     ├── env_system/                 # Constraint enforcement system
     │   ├── enforcer_hook.py        # Protocol injection (UserPromptSubmit)
     │   ├── reminder_prompt_en.md   # Constraint prompt (English)

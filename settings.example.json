@@ -48,6 +48,15 @@
             "command": "python \"~/.claude/hooks/pre_tool_guard.py\""
           }
         ]
+      },
+      {
+        "matcher": "Read|Glob|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"~/.claude/hooks/logic_enrichment_hook.py\""
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [

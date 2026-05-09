@@ -6,7 +6,7 @@ Falls back to regex-based extraction otherwise.
 
 import os
 import re
-from .base import LanguageParser, SymbolInfo
+from .base import LanguageParser, SymbolInfo, EdgeInfo
 
 TREE_SITTER_AVAILABLE = False
 _ts_language = None
@@ -585,3 +585,50 @@ class TSParser(LanguageParser):
 
         symbols.sort(key=lambda s: s.lineno)
         return symbols
+
+    def extract_call_graph(self, source, file_path):
+        if not TREE_SITTER_AVAILABLE:
+            return []
+
+        lang = _tsx_language if file_path.endswith('.tsx') else _ts_language
+        parser = _TreeSitterParser(lang)
+        source_bytes = source.encode('utf-8')
+        tree = parser.parse(source_bytes)
+
+        edges = []
+        function_stack = []
+
+        def _walk_calls(node):
+            pushed = False
+
+            if node.type in ('function_declaration', 'method_definition'):
+                name_node = node.child_by_field_name('name')
+                if name_node:
+                    function_stack.append(_ts_node_text(name_node))
+                    pushed = True
+            elif node.type == 'arrow_function' and node.parent and node.parent.type == 'variable_declarator':
+                name_node = node.parent.child_by_field_name('name')
+                if name_node:
+                    function_stack.append(_ts_node_text(name_node))
+                    pushed = True
+
+            if node.type == 'call_expression' and function_stack:
+                func_node = node.child_by_field_name('function')
+                if func_node:
+                    text = _ts_node_text(func_node)
+                    callee = text.rsplit('.', 1)[-1] if '.' in text else text
+                    if callee:
+                        edges.append(EdgeInfo(
+                            caller=function_stack[-1],
+                            callee=callee,
+                            line=node.start_point[0] + 1,
+                        ))
+
+            for child in node.children:
+                _walk_calls(child)
+
+            if pushed:
+                function_stack.pop()
+
+        _walk_calls(tree.root_node)
+        return edges

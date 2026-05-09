@@ -18,6 +18,14 @@ class SymbolInfo:
     docstring: Optional[str] = None  # For class/struct methods
 
 
+@dataclass
+class EdgeInfo:
+    """Represents a caller-to-callee relationship within a file."""
+    caller: str
+    callee: str
+    line: int
+
+
 class LanguageParser(ABC):
     """Abstract interface for language-specific code parsing."""
 
@@ -54,3 +62,7 @@ class LanguageParser(ABC):
     def matches(self, filename: str) -> bool:
         """Check if this parser handles the given filename."""
         return any(filename.endswith(ext) for ext in self.get_extensions())
+
+    def extract_call_graph(self, source: str, file_path: str) -> list:
+        """Extract caller-to-callee edges. Returns list of EdgeInfo. Override in subclasses with AST/tree-sitter support."""
+        return []

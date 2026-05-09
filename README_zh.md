@@ -74,9 +74,12 @@
 ### 5. 逻辑索引 &ensp;[📖 Doc](skills/update-logic-index/README.md)
 
 - **更新机制 (`/update-logic-index`)**:
-    - **核心功能**: 基于源码解析与 LLM API 推理，生成跨文件语义摘要与数据流向标签 (`[Source]/[Sink]`)。
+    - **核心功能**: 基于源码解析与 LLM API 推理，生成按架构分层组织的语义摘要，附带函数调用图数据。
+    - **架构分层**: 按目录路径模式将文件分组为架构层（API、Service、Data、Utility 等）。用户可通过 `.claude/logic_index_config` 中的 `@layer:` 指令自定义层定义。
+    - **调用图**: 提取函数级 caller→callee 关系（Python AST、C/C++/TypeScript tree-sitter），并通过 import map 将 callee 解析为跨文件的 qualified 引用。
     - **多语言支持**: Python（AST）、C/C++（正则回退 + tree-sitter 可选增强）、TypeScript/TSX（正则回退 + tree-sitter 可选增强）。
-    - **上下文注入**: 将生成的 `.claude/logic_tree.md` 自动注入到 `CLAUDE.md`，使 AI 在不读取源码的情况下理解项目逻辑。
+    - **上下文注入**: 将生成的 `.claude/logic_tree.md` 自动注入到 `CLAUDE.md`，输出按层分组并附带每文件的 imports 注释。
+    - **被动富化**: 独立的 PreToolUse Hook (`logic_enrichment_hook.py`) 在 Claude Code 读取项目文件时自动追加 caller/callee/layer 上下文信息。
     - **精准增量**: 支持依赖感知哈希与 **Usage-Aware** 过滤，仅重新分析受实质影响的文件。
     - **版本感知**: 自动记录 Git Commit Hash 与时间戳，确保上下文与代码版本严格对应。
 - **手动触发**: 通过 `/update-logic-index` 命令主动刷新逻辑索引，确保其与代码变更同步。
@@ -190,6 +193,7 @@
     ├── doc_manager/                # 文档管理
     │   └── injector.py             # CLAUDE.md 引用注入器
     ├── pre_tool_guard.py           # 工具前置拦截 (路径、命名、环境)
+    ├── logic_enrichment_hook.py    # 逻辑上下文富化 (callers/callees/layer)
     ├── env_system/                 # 约束增强系统
     │   ├── enforcer_hook.py        # 协议注入 (UserPromptSubmit)
     │   ├── reminder_prompt_en.md   # 约束提示词 (英文)

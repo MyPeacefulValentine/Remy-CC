@@ -7,7 +7,7 @@ import ast
 import hashlib
 import os
 import sys
-from .base import LanguageParser, SymbolInfo
+from .base import LanguageParser, SymbolInfo, EdgeInfo
 
 
 class ImportVisitor(ast.NodeVisitor):
@@ -180,3 +180,46 @@ class PythonParser(LanguageParser):
             source_segment=segment,
             docstring=docstring,
         )
+
+    def extract_call_graph(self, source, file_path):
+        try:
+            tree = self._get_tree(source)
+        except SyntaxError:
+            return []
+
+        edges = []
+        function_stack = []
+
+        def _walk(node, parent_class=None):
+            pushed = False
+
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                fname = f"{parent_class}.{node.name}" if parent_class else node.name
+                function_stack.append(fname)
+                pushed = True
+
+            if isinstance(node, ast.Call) and function_stack:
+                callee = None
+                if isinstance(node.func, ast.Name):
+                    callee = node.func.id
+                elif isinstance(node.func, ast.Attribute):
+                    callee = node.func.attr
+                if callee:
+                    edges.append(EdgeInfo(
+                        caller=function_stack[-1],
+                        callee=callee,
+                        line=node.lineno,
+                    ))
+
+            child_class = None
+            if isinstance(node, ast.ClassDef):
+                child_class = node.name
+
+            for child in ast.iter_child_nodes(node):
+                _walk(child, parent_class=child_class if isinstance(node, ast.ClassDef) else parent_class)
+
+            if pushed:
+                function_stack.pop()
+
+        _walk(tree)
+        return edges

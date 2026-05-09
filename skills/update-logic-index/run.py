@@ -32,7 +32,7 @@ from parsers.python_parser import PythonParser
 from parsers.c_cpp_parser import CCppParser
 from parsers.ts_parser import TSParser
 
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 CACHE_FILE = os.path.join(".claude", "logic_index.json")
 CONFIG_FILE = os.path.join(".claude", "logic_index_config")
 OUTPUT_MD = os.path.join(".claude", "logic_tree.md")
@@ -94,6 +94,7 @@ class LogicIndexer:
         self.lang = {"zh-CN": "Simplified Chinese", "en": "English"}.get(remy_lang, DEFAULT_LANG)
 
         self.exclusions = []
+        self.layers = []
         self._load_config()
         self.cache = self._load_cache()
         self.dirty_nodes = []
@@ -149,6 +150,13 @@ class LogicIndexer:
                         continue
                     if line.startswith("!"):
                         self.exclusions.append(line[1:])
+                    elif line.startswith("@layer:"):
+                        rest = line[len("@layer:"):]
+                        if "=" in rest:
+                            name, patterns_str = rest.split("=", 1)
+                            patterns = [p.strip() for p in patterns_str.split(",") if p.strip()]
+                            if name.strip() and patterns:
+                                self.layers.append({"name": name.strip(), "patterns": patterns})
         else:
             self.exclusions = [".git/", "__pycache__/", "venv/", "node_modules/", ".claude/", "dist/", "build/"]
 
@@ -170,6 +178,16 @@ class LogicIndexer:
             if fnmatch.fnmatch(basename, clean_pattern) or fnmatch.fnmatch(rel_path, clean_pattern):
                 return True
         return False
+
+    def _match_file_to_layer(self, rel_path):
+        """Match a file path to a layer by directory segment patterns. Returns layer name or 'Core'."""
+        segments = rel_path.replace("\\", "/").lower().split("/")
+        for layer_def in self.layers:
+            for segment in segments:
+                for pattern in layer_def["patterns"]:
+                    if segment == pattern or segment == pattern + "s":
+                        return layer_def["name"]
+        return "Core"
 
     def _load_cache(self):
         if os.path.exists(CACHE_FILE):
@@ -316,6 +334,7 @@ class LogicIndexer:
             "hash": file_hash,
             "imports": import_list,
             "language": parser.__class__.__name__,
+            "layer": self._match_file_to_layer(rel_path),
             "symbols": []
         }
 
@@ -325,6 +344,9 @@ class LogicIndexer:
         symbols = parser.parse_symbols(source, file_path)
         for sym_info in symbols:
             self._process_symbol(sym_info, file_node, file_changed, cached_file, parser)
+
+        call_edges = parser.extract_call_graph(source, file_path)
+        file_node["calls"] = [{"caller": e.caller, "callee": e.callee, "line": e.line} for e in call_edges]
 
         return file_node
 
@@ -494,6 +516,41 @@ class LogicIndexer:
                 executor.shutdown(wait=False, cancel_futures=True)
                 raise
 
+    def _resolve_call_edges(self):
+        """Resolve callee names to qualified references using imports + cached symbols."""
+        for path, file_data in self.cache.items():
+            if path == "_meta" or "calls" not in file_data:
+                continue
+            calls = file_data["calls"]
+            if not calls:
+                continue
+
+            symbol_map = {}
+            for imp_path in file_data.get("imports", []):
+                imp_data = self.cache.get(imp_path)
+                if not imp_data:
+                    continue
+                for sym in imp_data.get("symbols", []):
+                    name = sym["name"]
+                    symbol_map[name] = f"{imp_path}::{name}"
+                    if "." in name:
+                        short = name.split(".")[-1]
+                        symbol_map[short] = f"{imp_path}::{name}"
+
+            for sym in file_data.get("symbols", []):
+                name = sym["name"]
+                if name not in symbol_map:
+                    symbol_map[name] = f"{path}::{name}"
+                if "." in name:
+                    short = name.split(".")[-1]
+                    if short not in symbol_map:
+                        symbol_map[short] = f"{path}::{name}"
+
+            for call in calls:
+                qualified = symbol_map.get(call["callee"])
+                if qualified:
+                    call["callee_qualified"] = qualified
+
     def generate_markdown(self):
         git_hash = "Unknown"
         try:
@@ -511,21 +568,32 @@ class LogicIndexer:
         lines.append("> **Symbol Types**: `[C]` Class | `[f]` Function | `[S]` Struct | `[E]` Enum | `[T]` Typedef/TypeAlias | `[M]` Macro | `[N]` Namespace | `[I]` Interface")
         lines.append("> **Tags**: `[Doc]` From Docstring/Doxygen | `[Source]` Data Source | `[Sink]` Data Sink | `[Util]` Utility | `[Test]` Test\n")
 
-        sorted_files = sorted(self.cache.keys())
-        for path in sorted_files:
+        layer_groups = {}
+        for path, data in self.cache.items():
             if path == "_meta":
                 continue
-            data = self.cache[path]
             if not data.get("symbols"):
                 continue
+            layer = self._match_file_to_layer(path)
+            layer_groups.setdefault(layer, []).append((path, data))
 
-            lines.append(f"## 📄 `{path}`")
-            for sym in data["symbols"]:
-                icon = self._symbol_icon(sym["type"])
-                summary = sym.get("summary", "No summary")
-                name_display = f"{sym['name']}{sym.get('args', '')}"
-                lines.append(f"- **[{icon}]** `{name_display}`: {summary}")
-            lines.append("")
+        layer_order = [ld["name"] for ld in self.layers] + ["Core"]
+        for layer_name in layer_order:
+            if layer_name not in layer_groups:
+                continue
+            files = sorted(layer_groups[layer_name], key=lambda x: x[0])
+            lines.append(f"## 🏗️ {layer_name}")
+            for path, data in files:
+                lines.append(f"### 📄 `{path}`")
+                imports = data.get("imports", [])
+                if imports:
+                    lines.append(f"> Imports: {', '.join(imports)}")
+                for sym in data["symbols"]:
+                    icon = self._symbol_icon(sym["type"])
+                    summary = sym.get("summary", "No summary")
+                    name_display = f"{sym['name']}{sym.get('args', '')}"
+                    lines.append(f"- **[{icon}]** `{name_display}`: {summary}")
+                lines.append("")
 
         return "\n".join(lines)
 
@@ -577,6 +645,7 @@ class LogicIndexer:
                         self.stats["failed_files"] += 1
 
             self.cache = new_cache
+            self._resolve_call_edges()
 
             if self.dirty_nodes:
                 if not self.api_key:

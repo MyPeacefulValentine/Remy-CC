@@ -43,3 +43,18 @@
 !**/*.d.ts
 !**/*.js.map
 !**/*.tsbuildinfo
+
+# Architecture Layer Definitions
+# Syntax: @layer:LayerName=pattern1,pattern2,...
+# Files are matched by directory segments (case-insensitive, plural forms auto-matched).
+# First matching layer wins. Unmatched files go to "Core".
+@layer:API Layer=routes,controller,handler,endpoint,api
+@layer:Service Layer=service,usecase,use-case,business
+@layer:Data Layer=model,entity,schema,database,db,migration,repository,repo
+@layer:UI Layer=component,view,page,screen,layout,widget,ui
+@layer:Middleware Layer=middleware,interceptor,guard,filter,pipe
+@layer:External Services=client,integration,external,sdk,vendor,adapter
+@layer:Background Tasks=worker,job,queue,cron,consumer,processor,scheduler,background
+@layer:Utility Layer=util,helper,lib,common,shared
+@layer:Test Layer=test,spec,__test__,__spec__,__tests__,__specs__
+@layer:Configuration Layer=config,setting,env

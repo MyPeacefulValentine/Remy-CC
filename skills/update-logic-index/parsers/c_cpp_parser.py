@@ -6,7 +6,7 @@ Falls back to regex-based extraction otherwise.
 
 import os
 import re
-from .base import LanguageParser, SymbolInfo
+from .base import LanguageParser, SymbolInfo, EdgeInfo
 
 TREE_SITTER_AVAILABLE = False
 _c_language = None
@@ -609,3 +609,53 @@ class CCppParser(LanguageParser):
                 source_segment=segment,
                 docstring=docstring,
             ))
+
+    def extract_call_graph(self, source, file_path):
+        if not TREE_SITTER_AVAILABLE:
+            return []
+
+        is_cpp = any(file_path.endswith(ext) for ext in [".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx"])
+        if not is_cpp and file_path.endswith('.h'):
+            cpp_indicators = ['class ', 'namespace ', 'template<', 'template <',
+                              'public:', 'private:', 'protected:', '::']
+            is_cpp = any(ind in source for ind in cpp_indicators)
+        lang = _cpp_language if is_cpp else _c_language
+        parser = TSParser(lang)
+
+        source_bytes = source.encode('utf-8')
+        tree = parser.parse(source_bytes)
+
+        edges = []
+        function_stack = []
+
+        def _walk_calls(node):
+            pushed = False
+            if node.type == 'function_definition':
+                name = _ts_func_name(node)
+                if name:
+                    function_stack.append(name)
+                    pushed = True
+
+            if node.type == 'call_expression' and function_stack:
+                func_node = node.child_by_field_name('function')
+                if func_node:
+                    callee = _ts_node_text(func_node).split('(')[0].strip()
+                    if '.' in callee:
+                        callee = callee.rsplit('.', 1)[-1]
+                    elif '::' in callee:
+                        callee = callee.rsplit('::', 1)[-1]
+                    if callee:
+                        edges.append(EdgeInfo(
+                            caller=function_stack[-1],
+                            callee=callee,
+                            line=node.start_point[0] + 1,
+                        ))
+
+            for child in node.children:
+                _walk_calls(child)
+
+            if pushed:
+                function_stack.pop()
+
+        _walk_calls(tree.root_node)
+        return edges
