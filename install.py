@@ -9,12 +9,15 @@ Usage:
 """
 
 import argparse
+import getpass
 import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -27,6 +30,7 @@ DEPLOY_FILES = ["CLAUDE.md", "language.md", "style.md", "tools_ref.md"]
 SETTINGS_TEMPLATE = "settings.example.json"
 
 BACKUP_SUFFIX = ".bak"
+API_KEY_PLACEHOLDER = "YOUR_API_KEY_HERE"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -51,6 +55,20 @@ UI = {
         "j2_installed": "  [i] Jinja2 already installed, skipping",
         "j2_prompt": "Install Jinja2 (post-verify template rendering)? [y/N] ",
         "j2_installing": "  Installing Jinja2 ...",
+        "api_config_new": "Configure LLM API for Logic Index? [Y/n] ",
+        "api_config_existing": "Existing API config detected. Reconfigure? [y/N] ",
+        "api_cost_hint": "  [i] Logic Index may require many API calls.\n      Cost-effective models recommended (e.g. deepseek-v4-flash, or pay-per-call coding plans).",
+        "api_url_prompt": "  API URL\n  (e.g. https://api.deepseek.com/v1/chat/completions)\n  [default: {default}]: ",
+        "api_model_prompt": "  Model name (e.g. deepseek-v4-flash)\n  [default: {default}]: ",
+        "api_key_prompt": "  API Key: ",
+        "api_key_empty": "  [!] API Key is empty, skipping API configuration.",
+        "api_configured": "  [+] API configuration saved",
+        "api_test_prompt": "Test API connectivity? [y/N] ",
+        "api_test_running": "  Testing API connectivity ...",
+        "api_test_ok": "  [+] API connectivity test passed",
+        "api_test_attempt": "  [!] Attempt {n}/3 failed: {err}",
+        "api_test_all_failed": "  [!] All 3 connectivity tests failed.",
+        "api_test_reconfigure": "Reconfigure API? [Y/n] ",
         "install_done": "\nInstallation complete. {count} files deployed.",
         "install_verify_hint": "Run python install.py --verify to check the installation.",
         "no_manifest": "No install manifest (.installer_manifest.json) found. Cannot uninstall.",
@@ -76,7 +94,8 @@ UI = {
         "argparse_desc": "Remy Installer",
         "argparse_uninstall": "Uninstall the suite",
         "argparse_verify": "Verify installation",
-        "argparse_lang": "Language for UI and REMY_LANG setting (default: en)",
+        "verify_api_not_configured": "  [i] LLM API not configured (Logic Index will not generate summaries)",
+        "argparse_lang": "Language for UI and REMY_LANG (interactive prompt if omitted)",
     },
     "zh-CN": {
         "target_dir": "目标目录: {path}",
@@ -96,6 +115,20 @@ UI = {
         "j2_installed": "  [i] Jinja2 已安装，跳过",
         "j2_prompt": "是否安装 Jinja2（post-verify 模板渲染增强）？[y/N] ",
         "j2_installing": "  正在安装 Jinja2 ...",
+        "api_config_new": "是否配置 Logic Index 的 LLM API？[Y/n] ",
+        "api_config_existing": "检测到已有 API 配置，是否重新配置？[y/N] ",
+        "api_cost_hint": "  [i] Logic Index 可能产生较多 API 调用。\n      建议选择低成本模型（如 deepseek-v4-flash）或按次计费方案。",
+        "api_url_prompt": "  API URL\n  （例如 https://api.deepseek.com/v1/chat/completions）\n  [默认: {default}]: ",
+        "api_model_prompt": "  模型名称（例如 deepseek-v4-flash）\n  [默认: {default}]: ",
+        "api_key_prompt": "  API Key: ",
+        "api_key_empty": "  [!] API Key 为空，跳过 API 配置。",
+        "api_configured": "  [+] API 配置已保存",
+        "api_test_prompt": "是否测试 API 连通性？[y/N] ",
+        "api_test_running": "  正在测试 API 连通性 ...",
+        "api_test_ok": "  [+] API 连通性测试通过",
+        "api_test_attempt": "  [!] 第 {n}/3 次尝试失败: {err}",
+        "api_test_all_failed": "  [!] 3 次连通性测试均失败。",
+        "api_test_reconfigure": "是否重新配置 API？[Y/n] ",
         "install_done": "\n安装完成。共部署 {count} 个文件。",
         "install_verify_hint": "建议运行 python install.py --verify 检查安装结果。",
         "no_manifest": "未找到安装记录 (.installer_manifest.json)，无法执行卸载。",
@@ -121,7 +154,8 @@ UI = {
         "argparse_desc": "Remy 安装工具",
         "argparse_uninstall": "卸载套件",
         "argparse_verify": "验证安装",
-        "argparse_lang": "界面语言及 REMY_LANG 配置值（默认: en）",
+        "verify_api_not_configured": "  [i] LLM API 未配置（Logic Index 将无法生成摘要）",
+        "argparse_lang": "界面语言及 REMY_LANG 配置值（未指定时交互式选择）",
     },
 }
 
@@ -344,6 +378,116 @@ def remove_suite_permissions(settings: dict, template: dict) -> None:
             settings.pop("permissions", None)
 
 
+def prompt_language() -> str:
+    """Interactive bilingual language selection."""
+    print("Select language / 选择语言:")
+    print("  1. English")
+    print("  2. 简体中文")
+    try:
+        choice = input("Choice / 选择 [1]: ").strip()
+    except EOFError:
+        return "en"
+    if choice == "2":
+        return "zh-CN"
+    return "en"
+
+
+def configure_api(settings_path: Path) -> None:
+    """Interactive LLM API configuration for Logic Index."""
+    if not settings_path.exists():
+        return
+
+    with open(settings_path, "r", encoding="utf-8") as f:
+        settings = json.load(f)
+    env = settings.setdefault("env", {})
+
+    current_key = env.get("OPENAI_API_KEY", "").strip()
+    has_config = current_key not in ("", API_KEY_PLACEHOLDER)
+
+    try:
+        if has_config:
+            answer = input(_t("api_config_existing")).strip().lower()
+            if answer != "y":
+                return
+        else:
+            answer = input(_t("api_config_new")).strip().lower()
+            if answer == "n":
+                return
+
+        print()
+        print(_t("api_cost_hint"))
+
+        while True:
+            print()
+
+            default_url = env.get("OPENAI_BASE_URL", "https://api.deepseek.com/v1/chat/completions")
+            default_model = env.get("OPENAI_MODEL", "deepseek-v4-flash")
+
+            url = input(_t("api_url_prompt", default=default_url)).strip()
+            if not url:
+                url = default_url
+
+            model = input(_t("api_model_prompt", default=default_model)).strip()
+            if not model:
+                model = default_model
+
+            api_key = getpass.getpass(_t("api_key_prompt")).strip()
+
+            if not api_key:
+                print(_t("api_key_empty"))
+                return
+
+            env["OPENAI_BASE_URL"] = url
+            env["OPENAI_MODEL"] = model
+            env["OPENAI_API_KEY"] = api_key
+
+            with open(settings_path, "w", encoding="utf-8") as f:
+                json.dump(settings, f, indent=2, ensure_ascii=False)
+                f.write("\n")
+            print(_t("api_configured"))
+
+            print()
+            test_answer = input(_t("api_test_prompt")).strip().lower()
+            if test_answer != "y":
+                break
+
+            if test_api_connectivity(url, api_key, model):
+                break
+
+            print()
+            reconfigure = input(_t("api_test_reconfigure")).strip().lower()
+            if reconfigure == "n":
+                break
+    except EOFError:
+        return
+
+
+def test_api_connectivity(url: str, api_key: str, model: str) -> bool:
+    """Send a minimal request to verify API URL and key. Retries up to 3 times."""
+    print(_t("api_test_running"))
+    payload = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": "Hi"}],
+        "max_tokens": 5,
+    }).encode("utf-8")
+
+    for attempt in range(1, 4):
+        req = urllib.request.Request(url, data=payload, headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        })
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                resp.read()
+            print(_t("api_test_ok"))
+            return True
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:
+            print(_t("api_test_attempt", n=attempt, err=str(e)))
+
+    print(_t("api_test_all_failed"))
+    return False
+
+
 # ── Main Commands ──────────────────────────────────────────────
 
 
@@ -387,6 +531,8 @@ def do_install() -> None:
         settings_path = claude_home / "settings.json"
         settings_backup = merge_settings(template, settings_path, claude_home, lang_override=_ui_lang)
         print(_t("settings_merged"))
+        print()
+        configure_api(settings_path)
     else:
         print(_t("settings_tpl_missing", name=SETTINGS_TEMPLATE))
         settings_backup = None
@@ -408,7 +554,10 @@ def do_install() -> None:
     if ts_installed:
         print(_t("ts_installed"))
     else:
-        answer = input(_t("ts_prompt")).strip().lower()
+        try:
+            answer = input(_t("ts_prompt")).strip().lower()
+        except EOFError:
+            answer = ""
         if answer == "y":
             print(_t("ts_installing"))
             subprocess.run(
@@ -429,7 +578,10 @@ def do_install() -> None:
     if j2_installed:
         print(_t("j2_installed"))
     else:
-        answer = input(_t("j2_prompt")).strip().lower()
+        try:
+            answer = input(_t("j2_prompt")).strip().lower()
+        except EOFError:
+            answer = ""
         if answer == "y":
             print(_t("j2_installing"))
             subprocess.run(
@@ -512,6 +664,7 @@ def do_uninstall() -> None:
 def do_verify() -> None:
     claude_home = get_claude_home()
     errors = []
+    settings = None
 
     if sys.version_info < (3, 7):
         errors.append(_t("verify_python_old", ver=sys.version))
@@ -574,6 +727,14 @@ def do_verify() -> None:
     print(_t("verify_target", path=claude_home))
     print(_t("verify_ts", status=_t("verify_ts_yes") if ts_available else _t("verify_ts_no")))
     print(_t("verify_j2", status=_t("verify_ts_yes") if j2_available else _t("verify_ts_no")))
+
+    api_configured = False
+    if settings_path.exists() and settings:
+        api_key = settings.get("env", {}).get("OPENAI_API_KEY", "").strip()
+        api_configured = api_key not in ("", API_KEY_PLACEHOLDER)
+    if not api_configured:
+        print(_t("verify_api_not_configured"))
+
     print()
 
     if errors:
@@ -593,11 +754,14 @@ def main() -> None:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--uninstall", action="store_true", help=_t("argparse_uninstall"))
     group.add_argument("--verify", action="store_true", help=_t("argparse_verify"))
-    parser.add_argument("--lang", default="en", choices=["en", "zh-CN"],
+    parser.add_argument("--lang", default=None, choices=["en", "zh-CN"],
                         help=_t("argparse_lang"))
     args = parser.parse_args()
 
-    _ui_lang = args.lang
+    if args.lang:
+        _ui_lang = args.lang
+    elif not args.uninstall and not args.verify:
+        _ui_lang = prompt_language()
 
     if args.uninstall:
         do_uninstall()

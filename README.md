@@ -219,6 +219,7 @@ The installer performs the following:
 - Merges hooks, permissions, and env from `settings.example.json` into `~/.claude/settings.json` (does not overwrite existing values)
 - Expands hook paths to absolute paths for the current machine
 - Sets `REMY_LANG` in `settings.json` and generates `language.md` based on the `--lang` argument (default: `en`)
+- Prompts to configure LLM API for Logic Index (URL, model, API key); optionally tests connectivity
 - Detects tree-sitter installation; prompts to install if missing (optional, for high-precision C/C++/TypeScript parsing)
 
 ### 2. Verify

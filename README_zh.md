@@ -219,6 +219,7 @@ python install.py --lang zh-CN   # 简体中文
 - 将 `settings.example.json` 中的 hooks、permissions、env 合并到 `~/.claude/settings.json`（不覆盖已有值）
 - 自动将 hook 路径展开为当前机器的绝对路径
 - 根据 `--lang` 参数设置 `settings.json` 中的 `REMY_LANG` 值并生成 `language.md`（默认：`en`）
+- 交互式配置 Logic Index 的 LLM API（URL、模型、API Key）；可选测试连通性
 - 检测 tree-sitter 是否已安装，未安装时询问是否安装（C/C++/TypeScript 高精度解析，可选）
 
 ### 2. 验证
