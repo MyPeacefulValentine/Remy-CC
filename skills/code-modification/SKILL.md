@@ -80,7 +80,11 @@ Although strict schema validation is disabled, you MUST internally structure you
 -   Proceed directly to Phase 1.
 
 **Phase 1: Discovery & Tracing (Mandatory)**
-1.  **Map Dependencies**: Based on your `call_chain_analysis`, use `grep` or `glob` to locate all files that import or call the `target_files`.
+1.  **Map Dependencies**:
+    *   **Check**: Run `Bash("test -f .claude/logic_index.json && echo EXISTS || echo MISSING")`.
+    *   **EXISTS**: Run `Bash("python \"~/.claude/skills/update-logic-index/impact.py\" <target_file_1> <target_file_2> ...")` with the files targeted for modification. Use the output as the definitive dependency list. If exit code = 2 (no call graph data), fall through to the manual path below.
+    *   **MISSING or exit 2**: Use `grep` or `glob` to locate all files that import or call the `target_files`.
+    *   **Read**: You MUST `Read` all files listed at Depth 0–1 in the impact output (or all grep-discovered files in the manual path).
 2.  **Verify Signatures**: Read the definitions of any external functions you intend to use.
 
 **Phase 2: Framework Compliance Check**

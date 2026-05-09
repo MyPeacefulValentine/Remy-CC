@@ -6,8 +6,12 @@ Deep Plan is a **zero-code** architecture audit protocol. It forces the AI to co
 
 ### 1. Context Saturation
 
-The AI must read all relevant source code, especially the underlying definitions of called functions.
-Guessing or planning based on incomplete information is prohibited.
+The AI first checks whether `.claude/logic_index.json` exists:
+
+- **Available**: Runs `impact.py` on the target files to produce a deterministic impact report (affected files/functions per BFS depth, cross-layer warnings). All Depth 0–1 files are force-read. Cross-layer impacts are flagged for Table 3 audit.
+- **Unavailable**: Prompts the user to run `/update-logic-index` or falls back to manual grep/glob-based exploration.
+
+In both paths, the AI must read all relevant source code definitions. Guessing or planning based on incomplete information is prohibited.
 
 ### 2. Interactive Ambiguity Resolution (Loop)
 
@@ -75,3 +79,4 @@ Skipping `/deep-plan` means `/code-modification` runs without boundary constrain
 | `SKILL.md` | Full protocol definition (loaded by Claude Code) |
 | `audit_template.md` | Markdown table templates (loaded dynamically during audit) |
 | `output_schema.json` | JSON schema for verification depth |
+| `../update-logic-index/impact.py` | BFS impact radius script (invoked in Step 1a) |

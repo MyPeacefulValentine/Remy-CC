@@ -92,14 +92,15 @@
 1. **架构预审 (`/deep-plan`)** &ensp;[📖 Doc](skills/deep-plan/README.md)
     - **阶段**: 计划阶段 (Plan)，在编写任何代码之前。
     - **流程**:
-        1. **Context Saturation**: 递归式阅读源码定义，消除幻觉。
-        2. **Ambiguity Elimination**: 识别决策点 -> 批量提问 (`AskUserQuestion`) -> 针对新信息再次搜索 (Loop)。
-        3. **Finalize**: 按顺序输出四张核心表格，约定技术细节：
+        1. **前置依赖检查**: 检测 `.claude/logic_index.json` 是否存在；不存在时询问用户是否执行 `/update-logic-index`，或回退到手动探索。
+        2. **Context Saturation**: 若逻辑索引可用，对目标文件执行 `impact.py` 进行 BFS 影响半径分析（按深度输出受影响的文件/函数及跨层警告），强制阅读 Depth 0-1 层全部文件。否则使用 grep/glob 手动探索。
+        3. **Ambiguity Elimination**: 识别决策点 -> 批量提问 (`AskUserQuestion`) -> 针对新信息再次搜索 (Loop)。
+        4. **Finalize**: 按顺序输出四张核心表格，约定技术细节：
             - `歧义消除矩阵` (决策锁定)
             - `PBT 属性规约` (数学不变量)
             - `逻辑契约审计` (数据流与风险)
             - `物理变更预演` (文件级操作)
-        4. **Evidence Packet**: 四张表格生成完毕后，强制将证据链、Git Commit、变更范围写入 `.claude/temp_task/task_{TIMESTAMP}.json`（`AgentTaskPacketLite` 格式），并更新 `.active_packet` 指针。停止提示中附带执行入口：`/code-modification task_{TIMESTAMP}.json`。
+        5. **Evidence Packet**: 四张表格生成完毕后，强制将证据链、Git Commit、变更范围写入 `.claude/temp_task/task_{TIMESTAMP}.json`（`AgentTaskPacketLite` 格式），并更新 `.active_packet` 指针。停止提示中附带执行入口：`/code-modification task_{TIMESTAMP}.json`。
     - **功能**: 执行 "零决策" 架构审计，强制识别歧义与副作用；审计完成后输出可被 `/code-modification` 和 `/auditor` 直接消费的持久化任务包。
 
 2. **代码修改 (`/code-modification`)**
@@ -108,6 +109,7 @@
     - **流程**:
         - 若提供 `task_packet_file`：读取 `.claude/temp_task/{task_packet_file}`，以 `evidence_packet.proposed_changes[]` 作为权威变更范围，禁止超出该范围修改；`status: "suspected"` 的证据条目须重新读取确认后方可引用。
         - 若未提供：清除 `.active_packet` 后直接进入发现阶段。
+        - **依赖发现**: 若 `.claude/logic_index.json` 存在，执行 `impact.py` 进行确定性依赖追踪；否则回退到 grep/glob 手动追踪。
     - **功能**: 遵循 "Forked Context" 模式，强制执行数据流下游适配、框架完整性检查及防御性编程。
 
 3. **后验测试 (`/post-verify`)**
@@ -186,6 +188,7 @@
 │   ├── milestone/                  # 里程碑: 历史记录与阶段性总结
 │   ├── update-tree/                # 树更新: 手动刷新快照 (Proactive 模式)
 │   ├── update-logic-index/         # 逻辑索引: 语义摘要生成 (Python/C/C++/TypeScript)
+│   │   └── impact.py               # 影响半径: BFS 反向遍历受影响文件/函数分析
 │   ├── read-logic-index/           # 逻辑索引: 语义摘要读取
 │   ├── repo-audit/                 # 仓库审计: 安全克隆与结构分析 (Sandboxed)
 │   └── ...                         # 其他工程化技能 (TDD, Debugging, FileOps 等)

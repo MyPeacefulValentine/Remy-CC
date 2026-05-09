@@ -92,14 +92,15 @@ This project enforces a strict **Plan-Act-Verify** loop. The following skills/co
 1. **Architecture Pre-Review (`/deep-plan`)** &ensp;[📖 Doc](skills/deep-plan/README.md)
     - **Phase**: Plan — before writing any code.
     - **Process**:
-        1. **Context Saturation**: Recursively read source definitions to eliminate hallucination.
-        2. **Ambiguity Elimination**: Identify decision points → batch questions (`AskUserQuestion`) → re-search on new info (loop).
-        3. **Finalize**: Output four core tables:
+        1. **Infrastructure Check**: Detect `.claude/logic_index.json`; if missing, prompt user to run `/update-logic-index` or fall back to manual exploration.
+        2. **Context Saturation**: If logic index available, run `impact.py` on target files for BFS-based impact radius (affected files/functions per depth, cross-layer warnings); force-read all Depth 0–1 files. Otherwise, use grep/glob-based exploration.
+        3. **Ambiguity Elimination**: Identify decision points → batch questions (`AskUserQuestion`) → re-search on new info (loop).
+        4. **Finalize**: Output four core tables:
             - `Ambiguity Elimination Matrix` (decision locks)
             - `PBT Property Specification` (mathematical invariants)
             - `Logic Contract Audit` (data flow & risks)
             - `Physical Change Preview` (file-level operations)
-        4. **Evidence Packet**: Write evidence chain, Git commit, and change scope to `.claude/temp_task/task_{TIMESTAMP}.json` (`AgentTaskPacketLite` format); update `.active_packet` pointer; provide entry: `/code-modification task_{TIMESTAMP}.json`.
+        5. **Evidence Packet**: Write evidence chain, Git commit, and change scope to `.claude/temp_task/task_{TIMESTAMP}.json` (`AgentTaskPacketLite` format); update `.active_packet` pointer; provide entry: `/code-modification task_{TIMESTAMP}.json`.
     - **Function**: "Zero-decision" architecture audit — forces identification of ambiguities and side effects; outputs a persistent task packet consumable by `/code-modification` and `/auditor`.
 
 2. **Code Modification (`/code-modification`)**
@@ -108,6 +109,7 @@ This project enforces a strict **Plan-Act-Verify** loop. The following skills/co
     - **Process**:
         - With `task_packet_file`: Reads `.claude/temp_task/{task_packet_file}`, uses `evidence_packet.proposed_changes[]` as authoritative change scope; `status: "suspected"` entries must be re-read and confirmed before use.
         - Without: Clears `.active_packet` and enters discovery phase directly.
+        - **Discovery**: If `.claude/logic_index.json` exists, runs `impact.py` for deterministic dependency tracing; otherwise falls back to grep/glob.
     - **Function**: Follows the "Forked Context" pattern, enforcing downstream data-flow adaptation, framework integrity checks, and defensive programming.
 
 3. **Post-Verification (`/post-verify`)**
@@ -186,6 +188,7 @@ Skipping `/deep-plan` means `/code-modification` runs without boundary constrain
 │   ├── milestone/                  # Milestone: history records & phase summaries
 │   ├── update-tree/                # Tree update: manual snapshot refresh (proactive mode)
 │   ├── update-logic-index/         # Logic index: semantic summary generation (Python/C/C++/TS)
+│   │   └── impact.py               # Impact radius: BFS-based affected file/function analysis
 │   ├── read-logic-index/           # Logic index: semantic summary reader
 │   ├── repo-audit/                 # Repo audit: safe clone & structure analysis (sandboxed)
 │   └── ...                         # Other engineering skills (TDD, Debugging, FileOps, etc.)

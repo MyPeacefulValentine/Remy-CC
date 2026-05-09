@@ -190,9 +190,10 @@ class LogicIndexer:
         return "Core"
 
     def _load_cache(self):
-        if os.path.exists(CACHE_FILE):
+        cache_path = os.path.join(self.root_dir, CACHE_FILE)
+        if os.path.exists(cache_path):
             try:
-                with open(CACHE_FILE, 'r', encoding='utf-8') as f:
+                with open(cache_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     cache_version = data.get("_meta", {}).get("version", "1.4.0")
                     if cache_version != VERSION:
@@ -204,13 +205,14 @@ class LogicIndexer:
         return {}
 
     def _save_cache(self):
-        os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+        cache_path = os.path.join(self.root_dir, CACHE_FILE)
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
         self.cache["_meta"] = {
             "last_updated": datetime.now().isoformat(),
             "model": self.model,
             "version": VERSION
         }
-        with open(CACHE_FILE, 'w', encoding='utf-8') as f:
+        with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(self.cache, f, ensure_ascii=False, indent=2)
 
     def _calculate_hash(self, source_code, extra_data=""):
@@ -660,8 +662,9 @@ class LogicIndexer:
             self._save_cache()
 
             md_content = self.generate_markdown()
-            os.makedirs(os.path.dirname(OUTPUT_MD), exist_ok=True)
-            with open(OUTPUT_MD, 'w', encoding='utf-8') as f:
+            md_path = os.path.join(self.root_dir, OUTPUT_MD)
+            os.makedirs(os.path.dirname(md_path), exist_ok=True)
+            with open(md_path, 'w', encoding='utf-8') as f:
                 f.write(md_content)
 
             print(f"\nLogic index updated at {OUTPUT_MD}")

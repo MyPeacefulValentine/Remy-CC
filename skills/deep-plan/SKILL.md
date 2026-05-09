@@ -15,8 +15,39 @@ This skill enforces a rigorous **Zero-Decision** pre-implementation review. It f
 
 ## 2. Context Saturation & Interactive Ambiguity Resolution (Mandatory)
 
-**Step 1: Active Context Saturation (Pre-Flight)**
-Before identifying ambiguities, you MUST verify your knowledge completeness.
+**Step 0: Context Infrastructure Check**
+Before saturating context, check whether structured call graph data is available.
+1.  **Check**: Run `Bash("test -f .claude/logic_index.json && echo EXISTS || echo MISSING")`.
+2.  **Branch**:
+    *   **EXISTS**: Proceed to **Step 1: Structured Context Saturation**.
+    *   **MISSING**: Use `AskUserQuestion` to ask:
+        > "`.claude/logic_index.json` does not exist. Run `/update-logic-index` to initialize? This enables automated impact analysis. Choosing No uses manual grep-based exploration instead."
+        *   **User says Yes**: Invoke the `update-logic-index` skill, then proceed to **Step 1**.
+        *   **User says No**: Proceed to **Step 1-Fallback: Manual Context Saturation**.
+
+**Step 1: Structured Context Saturation (requires logic_index.json)**
+
+*   **1a — Impact Radius Scan**: Identify the target files from the task description, then run:
+    ```
+    Bash("python \"~/.claude/skills/update-logic-index/impact.py\" <target_file_1> <target_file_2> ...")
+    ```
+    *   If exit code = 2 (no call graph data): fall through to **Step 1-Fallback**.
+    *   Otherwise: record the output as the **Impact Report**.
+
+*   **1b — Forced Read**: You MUST `Read` every file listed at Depth 0 and Depth 1 in the Impact Report. For Depth 2+, read only files directly relevant to the planned change.
+    *   **Exit Condition**: All Depth 0–1 files have been read. Context is saturated for the call chain dimension.
+
+*   **1c — Cross-Layer Risk Flag**: If the Impact Report shows `⚠ Cross-layer impact`, record the affected layers. You MUST add a "Cross-layer interface compatibility" check item to Table 3 during the audit phase.
+
+*   **1d — Supplementary Checks** (still mandatory):
+    1.  **Self-Correction**: Ask "Do I have the *source definition* of every dependency involved?"
+    2.  **Recursive Read**: If you only see usages (e.g., `db.connect()`), you MUST read the definition (e.g., `class DBConnection`).
+    3.  **No Hallucinations**: You are FORBIDDEN from assuming implementation details without evidence.
+
+After completing Step 1, proceed to **Step 2: Recursive Ambiguity Elimination**.
+
+**Step 1-Fallback: Manual Context Saturation (no logic_index.json)**
+Use this path when `logic_index.json` is unavailable or contains no call graph data.
 1.  **Self-Correction**: Ask "Do I have the *source definition* of every dependency involved?"
 2.  **Recursive Read**: If you only see usages (e.g., `db.connect()`), you MUST read the definition (e.g., `class DBConnection`).
 3.  **No Hallucinations**: You are FORBIDDEN from assuming implementation details (e.g., "It likely uses requests") without evidence.
