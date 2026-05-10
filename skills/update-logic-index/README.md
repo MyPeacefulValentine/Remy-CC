@@ -103,6 +103,7 @@ This provides relationship context without requiring Claude Code to proactively 
 ### Incremental Updates
 
 - **File-Level Hashing**: MD5-based source content hashing.
+- **Comment-Insensitive Symbol Hashing**: When checking whether a function's LLM summary needs regeneration, comments (`#`, `//`, `/* */`) are stripped from the source before hashing. This means reformatting comments or adding inline notes does not trigger unnecessary API calls. Docstrings and Doxygen comments are preserved in the hash (they affect summary content). If comment stripping fails, the system falls back to hashing the full source.
 - **Dependency-Aware Hashing**: Upstream summary changes trigger downstream re-analysis.
 - **Usage-Aware Filtering**: Only triggers updates when referenced symbols are actually used in the current file.
 
@@ -218,6 +219,8 @@ Configure in `settings.local.json` (project-level) or `~/.claude/settings.json` 
 | `LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
 | `LOGIC_INDEX_FILTER_SMALL` | `false` | Skip LLM summarization for small functions without docstrings |
 | `REMY_LANG` | `en` | Summary output language (`en` / `zh-CN`) |
+| `IMPACT_DEPTH_UP` | `2` | Default upstream (callers) BFS depth for `impact.py` |
+| `IMPACT_DEPTH_DOWN` | `2` | Default downstream (callees) BFS depth for `impact.py` |
 
 ### Configuration File (`.claude/logic_index_config`)
 

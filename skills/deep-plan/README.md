@@ -8,7 +8,7 @@ Deep Plan is a **zero-code** architecture audit protocol. It forces the AI to co
 
 The AI first checks whether `.claude/logic_index.json` exists:
 
-- **Available**: Runs `impact.py` on the target files to produce a deterministic impact report (affected files/functions per BFS depth, cross-layer warnings). All Depth 0–1 files are force-read. Cross-layer impacts are flagged for Table 3 audit.
+- **Available**: Runs `impact.py` on the target files to produce a bidirectional impact report — upstream (who calls this code) and downstream (what this code calls), with cross-layer warnings. All files at Upstream Depth 1 and Downstream Depth 1 are force-read. Cross-layer impacts are flagged for Table 3 audit.
 - **Unavailable**: Prompts the user to run `/update-logic-index` or falls back to manual grep/glob-based exploration.
 
 In both paths, the AI must read all relevant source code definitions. Guessing or planning based on incomplete information is prohibited.

@@ -34,8 +34,8 @@ Before saturating context, check whether structured call graph data is available
     *   If exit code = 2 (no call graph data): fall through to **Step 1-Fallback**.
     *   Otherwise: record the output as the **Impact Report**.
 
-*   **1b — Forced Read**: You MUST `Read` every file listed at Depth 0 and Depth 1 in the Impact Report. For Depth 2+, read only files directly relevant to the planned change.
-    *   **Exit Condition**: All Depth 0–1 files have been read. Context is saturated for the call chain dimension.
+*   **1b — Forced Read**: You MUST `Read` every file listed at Upstream Depth 1 and Downstream Depth 1 in the Impact Report. For Depth 2+, read only files directly relevant to the planned change.
+    *   **Exit Condition**: All Upstream Depth 1 and Downstream Depth 1 files have been read. Context is saturated for the call chain dimension.
 
 *   **1c — Cross-Layer Risk Flag**: If the Impact Report shows `⚠ Cross-layer impact`, record the affected layers. You MUST add a "Cross-layer interface compatibility" check item to Table 3 during the audit phase.
 

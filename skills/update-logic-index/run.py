@@ -13,6 +13,7 @@ Version: 2.0.0
 import hashlib
 import json
 import os
+import re
 import sys
 import subprocess
 import time
@@ -215,6 +216,19 @@ class LogicIndexer:
         with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(self.cache, f, ensure_ascii=False, indent=2)
 
+    @staticmethod
+    def _strip_comments(source, parser):
+        try:
+            if isinstance(parser, PythonParser):
+                return re.sub(r'#[^\n]*', '', source)
+            elif isinstance(parser, (CCppParser, TSParser)):
+                source = re.sub(r'//[^\n]*', '', source)
+                source = re.sub(r'/\*[\s\S]*?\*/', '', source)
+                return source
+        except Exception:
+            pass
+        return source
+
     def _calculate_hash(self, source_code, extra_data=""):
         normalized = "".join(source_code.split()) + extra_data
         return hashlib.md5(normalized.encode('utf-8')).hexdigest()
@@ -354,7 +368,8 @@ class LogicIndexer:
 
     def _process_symbol(self, sym_info, file_node, file_changed, cached_file, parser):
         """Process a single extracted symbol: check cache, extract docstring, queue for LLM."""
-        symbol_hash = self._calculate_hash(sym_info.source_segment)
+        stripped = self._strip_comments(sym_info.source_segment, parser)
+        symbol_hash = self._calculate_hash(stripped)
 
         summary = None
         if not file_changed and cached_file:

@@ -8,6 +8,9 @@ import sys
 
 CACHE_FILE = os.path.join(".claude", "logic_index.json")
 
+DEFAULT_DEPTH_UP = 2
+DEFAULT_DEPTH_DOWN = 2
+
 
 def load_cache(cwd):
     path = os.path.join(cwd, CACHE_FILE)
@@ -31,6 +34,22 @@ def build_reverse_index(cache):
     return rev
 
 
+def build_forward_index(cache):
+    """Map caller_qualified -> list of (callee_file, callee_func)."""
+    fwd = {}
+    for path, data in cache.items():
+        if path == "_meta":
+            continue
+        for call in data.get("calls", []):
+            qualified = call.get("callee_qualified")
+            if qualified:
+                caller_q = f"{path}::{call['caller']}"
+                callee_file = qualified.split("::")[0]
+                callee_func = qualified.split("::")[-1]
+                fwd.setdefault(caller_q, []).append((callee_file, callee_func))
+    return fwd
+
+
 def collect_file_symbols(cache, file_path):
     """Return set of qualified names for all symbols in a file."""
     data = cache.get(file_path)
@@ -39,23 +58,23 @@ def collect_file_symbols(cache, file_path):
     return {f"{file_path}::{s['name']}" for s in data.get("symbols", [])}
 
 
-def bfs(cache, reverse_index, target_files, max_depth):
+def bfs(cache, adjacency_index, target_files, max_depth):
     seeds = set()
     for f in target_files:
         seeds |= collect_file_symbols(cache, f)
 
     visited = set(seeds)
-    levels = {0: sorted(seeds)}
+    levels = {}
 
     current = seeds
     for depth in range(1, max_depth + 1):
         next_level = set()
         for qualified in current:
-            for caller_file, caller_func in reverse_index.get(qualified, []):
-                caller_q = f"{caller_file}::{caller_func}"
-                if caller_q not in visited:
-                    next_level.add(caller_q)
-                    visited.add(caller_q)
+            for neighbor_file, neighbor_func in adjacency_index.get(qualified, []):
+                neighbor_q = f"{neighbor_file}::{neighbor_func}"
+                if neighbor_q not in visited:
+                    next_level.add(neighbor_q)
+                    visited.add(neighbor_q)
         if not next_level:
             break
         levels[depth] = sorted(next_level)
@@ -71,23 +90,46 @@ def get_layer(cache, file_path):
     return "Unknown"
 
 
-def format_output(cache, levels, target_files):
+def format_output(cache, seeds, upstream_levels, downstream_levels, target_files):
     lines = []
     all_layers = set()
     all_files = set(target_files)
 
-    for depth, qualified_list in sorted(levels.items()):
-        tag = "Modified" if depth == 0 else f"Depth {depth}"
-        lines.append(f"[{tag}]")
-        for q in qualified_list:
-            fpath = q.split("::")[0]
-            layer = get_layer(cache, fpath)
-            all_layers.add(layer)
-            all_files.add(fpath)
-            lines.append(f"  {q} ({layer})")
-        lines.append("")
+    lines.append("[Modified]")
+    for q in sorted(seeds):
+        fpath = q.split("::")[0]
+        layer = get_layer(cache, fpath)
+        all_layers.add(layer)
+        all_files.add(fpath)
+        lines.append(f"  {q} ({layer})")
+    lines.append("")
 
-    total_funcs = sum(len(v) for v in levels.values())
+    if upstream_levels:
+        for depth, qualified_list in sorted(upstream_levels.items()):
+            lines.append(f"[Upstream Depth {depth}]")
+            for q in qualified_list:
+                fpath = q.split("::")[0]
+                layer = get_layer(cache, fpath)
+                all_layers.add(layer)
+                all_files.add(fpath)
+                lines.append(f"  {q} ({layer})")
+            lines.append("")
+
+    if downstream_levels:
+        for depth, qualified_list in sorted(downstream_levels.items()):
+            lines.append(f"[Downstream Depth {depth}]")
+            for q in qualified_list:
+                fpath = q.split("::")[0]
+                layer = get_layer(cache, fpath)
+                all_layers.add(layer)
+                all_files.add(fpath)
+                lines.append(f"  {q} ({layer})")
+            lines.append("")
+
+    total_funcs = len(seeds)
+    for levels in (upstream_levels, downstream_levels):
+        total_funcs += sum(len(v) for v in levels.items())
+
     lines.append(f"Summary: {len(all_files)} files, {total_funcs} functions, {len(all_layers)} layers")
 
     if len(all_layers) >= 3:
@@ -100,9 +142,29 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="Impact radius analysis via BFS on call graph")
     parser.add_argument("files", nargs="+", help="Target files (relative paths, forward slashes)")
-    parser.add_argument("--depth", type=int, default=2, help="Max BFS depth (default: 2)")
+    parser.add_argument("--depth", type=int, default=None, help="Max BFS depth for both directions")
+    parser.add_argument("--depth-up", type=int, default=None, help="Max upstream (callers) BFS depth")
+    parser.add_argument("--depth-down", type=int, default=None, help="Max downstream (callees) BFS depth")
+    parser.add_argument("--direction", choices=["reverse", "forward", "both"], default="both",
+                        help="BFS direction (default: both)")
     parser.add_argument("--cwd", default=os.getcwd(), help="Project root directory")
     args = parser.parse_args()
+
+    env_depth_up = DEFAULT_DEPTH_UP
+    env_depth_down = DEFAULT_DEPTH_DOWN
+    try:
+        env_depth_up = int(os.environ.get("IMPACT_DEPTH_UP", DEFAULT_DEPTH_UP))
+    except ValueError:
+        pass
+    try:
+        env_depth_down = int(os.environ.get("IMPACT_DEPTH_DOWN", DEFAULT_DEPTH_DOWN))
+    except ValueError:
+        pass
+
+    base_depth_up = args.depth if args.depth is not None else env_depth_up
+    base_depth_down = args.depth if args.depth is not None else env_depth_down
+    depth_up = args.depth_up if args.depth_up is not None else base_depth_up
+    depth_down = args.depth_down if args.depth_down is not None else base_depth_down
 
     cache = load_cache(args.cwd)
 
@@ -110,7 +172,7 @@ def main():
         data.get("calls") for path, data in cache.items() if path != "_meta"
     )
     if not has_calls:
-        print("Warning: No call graph data found in logic_index.json (regex-only parsers produce no CALLS data)", file=sys.stderr)
+        print("Warning: No call graph data found in logic_index.json", file=sys.stderr)
         sys.exit(2)
 
     target_files = []
@@ -127,9 +189,22 @@ def main():
         for m in missing:
             print(f"Warning: {m} not found in logic_index.json", file=sys.stderr)
 
-    reverse_index = build_reverse_index(cache)
-    levels = bfs(cache, reverse_index, target_files, args.depth)
-    print(format_output(cache, levels, target_files))
+    seeds = set()
+    for f in target_files:
+        seeds |= collect_file_symbols(cache, f)
+
+    upstream_levels = {}
+    downstream_levels = {}
+
+    if args.direction in ("reverse", "both") and depth_up > 0:
+        reverse_index = build_reverse_index(cache)
+        upstream_levels = bfs(cache, reverse_index, target_files, depth_up)
+
+    if args.direction in ("forward", "both") and depth_down > 0:
+        forward_index = build_forward_index(cache)
+        downstream_levels = bfs(cache, forward_index, target_files, depth_down)
+
+    print(format_output(cache, seeds, upstream_levels, downstream_levels, target_files))
 
 
 if __name__ == "__main__":

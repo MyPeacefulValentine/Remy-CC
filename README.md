@@ -93,7 +93,7 @@ This project enforces a strict **Plan-Act-Verify** loop. The following skills/co
     - **Phase**: Plan — before writing any code.
     - **Process**:
         1. **Infrastructure Check**: Detect `.claude/logic_index.json`; if missing, prompt user to run `/update-logic-index` or fall back to manual exploration.
-        2. **Context Saturation**: If logic index available, run `impact.py` on target files for BFS-based impact radius (affected files/functions per depth, cross-layer warnings); force-read all Depth 0–1 files. Otherwise, use grep/glob-based exploration.
+        2. **Context Saturation**: If logic index available, run `impact.py` on target files for bidirectional BFS — upstream (who calls this code) and downstream (what this code calls), with cross-layer warnings; force-read all Upstream Depth 1 and Downstream Depth 1 files. Otherwise, use grep/glob-based exploration.
         3. **Ambiguity Elimination**: Identify decision points → batch questions (`AskUserQuestion`) → re-search on new info (loop).
         4. **Finalize**: Output four core tables:
             - `Ambiguity Elimination Matrix` (decision locks)
@@ -188,7 +188,7 @@ Skipping `/deep-plan` means `/code-modification` runs without boundary constrain
 │   ├── milestone/                  # Milestone: history records & phase summaries
 │   ├── update-tree/                # Tree update: manual snapshot refresh (proactive mode)
 │   ├── update-logic-index/         # Logic index: semantic summary generation (Python/C/C++/TS)
-│   │   └── impact.py               # Impact radius: BFS-based affected file/function analysis
+│   │   └── impact.py               # Impact radius: bidirectional BFS tracing upstream callers and downstream callees
 │   ├── read-logic-index/           # Logic index: semantic summary reader
 │   ├── repo-audit/                 # Repo audit: safe clone & structure analysis (sandboxed)
 │   └── ...                         # Other engineering skills (TDD, Debugging, FileOps, etc.)

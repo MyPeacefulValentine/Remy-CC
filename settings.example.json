@@ -17,7 +17,9 @@
     "REPO_AUDIT_ROOT": "~/claude_audit",
     "TIMELINE_INJECT_MODE": "all",
     "TIMELINE_INJECT_VALUE": "",
-    "POST_VERIFY_MAX_RETRIES": "-1"
+    "POST_VERIFY_MAX_RETRIES": "-1",
+    "IMPACT_DEPTH_UP": "2",
+    "IMPACT_DEPTH_DOWN": "2"
   },
   "permissions": {
     "allow": [

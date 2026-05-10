@@ -93,7 +93,7 @@
     - **阶段**: 计划阶段 (Plan)，在编写任何代码之前。
     - **流程**:
         1. **前置依赖检查**: 检测 `.claude/logic_index.json` 是否存在；不存在时询问用户是否执行 `/update-logic-index`，或回退到手动探索。
-        2. **Context Saturation**: 若逻辑索引可用，对目标文件执行 `impact.py` 进行 BFS 影响半径分析（按深度输出受影响的文件/函数及跨层警告），强制阅读 Depth 0-1 层全部文件。否则使用 grep/glob 手动探索。
+        2. **Context Saturation**: 若逻辑索引可用，对目标文件执行 `impact.py` 进行双向 BFS 分析——上游（谁调用了此代码）和下游（此代码调用了谁），并输出跨层警告；强制阅读 Upstream Depth 1 和 Downstream Depth 1 的全部文件。否则使用 grep/glob 手动探索。
         3. **Ambiguity Elimination**: 识别决策点 -> 批量提问 (`AskUserQuestion`) -> 针对新信息再次搜索 (Loop)。
         4. **Finalize**: 按顺序输出四张核心表格，约定技术细节：
             - `歧义消除矩阵` (决策锁定)
@@ -188,7 +188,7 @@
 │   ├── milestone/                  # 里程碑: 历史记录与阶段性总结
 │   ├── update-tree/                # 树更新: 手动刷新快照 (Proactive 模式)
 │   ├── update-logic-index/         # 逻辑索引: 语义摘要生成 (Python/C/C++/TypeScript)
-│   │   └── impact.py               # 影响半径: BFS 反向遍历受影响文件/函数分析
+│   │   └── impact.py               # 影响半径: 双向 BFS 追踪上游调用者和下游被调用者
 │   ├── read-logic-index/           # 逻辑索引: 语义摘要读取
 │   ├── repo-audit/                 # 仓库审计: 安全克隆与结构分析 (Sandboxed)
 │   └── ...                         # 其他工程化技能 (TDD, Debugging, FileOps 等)
