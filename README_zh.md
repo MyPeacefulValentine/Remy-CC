@@ -167,11 +167,38 @@
 
 若跳过 `/deep-plan` 直接调用后续技能，`/code-modification` 将无约束边界运行，`/auditor` 将退化为两方校验（无初始计划列）。
 
+### 7. CLI 与配置 UI
+
+安装完成后，`remy-cc` 命令可在系统任意位置使用（通过 `~/.claude/bin/`）：
+
+| 命令 | 说明 |
+| :--- | :--- |
+| `remy-cc ui` | 打开浏览器配置编辑器，编辑 `~/.claude/settings.json`（env 块） |
+| `remy-cc project <路径>` | 打开项目级配置编辑器，编辑 `<路径>/.claude/settings.local.json` |
+| `remy-cc verify` | 轻量安装完整性检查 |
+| `remy-cc version` | 显示已安装版本号 |
+
+- **浏览器配置界面**：
+    - 编辑 `settings.json` 的 `env` 块 — 23 个参数，分为 7 组（LLM API、影响分析、上下文注入、时间线、后验测试、系统、Claude Code）。
+    - 双语界面（English / 中文），语言根据 `REMY_LANG` 自动检测。
+    - 每个参数附带描述，枚举类型下拉菜单显示选项注释。
+- **项目模式** (`remy-cc project <路径>`)：
+    - 每参数提供切换开关："继承全局"（默认）或"自定义覆盖"。
+    - 仅被覆盖的键写入 `settings.local.json`；切换回继承时从文件中删除该键。
+- **安全机制**：
+    - 锁文件（`~/.claude/.config_ui.lock` + PID 存活检查）防止并发编辑。
+    - 浏览器标签页关闭时自动停止服务（`navigator.sendBeacon` + `pagehide` 事件）。
+    - Unix 系统上 `settings.json` 以 `0600` 权限写入，防止其他用户读取 API Key。
+
 ## 目录结构
 
 ```text
 .
-├── install.py                      # 安装脚本 (部署、卸载、验证)
+├── install.py                      # 安装脚本 (部署、卸载、验证、shim/PATH 配置)
+├── cli.py                          # CLI 入口 (remy-cc 命令分发器)
+├── config_ui.py                    # 配置 UI 服务端 (浏览器配置编辑器)
+├── config_ui.html                  # 配置 UI 前端模板
+├── logo.svg                        # Remy 标志 (配置界面头部显示)
 ├── CLAUDE.md                       # 系统入口，定义核心 Persona 和静态协议
 ├── language.md                     # 语言指令（安装时及 SessionStart 时动态生成）
 ├── style.md                        # 统一协议层 (定义 "Can/Cannot" 边界与 Agent 限制)
@@ -224,6 +251,7 @@ python install.py --lang zh-CN   # 简体中文
 - 根据 `--lang` 参数设置 `settings.json` 中的 `REMY_LANG` 值并生成 `language.md`（默认：`en`）
 - 交互式配置 Logic Index 的 LLM API（URL、模型、API Key）；可选测试连通性
 - 检测 tree-sitter 是否已安装，未安装时询问是否安装（C/C++/TypeScript 高精度解析，可选）
+- 创建 `~/.claude/bin/remy-cc` CLI 入口脚本，并可选将 `~/.claude/bin/` 注册到系统 PATH
 
 ### 2. 验证
 

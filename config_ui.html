@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Remy Configuration</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#f4f5f7;color:#1a1a2e;line-height:1.6;--accent:#6366f1;--accent-hover:#4f46e5;--accent-active:#4338ca;--accent-ring:rgba(99,102,241,.1)}
+body.theme-project{--accent:#059669;--accent-hover:#047857;--accent-active:#065f46;--accent-ring:rgba(5,150,105,.1)}
+#app{max-width:820px;margin:0 auto;padding:32px 20px 64px}
+header{margin-bottom:28px;display:flex;justify-content:space-between;align-items:flex-start}
+.header-left{flex:1}
+h1{font-size:22px;font-weight:700;margin-bottom:4px}
+.subtitle{font-size:13px;color:#6b7280;word-break:break-all}
+.header-actions{display:flex;gap:6px;margin-top:2px}
+.btn-lang,.btn-mode-tag{padding:6px 14px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;color:#374151;white-space:nowrap;transition:background .15s}
+.btn-lang:hover{background:#f3f4f6}
+.btn-mode-tag{cursor:default;font-weight:600;color:var(--accent);border-color:var(--accent)}
+.group{background:#fff;border-radius:10px;margin-bottom:14px;border:1px solid #e5e7eb;overflow:hidden}
+.group-header{padding:14px 18px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:600;user-select:none;transition:background .15s}
+.group-header:hover{background:#f9fafb}
+.group-header .arrow{font-size:12px;color:#9ca3af;transition:transform .2s}
+.group-header .arrow.collapsed{transform:rotate(-90deg)}
+.group-header .badge{font-size:11px;font-weight:400;color:#6b7280;margin-left:8px}
+.group-body{padding:4px 18px 18px;display:block}
+.group-body.hidden{display:none}
+.param{margin-bottom:16px}
+.param:last-child{margin-bottom:0}
+.param-top{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+.param-label{font-size:13px;font-weight:600;color:#374151}
+.param-label code{font-family:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;font-size:12.5px;background:#f3f4f6;padding:1px 5px;border-radius:3px}
+.param-desc{font-size:12px;color:#6b7280;margin-bottom:6px}
+.param input,.param select{width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;font-family:inherit;background:#fff;transition:border-color .15s}
+.param input:focus,.param select:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-ring)}
+.param input:disabled,.param select:disabled{background:#f3f4f6;color:#9ca3af;cursor:not-allowed}
+.param input[type=number]{appearance:textfield}
+.param input[type=number]::-webkit-inner-spin-button{opacity:1}
+.pw-wrap{display:flex;gap:6px}
+.pw-wrap input{flex:1}
+.btn-toggle{padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:12px;white-space:nowrap;color:#374151}
+.btn-toggle:hover{background:#f3f4f6}
+.toggle{position:relative;width:36px;height:20px;background:#d1d5db;border-radius:10px;cursor:pointer;transition:background .2s;flex-shrink:0}
+.toggle.active{background:var(--accent)}
+.toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .2s}
+.toggle.active::after{transform:translateX(16px)}
+.toggle-label{font-size:11px;color:#9ca3af;white-space:nowrap}
+.actions{margin-top:28px;display:flex;gap:10px;flex-wrap:wrap}
+.btn-save{background:var(--accent);color:#fff;border:none;padding:10px 28px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500;transition:background .15s}
+.btn-save:hover{background:var(--accent-hover)}
+.btn-save:active{background:var(--accent-active)}
+.btn-reset{background:#fff;border:1px solid #d1d5db;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;color:#374151;transition:background .15s}
+.btn-reset:hover{background:#f3f4f6}
+.status{margin-top:16px;padding:12px 16px;border-radius:8px;font-size:13px;display:none;animation:fadeIn .2s}
+.status.success{display:block;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.status.error{display:block;background:#fef2f2;color:#991b1b;border:1px solid #fca5a5}
+.unknown-warn{margin-top:12px;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:600px){#app{padding:16px 12px 48px}.actions{flex-direction:column}.btn-save,.btn-reset{width:100%;text-align:center}header{flex-direction:column;gap:8px}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="header-left">
+      <img src="/logo.svg" alt="Remy" width="32" height="32" style="vertical-align:middle;margin-right:8px" onerror="this.style.display='none'"><h1 id="title" style="display:inline;vertical-align:middle">Remy Configuration</h1>
+      <div class="subtitle" id="subtitle"></div>
+    </div>
+    <div class="header-actions">
+      <span class="btn-mode-tag" id="mode-tag"></span>
+      <button class="btn-lang" id="lang-btn" onclick="toggleLang()">中文</button>
+    </div>
+  </header>
+  <div id="groups"></div>
+  <div id="unknown-area"></div>
+  <div class="actions">
+    <button class="btn-save" id="save-btn">Save</button>
+    <button class="btn-reset" id="reset-btn">Reset to Defaults</button>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+<script>
+(function(){
+var config=null,lang="en",dirty=false,overrides={};
+
+var TEXT={
+  en:{title:"Remy Configuration",titleProject:"Remy Project Configuration",
+      subtitle:"Editing: ~/.claude/settings.json",
+      save:"Save",reset:"Reset to Defaults",langBtn:"中文",
+      modeGlobal:"Global",modeProject:"Project",
+      saved:"Settings saved. Backup written to .bak.",
+      resetDone:"Form reset to defaults (not yet saved).",
+      error:"Error: ",
+      unknownWarn:function(n,keys){return n+" unregistered env key(s) preserved on save: "+keys},
+      show:"Show",hide:"Hide",
+      inherit:"Inherit global",custom:"Custom",
+      validationInt:" must be a number.",
+      validationMin:" minimum value is ",validationMax:" maximum value is "},
+  "zh-CN":{title:"Remy 配置",titleProject:"Remy 项目配置",
+      subtitle:"编辑: ~/.claude/settings.json",
+      save:"保存",reset:"恢复默认值",langBtn:"English",
+      modeGlobal:"全局",modeProject:"项目",
+      saved:"设置已保存。备份已写入 .bak。",
+      resetDone:"表单已恢复默认值（尚未保存）。",
+      error:"错误: ",
+      unknownWarn:function(n,keys){return "发现 "+n+" 个未注册的 env 键（保存时保留）: "+keys},
+      show:"显示",hide:"隐藏",
+      inherit:"继承全局",custom:"自定义",
+      validationInt:" 必须为数字。",
+      validationMin:" 最小值为 ",validationMax:" 最大值为 "}
+};
+
+function t(key){return(TEXT[lang]||TEXT.en)[key]||(TEXT.en)[key]||key}
+function isProject(){return config&&config.mode==="project"}
+
+window.toggleLang=function(){
+  lang=(lang==="en")?"zh-CN":"en";
+  render();
+};
+
+function init(){
+  fetch("/api/config").then(function(r){return r.json()}).then(function(data){
+    config=data;
+    lang=config.lang==="zh-CN"?"zh-CN":"en";
+    if(isProject()){
+      document.body.classList.add("theme-project");
+      overrides={};
+      var locals=config.env_local||{};
+      for(var k in locals){overrides[k]=true}
+    }
+    render();
+  }).catch(function(e){
+    document.getElementById("status").className="status error";
+    document.getElementById("status").textContent="Failed to load: "+e.message;
+    document.getElementById("status").style.display="block";
+  });
+}
+
+function render(){
+  var proj=isProject();
+  document.title=proj?t("titleProject"):t("title");
+  document.getElementById("title").textContent=document.title;
+  document.getElementById("save-btn").textContent=t("save");
+  document.getElementById("reset-btn").textContent=t("reset");
+  document.getElementById("lang-btn").textContent=t("langBtn");
+  document.getElementById("mode-tag").textContent=proj?t("modeProject"):t("modeGlobal");
+
+  if(proj){
+    document.getElementById("subtitle").textContent=config.target||"";
+  }else{
+    document.getElementById("subtitle").textContent=t("subtitle");
+  }
+
+  var container=document.getElementById("groups");
+  container.innerHTML="";
+
+  config.groups.forEach(function(group){
+    var params=config.registry.filter(function(p){return p.group===group.id});
+    if(!params.length)return;
+    var section=document.createElement("div");
+    section.className="group";
+    var header=document.createElement("div");
+    header.className="group-header";
+    var label=lang==="zh-CN"?group.label_zh:group.label_en;
+    header.innerHTML='<span>'+label+'<span class="badge">'+params.length+'</span></span><span class="arrow">▾</span>';
+    var body=document.createElement("div");
+    body.className="group-body";
+    header.addEventListener("click",function(){
+      var arrow=header.querySelector(".arrow");
+      if(body.classList.contains("hidden")){body.classList.remove("hidden");arrow.classList.remove("collapsed")}
+      else{body.classList.add("hidden");arrow.classList.add("collapsed")}
+    });
+    params.forEach(function(param){body.appendChild(createParam(param))});
+    section.appendChild(header);
+    section.appendChild(body);
+    container.appendChild(section);
+  });
+
+  var unknownArea=document.getElementById("unknown-area");
+  unknownArea.innerHTML="";
+  if(!proj&&config.unknown_keys&&config.unknown_keys.length>0){
+    var warn=document.createElement("div");
+    warn.className="unknown-warn";
+    var fn=t("unknownWarn");
+    warn.textContent=typeof fn==="function"?fn(config.unknown_keys.length,config.unknown_keys.join(", ")):fn;
+    unknownArea.appendChild(warn);
+  }
+}
+
+function getCurrentValue(param){
+  if(isProject()){
+    var local=config.env_local||{};
+    if(param.key in local)return local[param.key];
+    var global_env=config.env_global||{};
+    if(param.key in global_env)return global_env[param.key];
+    return param["default"];
+  }
+  var env=config.env||{};
+  return env[param.key]!=null?env[param.key]:param["default"];
+}
+
+function getGlobalValue(param){
+  var g=config.env_global||{};
+  return g[param.key]!=null?g[param.key]:param["default"];
+}
+
+function optionLabel(param,idx,optValue){
+  var descs=lang==="zh-CN"?param.option_desc_zh:param.option_desc_en;
+  if(descs&&descs[idx])return optValue+" — "+descs[idx];
+  return optValue;
+}
+
+function createParam(param){
+  var div=document.createElement("div");
+  div.className="param";
+  var proj=isProject();
+  var isOverride=proj&&overrides[param.key];
+  var currentValue=getCurrentValue(param);
+  var globalValue=proj?getGlobalValue(param):null;
+
+  var top=document.createElement("div");
+  top.className="param-top";
+  var lbl=document.createElement("span");
+  lbl.className="param-label";
+  lbl.innerHTML="<code>"+param.key+"</code>";
+  top.appendChild(lbl);
+
+  var toggleEl=null;
+  if(proj){
+    toggleEl=document.createElement("div");
+    toggleEl.className="toggle"+(isOverride?" active":"");
+    toggleEl.title=isOverride?t("custom"):t("inherit");
+    top.appendChild(toggleEl);
+    var tLbl=document.createElement("span");
+    tLbl.className="toggle-label";
+    tLbl.textContent=isOverride?t("custom"):t("inherit");
+    top.appendChild(tLbl);
+  }
+
+  var desc=document.createElement("div");
+  desc.className="param-desc";
+  desc.textContent=lang==="zh-CN"?param.desc_zh:param.desc_en;
+
+  var displayValue=isOverride?currentValue:(proj?globalValue:currentValue);
+  var disabled=proj&&!isOverride;
+  var input;
+
+  if(param.type==="enum"){
+    input=document.createElement("select");
+    input.id="p-"+param.key;
+    input.disabled=disabled;
+    (param.options||[]).forEach(function(opt,idx){
+      var o=document.createElement("option");
+      o.value=opt;
+      o.textContent=optionLabel(param,idx,opt);
+      if(opt===displayValue)o.selected=true;
+      input.appendChild(o);
+    });
+    div.appendChild(top);
+    div.appendChild(desc);
+    div.appendChild(input);
+  }else if(param.type==="password"){
+    input=document.createElement("input");
+    input.type="password";input.id="p-"+param.key;
+    input.value=displayValue;input.autocomplete="off";
+    input.disabled=disabled;
+    var toggleBtn=document.createElement("button");
+    toggleBtn.type="button";toggleBtn.className="btn-toggle";
+    toggleBtn.textContent=t("show");
+    toggleBtn.addEventListener("click",function(){
+      if(input.type==="password"){input.type="text";toggleBtn.textContent=t("hide")}
+      else{input.type="password";toggleBtn.textContent=t("show")}
+    });
+    var wrap=document.createElement("div");
+    wrap.className="pw-wrap";
+    wrap.appendChild(input);
+    wrap.appendChild(toggleBtn);
+    div.appendChild(top);
+    div.appendChild(desc);
+    div.appendChild(wrap);
+  }else if(param.type==="int"){
+    input=document.createElement("input");
+    input.type="number";input.id="p-"+param.key;
+    input.value=displayValue;input.disabled=disabled;
+    if(param.min!=null)input.min=param.min;
+    if(param.max!=null)input.max=param.max;
+    div.appendChild(top);
+    div.appendChild(desc);
+    div.appendChild(input);
+  }else{
+    input=document.createElement("input");
+    input.type=param.type==="url"?"url":"text";
+    input.id="p-"+param.key;
+    input.value=displayValue;input.disabled=disabled;
+    div.appendChild(top);
+    div.appendChild(desc);
+    div.appendChild(input);
+  }
+
+  if(proj&&toggleEl){
+    (function(paramKey,inputEl,tEl,tLabel){
+      tEl.addEventListener("click",function(){
+        var active=tEl.classList.toggle("active");
+        overrides[paramKey]=active;
+        inputEl.disabled=!active;
+        tLabel.textContent=active?t("custom"):t("inherit");
+        tEl.title=tLabel.textContent;
+        if(!active){
+          inputEl.value=getGlobalValue({key:paramKey,"default":""});
+        }
+        dirty=true;
+      });
+    })(param.key,input,toggleEl,top.querySelector(".toggle-label"));
+  }
+
+  return div;
+}
+
+function collectFormData(){
+  var data={};
+  config.registry.forEach(function(param){
+    var el=document.getElementById("p-"+param.key);
+    if(el)data[param.key]=el.value;
+  });
+  return data;
+}
+
+function validate(data){
+  var keysToCheck=isProject()?overrides:null;
+  for(var i=0;i<config.registry.length;i++){
+    var param=config.registry[i];
+    if(param.type!=="int")continue;
+    if(keysToCheck&&!keysToCheck[param.key])continue;
+    var val=data[param.key];
+    var num=parseInt(val,10);
+    if(isNaN(num))return param.key+t("validationInt");
+    if(param.min!=null&&num<param.min)return param.key+t("validationMin")+param.min;
+    if(param.max!=null&&num>param.max)return param.key+t("validationMax")+param.max;
+  }
+  return null;
+}
+
+function save(){
+  var data=collectFormData();
+  var err=validate(data);
+  if(err){showStatus("error",err);return}
+
+  var body;
+  if(isProject()){
+    var overrideList=[];
+    for(var k in overrides){if(overrides[k])overrideList.push(k)}
+    body=JSON.stringify({env:data,overrides:overrideList});
+  }else{
+    body=JSON.stringify({env:data});
+  }
+
+  fetch("/api/save",{method:"POST",
+    headers:{"Content-Type":"application/json"},body:body
+  }).then(function(r){return r.json()}).then(function(result){
+    if(result.status==="ok"){dirty=false;showStatus("success",t("saved"))}
+    else{showStatus("error",t("error")+(result.message||""))}
+  }).catch(function(e){showStatus("error",t("error")+e.message)});
+}
+
+function resetDefaults(){
+  if(isProject()){
+    overrides={};
+    config.registry.forEach(function(param){
+      var el=document.getElementById("p-"+param.key);
+      if(el){el.value=getGlobalValue(param);el.disabled=true}
+    });
+    render();
+  }else{
+    config.registry.forEach(function(param){
+      var el=document.getElementById("p-"+param.key);
+      if(el)el.value=param["default"];
+    });
+  }
+  dirty=true;
+  showStatus("success",t("resetDone"));
+}
+
+function showStatus(type,msg){
+  var el=document.getElementById("status");
+  el.className="status "+type;
+  el.textContent=msg;
+  el.style.display="block";
+  clearTimeout(el._timer);
+  el._timer=setTimeout(function(){el.style.display="none"},6000);
+}
+
+document.getElementById("save-btn").addEventListener("click",save);
+document.getElementById("reset-btn").addEventListener("click",resetDefaults);
+document.getElementById("groups").addEventListener("input",function(){dirty=true});
+document.getElementById("groups").addEventListener("change",function(){dirty=true});
+window.addEventListener("beforeunload",function(e){
+  if(dirty){e.preventDefault();e.returnValue=""}
+});
+window.addEventListener("pagehide",function(){
+  navigator.sendBeacon("/api/shutdown","");
+});
+init();
+})();
+</script>
+</body>
+</html>

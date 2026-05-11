@@ -26,7 +26,8 @@ SUITE_VERSION = "2.0.0"
 MANIFEST_FILE = ".installer_manifest.json"
 
 DEPLOY_DIRS = ["hooks", "skills", "output-styles"]
-DEPLOY_FILES = ["CLAUDE.md", "language.md", "style.md", "tools_ref.md"]
+DEPLOY_FILES = ["CLAUDE.md", "language.md", "style.md", "tools_ref.md",
+                "cli.py", "config_ui.py", "config_ui.html", "logo.svg"]
 SETTINGS_TEMPLATE = "settings.example.json"
 
 BACKUP_SUFFIX = ".bak"
@@ -96,6 +97,14 @@ UI = {
         "argparse_verify": "Verify installation",
         "verify_api_not_configured": "  [i] LLM API not configured (Logic Index will not generate summaries)",
         "argparse_lang": "Language for UI and REMY_LANG (interactive prompt if omitted)",
+        "shim_created": "  [+] CLI command created: {path}",
+        "path_already": "  [i] {dir} is already in PATH",
+        "path_prompt": "Add remy-cc to PATH for global access? [Y/n] ",
+        "path_manual": "  [i] To use remy-cc globally, add to PATH:\n      {path}",
+        "path_too_long": "  [!] PATH variable exceeds 1024 characters, cannot auto-modify",
+        "path_set_win": "  [+] PATH updated (restart terminal to take effect)",
+        "path_set_unix": "  [+] Added to ~/{rc} (run 'source ~/{rc}' or restart terminal)",
+        "path_cleanup": "  [+] CLI shim removed",
     },
     "zh-CN": {
         "target_dir": "目标目录: {path}",
@@ -156,6 +165,14 @@ UI = {
         "argparse_verify": "验证安装",
         "verify_api_not_configured": "  [i] LLM API 未配置（Logic Index 将无法生成摘要）",
         "argparse_lang": "界面语言及 REMY_LANG 配置值（未指定时交互式选择）",
+        "shim_created": "  [+] CLI 命令已创建: {path}",
+        "path_already": "  [i] {dir} 已在 PATH 中",
+        "path_prompt": "是否将 remy-cc 添加到 PATH 以便全局访问？[Y/n] ",
+        "path_manual": "  [i] 如需全局使用 remy-cc，请将以下目录加入 PATH：\n      {path}",
+        "path_too_long": "  [!] PATH 变量超过 1024 字符，无法自动修改",
+        "path_set_win": "  [+] PATH 已更新（重启终端生效）",
+        "path_set_unix": "  [+] 已添加到 ~/{rc}（运行 'source ~/{rc}' 或重启终端生效）",
+        "path_cleanup": "  [+] CLI 入口已移除",
     },
 }
 
@@ -315,6 +332,8 @@ def merge_settings(template: dict, target_path: Path, claude_home: Path, lang_ov
     with open(target_path, "w", encoding="utf-8") as f:
         json.dump(existing, f, indent=2, ensure_ascii=False)
         f.write("\n")
+    if sys.platform != "win32":
+        os.chmod(target_path, 0o600)
 
     if missing_keys:
         print(_t("env_new_keys", keys=', '.join(missing_keys)))
@@ -444,6 +463,8 @@ def configure_api(settings_path: Path) -> None:
             with open(settings_path, "w", encoding="utf-8") as f:
                 json.dump(settings, f, indent=2, ensure_ascii=False)
                 f.write("\n")
+            if sys.platform != "win32":
+                os.chmod(settings_path, 0o600)
             print(_t("api_configured"))
 
             print()
@@ -486,6 +507,81 @@ def test_api_connectivity(url: str, api_key: str, model: str) -> bool:
 
     print(_t("api_test_all_failed"))
     return False
+
+
+# ── CLI Shim & PATH ───────────────────────────────────────────
+
+
+def create_shim(claude_home: Path) -> Path:
+    bin_dir = claude_home / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    cli_path = claude_home / "cli.py"
+
+    if sys.platform == "win32":
+        shim = bin_dir / "remy-cc.cmd"
+        shim.write_text('@echo off\npython "{}" %*\n'.format(cli_path), encoding="utf-8")
+    else:
+        shim = bin_dir / "remy-cc"
+        shim.write_text('#!/bin/sh\nexec python3 "{}" "$@"\n'.format(cli_path), encoding="utf-8")
+        shim.chmod(0o755)
+
+    print(_t("shim_created", path=shim))
+    return bin_dir
+
+
+def _is_in_path(bin_dir: Path) -> bool:
+    path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+    target = os.path.normcase(os.path.normpath(str(bin_dir)))
+    return any(os.path.normcase(os.path.normpath(d)) == target for d in path_dirs if d)
+
+
+def register_path(bin_dir: Path) -> None:
+    bin_str = str(bin_dir)
+
+    if _is_in_path(bin_dir):
+        print(_t("path_already", dir=bin_str))
+        return
+
+    try:
+        answer = input(_t("path_prompt")).strip().lower()
+    except EOFError:
+        answer = ""
+
+    if answer == "n":
+        print(_t("path_manual", path=bin_str))
+        return
+
+    if sys.platform == "win32":
+        result = subprocess.run(
+            ["reg", "query", "HKCU\\Environment", "/v", "PATH"],
+            capture_output=True, text=True,
+        )
+        current_user_path = ""
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                if "PATH" in line.upper() and "REG_" in line.upper():
+                    parts = line.split("    ")
+                    if len(parts) >= 3:
+                        current_user_path = parts[-1].strip()
+        new_path = (current_user_path + os.pathsep + bin_str) if current_user_path else bin_str
+        if len(new_path) > 1024:
+            print(_t("path_too_long"))
+            print(_t("path_manual", path=bin_str))
+            return
+        subprocess.run(["setx", "PATH", new_path], capture_output=True, check=False)
+        print(_t("path_set_win"))
+    else:
+        shell = os.environ.get("SHELL", "/bin/bash")
+        rc_file = Path.home() / (".zshrc" if "zsh" in shell else ".bashrc")
+        export_line = 'export PATH="$PATH:{}"'.format(bin_str)
+        if rc_file.exists():
+            content = rc_file.read_text(encoding="utf-8")
+            if bin_str in content:
+                print(_t("path_already", dir=bin_str))
+                return
+        with open(rc_file, "a", encoding="utf-8") as f:
+            f.write("\n# Remy-CC CLI\n{}\n".format(export_line))
+        print(_t("path_set_unix", rc=rc_file.name))
 
 
 # ── Main Commands ──────────────────────────────────────────────
@@ -589,6 +685,10 @@ def do_install() -> None:
                 check=False,
             )
 
+    print()
+    bin_dir = create_shim(claude_home)
+    register_path(bin_dir)
+
     print(_t("install_done", count=len(records)))
     print(_t("install_verify_hint"))
 
@@ -655,6 +755,11 @@ def do_uninstall() -> None:
         shutil.copy2(claude_md_bak, claude_md)
         claude_md_bak.unlink()
         print(_t("claude_restored"))
+
+    bin_dir = claude_home / "bin"
+    if bin_dir.exists():
+        shutil.rmtree(bin_dir, ignore_errors=True)
+        print(_t("path_cleanup"))
 
     manifest_path.unlink()
 
