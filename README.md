@@ -34,6 +34,8 @@ Remy addresses these limitations by adding a layer of **automated enforcement** 
 - **Cross-session memory** — The milestone system writes structured history reports to a timeline index. New sessions load a filtered view, providing continuity without flooding the context window.
 - **Environment normalization** — Shell encoding, path formatting, Conda/Mamba activation, and file naming conventions are enforced consistently on every tool call, regardless of platform.
 
+---
+
 ## ✨Core Features
 
 ### Design Principles
@@ -73,7 +75,7 @@ These layers are coupled by design. Hooks maintain the context that skills depen
 
 Skills with `disable-model-invocation: true` must be invoked manually. Each defines its own inputs, outputs, and stop conditions.
 
-| Command | Purpose | Doc |
+| Command | Purpose | Doc (Link) |
 | :--- | :--- | :--- |
 | `/deep-plan` | Deep analysis and planning before writing code — review architecture risks, resolve ambiguities | [📖](skills/deep-plan/README.md) |
 | `/code-modification` | Apply code changes with dependency tracing and integrity checks | [📖](skills/code-modification/README.md) |
@@ -86,6 +88,8 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 | `/update-tree` | Regenerate the project directory snapshot | [📖](skills/update-tree/README.md) |
 | `/repo-audit` | Inspect a GitHub repository in a sandboxed temporary directory | [📖](skills/repo-audit/README.md) |
 | `/receiving-feedback` | Process code review feedback with verification before implementation | [📖](skills/receiving-feedback/README.md) |
+
+### Development Cycle
 
 A full development cycle follows this sequence. Not every step is required for every change — scale to the task complexity.
 
