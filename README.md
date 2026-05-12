@@ -23,13 +23,28 @@
 
 ## What is Remy-CC?
 
-Remy-CC installs a set of **hooks**, **skills**, and **configuration files** into `~/.claude/` that modify how Claude Code behaves during development sessions.
+In large projects — especially when using less capable models — Claude Code can suffer from **AI hallucination** or **context rot**. Symptoms include modifying code without checking dependencies or function signatures, skipping verification steps, overlooking risks, or referencing content and file paths that no longer exist after a refactor. Across sessions, the problem persists: although Claude Code provides commands like `/compact` to compress context and maintain some continuity, they tend to lose structural details such as function signatures and interfaces, and cannot persistently preserve development records or project architecture. These are not bugs in Claude Code; they are inherent limitations of context-window-based AI interaction.
 
-- **Hooks** run automatically on Claude Code events (session start, before tool use, before each user message). They enforce behavioral rules, maintain project context, and inject environment settings.
-- **Skills** are slash commands (`/deep-plan`, `/milestone`, etc.) that you invoke manually to perform structured development tasks such as architecture review, code auditing, and history reporting.
-- **Configuration files** (`CLAUDE.md`, `style.md`, etc.) define the AI's communication style, engineering principles, and prohibited behaviors.
+Remy-CC addresses these limitations by adding a layer of **automated enforcement** and **structured workflows** on top of Claude Code. It uses only Claude Code's native extension points — [hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) and [CLAUDE.md](https://docs.anthropic.com/en/docs/claude-code/memory#claudemd-files) — without modifying Claude Code itself. Beyond behavioral constraints, Remy-CC also extracts project file structure, semantic indexes, and call relationships, persistently records development history, and injects them into Claude Code's context to enable continuous context awareness and dependency tracking.
 
-Remy-CC does not modify Claude Code itself. It uses Claude Code's native [hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) and [CLAUDE.md](https://docs.anthropic.com/en/docs/claude-code/memory#claudemd-files) mechanisms.
+The system is built on three coordinated layers:
+
+- **System prompts** (`CLAUDE.md`, `style.md`, output styles) define engineering principles, communication constraints, and prohibited behaviors. They form the static behavioral baseline, loaded at session start.
+- **Runtime hooks** fire automatically on Claude Code events — before every tool call, on every user message, and at session lifecycle boundaries. They re-inject behavioral rules to counteract instruction decay, normalize paths and shell environments, enrich file reads with caller/callee context from the logic index, and keep the project tree snapshot current. Hooks are the continuous enforcement layer: they run without user intervention.
+- **Skills** are slash commands (`/deep-plan`, `/code-modification`, `/auditor`, etc.) that you invoke manually to execute structured, multi-step development tasks. Each skill defines its own workflow with explicit inputs, outputs, and stop conditions.
+
+These layers are coupled by design. Hooks maintain the context that skills depend on — file tree, semantic code index, and session history are all updated automatically through lifecycle events. In the other direction, skills produce artifacts (task packets, changelogs, audit reports) that hooks validate at tool-call time. For example, `/deep-plan` writes a task packet that constrains which files `/code-modification` is allowed to edit, and `pre_tool_guard` enforces that boundary on every `Edit` call.
+
+Remy-CC does not pursue full automation or multi-agent orchestration. All code-modification skills require manual invocation and block at key decision points for user confirmation. The rationale: when agents pass summaries between each other, structural details like function signatures and type constraints are easily lost. Keeping the human in the development loop preserves control over change intent and scope at every stage.
+
+**What this gives you:**
+
+- **Instruction persistence** — Behavioral rules are re-injected on every user message, surviving across long conversations instead of silently decaying.
+- **Dependency-aware code changes** — A semantic logic index with function-level call graph data (Python AST, C/C++/TypeScript tree-sitter) lets the system trace upstream callers and downstream dependencies before code is modified.
+- **Automated context maintenance** — The project file tree, semantic code index, and session history update themselves through lifecycle hooks. `CLAUDE.md` references are kept in sync by the document injector.
+- **Composable verification pipeline** — Architecture review → code modification → test verification → changelog → context rewind → three-way auditing, chained through JSON task packets in `.claude/temp_task/`. Each step is independent; use what fits the task complexity.
+- **Cross-session memory** — The milestone system writes structured history reports to a timeline index. New sessions load a filtered view, providing continuity without flooding the context window.
+- **Environment normalization** — Shell encoding, path formatting, Conda/Mamba activation, and file naming conventions are enforced consistently on every tool call, regardless of platform.
 
 ## Features
 
