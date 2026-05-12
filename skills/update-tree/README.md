@@ -1,26 +1,43 @@
 # Update Tree (Project Tree Snapshot)
 
-Update Tree generates a text snapshot of the project directory structure and saves it to `.claude/project_tree.md`. This snapshot is then injected into `CLAUDE.md` as a structural navigation map for the AI.
+Update Tree generates a text snapshot of the project directory structure and saves it to `.claude/project_tree.md`. This snapshot is injected into `CLAUDE.md` as a structural navigation reference for the AI. The tree is also auto-updated on session lifecycle events.
 
-## Core Functions
+## When to Use
 
-1. **Smart Filtering**: Supports `.gitignore`-style exclusion rules.
-2. **Depth Control**: Supports per-directory traversal depth configuration.
-3. **File Visibility**: Controls whether leaf-node files are listed, or only directory structure.
-4. **Auto-Injection**: Automatically triggers `hooks/doc_manager/injector.py` to update `CLAUDE.md` after generation.
+- After batch file operations (creating, moving, or deleting multiple files)
+- After refactoring that changes module structure or directory layout
+- After destructive actions (`rm`, `mv`) that alter directory structure
+- When the AI begins referencing non-existent file paths (stale context)
 
-## Configuration (`.claude/tree_config`)
+## Workflow
 
-This skill reads `.claude/tree_config` for rules. If the file does not exist, a default template is created on first run.
+### Manual Invocation
+
+1. Run `/update-tree`. The skill executes `generate_smart_tree.py` to produce `.claude/project_tree.md`.
+2. The document injector (`hooks/doc_manager/injector.py`) updates the `CLAUDE.md` reference.
+
+### Automatic Updates
+
+The tree is also updated automatically via `hooks/tree_system/lifecycle_hook.py`:
+
+| Event | Trigger |
+| :--- | :--- |
+| `SessionStart` | Session begins |
+| `PreCompact` | Before context compaction |
+| `SessionEnd` | Session ends |
+
+## Configuration
+
+The skill reads `.claude/tree_config` for rules. If the file does not exist, a default template is created on first run.
 
 ### Syntax
 
-- **Exclusion rules**: Prefixed with `!`.
-    - `!node_modules` (exclude directories/files named node_modules)
-    - `!*.log` (exclude files ending in .log)
-- **Inclusion rules**: `[path] [arguments]`
-    - `-depth N`: Traversal depth (N=0 for current level only, N=-1 for unlimited recursion).
-    - `-if_file true/false`: Whether to display individual files.
+- **Exclusion rules** (`!` prefix):
+    - `!node_modules` — exclude directories/files named node_modules
+    - `!*.log` — exclude files ending in .log
+- **Inclusion rules** (`[path] [arguments]`):
+    - `-depth N` — traversal depth (0 = current level only, -1 = unlimited)
+    - `-if_file true/false` — whether to list individual files
 
 ### Example
 
@@ -30,40 +47,22 @@ This skill reads `.claude/tree_config` for rules. If the file does not exist, a 
 !.git
 !dist
 
-# Root rule: depth 2, show files
+# Root: depth 2, show files
 . -depth 2 -if_file true
 
-# Specific directory: depth 1, directories only
+# Assets: depth 1, directories only
 src/assets -depth 1 -if_file false
 
-# Source directory: unlimited depth, show files
+# Core code: unlimited depth, show files
 src/core -depth -1 -if_file true
 ```
-
-## Proactive Usage Policy
-
-You should run `/update-tree` in the following scenarios:
-
-1. **After file operations**: Batch creation (`touch`), move (`mv`), or deletion (`rm`) of files.
-2. **After refactoring**: Module structure changes or directory renames.
-3. **After destructive actions**: Any operation that alters the directory layout.
-4. **Context drift**: The AI begins referencing non-existent file paths.
-
-## Lifecycle Integration
-
-The tree is automatically updated on three lifecycle events via `hooks/tree_system/lifecycle_hook.py`:
-
-| Event | Trigger |
-| :--- | :--- |
-| `SessionStart` | Session begins |
-| `PreCompact` | Before context compaction |
-| `SessionEnd` | Session ends |
 
 ## Related Files
 
 | File | Purpose |
 | :--- | :--- |
 | `SKILL.md` | Protocol definition (loaded by Claude Code) |
-| `hooks/tree_system/generate_smart_tree.py` | Core generation script |
-| `hooks/tree_system/lifecycle_hook.py` | Lifecycle event handler |
-| `hooks/tree_system/default_tree_config.template` | Default configuration template |
+| `../../hooks/tree_system/generate_smart_tree.py` | Tree generation script |
+| `../../hooks/tree_system/lifecycle_hook.py` | Session lifecycle handler |
+| `../../hooks/tree_system/default_tree_config.template` | Default configuration template |
+| `../../hooks/doc_manager/injector.py` | CLAUDE.md reference injection |

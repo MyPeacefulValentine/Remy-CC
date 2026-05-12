@@ -5,8 +5,8 @@
 <h1 align="center">Remy</h1>
 
 <p align="center">
-  An engineering configuration suite for <a href="https://code.claude.com">Claude Code</a> —<br>
-  enforcing AI behavioral boundaries through hooks, prompt injection, and structured protocols.
+  A configuration suite for <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> that adds<br>
+  structured workflows, automated context maintenance, and behavioral rules to AI coding sessions.
 </p>
 
 <p align="center">
@@ -21,228 +21,77 @@
 
 ---
 
-## Requirements
+## What is Remy-CC?
 
-| Dimension | Requirement | Affected Behavior |
+Remy-CC installs a set of **hooks**, **skills**, and **configuration files** into `~/.claude/` that modify how Claude Code behaves during development sessions.
+
+- **Hooks** run automatically on Claude Code events (session start, before tool use, before each user message). They enforce behavioral rules, maintain project context, and inject environment settings.
+- **Skills** are slash commands (`/deep-plan`, `/milestone`, etc.) that you invoke manually to perform structured development tasks such as architecture review, code auditing, and history reporting.
+- **Configuration files** (`CLAUDE.md`, `style.md`, etc.) define the AI's communication style, engineering principles, and prohibited behaviors.
+
+Remy-CC does not modify Claude Code itself. It uses Claude Code's native [hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) and [CLAUDE.md](https://docs.anthropic.com/en/docs/claude-code/memory#claudemd-files) mechanisms.
+
+## Features
+
+### Hooks (Automated)
+
+| Hook | Trigger | Function |
 | :--- | :--- | :--- |
-| **Software** | Claude Code CLI ≥ 2.1.10 | Event hooks and proactive skill invocation |
-| **LLM** | OpenAI-compatible (e.g., GLM, Kimi, Qwen) | Per-call billing, high context limits, complex reasoning |
-| **OS** | Windows preferred | Cross-platform path handling and shell syntax |
-| **Language** | Python 3.7+ | Runs hook scripts |
-| **Runtime** | Mamba / Conda | Auto-injected shell environment |
-| **CLI Tool** | gh (GitHub CLI) | Required by repo-audit skill |
-| **Interaction** | Configurable (`REMY_LANG`) | Protocol headers and output language controlled by `REMY_LANG` env var (`en` / `zh-CN`) |
-| **Encoding** | UTF-8 | Enforced stdin/stdout encoding |
-| **Shell** | POSIX Bash | Non-standard syntax restricted |
-| **Naming** | snake_case | File naming convention enforced |
-| **Paths** | Relative preferred | Absolute paths auto-converted |
+| Protocol Enforcer | Every user message | Re-injects behavioral rules to counteract instruction decay in long conversations |
+| Pre-Tool Guard | Before each tool use | Converts absolute paths to relative; injects Conda/Mamba activation and UTF-8 encoding into shell commands; enforces snake_case file naming |
+| Logic Enrichment | Before Read/Grep/Glob | Appends caller/callee relationships and architecture layer for the target file (requires logic index) |
+| Lifecycle Manager | Session start/end, pre-compaction | Regenerates the project tree snapshot and language directive |
+| Document Injector | On demand | Injects project tree, logic index, and timeline references into `CLAUDE.md` |
 
-## Core Mechanisms
+### Skills (User-Invoked)
 
-### 1. Interaction Constraints
+Skills with `disable-model-invocation: true` must be invoked manually. Each enforces a specific workflow with defined inputs, outputs, and stop conditions.
 
-- **Protocol Injection**: `hooks/env_system/enforcer_hook.py` enforces **System Prompt Refreshing**, countering instruction decay in long contexts.
-- **Interrupt-Driven Workflow**: Any user question, conditional statement, or error report is treated as a **STOP** signal. Automatic "whack-a-mole" fixes after errors are strictly forbidden.
-- **Anti-Jargon Filter**: A vocabulary table is injected into the prompt, suppressing non-engineering buzzwords at the source.
+| Command | Purpose | Doc |
+| :--- | :--- | :--- |
+| `/deep-plan` | Analyze architecture risks and resolve ambiguities before writing code | [📖](skills/deep-plan/README.md) |
+| `/code-modification` | Apply code changes with dependency tracing and integrity checks | [📖](skills/code-modification/README.md) |
+| `/post-verify` | Discover/create tests, run them, evaluate branch coverage and assertion quality | [📖](skills/post-verify/README.md) |
+| `/log-change` | Generate a structured changelog recording modifications and impact | [📖](skills/log-change/README.md) |
+| `/auditor` | Verify consistency between plan, changelog, and actual code | [📖](skills/auditor/README.md) |
+| `/milestone` | Generate a history report and update the project timeline | [📖](skills/milestone/README.md) |
+| `/update-logic-index` | Parse source code to generate semantic summaries and call graph data | [📖](skills/update-logic-index/README.md) |
+| `/read-logic-index` | Display the current logic index | [📖](skills/read-logic-index/README.md) |
+| `/update-tree` | Regenerate the project directory snapshot | [📖](skills/update-tree/README.md) |
+| `/repo-audit` | Inspect a GitHub repository in a sandboxed temporary directory | [📖](skills/repo-audit/README.md) |
+| `/receiving-feedback` | Process code review feedback with verification before implementation | [📖](skills/receiving-feedback/README.md) |
 
-### 2. Dynamic File Tree &ensp;[📖 Doc](skills/update-tree/README.md)
+Other skills (debugging, TDD, git workflow, etc.) are loaded automatically based on context and require no manual invocation.
 
-- **Auto-Maintenance**: Maintains a `.claude/project_tree.md` snapshot via `hooks/tree_system/`.
-- **Lifecycle Integration**: Auto-updates on `SessionStart` and `PreCompact` events to keep the AI informed of the latest structure.
-- **Auto-Injection**: Injects the project tree into `CLAUDE.md` for structural navigation.
-- **Configurable Depth**: Control directory depth and file visibility via `.claude/tree_config` to save context tokens.
-    ```text
-    # Example .claude/tree_config
-    src/core -depth -1 -if_file true  # Deep-index core code with files (-1 = unlimited)
-    tests/   -depth 1                 # Shallow structure for tests
-    !legacy/                          # Exclude legacy directory
-    ```
+#### Plan → Modify → Audit Pipeline
 
-### 3. Environment & Path Guards
-
-- **Path Normalization**: `hooks/pre_tool_guard.py` intercepts absolute paths and converts them to project-relative paths.
-- **Shell Enhancement**: Auto-injects `PYTHONIOENCODING` and Conda/Mamba activation scripts for `Bash` tool calls.
-- **Agent Interception**: Intercepts high-latency agents (e.g., `Explore`) and requires user confirmation.
-
-### 4. Context Persistence &ensp;[📖 Doc](skills/milestone/README.md)
-
-- **History Index (Milestone System)**:
-    - **Architecture**: Two-layer storage — "Timeline Index + Report Details".
-    - **Persistence**: The `/milestone` command generates structured history reports and updates `.claude/history/timeline.md`.
-    - **Progressive Disclosure**: `CLAUDE.md` only references the timeline index; the AI reads detailed reports on demand, preserving long-term memory while saving tokens.
-
-### 5. Logic Index &ensp;[📖 Doc](skills/update-logic-index/README.md)
-
-- **Update Mechanism (`/update-logic-index`)**:
-    - **Core Function**: Generates architecture-layered semantic summaries with call graph data using source code parsing and LLM inference.
-    - **Architecture Layering**: Groups files by architectural layer (API, Service, Data, Utility, etc.) based on directory path patterns. User-customizable via `@layer:` directives in `.claude/logic_index_config`.
-    - **Call Graph**: Extracts function-level caller→callee relationships (Python AST, C/C++/TypeScript tree-sitter) and resolves callees to qualified cross-file references via import maps.
-    - **Multi-Language**: Python (AST), C/C++ (regex fallback + optional tree-sitter), TypeScript/TSX (regex fallback + optional tree-sitter).
-    - **Context Injection**: Auto-injects `.claude/logic_tree.md` into `CLAUDE.md` with layer-grouped output and per-file import annotations.
-    - **Passive Enrichment**: A dedicated PreToolUse hook (`logic_enrichment_hook.py`) automatically appends caller/callee/layer context when Claude Code reads project files.
-    - **Incremental Updates**: Dependency-aware hashing with **Usage-Aware** filtering — only re-analyzes substantially affected files.
-    - **Version-Aware**: Records Git commit hash and timestamp for strict version correspondence.
-- **Manual Trigger**: Run `/update-logic-index` to refresh the logic index on demand.
-- **Recommended Timing**: Keep the project in a "clean" state (no uncommitted changes) when running.
-
-### 6. Development Workflow
-
-This project enforces a strict **Plan-Act-Verify** loop. The following skills/commands must be **manually invoked** by the user:
-
-1. **Architecture Pre-Review (`/deep-plan`)** &ensp;[📖 Doc](skills/deep-plan/README.md)
-    - **Phase**: Plan — before writing any code.
-    - **Process**:
-        1. **Infrastructure Check**: Detect `.claude/logic_index.json`; if missing, prompt user to run `/update-logic-index` or fall back to manual exploration.
-        2. **Context Saturation**: If logic index available, run `impact.py` on target files for bidirectional BFS — upstream (who calls this code) and downstream (what this code calls), with cross-layer warnings; force-read all Upstream Depth 1 and Downstream Depth 1 files. Otherwise, use grep/glob-based exploration.
-        3. **Ambiguity Elimination**: Identify decision points → batch questions (`AskUserQuestion`) → re-search on new info (loop).
-        4. **Finalize**: Output four core tables:
-            - `Ambiguity Elimination Matrix` (decision locks)
-            - `PBT Property Specification` (mathematical invariants)
-            - `Logic Contract Audit` (data flow & risks)
-            - `Physical Change Preview` (file-level operations)
-        5. **Evidence Packet**: Write evidence chain, Git commit, and change scope to `.claude/temp_task/task_{TIMESTAMP}.json` (`AgentTaskPacketLite` format); update `.active_packet` pointer; provide entry: `/code-modification task_{TIMESTAMP}.json`.
-    - **Function**: "Zero-decision" architecture audit — forces identification of ambiguities and side effects; outputs a persistent task packet consumable by `/code-modification` and `/auditor`.
-
-2. **Code Modification (`/code-modification`)**
-    - **Phase**: Act — after architecture approval.
-    - **Input**: Optional `task_packet_file` (generated by `/deep-plan`).
-    - **Process**:
-        - With `task_packet_file`: Reads `.claude/temp_task/{task_packet_file}`, uses `evidence_packet.proposed_changes[]` as authoritative change scope; `status: "suspected"` entries must be re-read and confirmed before use.
-        - Without: Clears `.active_packet` and enters discovery phase directly.
-        - **Discovery**: If `.claude/logic_index.json` exists, runs `impact.py` for deterministic dependency tracing; otherwise falls back to grep/glob.
-    - **Function**: Follows the "Forked Context" pattern, enforcing downstream data-flow adaptation, framework integrity checks, and defensive programming.
-
-3. **Post-Verification (`/post-verify`)**
-    - **Phase**: Act — after code modification, before changelog generation.
-    - **Input**: Optional `target_files` or `changed_functions`.
-    - **Process**:
-        1. **Scope Identification**: Extract changeset via `git diff` or user specification.
-        2. **Test Discovery**: Detect test frameworks via `frameworks.json`, map existing coverage.
-        3. **Test Creation**: Generate temporary tests via Jinja2 templates for uncovered symbols (auto-cleaned after verification).
-        4. **Fix Loop**: On failure, perform fault isolation (test defect vs. implementation defect); requires `AskUserQuestion` confirmation before modification.
-        5. **Coverage Assessment**: Require ≥ 80% branch coverage for modified functions/classes.
-        6. **Assertion Quality Audit**: Scan assertion anti-patterns via `anti_patterns.json`; Critical-level findings block passage.
-    - **Function**: Post-implementation test coverage verification; temporary tests cleaned after verification; reports persisted to `.claude/temp_test/`.
-
-4. **Change Logging (`/log-change`)**
-    - **Phase**: After each modification.
-    - **Function**: Generates atomic changelogs recording Q&A and systemic impact, serving as an audit source.
-
-5. **Context Rewind (`/rewind`)**
-    - **Phase**: After generating standardized changelog.
-    - **Operation**: Use Claude Code's built-in `/rewind` to restore conversation context to the post-audit / pre-modification checkpoint.
-    - **Function**: Ensures the AI retains no memory of the modification process, preventing bias in subsequent interactions.
-
-6. **Triangulation Audit (`/auditor`)**
-    - **Phase**: Verify — before code merge.
-    - **Input**: Changelog (required) + optional `task_packet_file`.
-    - **Modes**:
-        - With `task_packet_file`: Full **three-way verification** (initial plan vs. changelog vs. actual code).
-        - Without: **Two-way verification** (changelog vs. actual code); "Initial Plan" column marked `N/A`.
-    - **Function**: Acts as an "adversarial auditor" — consistency checks without prior context to identify intent-implementation deviations.
-
-7. **Git Commit**
-
-8. **Milestone Report (`/milestone`)**
-    - **Phase**: After completing a phase or before `/compact`.
-    - **Function**: Generates structured history reports recording technical decisions, experiment results, and open issues; updates `.claude/history/timeline.md`.
-
-9. **Project Tree Update (`/update-tree`)**
-    - **Phase**: After file structure changes.
-    - **Function**: Refreshes `.claude/project_tree.md` snapshot. Supports configurable scan depth.
-
-#### Plan-Modify-Audit Loop
-
-`/deep-plan`, `/code-modification`, and `/auditor` form a cyclable data pipeline through JSON task packets in `.claude/temp_task/`:
+Three skills can be chained via JSON task packets in `.claude/temp_task/`:
 
 ```
-/deep-plan
-  └─→ Writes .claude/temp_task/task_{TIMESTAMP}.json  (evidence chain + change scope)
-  └─→ Updates .claude/temp_task/.active_packet
-         └─→ /code-modification task_{TIMESTAMP}.json
-               (uses proposed_changes[] as authoritative constraint)
-                      └─→ /auditor [log_file] task_{TIMESTAMP}.json
-                            (extracts initial plan from sender_payload.plan for three-way verification)
+/deep-plan                          → writes task packet
+  └→ /code-modification <packet>    → uses packet as change boundary
+        └→ /auditor <log> <packet>  → three-way verification (plan vs. log vs. code)
 ```
 
-Skipping `/deep-plan` means `/code-modification` runs without boundary constraints and `/auditor` degrades to two-way verification (no initial plan column).
+Each step is independent. Skipping `/deep-plan` removes the boundary constraints on `/code-modification` and reduces `/auditor` to a two-way check (log vs. code only).
 
-### 7. CLI & Configuration UI
+### CLI & Configuration
 
-After installation, the `remy-cc` command is available system-wide (via `~/.claude/bin/`):
+After installation, the `remy-cc` command is available system-wide:
 
 | Command | Description |
 | :--- | :--- |
-| `remy-cc ui` | Open a browser-based editor for `~/.claude/settings.json` (env block) |
-| `remy-cc project <path>` | Open a project-level editor for `<path>/.claude/settings.local.json` |
-| `remy-cc update` | Fetch and install the latest version from remote |
-| `remy-cc verify` | Lightweight installation integrity check |
+| `remy-cc ui` | Open browser-based settings editor for `~/.claude/settings.json` |
+| `remy-cc project <path>` | Open project-level settings editor for `<path>/.claude/settings.local.json` |
+| `remy-cc update` | Fetch and install the latest version |
+| `remy-cc verify` | Check installation integrity |
 | `remy-cc version` | Print installed version |
 
-- **Browser-Based Configuration UI**:
-    - Edits the `env` block of `settings.json` — 23 parameters across 7 groups (LLM API, Impact Analysis, Context Injection, Timeline, Post-Verify, System, Claude Code).
-    - Bilingual interface (English / 中文), language auto-detected from `REMY_LANG`.
-    - Per-parameter descriptions with enum option annotations in dropdowns.
-- **Project Mode** (`remy-cc project <path>`):
-    - Per-parameter toggle switches: "Inherit Global" (default) or "Custom Override".
-    - Only overridden keys are written to `settings.local.json`; toggling back to inherit deletes the key.
-- **Safety**:
-    - Lock file (`~/.claude/.config_ui.lock` + PID liveness check) prevents concurrent editing.
-    - Auto-shutdown when browser tab closes (`navigator.sendBeacon` + `pagehide` event).
-    - `settings.json` written with `0600` permissions on Unix to protect API keys.
-
-## Directory Structure
-
-```text
-.
-├── install.py                      # Installer (deploy, uninstall, verify, shim/PATH setup)
-├── install.sh                      # One-liner installer for macOS/Linux
-├── install.ps1                     # One-liner installer for Windows
-├── remy-src/                       # Executable source code
-│   ├── cli.py                      # CLI entry point (remy-cc command dispatcher)
-│   ├── config_ui.py                # Configuration UI server (browser-based settings editor)
-│   └── config_ui.html              # Configuration UI frontend template
-├── remy-assets/                    # Static assets
-│   └── logo.svg                    # Remy logo (displayed in config UI header)
-├── CLAUDE.md                       # System entry — core persona and static protocols
-├── language.md                     # Language directive (auto-generated by installer and SessionStart hook)
-├── style.md                        # Unified protocol layer (Can/Cannot boundaries & Agent limits)
-├── tools_ref.md                    # Tool reference (skill & hook index)
-├── settings.example.json           # Config template (with hooks configuration)
-├── output-styles/                  # Output style definitions
-│   └── system-architect.md         # Engineer role card (tone, anti-patterns, vocabulary)
-├── skills/                         # Dynamic skill library (loaded on demand)
-│   ├── deep-plan/                  # Deep plan: architecture pre-review protocol
-│   ├── code-modification/          # Code modification: engineered change protocol
-│   ├── log-change/                 # Change logging: changelog generation
-│   ├── post-verify/                # Post-verification: test discovery, coverage, assertion audit
-│   ├── auditor/                    # Audit agent: three-way consistency check
-│   ├── milestone/                  # Milestone: history records & phase summaries
-│   ├── update-tree/                # Tree update: manual snapshot refresh (proactive mode)
-│   ├── update-logic-index/         # Logic index: semantic summary generation (Python/C/C++/TS)
-│   │   └── impact.py               # Impact radius: bidirectional BFS tracing upstream callers and downstream callees
-│   ├── read-logic-index/           # Logic index: semantic summary reader
-│   ├── repo-audit/                 # Repo audit: safe clone & structure analysis (sandboxed)
-│   └── ...                         # Other engineering skills (TDD, Debugging, FileOps, etc.)
-└── hooks/                          # Automated hook system
-    ├── doc_manager/                # Document manager
-    │   └── injector.py             # CLAUDE.md reference injector
-    ├── pre_tool_guard.py           # Pre-tool interceptor (paths, naming, environment)
-    ├── logic_enrichment_hook.py    # Logic context enrichment (callers/callees/layer)
-    ├── env_system/                 # Constraint enforcement system
-    │   ├── enforcer_hook.py        # Protocol injection (UserPromptSubmit)
-    │   ├── reminder_prompt_en.md   # Constraint prompt (English)
-    │   └── reminder_prompt_zh.md   # Constraint prompt (Chinese)
-    └── tree_system/                # Project tree automation
-        ├── generate_smart_tree.py  # Core generation logic
-        └── lifecycle_hook.py       # Lifecycle integration
-```
+The settings editor provides a bilingual interface (English / 中文) for managing environment variables across 7 groups (LLM API, impact analysis, context injection, timeline, post-verify, system, Claude Code). Project-level settings inherit from global by default; individual parameters can be overridden.
 
 ## Installation
 
-### 1. Install
-
-**One-liner (recommended):**
+### Quick Install
 
 ```bash
 # macOS / Linux
@@ -252,55 +101,136 @@ curl -fsSL https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/m
 irm https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.ps1 | iex
 ```
 
-**Manual (from source):**
+### From Source
 
 ```bash
 git clone https://github.com/Till-Crazy-Tears-Us-Apart/Remy-CC.git
 cd Remy-CC
-python install.py                # Default: English
+python install.py                # English (default)
 python install.py --lang zh-CN   # Simplified Chinese
 ```
 
-The installer performs the following:
-- Copies `hooks/`, `skills/`, `output-styles/`, and config files to `~/.claude/`
-- Merges hooks, permissions, and env from `settings.example.json` into `~/.claude/settings.json` (does not overwrite existing values)
+The installer:
+- Copies hooks, skills, output styles, and config files to `~/.claude/`
+- Merges hook registrations and environment variables into `~/.claude/settings.json` (existing values are preserved)
 - Expands hook paths to absolute paths for the current machine
-- Sets `REMY_LANG` in `settings.json` and generates `language.md` based on the `--lang` argument (default: `en`)
-- Prompts to configure LLM API for Logic Index (URL, model, API key); optionally tests connectivity
-- Detects tree-sitter installation; prompts to install if missing (optional, for high-precision C/C++/TypeScript parsing)
-- Creates `~/.claude/bin/remy-cc` CLI shim and optionally registers `~/.claude/bin/` in system PATH
+- Prompts for LLM API configuration (URL, model, API key) used by `/update-logic-index`
+- Creates the `remy-cc` CLI command and optionally adds it to system PATH
 
-### 2. Update
+### Update
 
 ```bash
 # One-liner
 curl -fsSL https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.sh | sh -s -- --update
 
-# Or manual
+# From source
 python install.py
 ```
 
-### 3. Verify
+### Verify
 
 ```bash
 python install.py --verify
-# Or via CLI (after installation)
+# or
 remy-cc verify
 ```
 
-### 4. Uninstall
+### Uninstall
 
 ```bash
 # One-liner
 curl -fsSL https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.sh | sh -s -- --uninstall
 
-# Or manual
+# From source
 python install.py --uninstall
 ```
 
-### 5. Git Configuration (Recommended)
+## Getting Started
 
-Add auto-generated metadata directories to `.gitignore`:
+1. **Start a Claude Code session** in any project directory. Hooks activate automatically.
+2. **Run `/update-logic-index`** to generate the semantic code index for your project (requires LLM API configured during installation).
+3. **Use `/deep-plan`** before major changes to review architecture risks.
+4. **Use `/milestone`** periodically to record progress into the project timeline.
+
+## Recommended Workflow
+
+A full development cycle follows this sequence. Not every step is required for every change — scale to the task complexity.
+
+1. **`/deep-plan`** — Review architecture risks. Resolve ambiguities. Outputs a task packet. ([doc](skills/deep-plan/README.md))
+2. **`/code-modification [packet]`** — Apply changes with dependency tracing. Optionally constrained by the task packet. ([doc](skills/code-modification/README.md))
+3. **`/post-verify`** — Run tests, evaluate branch coverage (≥ 80%), audit assertion quality. ([doc](skills/post-verify/README.md))
+4. **`/log-change`** — Generate a structured changelog recording what changed and why. ([doc](skills/log-change/README.md))
+5. **`/rewind`** — (Claude Code built-in) Restore conversation context to the pre-modification checkpoint, removing implementation bias.
+6. **`/auditor [log] [packet]`** — Verify consistency between plan, changelog, and code. ([doc](skills/auditor/README.md))
+7. **`git commit`** — Commit the verified changes.
+8. **`/milestone`** — Record a history report and update the project timeline. ([doc](skills/milestone/README.md))
+9. **`/update-tree`** — Refresh the project tree snapshot if file structure changed. ([doc](skills/update-tree/README.md))
+
+For small, low-risk changes, steps 3–6 can be skipped. 
+
+## Requirements
+
+| Requirement | Purpose |
+| :--- | :--- |
+| Claude Code CLI ≥ 2.1.10 | Event hooks and skill invocation |
+| Python 3.7+ | Hook and installer scripts |
+| OpenAI-compatible LLM API | Semantic summarization for `/update-logic-index` |
+| Conda or Mamba (optional) | Auto-injected into shell environment when present |
+| `gh` CLI (optional) | Required by `/repo-audit` |
+| tree-sitter Python packages (optional) | Higher-precision C/C++/TypeScript parsing and call graph extraction |
+
+Language is configurable via the `REMY_LANG` environment variable (`en` or `zh-CN`).
+
+## Directory Structure
+
+```text
+.
+├── install.py                      # Installer (deploy, uninstall, verify)
+├── install.sh                      # One-liner installer for macOS/Linux
+├── install.ps1                     # One-liner installer for Windows
+├── remy-src/                       # CLI source code
+│   ├── cli.py                      # remy-cc command dispatcher
+│   ├── config_ui.py                # Browser-based settings editor server
+│   └── config_ui.html              # Settings editor frontend
+├── remy-assets/
+│   └── logo.svg
+├── CLAUDE.md                       # AI persona and protocol entry point
+├── language.md                     # Language directive (generated by installer)
+├── style.md                        # Communication rules and tool constraints
+├── tools_ref.md                    # Skill and hook reference index
+├── settings.example.json           # Configuration template with hook definitions
+├── output-styles/
+│   └── system-architect.md         # Output style definition (tone, vocabulary rules)
+├── skills/                         # Skill definitions (loaded on demand)
+│   ├── deep-plan/                  # Architecture review
+│   ├── code-modification/          # Code changes
+│   ├── post-verify/                # Test verification
+│   ├── log-change/                 # Changelog generation
+│   ├── auditor/                    # Consistency audit
+│   ├── milestone/                  # History reports
+│   ├── update-logic-index/         # Semantic code index
+│   ├── read-logic-index/           # Index viewer
+│   ├── update-tree/                # Project tree snapshot
+│   ├── repo-audit/                 # Repository inspection
+│   ├── receiving-feedback/         # Code review handler
+│   └── ...                         # Other skills (TDD, debugging, git, etc.)
+└── hooks/                          # Automated event handlers
+    ├── pre_tool_guard.py           # Path, naming, and environment enforcement
+    ├── logic_enrichment_hook.py    # Code relationship context injection
+    ├── doc_manager/
+    │   └── injector.py             # CLAUDE.md reference injection
+    ├── env_system/
+    │   ├── enforcer_hook.py        # Behavioral rule injection
+    │   ├── reminder_prompt_en.md   # Rule template (English)
+    │   └── reminder_prompt_zh.md   # Rule template (Chinese)
+    └── tree_system/
+        ├── generate_smart_tree.py  # Tree generation logic
+        └── lifecycle_hook.py       # Session lifecycle handler
+```
+
+## Git Configuration
+
+Add to your project's `.gitignore`:
 
 ```gitignore
 .claude/
@@ -308,4 +238,4 @@ Add auto-generated metadata directories to `.gitignore`:
 
 ## Credits
 
-Parts of the skills in this project were inspired by or ported from **[superpowers](https://github.com/obra/superpowers)** by Jesse Vincent (obra).
+Parts of the skills in this project were inspired by or ported from **[superpowers](https://github.com/obra/superpowers)** by Jesse Vincent.
