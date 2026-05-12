@@ -216,8 +216,8 @@ pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
 | 变量 | 默认值 | 说明 |
 | :--- | :--- | :--- |
 | `OPENAI_API_KEY` | — | API 密钥 |
-| `OPENAI_MODEL` | `glm-5` | 模型名称 |
-| `OPENAI_BASE_URL` | `https://coding.dashscope.aliyuncs.com/v1/chat/completions` | API 端点 |
+| `OPENAI_MODEL` | `deepseek-v4-flash` | 模型名称 |
+| `OPENAI_BASE_URL` | `https://api.deepseek.com/v1/chat/completions` | API 端点 |
 | `OPENAI_MAX_WORKERS` | `3` | 并发线程数 |
 | `OPENAI_RETRY_LIMIT` | `3` | 重试次数 |
 | `OPENAI_TIMEOUT` | `300` | 超时秒数 |

@@ -85,6 +85,8 @@ UI = {
         "hooks_removed": "  [+] Suite hooks/permissions removed from settings.json",
         "claude_restored": "  [+] CLAUDE.md restored from backup",
         "uninstall_done": "\nUninstall complete. Removed {removed} files, skipped {skipped} modified files.",
+        "uninstall_confirm": "This will remove all Remy-CC files and settings. Continue? [y/N] ",
+        "uninstall_aborted": "Uninstall cancelled.",
         "verify_python_old": "Python version too old: {ver} (requires >= 3.7)",
         "verify_settings_missing": "settings.json not found",
         "verify_settings_invalid": "settings.json JSON format error: {err}",
@@ -153,6 +155,8 @@ UI = {
         "hooks_removed": "  [+] settings.json 中的套件配置已移除",
         "claude_restored": "  [+] CLAUDE.md 已从备份恢复",
         "uninstall_done": "\n卸载完成。删除 {removed} 个文件，跳过 {skipped} 个已修改文件。",
+        "uninstall_confirm": "此操作将移除所有 Remy-CC 文件和配置。是否继续？[y/N] ",
+        "uninstall_aborted": "卸载已取消。",
         "verify_python_old": "Python 版本过低: {ver} (需要 >= 3.7)",
         "verify_settings_missing": "settings.json 不存在",
         "verify_settings_invalid": "settings.json JSON 格式错误: {err}",
@@ -349,12 +353,15 @@ def merge_settings(template: dict, target_path: Path, claude_home: Path, lang_ov
     return settings_backup
 
 
-def write_manifest(claude_home: Path, records: list, settings_backup: Optional[Path]) -> None:
+def write_manifest(claude_home: Path, records: list, settings_backup: Optional[Path],
+                    injected_hooks: dict = None, injected_permissions: list = None) -> None:
     manifest = {
         "version": SUITE_VERSION,
         "installed_at": datetime.now(timezone.utc).isoformat(),
         "settings_backup": str(settings_backup) if settings_backup else None,
         "files": records,
+        "injected_hooks": injected_hooks or {},
+        "injected_permissions": injected_permissions or [],
     }
     manifest_path = claude_home / MANIFEST_FILE
     with open(manifest_path, "w", encoding="utf-8") as f:
@@ -642,7 +649,10 @@ def do_install() -> None:
         print(_t("settings_tpl_missing", name=SETTINGS_TEMPLATE))
         settings_backup = None
 
-    write_manifest(claude_home, records, settings_backup)
+    injected_hooks = template.get("hooks", {}) if tpl_path.exists() else {}
+    injected_perms = template.get("permissions", {}).get("allow", []) if tpl_path.exists() else []
+    write_manifest(claude_home, records, settings_backup,
+                   injected_hooks=injected_hooks, injected_permissions=injected_perms)
     print(_t("manifest_written", name=MANIFEST_FILE))
 
     print()

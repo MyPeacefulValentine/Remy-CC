@@ -210,8 +210,8 @@ Configure in `settings.local.json` (project-level) or `~/.claude/settings.json` 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `OPENAI_API_KEY` | — | API key |
-| `OPENAI_MODEL` | `glm-5` | Model name |
-| `OPENAI_BASE_URL` | `https://coding.dashscope.aliyuncs.com/v1/chat/completions` | API endpoint |
+| `OPENAI_MODEL` | `deepseek-v4-flash` | Model name |
+| `OPENAI_BASE_URL` | `https://api.deepseek.com/v1/chat/completions` | API endpoint |
 | `OPENAI_MAX_WORKERS` | `3` | Concurrent threads |
 | `OPENAI_RETRY_LIMIT` | `3` | Retry count |
 | `OPENAI_TIMEOUT` | `300` | Timeout in seconds |
