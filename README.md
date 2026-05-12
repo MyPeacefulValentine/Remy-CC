@@ -5,7 +5,7 @@
 <h1 align="center">Remy</h1>
 
 <p align="center">
-  The engineering discipline layer for <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> —<br>
+  <b>The engineering discipline layer for <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> —</b><br>
   rule injection, tool interception, dependency tracking, persistent context, and structured workflows to keep long sessions under control.
 </p>
 

@@ -5,7 +5,7 @@
 <h1 align="center">Remy</h1>
 
 <p align="center">
-  为 <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> 打造的工程纪律层——<br>
+  <b>为 <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> 打造的工程纪律层——</b><br>
   规则注入、工具拦截、依赖追踪、上下文持久化与结构化工作流，让长会话不再失控。
 </p>
 
