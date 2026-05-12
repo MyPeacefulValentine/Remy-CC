@@ -4,7 +4,7 @@
     Remy-CC one-line installer for Windows.
 .DESCRIPTION
     Usage:
-      irm https://raw.githubusercontent.com/patchescamerababy/Remy-CC/main/install.ps1 | iex
+      irm https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.ps1 | iex
       .\install.ps1 -Update
       .\install.ps1 -Uninstall
 #>
@@ -15,7 +15,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$RepoUrl = if ($env:REMY_REPO_URL) { $env:REMY_REPO_URL } else { 'https://github.com/patchescamerababy/Remy-CC.git' }
+$RepoUrl = if ($env:REMY_REPO_URL) { $env:REMY_REPO_URL } else { 'https://github.com/Till-Crazy-Tears-Us-Apart/Remy-CC.git' }
 $Branch = if ($env:REMY_BRANCH) { $env:REMY_BRANCH } else { 'main' }
 
 function Show-Usage {

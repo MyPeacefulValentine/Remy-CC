@@ -246,16 +246,16 @@
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/patchescamerababy/Remy-CC/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.sh | sh
 
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/patchescamerababy/Remy-CC/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.ps1 | iex
 ```
 
 **手动安装（从源码）：**
 
 ```bash
-git clone https://github.com/patchescamerababy/Remy-CC.git
+git clone https://github.com/Till-Crazy-Tears-Us-Apart/Remy-CC.git
 cd Remy-CC
 python install.py                # 默认：英文
 python install.py --lang zh-CN   # 简体中文
@@ -274,7 +274,7 @@ python install.py --lang zh-CN   # 简体中文
 
 ```bash
 # 一键更新
-curl -fsSL https://raw.githubusercontent.com/patchescamerababy/Remy-CC/main/install.sh | sh -s -- --update
+curl -fsSL https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.sh | sh -s -- --update
 
 # 或手动
 python install.py
@@ -292,7 +292,7 @@ remy-cc verify
 
 ```bash
 # 一键卸载
-curl -fsSL https://raw.githubusercontent.com/patchescamerababy/Remy-CC/main/install.sh | sh -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.sh | sh -s -- --uninstall
 
 # 或手动
 python install.py --uninstall

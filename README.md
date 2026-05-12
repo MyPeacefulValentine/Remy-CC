@@ -246,16 +246,16 @@ After installation, the `remy-cc` command is available system-wide (via `~/.clau
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/patchescamerababy/Remy-CC/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.sh | sh
 
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/patchescamerababy/Remy-CC/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.ps1 | iex
 ```
 
 **Manual (from source):**
 
 ```bash
-git clone https://github.com/patchescamerababy/Remy-CC.git
+git clone https://github.com/Till-Crazy-Tears-Us-Apart/Remy-CC.git
 cd Remy-CC
 python install.py                # Default: English
 python install.py --lang zh-CN   # Simplified Chinese
@@ -274,7 +274,7 @@ The installer performs the following:
 
 ```bash
 # One-liner
-curl -fsSL https://raw.githubusercontent.com/patchescamerababy/Remy-CC/main/install.sh | sh -s -- --update
+curl -fsSL https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.sh | sh -s -- --update
 
 # Or manual
 python install.py
@@ -292,7 +292,7 @@ remy-cc verify
 
 ```bash
 # One-liner
-curl -fsSL https://raw.githubusercontent.com/patchescamerababy/Remy-CC/main/install.sh | sh -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.sh | sh -s -- --uninstall
 
 # Or manual
 python install.py --uninstall

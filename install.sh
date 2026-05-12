@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-REPO_URL="${REMY_REPO_URL:-https://github.com/patchescamerababy/Remy-CC.git}"
+REPO_URL="${REMY_REPO_URL:-https://github.com/Till-Crazy-Tears-Us-Apart/Remy-CC.git}"
 BRANCH="${REMY_BRANCH:-main}"
 
 usage() {
