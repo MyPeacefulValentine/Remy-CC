@@ -102,7 +102,9 @@ A full development cycle follows this sequence. Not every step is required for e
 
 For small, low-risk changes, steps 3–6 can be skipped. Other skills (debugging, TDD, git workflow, etc.) are loaded automatically based on context and require no manual invocation.
 
-> [!NOTE] Plan → Modify → Audit and Three-Way Verification
+> [!NOTE]
+> **Plan → Modify → Audit and Three-Way Verification**
+>
 > Three skills can be chained via JSON task packets in `.claude/temp_task/`:
 >```
 >/deep-plan                          → writes task packet
