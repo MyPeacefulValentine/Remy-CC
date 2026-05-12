@@ -50,9 +50,9 @@ run_installer() {
 
     printf '[*] Running installer...\n'
     case "$mode" in
-        install)  "$PYTHON" "$tmp_dir/remy-cc/install.py" ;;
-        update)   "$PYTHON" "$tmp_dir/remy-cc/install.py" ;;
-        uninstall) "$PYTHON" "$tmp_dir/remy-cc/install.py" --uninstall ;;
+        install)  "$PYTHON" "$tmp_dir/remy-cc/install.py" < /dev/tty ;;
+        update)   "$PYTHON" "$tmp_dir/remy-cc/install.py" < /dev/tty ;;
+        uninstall) "$PYTHON" "$tmp_dir/remy-cc/install.py" --uninstall < /dev/tty ;;
     esac
 
     printf '[*] Cleanup complete.\n'
