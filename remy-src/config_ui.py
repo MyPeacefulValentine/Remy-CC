@@ -223,7 +223,7 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
             else:
                 self._send_json({"error": "config_ui.html not found"}, 404)
         elif self.path == "/logo.svg":
-            logo = Path(__file__).resolve().parent / "logo.svg"
+            logo = Path(__file__).resolve().parent.parent / "remy-assets" / "logo.svg"
             if logo.exists():
                 body = logo.read_bytes()
                 self.send_response(200)

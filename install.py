@@ -31,10 +31,10 @@ DEPLOY_FILES_MAP = {
     "language.md": "language.md",
     "style.md": "style.md",
     "tools_ref.md": "tools_ref.md",
-    "remy-src/cli.py": "cli.py",
-    "remy-src/config_ui.py": "config_ui.py",
-    "remy-src/config_ui.html": "config_ui.html",
-    "remy-assets/logo.svg": "logo.svg",
+    "remy-src/cli.py": "remy-src/cli.py",
+    "remy-src/config_ui.py": "remy-src/config_ui.py",
+    "remy-src/config_ui.html": "remy-src/config_ui.html",
+    "remy-assets/logo.svg": "remy-assets/logo.svg",
 }
 SETTINGS_TEMPLATE = "settings.example.json"
 
@@ -523,7 +523,7 @@ def test_api_connectivity(url: str, api_key: str, model: str) -> bool:
 def create_shim(claude_home: Path) -> Path:
     bin_dir = claude_home / "bin"
     bin_dir.mkdir(exist_ok=True)
-    cli_path = claude_home / "cli.py"
+    cli_path = claude_home / "remy-src" / "cli.py"
 
     if sys.platform == "win32":
         shim = bin_dir / "remy-cc.cmd"
@@ -610,6 +610,7 @@ def do_install() -> None:
         if not src.exists():
             print(_t("src_missing_file", name=src_rel))
             continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
         if dst.exists():
             bp = backup_file(dst)
             if bp:
@@ -732,7 +733,7 @@ def do_uninstall() -> None:
         fpath.unlink()
         removed += 1
 
-    for dirname in DEPLOY_DIRS:
+    for dirname in DEPLOY_DIRS + ["remy-src", "remy-assets"]:
         dirpath = claude_home / dirname
         if dirpath.exists():
             try:
