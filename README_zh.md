@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.svg" width="200" alt="Remy">
+  <img src="remy-assets/logo.svg" width="200" alt="Remy">
 </p>
 
 <h1 align="center">Remy</h1>
@@ -175,6 +175,7 @@
 | :--- | :--- |
 | `remy-cc ui` | 打开浏览器配置编辑器，编辑 `~/.claude/settings.json`（env 块） |
 | `remy-cc project <路径>` | 打开项目级配置编辑器，编辑 `<路径>/.claude/settings.local.json` |
+| `remy-cc update` | 从远程获取并安装最新版本 |
 | `remy-cc verify` | 轻量安装完整性检查 |
 | `remy-cc version` | 显示已安装版本号 |
 
@@ -195,10 +196,14 @@
 ```text
 .
 ├── install.py                      # 安装脚本 (部署、卸载、验证、shim/PATH 配置)
-├── cli.py                          # CLI 入口 (remy-cc 命令分发器)
-├── config_ui.py                    # 配置 UI 服务端 (浏览器配置编辑器)
-├── config_ui.html                  # 配置 UI 前端模板
-├── logo.svg                        # Remy 标志 (配置界面头部显示)
+├── install.sh                      # macOS/Linux 一键安装脚本
+├── install.ps1                     # Windows 一键安装脚本
+├── remy-src/                       # 可执行源码
+│   ├── cli.py                      # CLI 入口 (remy-cc 命令分发器)
+│   ├── config_ui.py                # 配置 UI 服务端 (浏览器配置编辑器)
+│   └── config_ui.html              # 配置 UI 前端模板
+├── remy-assets/                    # 静态资源
+│   └── logo.svg                    # Remy 标志 (配置界面头部显示)
 ├── CLAUDE.md                       # 系统入口，定义核心 Persona 和静态协议
 ├── language.md                     # 语言指令（安装时及 SessionStart 时动态生成）
 ├── style.md                        # 统一协议层 (定义 "Can/Cannot" 边界与 Agent 限制)
@@ -237,8 +242,20 @@
 
 ### 1. 安装
 
+**一键安装（推荐）：**
+
 ```bash
-git clone https://github.com/Till-Crazy-Tears-Us-Apart/Remy-CC.git
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/patchescamerababy/Remy-CC/main/install.sh | sh
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/patchescamerababy/Remy-CC/main/install.ps1 | iex
+```
+
+**手动安装（从源码）：**
+
+```bash
+git clone https://github.com/patchescamerababy/Remy-CC.git
 cd Remy-CC
 python install.py                # 默认：英文
 python install.py --lang zh-CN   # 简体中文
@@ -253,19 +270,35 @@ python install.py --lang zh-CN   # 简体中文
 - 检测 tree-sitter 是否已安装，未安装时询问是否安装（C/C++/TypeScript 高精度解析，可选）
 - 创建 `~/.claude/bin/remy-cc` CLI 入口脚本，并可选将 `~/.claude/bin/` 注册到系统 PATH
 
-### 2. 验证
+### 2. 更新
+
+```bash
+# 一键更新
+curl -fsSL https://raw.githubusercontent.com/patchescamerababy/Remy-CC/main/install.sh | sh -s -- --update
+
+# 或手动
+python install.py
+```
+
+### 3. 验证
 
 ```bash
 python install.py --verify
+# 或通过 CLI（安装后可用）
+remy-cc verify
 ```
 
-### 3. 卸载
+### 4. 卸载
 
 ```bash
+# 一键卸载
+curl -fsSL https://raw.githubusercontent.com/patchescamerababy/Remy-CC/main/install.sh | sh -s -- --uninstall
+
+# 或手动
 python install.py --uninstall
 ```
 
-### 4. Git 配置 (推荐)
+### 5. Git 配置 (推荐)
 
 为了保持项目整洁，建议将自动生成的元数据目录加入 `.gitignore`：
 

@@ -22,12 +22,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-SUITE_VERSION = "0.6.4"
+SUITE_VERSION = "0.7.0"
 MANIFEST_FILE = ".installer_manifest.json"
 
 DEPLOY_DIRS = ["hooks", "skills", "output-styles"]
-DEPLOY_FILES = ["CLAUDE.md", "language.md", "style.md", "tools_ref.md",
-                "cli.py", "config_ui.py", "config_ui.html", "logo.svg"]
+DEPLOY_FILES_MAP = {
+    "CLAUDE.md": "CLAUDE.md",
+    "language.md": "language.md",
+    "style.md": "style.md",
+    "tools_ref.md": "tools_ref.md",
+    "remy-src/cli.py": "cli.py",
+    "remy-src/config_ui.py": "config_ui.py",
+    "remy-src/config_ui.html": "config_ui.html",
+    "remy-assets/logo.svg": "logo.svg",
+}
 SETTINGS_TEMPLATE = "settings.example.json"
 
 BACKUP_SUFFIX = ".bak"
@@ -596,19 +604,19 @@ def do_install() -> None:
 
     records = []
 
-    for fname in DEPLOY_FILES:
-        src = SCRIPT_DIR / fname
-        dst = claude_home / fname
+    for src_rel, dst_name in DEPLOY_FILES_MAP.items():
+        src = SCRIPT_DIR / src_rel
+        dst = claude_home / dst_name
         if not src.exists():
-            print(_t("src_missing_file", name=fname))
+            print(_t("src_missing_file", name=src_rel))
             continue
         if dst.exists():
             bp = backup_file(dst)
             if bp:
-                print(_t("backed_up", name=fname, bak=bp.name))
+                print(_t("backed_up", name=dst_name, bak=bp.name))
         rec = copy_file(src, dst)
         records.append(rec)
-        print(_t("copied_file", name=fname))
+        print(_t("copied_file", name=dst_name))
 
     for dirname in DEPLOY_DIRS:
         src = SCRIPT_DIR / dirname

@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -106,17 +110,77 @@ def cmd_version(_args):
     print("Remy v{}".format(get_version()))
 
 
+REPO_URL = "https://github.com/patchescamerababy/Remy-CC.git"
+BRANCH = "main"
+VERSION_RAW_URL = "https://raw.githubusercontent.com/patchescamerababy/Remy-CC/{}/install.py".format(BRANCH)
+
+
+def _fetch_remote_version():
+    import re
+    import urllib.request
+    try:
+        req = urllib.request.Request(VERSION_RAW_URL, headers={"User-Agent": "remy-cc"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            for line in resp:
+                decoded = line.decode("utf-8", errors="ignore")
+                m = re.match(r'^SUITE_VERSION\s*=\s*["\'](.+?)["\']', decoded)
+                if m:
+                    return m.group(1)
+    except (OSError, urllib.request.URLError):
+        return None
+    return None
+
+
+def cmd_update(_args):
+    if not shutil.which("git"):
+        print("Error: git is required for update.", file=sys.stderr)
+        sys.exit(1)
+
+    local_ver = get_version()
+    remote_ver = _fetch_remote_version()
+
+    if remote_ver and local_ver == remote_ver:
+        print("Already up to date (v{}).".format(local_ver))
+        return
+
+    if remote_ver:
+        print("[*] Update available: v{} -> v{}".format(local_ver, remote_ver))
+    else:
+        print("[*] Could not determine remote version. Proceeding with update...")
+
+    tmp_dir = tempfile.mkdtemp(prefix="remy-cc-update-")
+    clone_dir = os.path.join(tmp_dir, "remy-cc")
+    try:
+        print("[*] Fetching latest version...")
+        result = subprocess.run(
+            ["git", "clone", "--depth", "1", "--branch", BRANCH, REPO_URL, clone_dir],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            print("Error: git clone failed.\n" + result.stderr.strip(), file=sys.stderr)
+            sys.exit(1)
+
+        print("[*] Running installer...")
+        installer = os.path.join(clone_dir, "install.py")
+        rc = subprocess.run([sys.executable, installer]).returncode
+        if rc != 0:
+            sys.exit(rc)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def main():
     parser = argparse.ArgumentParser(prog="remy-cc", description="Remy - CLI for Claude Code configuration")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("ui", help="Open global configuration UI in browser")
     p_project = sub.add_parser("project", help="Open project-level configuration UI")
     p_project.add_argument("path", help="Project root directory (absolute path)")
+    sub.add_parser("update", help="Fetch and install latest version from remote")
     sub.add_parser("verify", help="Verify installation integrity")
     sub.add_parser("version", help="Show installed version")
     args = parser.parse_args()
 
-    commands = {"ui": cmd_ui, "project": cmd_project, "verify": cmd_verify, "version": cmd_version}
+    commands = {"ui": cmd_ui, "project": cmd_project, "update": cmd_update, "verify": cmd_verify, "version": cmd_version}
     handler = commands.get(args.command)
     if handler:
         handler(args)
