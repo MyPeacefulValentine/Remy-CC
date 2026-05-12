@@ -59,10 +59,10 @@ UI = {
         "env_new_keys": "  [i] New keys added to env (configure actual values): {keys}",
         "manifest_written": "  [+] {name}",
         "ts_installed": "  [i] tree-sitter already installed, skipping",
-        "ts_prompt": "Install tree-sitter (high-precision C/C++/TypeScript parsing)? [y/N] ",
+        "ts_prompt": "Install tree-sitter (high-precision C/C++/TypeScript parsing)? [Y/n] ",
         "ts_installing": "  Installing tree-sitter ...",
         "j2_installed": "  [i] Jinja2 already installed, skipping",
-        "j2_prompt": "Install Jinja2 (post-verify template rendering)? [y/N] ",
+        "j2_prompt": "Install Jinja2 (post-verify template rendering)? [Y/n] ",
         "j2_installing": "  Installing Jinja2 ...",
         "api_config_new": "Configure LLM API for Logic Index? [Y/n] ",
         "api_config_existing": "Existing API config detected. Reconfigure? [y/N] ",
@@ -127,10 +127,10 @@ UI = {
         "env_new_keys": "  [i] env 中新增以下 key（需手动配置实际值）：{keys}",
         "manifest_written": "  [+] {name}",
         "ts_installed": "  [i] tree-sitter 已安装，跳过",
-        "ts_prompt": "是否安装 tree-sitter（C/C++/TypeScript 高精度解析）？[y/N] ",
+        "ts_prompt": "是否安装 tree-sitter（C/C++/TypeScript 高精度解析）？[Y/n] ",
         "ts_installing": "  正在安装 tree-sitter ...",
         "j2_installed": "  [i] Jinja2 已安装，跳过",
-        "j2_prompt": "是否安装 Jinja2（post-verify 模板渲染增强）？[y/N] ",
+        "j2_prompt": "是否安装 Jinja2（post-verify 模板渲染增强）？[Y/n] ",
         "j2_installing": "  正在安装 Jinja2 ...",
         "api_config_new": "是否配置 Logic Index 的 LLM API？[Y/n] ",
         "api_config_existing": "检测到已有 API 配置，是否重新配置？[y/N] ",
@@ -663,7 +663,7 @@ def do_install() -> None:
             answer = input(_t("ts_prompt")).strip().lower()
         except EOFError:
             answer = ""
-        if answer == "y":
+        if answer != "n":
             print(_t("ts_installing"))
             subprocess.run(
                 [sys.executable, "-m", "pip", "install", "--user",
@@ -687,7 +687,7 @@ def do_install() -> None:
             answer = input(_t("j2_prompt")).strip().lower()
         except EOFError:
             answer = ""
-        if answer == "y":
+        if answer != "n":
             print(_t("j2_installing"))
             subprocess.run(
                 [sys.executable, "-m", "pip", "install", "--user", "Jinja2"],
