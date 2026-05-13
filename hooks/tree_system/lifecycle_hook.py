@@ -4,7 +4,7 @@
 @FileName    : tree_lifecycle.py
 @Description : Automated project tree updater for SessionStart and PreCompact events.
                Ensures .claude/project_tree.md is fresh BEFORE the system prompts are assembled.
-@Author      : Till-Crazy-Tears-Us-Apart
+@Author      : MyPeacefulValentine
 @CreationDate: 2026-01-26
 """
 

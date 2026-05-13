@@ -140,16 +140,16 @@ Remy supports one-line install scripts:
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/MyPeacefulValentine/Remy-CC/main/install.sh | sh
 
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/MyPeacefulValentine/Remy-CC/main/install.ps1 | iex
 ```
 
 Or install from source:
 
 ```bash
-git clone https://github.com/Till-Crazy-Tears-Us-Apart/Remy-CC.git
+git clone https://github.com/MyPeacefulValentine/Remy-CC.git
 cd Remy-CC
 python install.py                # English (default)
 python install.py --lang zh-CN   # Simplified Chinese

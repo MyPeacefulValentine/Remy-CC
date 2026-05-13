@@ -4,7 +4,7 @@
 @FileName    : generate_draft.py
 @Description : Standalone script to generate a milestone draft and update the timeline.
                Designed to be called manually by the agent via /milestone skill.
-@Author      : Till-Crazy-Tears-Us-Apart
+@Author      : MyPeacefulValentine
 @CreationDate: 2026-01-26
 """
 

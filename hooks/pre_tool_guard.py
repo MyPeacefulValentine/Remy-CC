@@ -8,7 +8,7 @@
                2. Snake Case Guard: Smartly detects and corrects kebab-case to snake_case.
                3. Bash Environment Guard: Auto-injects POSIX/Python/Mamba environment setup into Bash commands.
                4. Agent Speed Bump: Intercepts high-cost agent calls for user confirmation.
-@Author      : Till-Crazy-Tears-Us-Apart
+@Author      : MyPeacefulValentine
 @CreationDate: 2026-01-10
 """
 

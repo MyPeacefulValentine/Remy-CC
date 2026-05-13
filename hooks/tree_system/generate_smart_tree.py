@@ -5,7 +5,7 @@
 @Description : Generates a compact project tree based on .claude/tree_config rules.
                Supports custom depth and file visibility per path.
                Automatically injects reference into CLAUDE.md if missing.
-@Author      : Till-Crazy-Tears-Us-Apart
+@Author      : MyPeacefulValentine
 @CreationDate: 2026-01-24
 """
 

@@ -140,16 +140,16 @@ Remy 支持一键安装脚本：
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/MyPeacefulValentine/Remy-CC/main/install.sh | sh
 
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/MyPeacefulValentine/Remy-CC/main/install.ps1 | iex
 ```
 
 或者从源码安装：
 
 ```bash
-git clone https://github.com/Till-Crazy-Tears-Us-Apart/Remy-CC.git
+git clone https://github.com/MyPeacefulValentine/Remy-CC.git
 cd Remy-CC
 python install.py                # 默认英文
 python install.py --lang zh-CN   # 简体中文

@@ -4,7 +4,7 @@
 @FileName    : env_enforcer.py
 @Description : UserPromptSubmit hook that injects CRITICAL environment constraints.
                Reads configuration from hooks/config/reminder_prompt.md.
-@Author      : Till-Crazy-Tears-Us-Apart
+@Author      : MyPeacefulValentine
 @CreationDate: 2026-01-10
 """
 

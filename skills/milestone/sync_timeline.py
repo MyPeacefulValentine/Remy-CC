@@ -4,7 +4,7 @@
 @FileName    : sync_timeline.py
 @Description : Synchronizes the summary from the latest milestone report back to the timeline index.
                Extracts the content of "1. 工作摘要 (Summary)" and updates timeline.md.
-@Author      : Till-Crazy-Tears-Us-Apart
+@Author      : MyPeacefulValentine
 @CreationDate: 2026-01-27
 """
 

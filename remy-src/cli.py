@@ -115,9 +115,9 @@ def cmd_version(_args):
     print("Remy v{}".format(get_version()))
 
 
-REPO_URL = "https://github.com/Till-Crazy-Tears-Us-Apart/Remy-CC.git"
+REPO_URL = "https://github.com/MyPeacefulValentine/Remy-CC.git"
 BRANCH = "main"
-VERSION_RAW_URL = "https://raw.githubusercontent.com/Till-Crazy-Tears-Us-Apart/Remy-CC/{}/install.py".format(BRANCH)
+VERSION_RAW_URL = "https://raw.githubusercontent.com/MyPeacefulValentine/Remy-CC/{}/install.py".format(BRANCH)
 
 
 def _fetch_remote_version():
