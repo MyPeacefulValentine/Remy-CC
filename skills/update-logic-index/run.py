@@ -180,6 +180,24 @@ class LogicIndexer:
                 return True
         return False
 
+    def _is_path_excluded(self, rel_path):
+        """Check if a relative file path matches exclusion rules, including parent directory patterns."""
+        rel_path = rel_path.replace("\\", "/")
+        parts = rel_path.split("/")
+        basename = parts[-1]
+        for pattern in self.exclusions:
+            must_be_dir = pattern.endswith("/")
+            clean_pattern = pattern.rstrip("/")
+            if must_be_dir:
+                for i, segment in enumerate(parts[:-1]):
+                    cumulative = "/".join(parts[:i + 1])
+                    if fnmatch.fnmatch(segment, clean_pattern) or fnmatch.fnmatch(cumulative, clean_pattern):
+                        return True
+            else:
+                if fnmatch.fnmatch(basename, clean_pattern) or fnmatch.fnmatch(rel_path, clean_pattern):
+                    return True
+        return False
+
     def _match_file_to_layer(self, rel_path):
         """Match a file path to a layer by directory segment patterns. Returns layer name or 'Core'."""
         segments = rel_path.replace("\\", "/").lower().split("/")
@@ -591,6 +609,8 @@ class LogicIndexer:
                 continue
             if not data.get("symbols"):
                 continue
+            if self._is_path_excluded(path):
+                continue
             layer = self._match_file_to_layer(path)
             layer_groups.setdefault(layer, []).append((path, data))
 
@@ -661,7 +681,20 @@ class LogicIndexer:
                     else:
                         self.stats["failed_files"] += 1
 
+            old_cache = self.cache
             self.cache = new_cache
+            retained_count = 0
+            retained_paths = set()
+            for path, data in old_cache.items():
+                if path == "_meta":
+                    continue
+                if path not in new_cache and self._is_path_excluded(path):
+                    self.cache[path] = data
+                    retained_count += 1
+                    retained_paths.add(path)
+            if retained_count:
+                print(f"Retained {retained_count} cached entries for {len(retained_paths)} excluded paths")
+
             self._resolve_call_edges()
 
             if self.dirty_nodes:
