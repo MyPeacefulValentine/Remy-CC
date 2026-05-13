@@ -10,6 +10,12 @@ import webbrowser
 from pathlib import Path
 
 PARAM_REGISTRY = [
+    {"key": "LOGIC_INDEX_FILTER_SMALL", "group": "llm_api", "type": "enum", "default": "false",
+     "options": ["true", "false"],
+     "option_desc_en": ["Skip small functions (< 3 lines, no docstring)", "Summarize all functions"],
+     "option_desc_zh": ["跳过小函数（< 3 行且无文档）", "为所有函数生成摘要"],
+     "desc_en": "Skip LLM summarization for small functions without docstrings",
+     "desc_zh": "跳过无文档小函数的 LLM 摘要生成"},
     {"key": "OPENAI_API_KEY", "group": "llm_api", "type": "password", "default": "",
      "desc_en": "API key for OpenAI-compatible LLM service",
      "desc_zh": "OpenAI 兼容 LLM 服务的 API Key"},
@@ -43,12 +49,6 @@ PARAM_REGISTRY = [
      "option_desc_zh": ["每次更新自动注入", "注入前询问确认", "仅生成文件，不注入"],
      "desc_en": "Auto-inject logic_tree.md into CLAUDE.md",
      "desc_zh": "自动将 logic_tree.md 注入 CLAUDE.md"},
-    {"key": "LOGIC_INDEX_FILTER_SMALL", "group": "injection", "type": "enum", "default": "false",
-     "options": ["true", "false"],
-     "option_desc_en": ["Skip small functions (< 3 lines, no docstring)", "Summarize all functions"],
-     "option_desc_zh": ["跳过小函数（< 3 行且无文档）", "为所有函数生成摘要"],
-     "desc_en": "Skip LLM summarization for small functions without docstrings",
-     "desc_zh": "跳过无文档小函数的 LLM 摘要生成"},
 
     {"key": "IMPACT_DEPTH_UP", "group": "impact", "type": "int", "default": "2",
      "min": 1, "max": 10,
@@ -116,7 +116,7 @@ PARAM_REGISTRY = [
 ]
 
 GROUPS = [
-    {"id": "llm_api", "label_en": "LLM API", "label_zh": "LLM API"},
+    {"id": "llm_api", "label_en": "Logic Index", "label_zh": "语义索引"},
     {"id": "impact", "label_en": "Impact Analysis", "label_zh": "影响分析"},
     {"id": "injection", "label_en": "Context Injection", "label_zh": "上下文注入"},
     {"id": "timeline", "label_en": "Timeline", "label_zh": "时间线"},
