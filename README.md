@@ -182,3 +182,9 @@ The settings editor provides a bilingual interface (English / 中文) for managi
 ## 🤝Credits
 
 Some skills in this project (such as TDD development principles) were inspired by **[superpowers](https://github.com/obra/superpowers)** by Jesse Vincent.
+
+---
+
+## 🔗 Friends
+
+Thanks for the support and feedback from the community at **[LINUX DO](https://linux.do/)**.

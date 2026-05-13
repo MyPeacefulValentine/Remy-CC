@@ -182,3 +182,9 @@ python install.py --lang zh-CN   # 简体中文
 ## 🤝鸣谢
 
 本项目中的部分其它 Skills （如 TDD 开发原则）借鉴自 **[superpowers](https://github.com/obra/superpowers)** 项目（作者 Jesse Vincent）。
+
+---
+
+## 🔗 友情链接
+
+感谢 **[LINUX DO](https://linux.do/)** 社区朋友们的支持与反馈。
