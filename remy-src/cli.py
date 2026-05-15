@@ -15,7 +15,15 @@ DEPLOY_DIRS = ["hooks", "skills", "output-styles", "remy-src", "remy-assets"]
 
 
 def get_claude_home():
-    return Path.home() / ".claude"
+    try:
+        home = Path.home()
+    except RuntimeError:
+        home_str = os.environ.get("HOME") or os.environ.get("USERPROFILE") or ""
+        if not home_str:
+            print("Cannot determine home directory. Set $HOME and retry.", file=sys.stderr)
+            sys.exit(1)
+        home = Path(home_str)
+    return home / ".claude"
 
 
 def get_version():
@@ -334,7 +342,10 @@ def cmd_uninstall(args):
         print(_um("claude_restored"))
 
     bin_dir = claude_home / "bin"
-    if bin_dir.exists():
+    if bin_dir.is_symlink():
+        bin_dir.unlink()
+        print(_um("shim_removed"))
+    elif bin_dir.exists():
         try:
             shutil.rmtree(bin_dir)
             print(_um("shim_removed"))
@@ -348,6 +359,9 @@ def cmd_uninstall(args):
 
     for dirname in DEPLOY_DIRS:
         dirpath = claude_home / dirname
+        if dirpath.is_symlink():
+            dirpath.unlink()
+            continue
         if not dirpath.exists():
             continue
         for root, _dirs, _files in os.walk(str(dirpath), topdown=False):

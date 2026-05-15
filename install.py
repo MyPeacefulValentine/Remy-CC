@@ -115,6 +115,10 @@ UI = {
         "path_set_win": "  [+] PATH updated (restart terminal to take effect)",
         "path_set_unix": "  [+] Added to ~/{rc} (run 'source ~/{rc}' or restart terminal)",
         "path_cleanup": "  [+] CLI shim removed",
+        "warn_sudo": "  [!] Running as root via sudo (SUDO_USER={user}).\n      Files will install to {path}, not /home/{user}/.claude.\n      If unintended, re-run without sudo.",
+        "err_home_is_file": "  [!] {path} exists as a regular file, not a directory.\n      Remove or rename it, then retry.",
+        "err_home_not_found": "  [!] Cannot determine home directory. Set $HOME and retry.",
+        "err_permission": "\n  [!] Permission denied: {err}\n      Check directory permissions or avoid running with sudo.",
     },
     "zh-CN": {
         "target_dir": "目标目录: {path}",
@@ -185,6 +189,10 @@ UI = {
         "path_set_win": "  [+] PATH 已更新（重启终端生效）",
         "path_set_unix": "  [+] 已添加到 ~/{rc}（运行 'source ~/{rc}' 或重启终端生效）",
         "path_cleanup": "  [+] CLI 入口已移除",
+        "warn_sudo": "  [!] 当前以 root 身份运行（SUDO_USER={user}）。\n      文件将安装到 {path}，而非 /home/{user}/.claude。\n      如非预期，请去掉 sudo 重新执行。",
+        "err_home_is_file": "  [!] {path} 是普通文件而非目录。\n      请移除或重命名后重试。",
+        "err_home_not_found": "  [!] 无法确定用户主目录。请设置 $HOME 环境变量后重试。",
+        "err_permission": "\n  [!] 权限不足: {err}\n      请检查目录权限，或避免使用 sudo 执行。",
     },
 }
 
@@ -197,7 +205,15 @@ def _t(key, **kwargs):
 
 
 def get_claude_home() -> Path:
-    return Path.home() / ".claude"
+    try:
+        home = Path.home()
+    except RuntimeError:
+        home_str = os.environ.get("HOME") or os.environ.get("USERPROFILE") or ""
+        if not home_str:
+            print(_t("err_home_not_found"))
+            sys.exit(1)
+        home = Path(home_str)
+    return home / ".claude"
 
 
 def compute_sha256(path: Path) -> str:
@@ -211,7 +227,9 @@ def compute_sha256(path: Path) -> str:
 def copy_tree(src: Path, dst: Path) -> list:
     """Recursively copy directory, return list of {path, sha256} records."""
     records = []
-    if dst.exists():
+    if dst.is_symlink():
+        dst.unlink()
+    elif dst.exists():
         shutil.rmtree(dst)
     shutil.copytree(src, dst)
     for root, _dirs, files in os.walk(dst):
@@ -604,6 +622,15 @@ def register_path(bin_dir: Path) -> None:
 
 def do_install() -> None:
     claude_home = get_claude_home()
+
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user and hasattr(os, "getuid") and os.getuid() == 0:
+        print(_t("warn_sudo", user=sudo_user, path=claude_home))
+
+    if claude_home.exists() and not claude_home.is_dir():
+        print(_t("err_home_is_file", path=claude_home))
+        sys.exit(1)
+
     claude_home.mkdir(parents=True, exist_ok=True)
 
     print(f"Remy v{SUITE_VERSION}")
@@ -745,7 +772,9 @@ def do_uninstall() -> None:
 
     for dirname in DEPLOY_DIRS + ["remy-src", "remy-assets"]:
         dirpath = claude_home / dirname
-        if dirpath.exists():
+        if dirpath.is_symlink():
+            dirpath.unlink()
+        elif dirpath.exists():
             try:
                 shutil.rmtree(dirpath)
             except OSError:
@@ -776,7 +805,9 @@ def do_uninstall() -> None:
         print(_t("claude_restored"))
 
     bin_dir = claude_home / "bin"
-    if bin_dir.exists():
+    if bin_dir.is_symlink():
+        bin_dir.unlink()
+    elif bin_dir.exists():
         shutil.rmtree(bin_dir, ignore_errors=True)
         print(_t("path_cleanup"))
 
@@ -896,4 +927,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except PermissionError as e:
+        print(_t("err_permission", err=e))
+        sys.exit(1)
