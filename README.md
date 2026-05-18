@@ -67,8 +67,9 @@ These layers are coupled by design. Hooks maintain the context that skills depen
 | :--- | :--- | :--- |
 | Protocol Enforcer | Every user message | Re-injects concise rules to counteract instruction decay in long conversations |
 | Pre-Tool Guard | Before each tool use | Converts absolute paths to relative; injects Conda/Mamba activation and UTF-8 encoding into shell commands; enforces snake_case file naming |
-| Logic Enrichment | Before Read/Grep/Glob | Appends caller/callee relationships and architecture layer for the target file (requires logic index) |
-| Lifecycle Manager | Session start/end, pre-compaction | Regenerates the project tree snapshot and language directive |
+| Logic Enrichment | Before Read/Grep/Glob | Consumes dirty file entries for incremental re-parsing; appends caller/callee relationships and architecture layer for the target file (requires logic index) |
+| Dirty File Tracker | After Edit/Write | Records modified file paths for incremental logic index updates on the next Read |
+| Lifecycle Manager | Session start/end, pre-compaction | Regenerates the project tree snapshot and language directive; triggers full structural scan to refresh symbol line numbers and call graph |
 | Document Injector | On demand | Injects project tree, logic index, and timeline references into `CLAUDE.md` |
 
 ### Skills (User-Invoked)

@@ -322,6 +322,7 @@ class CCppParser(LanguageParser):
                         type="enum",
                         lineno=child.start_point[0] + 1,
                         source_segment=_ts_node_text(child),
+                        end_lineno=child.end_point[0] + 1,
                         docstring=_ts_extract_doxygen(source_bytes, child),
                     ))
 
@@ -336,6 +337,7 @@ class CCppParser(LanguageParser):
                         type="typedef",
                         lineno=child.start_point[0] + 1,
                         source_segment=_ts_node_text(child),
+                        end_lineno=child.end_point[0] + 1,
                         docstring=_ts_extract_doxygen(source_bytes, child),
                     ))
 
@@ -350,6 +352,7 @@ class CCppParser(LanguageParser):
                         type="namespace",
                         lineno=child.start_point[0] + 1,
                         source_segment=_ts_node_text(child),
+                        end_lineno=child.end_point[0] + 1,
                         docstring=_ts_extract_doxygen(source_bytes, child),
                     ))
                     body = child.child_by_field_name('body')
@@ -375,6 +378,7 @@ class CCppParser(LanguageParser):
                         type="macro",
                         lineno=child.start_point[0] + 1,
                         source_segment=_ts_node_text(child),
+                        end_lineno=child.end_point[0] + 1,
                         docstring=None,
                     ))
 
@@ -390,6 +394,7 @@ class CCppParser(LanguageParser):
             type="function",
             lineno=node.start_point[0] + 1,
             source_segment=_ts_node_text(node),
+            end_lineno=node.end_point[0] + 1,
             docstring=_ts_extract_doxygen(source_bytes, node),
         ))
 
@@ -407,6 +412,7 @@ class CCppParser(LanguageParser):
             type=sym_type,
             lineno=node.start_point[0] + 1,
             source_segment=_ts_node_text(node),
+            end_lineno=node.end_point[0] + 1,
             docstring=_ts_extract_doxygen(source_bytes, node),
         ))
 
@@ -450,6 +456,7 @@ class CCppParser(LanguageParser):
                 type=sym_type,
                 lineno=lineno,
                 source_segment=segment,
+                end_lineno=lineno + segment.count('\n'),
                 docstring=docstring,
             )
             symbols.append(sym)
@@ -471,6 +478,7 @@ class CCppParser(LanguageParser):
                 type="namespace",
                 lineno=lineno,
                 source_segment=segment,
+                end_lineno=lineno + segment.count('\n'),
                 docstring=docstring,
             ))
             ns_ranges.append((brace_pos + 1, end_pos, ns_name))
@@ -526,6 +534,7 @@ class CCppParser(LanguageParser):
                 type="function",
                 lineno=lineno,
                 source_segment=segment,
+                end_lineno=lineno + segment.count('\n'),
                 docstring=docstring,
             ))
 
@@ -542,6 +551,7 @@ class CCppParser(LanguageParser):
                     type="typedef",
                     lineno=lineno,
                     source_segment=source[m.start():m.end()],
+                    end_lineno=_line_number_at(source, m.end() - 1),
                     docstring=docstring,
                 ))
 
@@ -568,6 +578,7 @@ class CCppParser(LanguageParser):
                     type="macro",
                     lineno=lineno,
                     source_segment=segment,
+                    end_lineno=lineno + segment.count('\n'),
                     docstring=None,
                 ))
 
@@ -607,6 +618,7 @@ class CCppParser(LanguageParser):
                 type="function",
                 lineno=lineno,
                 source_segment=segment,
+                end_lineno=lineno + segment.count('\n'),
                 docstring=docstring,
             ))
 

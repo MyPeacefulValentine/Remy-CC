@@ -58,6 +58,10 @@ PARAM_REGISTRY = [
      "min": 1, "max": 10,
      "desc_en": "Downstream (callees) BFS search depth",
      "desc_zh": "下游（被调用者）BFS 搜索深度"},
+    {"key": "PRECISION_READ_THRESHOLD", "group": "impact", "type": "int", "default": "500",
+     "min": 50, "max": 10000,
+     "desc_en": "Line count threshold for precision Read. Files above this use offset-based Read with [L{start}-L{end}] ranges instead of full-file reads",
+     "desc_zh": "精准 Read 行数阈值。超过此行数的文件使用 [L{start}-L{end}] 行号范围的偏移 Read，而非全量读取"},
 
     {"key": "PROJECT_TREE_AUTO_INJECT", "group": "injection", "type": "enum", "default": "ALWAYS",
      "options": ["ALWAYS", "ASK", "NEVER"],
@@ -102,6 +106,10 @@ PARAM_REGISTRY = [
     {"key": "REPO_AUDIT_ROOT", "group": "system", "type": "text", "default": "~/claude_audit",
      "desc_en": "Root directory for repo-audit sandbox",
      "desc_zh": "仓库审计沙盒根目录"},
+    {"key": "STRUCT_SCAN_TIMEOUT", "group": "system", "type": "int", "default": "60",
+     "min": 10, "max": 300,
+     "desc_en": "Timeout in seconds for full structural scan on SessionStart/PreCompact",
+     "desc_zh": "SessionStart/PreCompact 全量结构扫描的超时秒数"},
 
     {"key": "ANTHROPIC_API_KEY", "group": "claude_code", "type": "password", "default": "",
      "desc_en": "Anthropic API key for Claude Code",

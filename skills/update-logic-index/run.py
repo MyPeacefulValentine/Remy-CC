@@ -7,13 +7,11 @@ Features:
     - Incremental updates via MD5 hashing
     - Concurrent API calls (ThreadPoolExecutor)
     - Zero required external dependencies (Standard Library only; tree-sitter optional)
-Version: 2.0.0
+Version: 3.0.0
 """
 
-import hashlib
 import json
 import os
-import re
 import sys
 import subprocess
 import time
@@ -23,15 +21,14 @@ import urllib.request
 import urllib.error
 import ssl
 import fnmatch
-from pathlib import Path
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from parsers.base import LanguageParser, SymbolInfo
 from parsers.python_parser import PythonParser
 from parsers.c_cpp_parser import CCppParser
 from parsers.ts_parser import TSParser
+from struct_scan import StructScanner
 
 VERSION = "3.0.0"
 CACHE_FILE = os.path.join(".claude", "logic_index.json")
@@ -161,25 +158,6 @@ class LogicIndexer:
         else:
             self.exclusions = [".git/", "__pycache__/", "venv/", "node_modules/", ".claude/", "dist/", "build/"]
 
-    def _is_excluded(self, path):
-        rel_path = os.path.relpath(path, self.root_dir).replace(os.sep, "/")
-        if rel_path == ".":
-            return False
-
-        basename = os.path.basename(rel_path)
-        is_dir = os.path.isdir(path)
-
-        for pattern in self.exclusions:
-            must_be_dir = pattern.endswith("/")
-            clean_pattern = pattern.rstrip("/")
-
-            if must_be_dir and not is_dir:
-                continue
-
-            if fnmatch.fnmatch(basename, clean_pattern) or fnmatch.fnmatch(rel_path, clean_pattern):
-                return True
-        return False
-
     def _is_path_excluded(self, rel_path):
         """Check if a relative file path matches exclusion rules, including parent directory patterns."""
         rel_path = rel_path.replace("\\", "/")
@@ -233,23 +211,6 @@ class LogicIndexer:
         }
         with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(self.cache, f, ensure_ascii=False, indent=2)
-
-    @staticmethod
-    def _strip_comments(source, parser):
-        try:
-            if isinstance(parser, PythonParser):
-                return re.sub(r'#[^\n]*', '', source)
-            elif isinstance(parser, (CCppParser, TSParser)):
-                source = re.sub(r'//[^\n]*', '', source)
-                source = re.sub(r'/\*[\s\S]*?\*/', '', source)
-                return source
-        except Exception:
-            pass
-        return source
-
-    def _calculate_hash(self, source_code, extra_data=""):
-        normalized = "".join(source_code.split()) + extra_data
-        return hashlib.md5(normalized.encode('utf-8')).hexdigest()
 
     def _call_llm(self, prompt):
         if not self.api_key:
@@ -330,93 +291,6 @@ class LogicIndexer:
             except Exception as e:
                 return f"Error: {str(e)}"
         return "Error: Maximum retries exceeded."
-
-    def parse_file(self, file_path, parser):
-        """Parses a source file using the given language parser."""
-        rel_path = os.path.relpath(file_path, self.root_dir).replace(os.sep, '/')
-
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                source = f.read()
-        except Exception as e:
-            print(f"Skipping {rel_path}: {e}")
-            return None
-
-        imports = parser.resolve_imports(source, file_path, self.root_dir)
-        used_names = parser.collect_used_names(source)
-        is_complex = any(ind in source for ind in parser.get_complexity_indicators())
-
-        dep_summaries = []
-        for imp_path, has_alias in imports.items():
-            cached_imp = self.cache.get(imp_path)
-            if cached_imp:
-                for sym in cached_imp.get("symbols", []):
-                    if sym.get("summary"):
-                        is_used = sym['name'] in used_names
-                        if not is_used and "." in sym['name']:
-                            short_name = sym['name'].split(".")[-1]
-                            is_used = short_name in used_names
-                        if is_complex or has_alias or is_used:
-                            dep_summaries.append(f"{sym['name']}:{sym['summary']}")
-
-        extra_data = "|".join(sorted(dep_summaries))
-        file_hash = self._calculate_hash(source, extra_data)
-
-        import_list = list(imports.keys())
-        file_node = {
-            "path": rel_path,
-            "hash": file_hash,
-            "imports": import_list,
-            "language": parser.__class__.__name__,
-            "layer": self._match_file_to_layer(rel_path),
-            "symbols": []
-        }
-
-        cached_file = self.cache.get(rel_path)
-        file_changed = not cached_file or cached_file.get("hash") != file_hash
-
-        symbols = parser.parse_symbols(source, file_path)
-        for sym_info in symbols:
-            self._process_symbol(sym_info, file_node, file_changed, cached_file, parser)
-
-        call_edges = parser.extract_call_graph(source, file_path)
-        file_node["calls"] = [{"caller": e.caller, "callee": e.callee, "line": e.line} for e in call_edges]
-
-        return file_node
-
-    def _process_symbol(self, sym_info, file_node, file_changed, cached_file, parser):
-        """Process a single extracted symbol: check cache, extract docstring, queue for LLM."""
-        stripped = self._strip_comments(sym_info.source_segment, parser)
-        symbol_hash = self._calculate_hash(stripped)
-
-        summary = None
-        if not file_changed and cached_file:
-            for s in cached_file.get("symbols", []):
-                if s["name"] == sym_info.name and s.get("hash") == symbol_hash:
-                    summary = s.get("summary")
-                    break
-
-        if not summary:
-            if sym_info.docstring:
-                lines = [line.strip() for line in sym_info.docstring.splitlines() if line.strip()]
-                if lines:
-                    summary = "[Doc] " + " ".join(lines[:3])
-            elif self.filter_small and len(sym_info.source_segment.splitlines()) < 3:
-                summary = "Small utility function."
-
-        symbol_data = {
-            "name": sym_info.name,
-            "args": sym_info.args,
-            "type": sym_info.type,
-            "lineno": sym_info.lineno,
-            "hash": symbol_hash,
-            "summary": summary
-        }
-
-        if not summary:
-            self.dirty_nodes.append((file_node["path"], symbol_data, sym_info.source_segment, parser))
-
-        file_node["symbols"].append(symbol_data)
 
     def _load_prompt_template(self, parser):
         """Loads the prompt template for the given parser's language."""
@@ -551,41 +425,6 @@ class LogicIndexer:
                 executor.shutdown(wait=False, cancel_futures=True)
                 raise
 
-    def _resolve_call_edges(self):
-        """Resolve callee names to qualified references using imports + cached symbols."""
-        for path, file_data in self.cache.items():
-            if path == "_meta" or "calls" not in file_data:
-                continue
-            calls = file_data["calls"]
-            if not calls:
-                continue
-
-            symbol_map = {}
-            for imp_path in file_data.get("imports", []):
-                imp_data = self.cache.get(imp_path)
-                if not imp_data:
-                    continue
-                for sym in imp_data.get("symbols", []):
-                    name = sym["name"]
-                    symbol_map[name] = f"{imp_path}::{name}"
-                    if "." in name:
-                        short = name.split(".")[-1]
-                        symbol_map[short] = f"{imp_path}::{name}"
-
-            for sym in file_data.get("symbols", []):
-                name = sym["name"]
-                if name not in symbol_map:
-                    symbol_map[name] = f"{path}::{name}"
-                if "." in name:
-                    short = name.split(".")[-1]
-                    if short not in symbol_map:
-                        symbol_map[short] = f"{path}::{name}"
-
-            for call in calls:
-                qualified = symbol_map.get(call["callee"])
-                if qualified:
-                    call["callee_qualified"] = qualified
-
     def generate_markdown(self):
         git_hash = "Unknown"
         try:
@@ -653,49 +492,34 @@ class LogicIndexer:
         print("Scanning codebase...")
 
         try:
-            new_cache = {}
-            detected_languages = set()
+            scanner = StructScanner(self.root_dir)
+            scanner.scan_all()
+            self.cache = scanner.cache
 
-            for root, dirs, files in os.walk(self.root_dir):
-                dirs[:] = [d for d in dirs if not self._is_excluded(os.path.join(root, d))]
-
-                for file in files:
-                    self.stats["total_files"] += 1
-                    full_path = os.path.join(root, file)
-
-                    if self._is_excluded(full_path):
-                        continue
-
-                    parser = self._get_parser_for_file(file)
-                    if not parser:
-                        continue
-
-                    lang_name = parser.__class__.__name__
-                    detected_languages.add(lang_name)
-                    self.stats["languages"][lang_name] = self.stats["languages"].get(lang_name, 0) + 1
-                    self.stats["processed_files"] += 1
-
-                    result = self.parse_file(full_path, parser)
-                    if result:
-                        new_cache[result["path"]] = result
-                    else:
-                        self.stats["failed_files"] += 1
-
-            old_cache = self.cache
-            self.cache = new_cache
-            retained_count = 0
-            retained_paths = set()
-            for path, data in old_cache.items():
+            dirty_by_file = {}
+            for path, file_data in self.cache.items():
                 if path == "_meta":
                     continue
-                if path not in new_cache and self._is_path_excluded(path):
-                    self.cache[path] = data
-                    retained_count += 1
-                    retained_paths.add(path)
-            if retained_count:
-                print(f"Retained {retained_count} cached entries for {len(retained_paths)} excluded paths")
+                for sym in file_data.get("symbols", []):
+                    if not sym.get("summary"):
+                        dirty_by_file.setdefault(path, []).append(sym)
 
-            self._resolve_call_edges()
+            for path, syms in dirty_by_file.items():
+                full_path = os.path.join(self.root_dir, path)
+                parser = self._get_parser_for_file(os.path.basename(path))
+                if not parser:
+                    continue
+                try:
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        source = f.read()
+                except Exception:
+                    continue
+                parsed = parser.parse_symbols(source, full_path)
+                seg_map = {s.name: s.source_segment for s in parsed}
+                for sym in syms:
+                    segment = seg_map.get(sym["name"], "")
+                    if segment:
+                        self.dirty_nodes.append((path, sym, segment, parser))
 
             if self.dirty_nodes:
                 if not self.api_key:
@@ -718,14 +542,12 @@ class LogicIndexer:
             print(f"\nLogic index updated at {OUTPUT_MD}")
 
             duration = time.time() - self.stats["start_time"]
+            dirty_count = len(self.dirty_nodes)
+            file_count = sum(1 for k in self.cache if k != "_meta")
             print("\n=== Logic Indexer Stats ===")
             print(f"Version             : {VERSION}")
-            print(f"Total Files Scanned : {self.stats['total_files']}")
-            print(f"Files Processed     : {self.stats['processed_files']}")
-            lang_detail = ", ".join(f"{k}: {v}" for k, v in self.stats["languages"].items())
-            if lang_detail:
-                print(f"Languages           : {lang_detail}")
-            print(f"Failed Files        : {self.stats['failed_files']}")
+            print(f"Files in Index      : {file_count}")
+            print(f"Symbols for LLM     : {dirty_count}")
             print(f"API Calls           : {self.stats['api_calls']}")
             print(f"Total Duration      : {duration:.2f}s")
             print("===========================\n")

@@ -4,9 +4,28 @@ Logic Indexer is a semantic indexing tool based on multi-language source code pa
 
 ## Architecture Overview
 
-The system operates on three layers:
+The system operates in two phases across four layers:
 
 ```
+Phase 1: Structural Scanning (no LLM, Hook-driven)
+┌──────────────────────────────────────────────────────────┐
+│  struct_scan.py (standalone scanner)                     │
+│  ├── Symbol extraction with start/end line numbers       │
+│  ├── Call graph edges + import resolution                │
+│  ├── Architecture layer assignment                       │
+│  ├── struct_hash (raw source MD5, skip-if-unchanged)     │
+│  Triggers: SessionStart, PreCompact (full scan)          │
+│            PreToolUse via dirty file consumer (incremental│
+└──────────────────────────────────────────────────────────┘
+
+Phase 2: LLM Summarization (API-dependent, manual invocation)
+┌──────────────────────────────────────────────────────────┐
+│  run.py (LLM indexer)                                    │
+│  ├── Delegates Phase 1 to struct_scan.py                 │
+│  ├── Generates semantic summaries for dirty symbols      │
+│  └── Saves logic_index.json + logic_tree.md              │
+└──────────────────────────────────────────────────────────┘
+
 ┌──────────────────────────────────────────────────────────┐
 │  logic_tree.md (injected into CLAUDE.md)                 │
 │  ├── Architecture layer grouping (files grouped by layer)│
@@ -18,6 +37,8 @@ The system operates on three layers:
 ┌──────────────────────────────────────────────────────────┐
 │  logic_index.json (disk cache, not injected)             │
 │  ├── Symbol hashes + summary cache                       │
+│  ├── struct_hash (per-file raw source fingerprint)       │
+│  ├── end_lineno (symbol end line for precision Read)     │
 │  ├── File-level imports list                             │
 │  ├── File layer assignment                               │
 │  └── Function-level CALLS edges (with callee resolution) │
@@ -25,11 +46,14 @@ The system operates on three layers:
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────┐
-│  PreToolUse Hook (passive enrichment)                    │
-│  Trigger: Claude Code executes Read/Grep/Glob            │
-│  Behavior: Queries logic_index.json for target file's    │
-│           callers/callees/layer, appends to hook output  │
-│  Purpose: On-demand relationship info without MCP        │
+│  Hooks (automated pipeline)                              │
+│  ├── PostToolUse: dirty file tracker records Edit/Write  │
+│  ├── PreToolUse: enrichment hook consumes dirty files,   │
+│  │   triggers incremental struct_scan, appends           │
+│  │   callers/callees/layer + [L{start}-L{end}] ranges   │
+│  └── Lifecycle: full struct_scan on SessionStart/PreCompact
+│  Purpose: Continuous structural accuracy without manual  │
+│           invocation                                     │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -79,13 +103,15 @@ After extraction, `_resolve_call_edges` resolves callee names to qualified refer
 
 ### Passive Enrichment Hook
 
-`hooks/logic_enrichment_hook.py` is a PreToolUse hook triggered on Read/Glob/Grep operations. It queries `logic_index.json` for the target file and outputs:
+`hooks/logic_enrichment_hook.py` is a PreToolUse hook triggered on Read/Glob/Grep operations. It first consumes any dirty file entries (written by the PostToolUse dirty tracker after Edit/Write operations), triggers incremental `struct_scan` for affected files, then queries `logic_index.json` for the target file and outputs:
 
 ```
 [Logic Context] services/auth.py (Service Layer)
-  Calls into: models/user.py::User.verify_password, utils/token.py::generate_jwt
+  Calls into: models/user.py::User.verify_password [L42-L68], utils/token.py::generate_jwt [L15-L30]
   Called by: routes/login.py::handle_login, routes/register.py::handle_register
 ```
+
+The `[L{start}-L{end}]` line ranges enable `deep-plan` and `code-modification` Skills to use offset-based `Read()` for files exceeding `PRECISION_READ_THRESHOLD` (default: 500 lines), avoiding full-file reads of large files.
 
 This provides relationship context without requiring Claude Code to proactively call MCP tools.
 
@@ -103,6 +129,7 @@ This provides relationship context without requiring Claude Code to proactively 
 ### Incremental Updates
 
 - **File-Level Hashing**: MD5-based source content hashing.
+- **Structural Hashing (`struct_hash`)**: Raw source MD5 (independent of the symbol-level `hash`). Any byte change — including whitespace or comment edits — triggers structural re-parsing to refresh line numbers and call edges. Unchanged files are skipped entirely.
 - **Comment-Insensitive Symbol Hashing**: When checking whether a function's LLM summary needs regeneration, comments (`#`, `//`, `/* */`) are stripped from the source before hashing. This means reformatting comments or adding inline notes does not trigger unnecessary API calls. Docstrings and Doxygen comments are preserved in the hash (they affect summary content). If comment stripping fails, the system falls back to hashing the full source.
 - **Dependency-Aware Hashing**: Upstream summary changes trigger downstream re-analysis.
 - **Usage-Aware Filtering**: Only triggers updates when referenced symbols are actually used in the current file.
@@ -221,6 +248,8 @@ Configure in `settings.local.json` (project-level) or `~/.claude/settings.json` 
 | `REMY_LANG` | `en` | Summary output language (`en` / `zh-CN`) |
 | `IMPACT_DEPTH_UP` | `2` | Default upstream (callers) BFS depth for `impact.py` |
 | `IMPACT_DEPTH_DOWN` | `2` | Default downstream (callees) BFS depth for `impact.py` |
+| `PRECISION_READ_THRESHOLD` | `500` | Line count threshold; files above this use offset-based `Read()` with `[L{start}-L{end}]` ranges |
+| `STRUCT_SCAN_TIMEOUT` | `60` | Timeout in seconds for full structural scan on SessionStart/PreCompact |
 
 ### Configuration File (`.claude/logic_index_config`)
 

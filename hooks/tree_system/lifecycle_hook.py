@@ -14,6 +14,10 @@ import os
 import subprocess
 
 GENERATOR_SCRIPT = "generate_smart_tree.py"
+STRUCT_SCAN_SCRIPT = os.path.join(
+    os.path.expanduser("~"), ".claude",
+    "skills", "update-logic-index", "struct_scan.py"
+)
 
 LANGUAGE_DIRECTIVES = {
     "zh-CN": "Always respond in Chinese-simplified",
@@ -31,6 +35,31 @@ def generate_language_md():
             f.write(directive + "\n")
     except Exception as e:
         print(f"[LifecycleHook] Failed to generate language.md: {e}", file=sys.stderr)
+
+def run_struct_scan(cwd):
+    if not os.path.exists(STRUCT_SCAN_SCRIPT):
+        return
+    cache_file = os.path.join(cwd, ".claude", "logic_index.json")
+    if not os.path.exists(cache_file):
+        return
+    try:
+        scan_timeout = int(os.environ.get("STRUCT_SCAN_TIMEOUT", "60"))
+    except ValueError:
+        scan_timeout = 60
+    try:
+        subprocess.run(
+            [sys.executable, STRUCT_SCAN_SCRIPT, "--cwd", cwd],
+            cwd=cwd,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=scan_timeout
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"[StructScan] Failed: {e.stderr.decode('utf-8', errors='replace')}", file=sys.stderr)
+    except Exception as e:
+        print(f"[StructScan] Unexpected error: {e}", file=sys.stderr)
+
 
 def update_tree(cwd):
     """
@@ -78,6 +107,7 @@ def main():
         # Trigger update on specific lifecycle events
         if event_name == "SessionStart":
             update_tree(cwd)
+            run_struct_scan(cwd)
             generate_language_md()
 
             lang = os.environ.get("REMY_LANG", "en")
@@ -100,6 +130,7 @@ def main():
 
         if event_name == "PreCompact":
             update_tree(cwd)
+            run_struct_scan(cwd)
             print(json.dumps({}))
             sys.exit(0)
 

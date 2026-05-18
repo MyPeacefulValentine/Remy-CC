@@ -10,6 +10,60 @@ import json
 import os
 
 CACHE_FILE = os.path.join(".claude", "logic_index.json")
+DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
+
+
+def _consume_dirty_files(cwd, target_path):
+    dirty_path = os.path.join(cwd, DIRTY_FILE)
+    if not os.path.exists(dirty_path):
+        return
+    try:
+        with open(dirty_path, 'r', encoding='utf-8') as f:
+            dirty_paths = {line.strip() for line in f if line.strip()}
+    except Exception:
+        return
+    if not dirty_paths:
+        return
+
+    cache_path = os.path.join(cwd, CACHE_FILE)
+    if not os.path.exists(cache_path):
+        return
+
+    try:
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            cache = json.load(f)
+    except Exception:
+        return
+
+    deps_of_target = set()
+    target_data = cache.get(target_path)
+    if target_data:
+        deps_of_target = set(target_data.get("imports", []))
+
+    relevant = dirty_paths & ({target_path} | deps_of_target)
+    if not relevant:
+        return
+
+    try:
+        claude_home = os.path.join(os.path.expanduser("~"), ".claude")
+        struct_scan_path = os.path.join(claude_home, "skills", "update-logic-index", "struct_scan.py")
+
+        if os.path.exists(struct_scan_path):
+            import subprocess
+            args = [sys.executable, struct_scan_path, "--cwd", cwd, "--files"] + list(relevant)
+            subprocess.run(args, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=30)
+    except Exception:
+        return
+
+    remaining = dirty_paths - relevant
+    try:
+        if remaining:
+            with open(dirty_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(sorted(remaining)) + '\n')
+        else:
+            os.remove(dirty_path)
+    except Exception:
+        pass
 
 
 def _normalize_path(file_path, cwd):
@@ -95,14 +149,16 @@ def main():
         if not os.path.exists(cache_path):
             sys.exit(0)
 
+        target = _normalize_path(file_path, cwd)
+        if not target:
+            sys.exit(0)
+
+        _consume_dirty_files(cwd, target)
+
         try:
             with open(cache_path, 'r', encoding='utf-8') as f:
                 cache = json.load(f)
         except (json.JSONDecodeError, IOError):
-            sys.exit(0)
-
-        target = _normalize_path(file_path, cwd)
-        if not target:
             sys.exit(0)
 
         enrichment = _build_enrichment(target, cache)

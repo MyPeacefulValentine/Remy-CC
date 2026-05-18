@@ -336,6 +336,7 @@ class TSParser(LanguageParser):
             type="function",
             lineno=node.start_point[0] + 1,
             source_segment=_ts_node_text(node),
+            end_lineno=node.end_point[0] + 1,
             docstring=_ts_extract_jsdoc(source_bytes, node),
         ))
 
@@ -349,6 +350,7 @@ class TSParser(LanguageParser):
             type="class",
             lineno=node.start_point[0] + 1,
             source_segment=_ts_node_text(node),
+            end_lineno=node.end_point[0] + 1,
             docstring=_ts_extract_jsdoc(source_bytes, node),
         ))
         body = node.child_by_field_name('body')
@@ -363,6 +365,7 @@ class TSParser(LanguageParser):
                             type="function",
                             lineno=member.start_point[0] + 1,
                             source_segment=_ts_node_text(member),
+                            end_lineno=member.end_point[0] + 1,
                             docstring=_ts_extract_jsdoc(source_bytes, member),
                         ))
                 elif member.type == 'abstract_method_signature':
@@ -374,6 +377,7 @@ class TSParser(LanguageParser):
                             type="function",
                             lineno=member.start_point[0] + 1,
                             source_segment=_ts_node_text(member),
+                            end_lineno=member.end_point[0] + 1,
                             docstring=_ts_extract_jsdoc(source_bytes, member),
                         ))
 
@@ -389,6 +393,7 @@ class TSParser(LanguageParser):
             type="interface",
             lineno=node.start_point[0] + 1,
             source_segment=_ts_node_text(node),
+            end_lineno=node.end_point[0] + 1,
             docstring=_ts_extract_jsdoc(source_bytes, node),
         ))
         body = node.child_by_field_name('body')
@@ -403,6 +408,7 @@ class TSParser(LanguageParser):
                             type="function",
                             lineno=member.start_point[0] + 1,
                             source_segment=_ts_node_text(member),
+                            end_lineno=member.end_point[0] + 1,
                             docstring=_ts_extract_jsdoc(source_bytes, member),
                         ))
 
@@ -418,6 +424,7 @@ class TSParser(LanguageParser):
             type="type_alias",
             lineno=node.start_point[0] + 1,
             source_segment=_ts_node_text(node),
+            end_lineno=node.end_point[0] + 1,
             docstring=_ts_extract_jsdoc(source_bytes, node),
         ))
 
@@ -433,6 +440,7 @@ class TSParser(LanguageParser):
             type="enum",
             lineno=node.start_point[0] + 1,
             source_segment=_ts_node_text(node),
+            end_lineno=node.end_point[0] + 1,
             docstring=_ts_extract_jsdoc(source_bytes, node),
         ))
 
@@ -448,6 +456,7 @@ class TSParser(LanguageParser):
             type="namespace",
             lineno=node.start_point[0] + 1,
             source_segment=_ts_node_text(node),
+            end_lineno=node.end_point[0] + 1,
             docstring=_ts_extract_jsdoc(source_bytes, node),
         ))
         body = node.child_by_field_name('body')
@@ -472,6 +481,7 @@ class TSParser(LanguageParser):
                 type="function",
                 lineno=child.start_point[0] + 1,
                 source_segment=_ts_node_text(child),
+                end_lineno=child.end_point[0] + 1,
                 docstring=_ts_extract_jsdoc(source_bytes, node),
             ))
 
@@ -508,6 +518,7 @@ class TSParser(LanguageParser):
                 type=sym_type,
                 lineno=lineno,
                 source_segment=source[match.start():end_pos + 1],
+                end_lineno=_line_number_at(source, end_pos),
                 docstring=docstring,
             )
             symbols.append(sym)
@@ -563,6 +574,7 @@ class TSParser(LanguageParser):
                 type="function",
                 lineno=lineno,
                 source_segment=source[m.start():end_pos + 1],
+                end_lineno=_line_number_at(source, end_pos),
                 docstring=docstring,
             ))
 
@@ -580,6 +592,7 @@ class TSParser(LanguageParser):
                 type="type_alias",
                 lineno=lineno,
                 source_segment=source[m.start():end],
+                end_lineno=_line_number_at(source, end - 1),
                 docstring=docstring,
             ))
 

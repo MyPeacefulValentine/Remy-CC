@@ -18,7 +18,7 @@ import re
 import os
 
 # Tools that are allowed to use absolute paths (Read-only tools)
-READ_ONLY_TOOLS = {"Read", "Glob", "Grep", "Search"}
+READ_ONLY_TOOLS = {"Read", "Glob", "Grep"}
 
 # Compiled regex for performance
 PYTHON_RELATED_PATTERN = re.compile(
@@ -139,11 +139,6 @@ def inject_bash_env(original_command):
 
     if is_python_related(original_command):
         env_vars = 'export PYTHONIOENCODING="utf-8"; '
-    else:
-        # Lazy import platform only when needed
-        import platform
-        if platform.system() == "Windows":
-            env_vars = 'chcp.com 65001 >/dev/null 2>&1 && '
 
     return f"{env_vars}{clean_preamble} {original_command}"
 
@@ -216,7 +211,6 @@ def main():
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "allow",
-                    # JIT Context Injection for Bash
                     "additionalContext": "<system_reminder>Bash Constraint: Use POSIX syntax. Ensure all paths are relative.</system_reminder>"
                 }
             }
@@ -230,10 +224,32 @@ def main():
             print(json.dumps(response))
             sys.exit(0)
 
+        if tool_name == "PowerShell":
+            command = tool_input.get("command", "")
+            if is_python_related(command) and "PYTHONIOENCODING" not in command:
+                new_input = tool_input.copy()
+                new_input["command"] = "$env:PYTHONIOENCODING='utf-8'; " + command
+                print(json.dumps({
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "allow",
+                        "updatedInput": new_input,
+                        "permissionDecisionReason": _msg("env_auto_fix", cmd=command[:20])
+                    }
+                }))
+            else:
+                print(json.dumps({
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "allow",
+                    }
+                }))
+            sys.exit(0)
+
         # ---------------------------------------------------------
         # Logic 0.5: Agent "Speed Bump" & Plan Config
         # ---------------------------------------------------------
-        if tool_name == "Task":
+        if tool_name == "Agent":
             subagent = tool_input.get("subagent_type", "")
 
             # Enforce configured language for Plan agent
@@ -263,7 +279,7 @@ def main():
         # ---------------------------------------------------------
         additional_context_buffer = []
 
-        if tool_name in ["Edit", "Write"]:
+        if tool_name in ["Edit", "Write", "NotebookEdit"]:
             is_valid, error_msg = validate_packet(cwd)
             if not is_valid:
                 print(json.dumps({
@@ -275,7 +291,6 @@ def main():
                 }))
                 sys.exit(0)
 
-            # [NEW] Inject Strict Code Hygiene Rules
             strict_rules = (
                 "CRITICAL CODE HYGIENE:\n"
                 "1. NO thought process/plans in comments (e.g., 'Step 1...', 'I will fix...').\n"
@@ -284,7 +299,7 @@ def main():
             )
             additional_context_buffer.append(strict_rules)
 
-            path = tool_input.get("file_path", "")
+            path = tool_input.get("file_path") or tool_input.get("notebook_path", "")
             if path:
                 # Check for lock files
                 if "lock" in path:
@@ -297,7 +312,7 @@ def main():
         # ---------------------------------------------------------
         # Path Logic
         # ---------------------------------------------------------
-        file_path = tool_input.get("file_path") or tool_input.get("path")
+        file_path = tool_input.get("file_path") or tool_input.get("notebook_path") or tool_input.get("path")
         if not file_path:
             # If no path, we can't do path logic.
             # But if we have accumulated context, we should output it?

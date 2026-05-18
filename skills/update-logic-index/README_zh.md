@@ -10,9 +10,28 @@ Logic Indexer 是一个基于多语言源码解析和 OpenAI 兼容 API 的语�
 
 ## 架构概览
 
-系统分三层运作：
+系统分两个阶段、四层运作：
 
 ```
+Phase 1: 结构扫描（无 LLM，Hook 驱动）
+┌──────────────────────────────────────────────────────────┐
+│  struct_scan.py（独立扫描器）                            │
+│  ├── 符号提取，含起止行号（end_lineno）                  │
+│  ├── 调用图边 + import 解析                              │
+│  ├── 架构层分配                                          │
+│  ├── struct_hash（原始源码 MD5，跳过未变更文件）         │
+│  触发：SessionStart、PreCompact（全量扫描）              │
+│        PreToolUse 脏文件消费（增量扫描）                 │
+└──────────────────────────────────────────────────────────┘
+
+Phase 2: LLM 摘要生成（依赖 API，手动调用）
+┌──────────────────────────────────────────────────────────┐
+│  run.py（LLM 索引器）                                    │
+│  ├── 将 Phase 1 委托给 struct_scan.py                    │
+│  ├── 为脏符号生成语义摘要                                │
+│  └── 保存 logic_index.json + logic_tree.md               │
+└──────────────────────────────────────────────────────────┘
+
 ┌──────────────────────────────────────────────────────────┐
 │  logic_tree.md（注入 CLAUDE.md）                         │
 │  ├── 架构层分组（文件按层归类）                          │
@@ -24,6 +43,8 @@ Logic Indexer 是一个基于多语言源码解析和 OpenAI 兼容 API 的语�
 ┌──────────────────────────────────────────────────────────┐
 │  logic_index.json（磁盘缓存，不注入）                    │
 │  ├── 符号哈希 + 摘要缓存                                 │
+│  ├── struct_hash（文件级原始源码指纹）                   │
+│  ├── end_lineno（符号结束行号，用于精准 Read）           │
 │  ├── 文件级 imports 列表                                 │
 │  ├── 文件层分配                                          │
 │  └── 函数级 CALLS 边（含 callee 解析）                   │
@@ -31,11 +52,13 @@ Logic Indexer 是一个基于多语言源码解析和 OpenAI 兼容 API 的语�
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────┐
-│  PreToolUse Hook（被动富化）                             │
-│  触发：Claude Code 执行 Read/Grep/Glob                   │
-│  行为：查询 logic_index.json，追加目标文件的             │
-│        callers/callees/layer 信息到 hook 输出            │
-│  用途：按需获取关系信息，无需 MCP                        │
+│  Hooks（自动化管道）                                     │
+│  ├── PostToolUse：脏文件追踪器记录 Edit/Write 目标       │
+│  ├── PreToolUse：富化 hook 消费脏文件，触发增量          │
+│  │   struct_scan，追加 callers/callees/layer +            │
+│  │   [L{start}-L{end}] 行号范围                          │
+│  └── Lifecycle：SessionStart/PreCompact 全量 struct_scan │
+│  用途：无需手动调用即可持续维护结构准确性                │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -85,13 +108,15 @@ Logic Indexer 是一个基于多语言源码解析和 OpenAI 兼容 API 的语�
 
 ### 被动富化 Hook
 
-`hooks/logic_enrichment_hook.py` 是一个 PreToolUse Hook，在 Read/Glob/Grep 操作时触发。它查询 `logic_index.json` 并输出：
+`hooks/logic_enrichment_hook.py` 是一个 PreToolUse Hook，在 Read/Glob/Grep 操作时触发。它首先消费脏文件条目（由 PostToolUse 脏文件追踪器在 Edit/Write 操作后写入），为受影响的文件触发增量 `struct_scan`，然后查询 `logic_index.json` 并输出：
 
 ```
 [Logic Context] services/auth.py (Service Layer)
-  Calls into: models/user.py::User.verify_password, utils/token.py::generate_jwt
+  Calls into: models/user.py::User.verify_password [L42-L68], utils/token.py::generate_jwt [L15-L30]
   Called by: routes/login.py::handle_login, routes/register.py::handle_register
 ```
+
+`[L{start}-L{end}]` 行号范围使 `deep-plan` 和 `code-modification` Skill 能对超过 `PRECISION_READ_THRESHOLD`（默认 500 行）的文件使用偏移 `Read()`，避免全量读取大文件。
 
 无需 Claude Code 主动调用 MCP 工具即可获取关系上下文。
 
@@ -109,6 +134,7 @@ Logic Indexer 是一个基于多语言源码解析和 OpenAI 兼容 API 的语�
 ### 增量更新
 
 - **文件级哈希**：基于 MD5 的源码内容哈希。
+- **结构哈希（`struct_hash`）**：原始源码 MD5（与符号级 `hash` 独立）。任何字节变更（包括空白或注释编辑）都会触发结构重解析以刷新行号和调用边。未变更文件被跳过。
 - **注释不敏感的符号哈希**：检查函数的 LLM 摘要是否需要重新生成时，从源码中剥离注释（`#`、`//`、`/* */`）后再计算哈希。修改注释或添加行内注释不会触发不必要的 API 调用。Docstring 和 Doxygen 注释保留在哈希中（它们影响摘要内容）。注释剥离失败时回退到完整源码哈希。
 - **依赖感知哈希**：上游摘要变更触发下游重新分析。
 - **使用感知过滤**：仅在引用的符号在当前文件中被实际使用时触发更新。
@@ -227,6 +253,8 @@ pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
 | `REMY_LANG` | `en` | 摘要输出语言（`en` / `zh-CN`） |
 | `IMPACT_DEPTH_UP` | `2` | `impact.py` 默认上游（调用者）BFS 深度 |
 | `IMPACT_DEPTH_DOWN` | `2` | `impact.py` 默认下游（被调用者）BFS 深度 |
+| `PRECISION_READ_THRESHOLD` | `500` | 行数阈值；超过此值的文件使用 `[L{start}-L{end}]` 行号范围的偏移 `Read()` |
+| `STRUCT_SCAN_TIMEOUT` | `60` | SessionStart/PreCompact 全量结构扫描的超时秒数 |
 
 ### 配置文件（`.claude/logic_index_config`）
 

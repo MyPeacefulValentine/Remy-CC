@@ -178,6 +178,7 @@ class PythonParser(LanguageParser):
             type=symbol_type,
             lineno=node.lineno,
             source_segment=segment,
+            end_lineno=node.end_lineno,
             docstring=docstring,
         )
 

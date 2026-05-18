@@ -15,7 +15,8 @@ class SymbolInfo:
     type: str               # "function", "class", "struct", "enum", "typedef", "macro", "namespace", "interface", "type_alias"
     lineno: int
     source_segment: str
-    docstring: Optional[str] = None  # For class/struct methods
+    end_lineno: Optional[int] = None
+    docstring: Optional[str] = None
 
 
 @dataclass

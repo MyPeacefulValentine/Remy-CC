@@ -19,10 +19,34 @@
     "TIMELINE_INJECT_VALUE": "",
     "POST_VERIFY_MAX_RETRIES": "-1",
     "IMPACT_DEPTH_UP": "2",
-    "IMPACT_DEPTH_DOWN": "2"
+    "IMPACT_DEPTH_DOWN": "2",
+    "PRECISION_READ_THRESHOLD": "500",
+    "STRUCT_SCAN_TIMEOUT": "60"
   },
   "permissions": {
     "allow": [
+      "Bash",
+      "Agent",
+      "Edit",
+      "ExitPlanMode",
+      "Glob",
+      "Grep",
+      "Monitor",
+      "NotebookEdit",
+      "PowerShell",
+      "Read",
+      "Skill",
+      "TaskCreate",
+      "TaskGet",
+      "TaskList",
+      "TaskUpdate",
+      "TaskStop",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "WebFetch",
+      "WebSearch",
+      "Write",
       "Skill(code-modification)",
       "Skill(systematic-debugging)",
       "Skill(test-driven-development)",
@@ -43,7 +67,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|Read|Glob|Grep|Bash",
+        "matcher": "Write|Edit|NotebookEdit|Read|Glob|Grep|Bash|PowerShell|Agent",
         "hooks": [
           {
             "type": "command",
@@ -98,6 +122,17 @@
           {
             "type": "command",
             "command": "python \"~/.claude/hooks/tree_system/lifecycle_hook.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"~/.claude/hooks/logic_dirty_tracker.py\""
           }
         ]
       }

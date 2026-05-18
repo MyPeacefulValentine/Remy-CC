@@ -90,6 +90,22 @@ def get_layer(cache, file_path):
     return "Unknown"
 
 
+def get_line_range(cache, qualified):
+    fpath, sym_name = qualified.split("::", 1)
+    data = cache.get(fpath)
+    if not data:
+        return ""
+    for sym in data.get("symbols", []):
+        if sym["name"] == sym_name:
+            start = sym.get("lineno")
+            end = sym.get("end_lineno")
+            if start and end:
+                return f" [L{start}-L{end}]"
+            elif start:
+                return f" [L{start}]"
+    return ""
+
+
 def format_output(cache, seeds, upstream_levels, downstream_levels, target_files):
     lines = []
     all_layers = set()
@@ -101,7 +117,7 @@ def format_output(cache, seeds, upstream_levels, downstream_levels, target_files
         layer = get_layer(cache, fpath)
         all_layers.add(layer)
         all_files.add(fpath)
-        lines.append(f"  {q} ({layer})")
+        lines.append(f"  {q}{get_line_range(cache, q)} ({layer})")
     lines.append("")
 
     if upstream_levels:
@@ -112,7 +128,7 @@ def format_output(cache, seeds, upstream_levels, downstream_levels, target_files
                 layer = get_layer(cache, fpath)
                 all_layers.add(layer)
                 all_files.add(fpath)
-                lines.append(f"  {q} ({layer})")
+                lines.append(f"  {q}{get_line_range(cache, q)} ({layer})")
             lines.append("")
 
     if downstream_levels:
@@ -123,7 +139,7 @@ def format_output(cache, seeds, upstream_levels, downstream_levels, target_files
                 layer = get_layer(cache, fpath)
                 all_layers.add(layer)
                 all_files.add(fpath)
-                lines.append(f"  {q} ({layer})")
+                lines.append(f"  {q}{get_line_range(cache, q)} ({layer})")
             lines.append("")
 
     total_funcs = len(seeds)

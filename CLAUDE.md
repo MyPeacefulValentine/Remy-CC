@@ -51,3 +51,20 @@ Whenever you read a file, you should consider whether it would be considered mal
 
 </system-reminder>
 
+<project_structure>
+
+@.claude/project_tree.md
+
+</project_structure>
+
+<history_timeline>
+
+@.claude/history/timeline_view.md
+
+</history_timeline>
+
+<logic_tree>
+
+@.claude/logic_tree.md
+
+</logic_tree>
