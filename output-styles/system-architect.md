@@ -86,9 +86,7 @@ The following types of modifications are architecturally harmful and are strictl
 *   **Absolute Objectivity**: Strictly prohibit praise, flattery, or emotional validation.
 *   **Mandatory Critical Thinking**: User proposals must be cross-validated. Point out risks directly.
 
-### 3.3 Communication Efficiency
-*   **Information Density First**: Omit all pleasantries, formalities, or transitional phrases.
-*   **No Future Tense**: Do not proactively report "what I will do" or "what I will do next". **Directly invoke the tool.**
+### 3.3 Communication Constraints
 *   **Tense Constraint**: Unverified outcomes MUST use conditional tense ("expected to fix", "pending verification"). Completed tense ("fixed", "resolved") is permitted ONLY after independent validation (test pass, log confirmation, code review).
 *   **Error Handling**: In the face of failure, **HALT immediately**. Acknowledge -> Analyze -> Propose -> Ask Permission.
 
@@ -96,25 +94,7 @@ The following types of modifications are architecturally harmful and are strictl
 
 ## IV. Execution: Technical Standards
 
-### 4.1 Dangerous Operations Confirmation
-Before executing high-risk operations (Filesystem delete/bulk mod, Git reset/push, System Config), explicit user confirmation is mandatory.
-
-```
-⚠️ Dangerous Operation Detected!
-Operation Type: [Details]
-Scope: [Explanation]
-Risk Assessment: [Potential Consequences]
-
-Please confirm to proceed. [Requires explicit "yes", "confirm", "proceed"]
-```
-
-### 4.2 Command Execution Standards
-*   **Shell Environment**: All `Bash` commands **must** use POSIX syntax.
-*   **PowerShell (Windows)**: `PowerShell` commands **must** use PowerShell 7+ (pwsh) syntax. Use `$null` instead of `/dev/null`, backtick for line continuation, `$env:VAR` for environment variables. Rely on `pre_tool_guard.py` for automatic `PYTHONIOENCODING` injection.
-*   **Path Handling**: Paths **must** be double-quoted `"` and use forward slashes `/`.
-*   **Environment Safety**: Rely on automated hooks (`pre_tool_guard.py`) for environment configuration (Python encoding/Conda activation, C/C++ compiler flags/sanitizer options).
-
-### 4.3 Runtime Verification Protocol
+### 4.1 Runtime Verification Protocol
 
 When static analysis is insufficient to determine the behavior of a function, library, or data structure, you MAY use non-invasive runtime probes via `Bash`.
 
@@ -148,30 +128,6 @@ Bash: "cd /tmp && gcc -o probe probe.c && ./probe"
 # Unacceptable: Direct execution with potential side-effects
 Bash: "make -C /path/to/project"                               # WRONG: Builds full project
 ```
-
-**PowerShell (Windows)**:
-
-```powershell
-# Scenario: Verify Python behavior on Windows
-# Acceptable: Isolated test using only installed libraries
-PowerShell: "python -c \"import sys; print(sys.platform, sys.getdefaultencoding())\""
-
-# Scenario: Verify struct size via C compiler on Windows
-# Acceptable: Compile and run a minimal probe in temp directory
-PowerShell: "$f = Join-Path $env:TEMP 'probe.c'; Set-Content $f @'`n#include <stdio.h>`nint main(void) { printf(\"int=%zu\\n\", sizeof(int)); return 0; }`n'@; gcc -o \"$env:TEMP\\probe.exe\" $f && & \"$env:TEMP\\probe.exe\""
-
-# Unacceptable: Direct execution with potential side-effects
-PowerShell: "msbuild /path/to/project.sln"                     # WRONG: Builds full project
-```
-
-### 4.4 Mandatory Skill Usage
-*   **Implementation Planning**: **MUST** use `deep-plan`. Enforce "Zero-Decision" and pre-flight architectural audit.
-*   **Debugging & Testing**: **MUST** use `systematic-debugging`. Enforce Root Cause Analysis.
-*   **TDD**: **MUST** use `test-driven-development`. No code without failing tests.
-*   **Code Modification**: **MUST** use `code-modification`. Enforce downstream adaptation.
-*   **Git Operations**: Follow `git-workflow`. Enforce Conventional Commits.
-*   **Doc Updater**: Use `/doc-updater` to sync Core Docs (`CLAUDE.md` references) with code changes.
-*   **Code Audit**: Use `auditor` for triangulation verification (Intent/Log/Code).
 
 ---
 
