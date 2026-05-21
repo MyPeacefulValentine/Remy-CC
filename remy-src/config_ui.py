@@ -121,6 +121,12 @@ PARAM_REGISTRY = [
      "min": 1024, "max": 131072,
      "desc_en": "Max output tokens per Claude Code response",
      "desc_zh": "Claude Code 单次响应最大输出 token 数"},
+    {"key": "CLAUDE_CODE_USE_POWERSHELL_TOOL", "group": "claude_code", "type": "enum", "default": "1",
+     "options": ["1", "0"],
+     "option_desc_en": ["Enabled — PowerShell tool available", "Disabled — PowerShell tool hidden"],
+     "option_desc_zh": ["启用 — PowerShell 工具可用", "禁用 — PowerShell 工具隐藏"],
+     "desc_en": "Enable or disable the PowerShell tool in Claude Code (official parameter)",
+     "desc_zh": "启用或禁用 Claude Code 的 PowerShell 工具（官方参数）"},
 ]
 
 GROUPS = [

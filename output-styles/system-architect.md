@@ -110,8 +110,8 @@ Please confirm to proceed. [Requires explicit "yes", "confirm", "proceed"]
 
 ### 4.2 Command Execution Standards
 *   **Shell Environment**: All `Bash` commands **must** use POSIX syntax.
+*   **PowerShell (Windows)**: `PowerShell` commands **must** use PowerShell 7+ (pwsh) syntax. Use `$null` instead of `/dev/null`, backtick for line continuation, `$env:VAR` for environment variables. Rely on `pre_tool_guard.py` for automatic `PYTHONIOENCODING` injection.
 *   **Path Handling**: Paths **must** be double-quoted `"` and use forward slashes `/`.
-*   **Path Reference**: Prefer **Relative Paths** for all file operations unless strictly necessary.
 *   **Environment Safety**: Rely on automated hooks (`pre_tool_guard.py`) for environment configuration (Python encoding/Conda activation, C/C++ compiler flags/sanitizer options).
 
 ### 4.3 Runtime Verification Protocol
@@ -128,50 +128,40 @@ When static analysis is insufficient to determine the behavior of a function, li
 **Python**:
 
 ```python
-# Scenario: Verify numpy broadcasting behavior
 # Acceptable: Isolated test using only installed libraries
-Bash: "cd /tmp && python3 -c \"import numpy as np; a = np.array([[1]]); b = np.array([1, 2]); print((a + b).shape)\""
-
-# Scenario: Verify custom utility function behavior
-# Acceptable: Extract function definition to temp file, test in isolation
-Bash: "cat > /tmp/test_target.py << 'EOF'\ndef merge_dicts(d1, d2):\n    return {**d1, **d2}\nEOF"
-Bash: "cd /tmp && python3 -c \"from test_target import merge_dicts; print(merge_dicts({'a': 1}, {'b': 2}))\""
+Bash: "cd /tmp && python3 -c \"import numpy as np; print(np.__version__)\""
 
 # Unacceptable: Direct execution with potential side-effects
 Bash: "python3 src/main.py"                                    # WRONG: Runs full application
-Bash: "python3 -c \"from src.config import *; init_db()\""     # WRONG: Side-effect on import
-Bash: "pytest tests/"                                          # WRONG: Executes full test suite
 ```
 
 **C/C++**:
 
 ```bash
-# Scenario: Verify compiler's understanding of code structure
-# Acceptable: Dump AST of an isolated source file
-Bash: "cd /tmp && clang -Xclang -ast-dump -fsyntax-only test.cpp 2>/dev/null | head -50"
-
-# Scenario: Verify struct memory layout and alignment
-# Acceptable: Compile and run a minimal probe
-Bash: "cd /tmp && cat > probe_layout.c << 'EOF'
+# Acceptable: Compile and run a minimal probe in temp directory
+Bash: "cd /tmp && cat > probe.c << 'EOF'
 #include <stdio.h>
-#include <stddef.h>
-struct S { char a; int b; double c; };
-int main(void) {
-    printf(\"sizeof=%zu, offsetof(b)=%zu, offsetof(c)=%zu\\n\",
-           sizeof(struct S), offsetof(struct S, b), offsetof(struct S, c));
-    return 0;
-}
+int main(void) { printf(\"sizeof(int)=%zu\\n\", sizeof(int)); return 0; }
 EOF"
-Bash: "cd /tmp && gcc -o probe_layout probe_layout.c && ./probe_layout"
-
-# Scenario: Static analysis for potential issues
-# Acceptable: Run linter/checker on isolated file without modifying workspace
-Bash: "cd /tmp && cppcheck --enable=all test.cpp 2>&1"
-Bash: "cd /tmp && clang-tidy test.cpp --checks='*,-llvm-*' -- 2>/dev/null"
+Bash: "cd /tmp && gcc -o probe probe.c && ./probe"
 
 # Unacceptable: Direct execution with potential side-effects
 Bash: "make -C /path/to/project"                               # WRONG: Builds full project
-Bash: "cd /path/to/project && cmake --build build/"            # WRONG: Modifies build state
+```
+
+**PowerShell (Windows)**:
+
+```powershell
+# Scenario: Verify Python behavior on Windows
+# Acceptable: Isolated test using only installed libraries
+PowerShell: "python -c \"import sys; print(sys.platform, sys.getdefaultencoding())\""
+
+# Scenario: Verify struct size via C compiler on Windows
+# Acceptable: Compile and run a minimal probe in temp directory
+PowerShell: "$f = Join-Path $env:TEMP 'probe.c'; Set-Content $f @'`n#include <stdio.h>`nint main(void) { printf(\"int=%zu\\n\", sizeof(int)); return 0; }`n'@; gcc -o \"$env:TEMP\\probe.exe\" $f && & \"$env:TEMP\\probe.exe\""
+
+# Unacceptable: Direct execution with potential side-effects
+PowerShell: "msbuild /path/to/project.sln"                     # WRONG: Builds full project
 ```
 
 ### 4.4 Mandatory Skill Usage
@@ -182,12 +172,6 @@ Bash: "cd /path/to/project && cmake --build build/"            # WRONG: Modifies
 *   **Git Operations**: Follow `git-workflow`. Enforce Conventional Commits.
 *   **Doc Updater**: Use `/doc-updater` to sync Core Docs (`CLAUDE.md` references) with code changes.
 *   **Code Audit**: Use `auditor` for triangulation verification (Intent/Log/Code).
-
-### 4.4 Tool Protocols
-*   **Concurrency Control**:
-    *   **Modification**: Default to serial. Parallel permitted for independent, non-conflicting operations.
-    *   **Read-Only**: Parallel allowed.
-*   **Parameter Checks**: Verify all arguments (especially `file_path`) before calling.
 
 ---
 

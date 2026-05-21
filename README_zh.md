@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>&nbsp;
-  <img src="https://img.shields.io/badge/Claude_Code-≥2.1.10-blueviolet" alt="Claude Code ≥2.1.10">&nbsp;
+  <img src="https://img.shields.io/badge/Claude_Code-≥2.1.139-blueviolet" alt="Claude Code ≥2.1.139">&nbsp;
   <img src="https://img.shields.io/badge/Python-3.7+-green.svg" alt="Python 3.7+">
 </p>
 
@@ -126,7 +126,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 | 要求 | 用途 |
 | :--- | :--- |
-| Claude Code CLI ≥ 2.1.10 | 事件 Hooks 和 Skill 调用 |
+| Claude Code CLI ≥ 2.1.139 | 事件 Hooks 和 Skill 调用 |
 | Python 3.7+ | Hook 和安装脚本 |
 | OpenAI 兼容的 LLM API | `/update-logic-index` 的语义摘要生成 |
 | Conda 或 Mamba（可选） | 存在时自动注入到 Shell 环境 |

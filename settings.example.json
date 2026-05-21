@@ -21,7 +21,8 @@
     "IMPACT_DEPTH_UP": "2",
     "IMPACT_DEPTH_DOWN": "2",
     "PRECISION_READ_THRESHOLD": "500",
-    "STRUCT_SCAN_TIMEOUT": "60"
+    "STRUCT_SCAN_TIMEOUT": "60",
+    "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
   },
   "permissions": {
     "allow": [

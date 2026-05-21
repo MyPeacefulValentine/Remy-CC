@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>&nbsp;
-  <img src="https://img.shields.io/badge/Claude_Code-≥2.1.10-blueviolet" alt="Claude Code ≥2.1.10">&nbsp;
+  <img src="https://img.shields.io/badge/Claude_Code-≥2.1.139-blueviolet" alt="Claude Code ≥2.1.139">&nbsp;
   <img src="https://img.shields.io/badge/Python-3.7+-green.svg" alt="Python 3.7+">
 </p>
 
@@ -126,7 +126,7 @@ For small, low-risk changes, steps 3–6 can be skipped. Other skills (debugging
 
 | Requirement | Purpose |
 | :--- | :--- |
-| Claude Code CLI ≥ 2.1.10 | Event hooks and skill invocation |
+| Claude Code CLI ≥ 2.1.139 | Event hooks and skill invocation |
 | Python 3.7+ | Hook and installer scripts |
 | OpenAI-compatible LLM API | Semantic summarization for `/update-logic-index` |
 | Conda or Mamba (optional) | Auto-injected into shell environment when present |

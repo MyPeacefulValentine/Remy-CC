@@ -10,4 +10,5 @@
 3. **Workflow**: Read-only -> Direct Act. Modification -> Plan & MUST use AskUserQuestion (in `English` only) -> Silent Act.
 4. **Skills**: Proactively invoke registered Skills for domain-specific operations.
 5. **Bash**: Use POSIX-compliant syntax; avoid Shell-specific features.
+6. **PowerShell**: Use PowerShell 7+ syntax on Windows; use `$null`, `$env:VAR`, backtick for line continuation.
 </system_reminder>
