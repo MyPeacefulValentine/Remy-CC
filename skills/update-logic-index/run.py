@@ -176,16 +176,6 @@ class LogicIndexer:
                     return True
         return False
 
-    def _match_file_to_layer(self, rel_path):
-        """Match a file path to a layer by directory segment patterns. Returns layer name or 'Core'."""
-        segments = rel_path.replace("\\", "/").lower().split("/")
-        for layer_def in self.layers:
-            for segment in segments:
-                for pattern in layer_def["patterns"]:
-                    if segment == pattern or segment == pattern + "s":
-                        return layer_def["name"]
-        return "Core"
-
     def _load_cache(self):
         cache_path = os.path.join(self.root_dir, CACHE_FILE)
         if os.path.exists(cache_path):
@@ -450,7 +440,7 @@ class LogicIndexer:
                 continue
             if self._is_path_excluded(path):
                 continue
-            layer = self._match_file_to_layer(path)
+            layer = data.get("layer", "Core")
             layer_groups.setdefault(layer, []).append((path, data))
 
         layer_order = [ld["name"] for ld in self.layers] + ["Core"]
