@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Output schema for semantic audit agents. Each agent returns an array of test quality findings.",
+  "type": "array",
+  "maxItems": 6,
+  "items": {
+    "type": "object",
+    "required": ["test_name", "issue", "category", "severity", "evidence"],
+    "properties": {
+      "test_name": {
+        "type": "string",
+        "description": "Name of the test function or block (e.g., 'test_load_policy_missing_file')"
+      },
+      "issue": {
+        "type": "string",
+        "description": "One-line description of the quality problem"
+      },
+      "category": {
+        "type": "string",
+        "enum": ["coverage_gap", "weak_assertion", "isolation_issue"],
+        "description": "Which audit angle identified this issue"
+      },
+      "severity": {
+        "type": "string",
+        "enum": ["critical", "warning", "info"],
+        "description": "critical = test is misleading, warning = test is weak, info = improvement opportunity"
+      },
+      "evidence": {
+        "type": "string",
+        "description": "Specific code line or pattern demonstrating the issue"
+      },
+      "suggestion": {
+        "type": "string",
+        "description": "Concrete improvement recommendation"
+      }
+    },
+    "additionalProperties": false
+  }
+}

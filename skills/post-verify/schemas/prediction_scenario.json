@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Output schema for defect prediction agents. Each agent returns an array of failure scenario candidates.",
+  "type": "array",
+  "maxItems": 6,
+  "items": {
+    "type": "object",
+    "required": ["symbol", "scenario", "category", "trigger_input", "expected_behavior", "priority"],
+    "properties": {
+      "symbol": {
+        "type": "string",
+        "description": "Target function or method name (e.g., 'load_policy' or 'MyClass.method')"
+      },
+      "scenario": {
+        "type": "string",
+        "description": "One-line description of the failure scenario"
+      },
+      "category": {
+        "type": "string",
+        "enum": ["input_boundary", "error_path", "state_interaction"],
+        "description": "Which prediction angle identified this scenario"
+      },
+      "trigger_input": {
+        "type": "string",
+        "description": "Concrete input values or state conditions that trigger the failure"
+      },
+      "expected_behavior": {
+        "type": "string",
+        "description": "What the code should do (correct behavior) when this scenario occurs"
+      },
+      "priority": {
+        "type": "string",
+        "enum": ["high", "medium", "low"],
+        "description": "high = data loss/crash risk, medium = incorrect output, low = suboptimal behavior"
+      }
+    },
+    "additionalProperties": false
+  }
+}

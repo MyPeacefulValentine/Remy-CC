@@ -1,14 +1,19 @@
 ---
 name: post-verify
-description: Use after code modification to discover/create tests, run them, assess coverage, and fix failures. Invoked explicitly by user.
-allowed-tools: Read, Edit, Write, Grep, Glob, Bash, AskUserQuestion
-argument-hint: "[target_files or changed_functions (optional)]"
+description: Use after code modification to discover/create tests, run them, assess coverage, and fix failures. Supports multi-angle defect prediction and semantic audit via parallel agents.
+allowed-tools: Read, Edit, Write, Grep, Glob, Bash, AskUserQuestion, Agent
+argument-hint: "[low|medium|high] [target_files or changed_functions (optional)]"
 disable-model-invocation: true
 ---
 
 # Post-Verify Protocol
 
 Post-implementation verification skill. Discovers existing tests, creates temporary tests when none exist, runs them, evaluates coverage and assertion quality, and drives a fix loop until all tests pass.
+
+Supports three effort levels for multi-angle analysis:
+- **low**: Skip prediction/semantic audit; direct test discovery and execution (fastest).
+- **medium** (default): 2 prediction angles + 1 semantic audit angle (3 parallel agents).
+- **high**: 3 prediction angles + 3 semantic audit angles (6 parallel agents).
 
 **Relationship to TDD**: TDD operates *before* implementation (RED→GREEN→REFACTOR). This skill operates *after* implementation to verify completed changes. They are complementary, not overlapping.
 
@@ -19,7 +24,15 @@ Post-implementation verification skill. Discovers existing tests, creates tempor
 | File | Purpose |
 | :--- | :--- |
 | `skills/post-verify/frameworks.json` | Test framework detection rules (Phase 2). User-extensible. |
-| `skills/post-verify/anti_patterns.json` | Assertion anti-pattern detection rules (Phase 6). User-extensible. |
+| `skills/post-verify/anti_patterns.json` | Assertion anti-pattern detection rules (Phase 6.1). User-extensible. |
+| `skills/post-verify/schemas/prediction_scenario.json` | Output schema for defect prediction agents (Phase 2.5). |
+| `skills/post-verify/schemas/audit_finding.json` | Output schema for semantic audit agents (Phase 6.2). |
+| `skills/post-verify/prompts/predict_input_boundary.md` | Prediction Angle A prompt template. |
+| `skills/post-verify/prompts/predict_error_path.md` | Prediction Angle B prompt template. |
+| `skills/post-verify/prompts/predict_state_interaction.md` | Prediction Angle C prompt template (high only). |
+| `skills/post-verify/prompts/audit_coverage_gap.md` | Audit Angle A prompt template. |
+| `skills/post-verify/prompts/audit_assertion_strength.md` | Audit Angle B prompt template (high only). |
+| `skills/post-verify/prompts/audit_test_isolation.md` | Audit Angle C prompt template (high only). |
 | `skills/post-verify/templates/test_python.py.j2` | Jinja2 template for temporary Python tests (Phase 3). |
 | `skills/post-verify/templates/test_javascript.js.j2` | Jinja2 template for temporary JavaScript tests (Phase 3). |
 | `skills/post-verify/templates/test_go.go.j2` | Jinja2 template for temporary Go tests (Phase 3). |
@@ -35,8 +48,24 @@ Post-implementation verification skill. Discovers existing tests, creates tempor
 | Environment Variable | Default | Description |
 | :--- | :--- | :--- |
 | `POST_VERIFY_MAX_RETRIES` | `-1` (unlimited) | Maximum test-fix iterations. `-1` = no limit. Positive integer = hard cap. |
+| `POST_VERIFY_EFFORT` | `medium` | Fallback effort level when not specified as argument. |
 
-Read `POST_VERIFY_MAX_RETRIES` from `os.environ` at the start of Phase 4. If the value is not parseable as an integer, treat as `-1`.
+### Argument Parsing
+
+```
+/post-verify [effort] [target_files_or_functions...]
+```
+
+1. If the first argument matches `low`, `medium`, or `high` (case-insensitive): use it as effort level, remaining args are targets.
+2. Otherwise: use `POST_VERIFY_EFFORT` env var (default `medium`), all args are targets.
+
+### Effort Level Matrix
+
+| Effort | Prediction Angles | Semantic Audit Angles | Total Agents |
+| :--- | :--- | :--- | :--- |
+| low | 0 (skip Phase 2.5) | 0 (regex only in Phase 6) | 0 |
+| medium | 2 (A: Input Boundary, B: Error Path) | 1 (A: Coverage Gap) | 3 |
+| high | 3 (A + B + C: State/Interaction) | 3 (A + B: Assertion Strength + C: Test Isolation) | 6 |
 
 ## Report Persistence
 
@@ -70,7 +99,7 @@ Load detection rules from `frameworks.json`. Each entry defines:
 
 Execute indicator checks for each framework entry in priority order. Stop at the first match.
 
-If no framework is detected and no test directories exist → proceed to Phase 3.
+If no framework is detected and no test directories exist → proceed to Phase 2.5 (or Phase 3 if effort=low).
 
 ### 2.2 Mapping Changes to Tests
 
@@ -85,18 +114,78 @@ For each item in `change_set`:
 
 ---
 
+## 2.5. Phase 2.5: Defect Prediction (Multi-Angle)
+
+**Trigger**: effort level is `medium` or `high`. Skip entirely when effort is `low`.
+
+**Goal**: Use parallel agents to identify failure scenarios from multiple independent perspectives, driving targeted test generation in Phase 3.
+
+### 2.5.1 Context Preparation
+
+Gather the following context for agent prompts:
+1. **Diff**: `git diff HEAD` output for the target files (or full source if no prior version).
+2. **Source**: Full source of each function in `change_set`.
+3. **Existing tests**: List of test function names discovered in Phase 2 (to avoid duplicating coverage).
+4. **Callers/callees** (optional): If `.claude/logic_index.json` exists, run `impact.py` and include the upstream/downstream summary.
+
+### 2.5.2 Agent Dispatch
+
+Read the prompt templates from `~/.claude/skills/post-verify/prompts/`:
+
+| Effort | Agents Launched (in parallel) |
+| :--- | :--- |
+| medium | `predict_input_boundary.md` (Angle A) + `predict_error_path.md` (Angle B) |
+| high | A + B + `predict_state_interaction.md` (Angle C) |
+
+For each angle, construct the Agent call:
+
+```
+Agent({
+  description: "Post-verify: [angle name]",
+  prompt: "[prompt template content]\n\n---\n\n## Provided Context\n\n### Diff\n```\n{diff}\n```\n\n### Source\n```\n{source}\n```\n\n### Existing Tests\n{test_names}\n\n### Caller/Callee Context\n{impact_summary}"
+})
+```
+
+Launch all agents **in parallel** (single message, multiple Agent tool calls).
+
+### 2.5.3 Result Processing
+
+1. **Parse**: Extract JSON array from each agent's response. If parsing fails (malformed JSON), discard that angle's results with a warning.
+2. **Merge**: Concatenate all scenario arrays.
+3. **Dedup**: For scenarios with the same `symbol` + similar `scenario` text (>80% token overlap), keep the one with higher priority.
+4. **Sort**: Order by priority (high → medium → low).
+5. **Record**: Store as `scenario_list` for Phase 3 consumption.
+
+**Output**: Print the merged scenario list as a table:
+
+| # | Symbol | Category | Scenario | Priority |
+| :--- | :--- | :--- | :--- | :--- |
+
+---
+
 ## 3. Phase 3: Test Creation (Conditional)
 
-**Trigger**: Any symbol in `change_set` has no existing test coverage.
+**Trigger**: Any symbol in `change_set` has no existing test coverage, OR `scenario_list` is non-empty.
 
-### 3.1 Placement Strategy (Mixed)
+### 3.1 Scenario-Driven Generation (when scenario_list available)
+
+When Phase 2.5 produced scenarios:
+1. For each scenario in `scenario_list`, generate a test targeting that specific failure condition.
+2. Test naming: `test_{symbol}_{category_short}_{scenario_slug}`
+   - `category_short`: `boundary`, `errpath`, `state`
+   - `scenario_slug`: 2-3 word kebab-case summary
+3. Use `trigger_input` as the test's input setup.
+4. Use `expected_behavior` to derive the assertion.
+5. `priority=high` scenarios are generated first.
+
+### 3.2 Placement Strategy (Mixed)
 
 | Condition | Location | Cleanup |
 | :--- | :--- | :--- |
 | Module importable without project-specific setup | `/tmp/_postverify_{timestamp}/` | Delete entire directory after Phase 7 |
 | Module requires project structure (relative imports, config files, fixtures) | Project directory: `_temp_postverify_test_{timestamp}.py` | Delete file after Phase 7 |
 
-### 3.2 Template-Based Generation
+### 3.3 Template-Based Generation
 
 Use `render.render_template()` to generate test files from the appropriate language template (`test_python.py.j2`, `test_javascript.js.j2`, `test_go.go.j2`). Populate the context dict with:
 
@@ -117,20 +206,20 @@ Use `render.render_template()` to generate test files from the appropriate langu
 
 If the target language has no matching template, generate tests directly via LLM (no template).
 
-### 3.3 Test Quality Requirements
+### 3.4 Test Quality Requirements
 
 Temporary tests MUST satisfy:
 
 - **One assertion per logical behavior**. No multi-behavior bundling.
 - **Test the public interface**, not internal state.
-- **Include at least**:
+- **Include at least** (when no scenario_list):
   - 1 happy-path case
   - 1 edge-case (empty input, boundary value, None/null)
   - 1 error-case (invalid input, expected exception)
 - **No mocks** unless the dependency is external I/O (network, filesystem, database). When mocking is unavoidable, mock at the boundary, not deep internals.
 - **Deterministic**. No random data without fixed seeds. No time-dependent assertions without freezing time.
 
-### 3.4 Test Naming Convention
+### 3.5 Test Naming Convention
 
 ```
 test_{function_name}_{scenario}_{expected_outcome}
@@ -170,7 +259,11 @@ Test fails
 
 **Rule**: When triage is ambiguous, report both hypotheses to the user via `AskUserQuestion` and let them decide. Do NOT guess.
 
-### 4.3 Fix Loop
+### 4.3 Prediction Accuracy Tracking
+
+When `scenario_list` exists: for each scenario-driven test that fails (revealing a real implementation issue), increment `prediction_confirmed` counter. This feeds into Phase 8 accuracy metrics.
+
+### 4.4 Fix Loop
 
 ```
 iteration = 0
@@ -225,11 +318,11 @@ If any symbol is below 80%:
 
 ---
 
-## 6. Phase 6: Assertion Quality Audit
+## 6. Phase 6: Quality Audit
 
 **Goal**: Verify that passing tests are testing meaningful behavior, not trivially true.
 
-### 6.1 Anti-Pattern Detection
+### 6.1 Regex Anti-Pattern Detection (Baseline — Always Runs)
 
 Load detection rules from `anti_patterns.json`. Each entry defines:
 - `id`, `name`, `severity` (`critical` / `warning` / `info`)
@@ -244,9 +337,38 @@ For each relevant test file:
 3. Apply `ast_scan` rules by reading the test file and analyzing structure.
 4. For rules with `negative_regex`: flag only if positive matches exist AND no negative matches exist.
 
-### 6.2 Report
+### 6.2 Semantic Audit Agents (Medium/High Only)
 
-Print findings. Critical anti-patterns MUST be fixed (following the same AskUser fix loop). Warnings are reported but not blocking.
+**Trigger**: effort level is `medium` or `high`. Skip when `low`.
+
+Read prompt templates from `~/.claude/skills/post-verify/prompts/`:
+
+| Effort | Agents Launched (in parallel) |
+| :--- | :--- |
+| medium | `audit_coverage_gap.md` (Angle A) |
+| high | A + `audit_assertion_strength.md` (Angle B) + `audit_test_isolation.md` (Angle C) |
+
+For each audit angle, construct the Agent call:
+
+```
+Agent({
+  description: "Post-verify audit: [angle name]",
+  prompt: "[prompt template content]\n\n---\n\n## Provided Context\n\n### Test Source\n```\n{test_code}\n```\n\n### Implementation Source\n```\n{impl_code}\n```\n\n### Test Results\n{pass_fail_summary}\n\n### Change Set\n{change_set_table}"
+})
+```
+
+Launch all audit agents **in parallel**.
+
+### 6.3 Result Merging
+
+1. **Parse** JSON from each audit agent response. Discard malformed results with a warning.
+2. **Merge** regex findings (6.1) and semantic findings (6.2) into a unified list.
+3. **Dedup**: If regex and semantic analysis flag the same test+line, keep the semantic version (richer context).
+4. **Sort**: critical → warning → info.
+
+### 6.4 Report and Fix
+
+Print findings table. Critical findings from either layer MUST be fixed (following the same AskUser fix loop as Phase 4). Warnings are reported but not blocking.
 
 ---
 
@@ -270,14 +392,20 @@ Populate the context dict:
 ```python
 {
     "project_name": "...",
+    "effort_level": "medium",
     "change_set": [{"file": "...", "symbol": "...", "type": "..."}],
     "coverage_map": [{"symbol": "...", "existing_count": N, "temp_count": N}],
+    "prediction_scenarios": [
+        {"symbol": "...", "scenario": "...", "category": "...", "priority": "...", "test_result": "PASS|FAIL"}
+    ],
+    "prediction_accuracy": {"total": N, "confirmed_by_test": M},
     "test_results": [{"name": "...", "status": "PASS/FAIL", "duration": "..."}],
     "passed": N,
     "total": N,
     "fix_iterations": N,
     "coverage_data": [{"symbol": "...", "branches": N, "covered": N, "percent": N, "status": "PASS/FAIL"}],
-    "audit_findings": [{"id": "AP-001", "pattern_name": "...", "severity": "...", "file": "...", "line": N}],
+    "audit_findings": [{"id": "...", "pattern_name": "...", "severity": "...", "file": "...", "line": N, "source": "regex|semantic"}],
+    "semantic_findings": [{"test_name": "...", "issue": "...", "category": "...", "severity": "...", "evidence": "...", "suggestion": "..."}],
     "final_status": "PASS / FAIL"
 }
 ```
@@ -287,11 +415,13 @@ Also print a condensed summary to stdout:
 ```
 Post-Verify Complete
 ====================
+Effort:         {effort_level}
 Change Set:     {N} symbols across {M} files
+Prediction:     {scenarios} scenarios identified, {confirmed}/{scenarios} confirmed by tests
 Tests:          {existing} existing, {created} temporary (cleaned)
 Results:        {passed}/{total} passed | Fix iterations: {iterations}
 Branch Coverage: {min}% - {max}% (threshold: 80%)
-Audit:          {critical} critical, {warning} warnings
+Audit:          {critical} critical, {warning} warnings ({regex_count} regex + {semantic_count} semantic)
 Status:         PASS / FAIL
 Report:         .claude/temp_test/report_{timestamp}.md
 ```
@@ -306,3 +436,5 @@ Report:         .claude/temp_test/report_{timestamp}.md
 4. **Never lower the coverage threshold**. 80% branch coverage is non-negotiable.
 5. **Never trust a passing test without auditing it** (Phase 6). A tautological test is worse than no test.
 6. **Clean separation**: This skill does not write permanent tests for the project unless the user explicitly requests it. All created tests are temporary by default.
+7. **Agent failure tolerance**: If an Agent call fails (permission denied, timeout, malformed response), log a warning and continue without that angle's results. Do NOT halt the entire workflow.
+8. **Effort=low backward compatibility**: When effort is `low`, the skill behaves identically to the pre-v2 version (no agents, no prediction, regex-only audit).

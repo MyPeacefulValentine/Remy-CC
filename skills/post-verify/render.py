@@ -80,6 +80,7 @@ def _render_report_fallback(ctx):
     lines.append("# Post-Verify Report")
     lines.append(f"> Generated: {ctx.get('timestamp', datetime.now().isoformat())}")
     lines.append(f"> Project: {ctx.get('project_name', 'unknown')}")
+    lines.append(f"> Effort: {ctx.get('effort_level', 'medium')}")
     lines.append("")
 
     lines.append("## Change Set")
@@ -89,6 +90,22 @@ def _render_report_fallback(ctx):
     for item in ctx.get("change_set", []):
         lines.append(f"| `{item['file']}` | `{item['symbol']}` | {item['type']} |")
     lines.append("")
+
+    predictions = ctx.get("prediction_scenarios", [])
+    if predictions:
+        lines.append("## Defect Prediction")
+        lines.append("")
+        accuracy = ctx.get("prediction_accuracy", {})
+        total_p = accuracy.get("total", len(predictions))
+        confirmed_p = accuracy.get("confirmed_by_test", 0)
+        lines.append(f"**Accuracy**: {confirmed_p}/{total_p} scenarios confirmed by test failures")
+        lines.append("")
+        lines.append("| Symbol | Category | Scenario | Priority | Test Result |")
+        lines.append("| :--- | :--- | :--- | :--- | :--- |")
+        for p in predictions:
+            lines.append(f"| `{p['symbol']}` | {p['category']} | {p['scenario']} "
+                         f"| {p['priority']} | {p.get('test_result', 'N/A')} |")
+        lines.append("")
 
     lines.append("## Test Discovery")
     lines.append("")
@@ -122,14 +139,25 @@ def _render_report_fallback(ctx):
     lines.append("")
     findings = ctx.get("audit_findings", [])
     if findings:
-        lines.append("| ID | Pattern | Severity | File | Line |")
-        lines.append("| :--- | :--- | :--- | :--- | :--- |")
+        lines.append("| ID | Pattern | Severity | File | Line | Source |")
+        lines.append("| :--- | :--- | :--- | :--- | :--- | :--- |")
         for a in findings:
             lines.append(f"| {a['id']} | {a['pattern_name']} | {a['severity']} "
-                         f"| `{a['file']}` | {a['line']} |")
+                         f"| `{a['file']}` | {a['line']} | {a.get('source', 'regex')} |")
     else:
         lines.append("No anti-patterns detected.")
     lines.append("")
+
+    semantic = ctx.get("semantic_findings", [])
+    if semantic:
+        lines.append("## Semantic Audit")
+        lines.append("")
+        lines.append("| Test | Category | Issue | Severity | Suggestion |")
+        lines.append("| :--- | :--- | :--- | :--- | :--- |")
+        for s in semantic:
+            lines.append(f"| `{s['test_name']}` | {s['category']} | {s['issue']} "
+                         f"| {s['severity']} | {s.get('suggestion', '')} |")
+        lines.append("")
 
     lines.append(f"## Status: {ctx.get('final_status', 'UNKNOWN')}")
     return "\n".join(lines) + "\n"

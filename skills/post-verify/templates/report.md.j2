@@ -1,6 +1,7 @@
 # Post-Verify Report
 > Generated: {{ timestamp }}
 > Project: {{ project_name }}
+> Effort: {{ effort_level | default("medium") }}
 
 ## Change Set
 
@@ -10,6 +11,18 @@
 | `{{ item.file }}` | `{{ item.symbol }}` | {{ item.type }} |
 {% endfor %}
 
+{% if prediction_scenarios %}
+## Defect Prediction
+
+**Accuracy**: {{ prediction_accuracy.confirmed_by_test | default(0) }}/{{ prediction_accuracy.total | default(prediction_scenarios | length) }} scenarios confirmed by test failures
+
+| Symbol | Category | Scenario | Priority | Test Result |
+| :--- | :--- | :--- | :--- | :--- |
+{% for p in prediction_scenarios %}
+| `{{ p.symbol }}` | {{ p.category }} | {{ p.scenario }} | {{ p.priority }} | {{ p.test_result | default("N/A") }} |
+{% endfor %}
+
+{% endif %}
 ## Test Discovery
 
 | Symbol | Existing Tests | Temporary Tests |
@@ -38,13 +51,24 @@
 
 ## Assertion Quality Audit
 
-| ID | Pattern | Severity | File | Line |
-| :--- | :--- | :--- | :--- | :--- |
+{% if audit_findings %}
+| ID | Pattern | Severity | File | Line | Source |
+| :--- | :--- | :--- | :--- | :--- | :--- |
 {% for a in audit_findings %}
-| {{ a.id }} | {{ a.pattern_name }} | {{ a.severity }} | `{{ a.file }}` | {{ a.line }} |
+| {{ a.id }} | {{ a.pattern_name }} | {{ a.severity }} | `{{ a.file }}` | {{ a.line }} | {{ a.source | default("regex") }} |
 {% endfor %}
-{% if not audit_findings %}
+{% else %}
 No anti-patterns detected.
 {% endif %}
 
+{% if semantic_findings %}
+## Semantic Audit
+
+| Test | Category | Issue | Severity | Suggestion |
+| :--- | :--- | :--- | :--- | :--- |
+{% for s in semantic_findings %}
+| `{{ s.test_name }}` | {{ s.category }} | {{ s.issue }} | {{ s.severity }} | {{ s.suggestion | default("") }} |
+{% endfor %}
+
+{% endif %}
 ## Status: {{ final_status }}
