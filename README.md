@@ -78,9 +78,9 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 
 | Command | Purpose | Doc (Link) |
 | :--- | :--- | :--- |
-| `/deep-plan` | Deep analysis and planning before writing code — review architecture risks, resolve ambiguities | [📖](skills/deep-plan/README.md) |
+| `/deep-plan` | Deep analysis and planning before writing code — 5-table audit with reuse scan and verification plan | [📖](skills/deep-plan/README.md) |
 | `/code-modification` | Apply code changes with dependency tracing and integrity checks | [📖](skills/code-modification/README.md) |
-| `/post-verify` | Discover/create tests, run them, evaluate branch coverage and assertion quality | [📖](skills/post-verify/README.md) |
+| `/post-verify` | Multi-angle defect prediction + test execution + semantic quality audit (effort: low/medium/high) | [📖](skills/post-verify/README.md) |
 | `/log-change` | Generate a structured changelog recording modifications and impact | [📖](skills/log-change/README.md) |
 | `/auditor` | Verify consistency between plan, changelog, and actual code | [📖](skills/auditor/README.md) |
 | `/milestone` | Generate a history report and update the project timeline | [📖](skills/milestone/README.md) |
@@ -95,9 +95,9 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 A full development cycle follows this sequence. Not every step is required for every change — scale to the task complexity.
 
 0. **`/update-logic-index`** (**initialization**): Generate the semantic code index for your project (requires LLM API configured during installation). After the first full scan, subsequent invocations update incrementally. ([doc](skills/update-logic-index/README.md))
-1. **`/deep-plan`** — Review architecture risks. Resolve ambiguities. Outputs a task packet. ([doc](skills/deep-plan/README.md))
+1. **`/deep-plan`** — Review architecture risks. Resolve ambiguities. 5-table audit with verification plan. Outputs a task packet. ([doc](skills/deep-plan/README.md))
 2. **`/code-modification [packet]`** — Apply changes with dependency tracing. Optionally constrained by the task packet. ([doc](skills/code-modification/README.md))
-3. **`/post-verify`** — Run tests, evaluate branch coverage (≥ 80%), audit assertion quality. ([doc](skills/post-verify/README.md))
+3. **`/post-verify`** — Multi-angle defect prediction, test execution, branch coverage (≥ 80%), semantic quality audit. Supports effort levels. ([doc](skills/post-verify/README.md))
 4. **`/log-change`** — Generate a structured changelog recording what changed and why. ([doc](skills/log-change/README.md))
 5. **`/rewind`** — (Claude Code built-in) Restore conversation context to the pre-modification checkpoint, removing implementation bias.
 6. **`/auditor [log] [packet]`** — Verify consistency between plan, changelog, and code. ([doc](skills/auditor/README.md))

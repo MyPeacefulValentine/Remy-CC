@@ -78,9 +78,9 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 | 命令 | 功能 | 文档（链接） |
 | :--- | :--- | :--- |
-| `/deep-plan` | 在编写代码前深度分析并制定方案，排查架构风险，消除歧义 | [📖](skills/deep-plan/README_zh.md) |
+| `/deep-plan` | 在编写代码前深度分析并制定方案——五表审计含复用扫描和验证计划 | [📖](skills/deep-plan/README_zh.md) |
 | `/code-modification` | 带依赖追踪和完整性检查的代码修改 | [📖](skills/code-modification/README_zh.md) |
-| `/post-verify` | 发现/创建测试、运行测试、评估分支覆盖率和断言质量 | [📖](skills/post-verify/README_zh.md) |
+| `/post-verify` | 多角度缺陷预判 + 测试执行 + 语义质量审计（支持 low/medium/high 级别） | [📖](skills/post-verify/README_zh.md) |
 | `/log-change` | 生成结构化变更日志，记录修改内容和影响 | [📖](skills/log-change/README_zh.md) |
 | `/auditor` | 验证计划、变更日志与实际代码之间的一致性 | [📖](skills/auditor/README_zh.md) |
 | `/milestone` | 生成历史报告并更新项目时间线 | [📖](skills/milestone/README_zh.md) |
@@ -95,9 +95,9 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 一次完整的开发循环按以下顺序进行。并非每次修改都需要全部步骤——根据任务复杂度选择。
 
 0. **`/update-logic-index`**（**初始化**）：为项目生成语义代码索引（需要安装时配置的 LLM API）。在第一次全量扫描后，后续调用此指令会增量更新索引。（[文档](skills/update-logic-index/README_zh.md)）
-1. **`/deep-plan`** — 审查架构风险，消除歧义，输出任务包。（[文档](skills/deep-plan/README_zh.md)）
+1. **`/deep-plan`** — 审查架构风险，消除歧义，五表审计含验证计划，输出任务包。（[文档](skills/deep-plan/README_zh.md)）
 2. **`/code-modification [任务包]`** — 带依赖追踪的代码修改。可选使用任务包作为变更约束。（[文档](skills/code-modification/README_zh.md)）
-3. **`/post-verify`** — 运行测试，评估分支覆盖率（≥ 80%），审计断言质量。（[文档](skills/post-verify/README_zh.md)）
+3. **`/post-verify`** — 多角度缺陷预判、测试执行、分支覆盖率（≥ 80%）、语义质量审计。支持努力级别。（[文档](skills/post-verify/README_zh.md)）
 4. **`/log-change`** — 生成结构化变更日志，记录变更内容和原因。（[文档](skills/log-change/README_zh.md)）
 5. **`/rewind`** — （Claude Code 内置命令）将对话上下文回退到修改前的检查点，消除实现偏见。
 6. **`/auditor [日志] [任务包]`** — 校验计划、变更日志与代码之间的一致性。（[文档](skills/auditor/README_zh.md)）

@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Deep Plan Audit Output",
   "type": "object",
-  "required": ["ambiguity_resolution", "pbt_specs", "logic_audit", "physical_changes"],
+  "required": ["ambiguity_resolution", "pbt_specs", "logic_audit", "physical_changes", "verification_plan"],
   "properties": {
     "ambiguity_resolution": {
       "type": "array",
@@ -70,6 +70,20 @@
           "summary": { "type": "string", "description": "修改目的与内容简述" },
           "minimalist_check": { "type": "string", "description": "最小化验证" },
           "ripple_effect": { "type": "string", "description": "涟漪效应" }
+        }
+      }
+    },
+    "verification_plan": {
+      "type": "array",
+      "description": "Table 5: 验证计划 (Verification Plan)",
+      "items": {
+        "type": "object",
+        "required": ["step", "method", "expected_result", "rollback_condition"],
+        "properties": {
+          "step": { "type": "string", "description": "验证步骤名称" },
+          "method": { "type": "string", "description": "具体验证命令或操作" },
+          "expected_result": { "type": "string", "description": "预期结果" },
+          "rollback_condition": { "type": "string", "description": "失败时的回退条件" }
         }
       }
     }

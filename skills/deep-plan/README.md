@@ -13,13 +13,19 @@ The AI first checks whether `.claude/logic_index.json` exists:
 
 In both paths, the AI must read all relevant source code definitions. Guessing or planning based on incomplete information is prohibited.
 
+A **reuse scan** is performed: for any planned new function or utility, the project is searched for existing implementations with similar names or purposes. If a reusable function exists, the plan references it rather than proposing new code.
+
 ### 2. Interactive Ambiguity Resolution (Loop)
 
 If multiple technical paths exist (e.g., Regex vs AST, Redis vs in-memory), the AI **must** pause and use `AskUserQuestion` (language follows `REMY_LANG`) to ask the user. Upon receiving an answer, the AI must search for related code before proceeding. This loop repeats until all "TBD" items are converted to "Fixed" constraints.
 
-### 3. Strict Audit (4 Tables)
+### 2.5. Plan-Code Alignment Check
 
-Once ambiguities are resolved, the AI loads the report template from `audit_template.md` and generates four tables:
+Before generating the final tables, the AI re-reads target function signatures to confirm no concurrent external modifications invalidated the plan's assumptions. If a contradiction is detected, the ambiguity resolution loop is re-entered.
+
+### 3. Strict Audit (5 Tables)
+
+Once ambiguities are resolved, the AI loads the report template from `audit_template.md` and generates five tables:
 
 | Table | Purpose |
 | :--- | :--- |
@@ -27,10 +33,11 @@ Once ambiguities are resolved, the AI loads the report template from `audit_temp
 | PBT Property Specification | Defines mathematical invariants (idempotency, reversibility, etc.) to guide test case design. |
 | Logic & Contract Audit | Checks data-flow consistency, complexity (Big-O), concurrency risks, and system side effects. |
 | Physical Change Simulation | Lists every file, function, and operation type to be modified, with ripple effect estimates. |
+| Verification Plan | Defines how to verify the implementation end-to-end after execution, with rollback conditions. |
 
 ### 4. Evidence Packet Generation
 
-After the 4 tables, the AI writes an `AgentTaskPacketLite` JSON file to `.claude/temp_task/task_{TIMESTAMP}.json`. This packet contains:
+After the 5 tables, the AI writes an `AgentTaskPacketLite` JSON file to `.claude/temp_task/task_{TIMESTAMP}.json`. This packet contains:
 
 - **Evidence chain**: Verbatim excerpts from every file read during the audit.
 - **Proposed changes**: File-level operations mapped to evidence references.

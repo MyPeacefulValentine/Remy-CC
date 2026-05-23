@@ -45,3 +45,14 @@ You must output your analysis in the following **four** Markdown tables in this 
 | 文件路径 | 定位 | 操作 | 简述 | 最小化验证 | 涟漪效应 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `path/to/file` | `func_name` | Modify | 增加重试逻辑 | ✅ 仅修改目标函数 | 无 |
+
+### ✅ Table 5: Verification Plan (验证计划)
+
+*   **Goal**: Define how to verify the implementation is correct after execution.
+*   **Scope**: Each entry corresponds to one or more changes from Table 4.
+
+| 验证步骤 | 方法 | 预期结果 | 回退条件 |
+| :--- | :--- | :--- | :--- |
+| *Example: Unit test* | `pytest tests/test_auth.py -v` | All tests pass | Revert commit |
+| *Example: Integration* | Manual invocation of modified endpoint | Response matches Table 2 invariant | Mark as partial implementation |
+| *Example: Regression* | Run full test suite | No new failures | Investigate before proceeding |

@@ -46,6 +46,7 @@ Before saturating context, check whether structured call graph data is available
     1.  **Self-Correction**: Ask "Do I have the *source definition* of every dependency involved?"
     2.  **Recursive Read**: If you only see usages (e.g., `db.connect()`), you MUST read the definition (e.g., `class DBConnection`).
     3.  **No Hallucinations**: You are FORBIDDEN from assuming implementation details without evidence.
+    4.  **Reuse Scan**: For any planned new function or utility, `Grep` the project for existing implementations with similar names or purposes. If a reusable function exists, the plan MUST reference it (Modify/extend) rather than proposing a new one.
 
 After completing Step 1, proceed to **Step 2: Recursive Ambiguity Elimination**.
 
@@ -61,7 +62,7 @@ You MUST execute the following loop until NO ambiguities remain:
 
 1.  **Scan**: Identify current architectural decision points based on *saturated* context.
 2.  **Check**: Are there unresolved ambiguities?
-    *   **NO**: Break loop and proceed to "Step 3: Finalize".
+    *   **NO**: Break loop and proceed to "Step 2.5: Plan-Code Alignment Check".
     *   **YES**: Continue to next sub-step.
 3.  **Ask**: Use `AskUserQuestion` to resolve *current layer* ambiguities.
     *   **Multi-Question Batching**: Present all currently visible ambiguities.
@@ -73,6 +74,15 @@ You MUST execute the following loop until NO ambiguities remain:
     *   **Read**: You **MUST** read any newly discovered configuration/utility files.
     *   **Blocker**: Do NOT proceed to Step 5 until these new tool outputs are visible in the context.
 5.  **Repeat**: Go back to sub-step 1.
+
+**Step 2.5: Plan-Code Alignment Check**
+Before generating the final tables, verify that your plan assumptions still match the code:
+1.  For each file you intend to modify (future Table 4 targets), `Read` the target function's current signature and first 5 lines of body.
+2.  Confirm:
+    *   Function signatures have not changed since Step 1 reads (no concurrent external modification).
+    *   Constraints locked in Table 1 do not contradict the current code state.
+3.  If a contradiction is found: return to **Step 2** and re-resolve the affected ambiguity.
+4.  If no contradictions: proceed to **Step 3: Finalize**.
 
 **Step 3: Finalize (Load Templates)**
 Only when the loop terminates (ZERO ambiguities remain):
@@ -98,7 +108,7 @@ You MUST read `~/.claude/skills/deep-plan/output_schema.json` (if available) to 
 
 ## 5.5 Evidence Packet Generation (Mandatory)
 
-After generating the 4 analysis tables (Section 3), you MUST produce and write an AgentTaskPacketLite JSON file before the stop prompt. This packet is the executable contract for `/code-modification`.
+After generating the 5 analysis tables (Section 3), you MUST produce and write an AgentTaskPacketLite JSON file before the stop prompt. This packet is the executable contract for `/code-modification`.
 
 **Steps (execute in order):**
 
