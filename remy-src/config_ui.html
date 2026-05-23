@@ -5,59 +5,76 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Remy Configuration</title>
 <style>
+:root{--c-pri:#6366f1;--c-pri-h:#4f46e5;--c-pri-a:#4338ca;--c-pri-ring:rgba(99,102,241,.1);--c-pri-shadow:rgba(99,102,241,.3);--c-bg:#f4f5f7;--c-srf:#fff;--c-bdr:#e5e7eb;--c-bdr-h:#d1d5db;--c-txt:#1a1a2e;--c-txt2:#374151;--c-txt3:#6b7280;--c-txt4:#9ca3af;--c-ok-bg:#ecfdf5;--c-ok-txt:#065f46;--c-ok-bdr:#a7f3d0;--c-err-bg:#fef2f2;--c-err-txt:#991b1b;--c-err-bdr:#fca5a5;--c-warn-bg:#fffbeb;--c-warn-txt:#92400e;--c-warn-bdr:#fde68a}
+body.theme-project{--c-pri:#059669;--c-pri-h:#047857;--c-pri-a:#065f46;--c-pri-ring:rgba(5,150,105,.1);--c-pri-shadow:rgba(5,150,105,.3)}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#f4f5f7;color:#1a1a2e;line-height:1.6;--accent:#6366f1;--accent-hover:#4f46e5;--accent-active:#4338ca;--accent-ring:rgba(99,102,241,.1)}
-body.theme-project{--accent:#059669;--accent-hover:#047857;--accent-active:#065f46;--accent-ring:rgba(5,150,105,.1)}
-#app{max-width:820px;margin:0 auto;padding:32px 20px 64px}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--c-bg);color:var(--c-txt);line-height:1.6}
+#app{max-width:820px;margin:0 auto;padding:32px 20px 100px}
 header{margin-bottom:28px;display:flex;justify-content:space-between;align-items:flex-start}
 .header-left{flex:1}
 h1{font-size:22px;font-weight:700;margin-bottom:4px}
-.subtitle{font-size:13px;color:#6b7280;word-break:break-all}
+.subtitle{font-size:13px;color:var(--c-txt3);word-break:break-all}
 .header-actions{display:flex;gap:6px;margin-top:2px}
-.btn-lang,.btn-mode-tag{padding:6px 14px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;color:#374151;white-space:nowrap;transition:background .15s}
-.btn-lang:hover{background:#f3f4f6}
-.btn-mode-tag{cursor:default;font-weight:600;color:var(--accent);border-color:var(--accent)}
-.group{background:#fff;border-radius:10px;margin-bottom:14px;border:1px solid #e5e7eb;overflow:hidden}
+.btn-lang,.btn-mode-tag{padding:6px 14px;border:1px solid var(--c-bdr-h);border-radius:6px;background:var(--c-srf);cursor:pointer;font-size:13px;color:var(--c-txt2);white-space:nowrap;transition:all .15s}
+.btn-lang:hover{background:#f3f4f6;transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.btn-lang:active{transform:translateY(0);box-shadow:none}
+.btn-mode-tag{cursor:default;font-weight:600;color:var(--c-pri);border-color:var(--c-pri)}
+.group{background:var(--c-srf);border-radius:10px;margin-bottom:14px;border:1px solid var(--c-bdr);overflow:hidden}
 .group-header{padding:14px 18px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:600;user-select:none;transition:background .15s}
 .group-header:hover{background:#f9fafb}
-.group-header .arrow{font-size:12px;color:#9ca3af;transition:transform .2s}
+.group-header .arrow{font-size:12px;color:var(--c-txt4);transition:transform .2s}
 .group-header .arrow.collapsed{transform:rotate(-90deg)}
-.group-header .badge{font-size:11px;font-weight:400;color:#6b7280;margin-left:8px}
+.group-header .badge{font-size:11px;font-weight:400;color:var(--c-txt3);margin-left:8px}
+.group-header .gicon{margin-right:8px;font-size:16px}
 .group-body{padding:4px 18px 18px;display:block}
 .group-body.hidden{display:none}
 .param{margin-bottom:16px}
 .param:last-child{margin-bottom:0}
 .param-top{display:flex;align-items:center;gap:8px;margin-bottom:2px}
-.param-label{font-size:13px;font-weight:600;color:#374151}
+.param-label{font-size:13px;font-weight:600;color:var(--c-txt2)}
 .param-label code{font-family:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;font-size:12.5px;background:#f3f4f6;padding:1px 5px;border-radius:3px}
-.param-desc{font-size:12px;color:#6b7280;margin-bottom:6px}
-.param input,.param select{width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;font-family:inherit;background:#fff;transition:border-color .15s}
-.param input:focus,.param select:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-ring)}
-.param input:disabled,.param select:disabled{background:#f3f4f6;color:#9ca3af;cursor:not-allowed}
+.param-desc{font-size:12px;color:var(--c-txt3);margin-bottom:6px}
+.param input,.param select{width:100%;padding:8px 10px;border:1px solid var(--c-bdr-h);border-radius:6px;font-size:14px;font-family:inherit;background:var(--c-srf);transition:border-color .15s,box-shadow .15s}
+.param input:focus,.param select:focus{border-color:var(--c-pri);outline:none;box-shadow:0 0 0 3px var(--c-pri-ring)}
+.param input:disabled,.param select:disabled{background:#f3f4f6;color:var(--c-txt4);cursor:not-allowed}
 .param input[type=number]{appearance:textfield}
 .param input[type=number]::-webkit-inner-spin-button{opacity:1}
 .pw-wrap{display:flex;gap:6px}
 .pw-wrap input{flex:1}
-.btn-toggle{padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:12px;white-space:nowrap;color:#374151}
-.btn-toggle:hover{background:#f3f4f6}
-.toggle{position:relative;width:36px;height:20px;background:#d1d5db;border-radius:10px;cursor:pointer;transition:background .2s;flex-shrink:0}
-.toggle.active{background:var(--accent)}
+.btn-toggle{padding:8px 12px;border:1px solid var(--c-bdr-h);border-radius:6px;background:var(--c-srf);cursor:pointer;font-size:12px;white-space:nowrap;color:var(--c-txt2);transition:all .15s}
+.btn-toggle:hover{background:#f3f4f6;transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.btn-toggle:active{transform:translateY(0);box-shadow:none}
+.toggle{position:relative;width:36px;height:20px;background:var(--c-bdr-h);border-radius:10px;cursor:pointer;transition:background .2s;flex-shrink:0}
+.toggle.active{background:var(--c-pri)}
 .toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .2s}
 .toggle.active::after{transform:translateX(16px)}
-.toggle-label{font-size:11px;color:#9ca3af;white-space:nowrap}
-.actions{margin-top:28px;display:flex;gap:10px;flex-wrap:wrap}
-.btn-save{background:var(--accent);color:#fff;border:none;padding:10px 28px;border-radius:20px;cursor:pointer;font-size:14px;font-weight:500;box-shadow:0 2px 8px rgba(99,102,241,.3);transition:all .15s}
-.btn-save:hover{background:var(--accent-hover);transform:translateY(-1px);box-shadow:0 4px 12px rgba(99,102,241,.35)}
-.btn-save:active{background:var(--accent-active);transform:translateY(0);box-shadow:none}
-.btn-reset{background:#fff;border:1px solid #d1d5db;padding:10px 20px;border-radius:20px;cursor:pointer;font-size:14px;color:#374151;transition:all .15s}
-.btn-reset:hover{background:#f3f4f6;transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.08)}
-.btn-reset:active{transform:translateY(0);box-shadow:none}
+.toggle-label{font-size:11px;color:var(--c-txt4);white-space:nowrap}
+.footer{position:fixed;bottom:0;left:0;right:0;background:var(--c-srf);border-top:1px solid var(--c-bdr);padding:12px 24px;display:flex;gap:10px;align-items:center;justify-content:center;box-shadow:0 -2px 8px rgba(0,0,0,.04);z-index:100}
+.btn{padding:9px 22px;border-radius:20px;cursor:pointer;font-size:13px;font-weight:500;border:1px solid var(--c-bdr-h);background:var(--c-srf);color:var(--c-txt2);transition:all .15s}
+.btn:hover{background:#f3f4f6;transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.btn:active{transform:translateY(0);box-shadow:none}
+.btn-p{background:var(--c-pri);color:#fff;border-color:var(--c-pri);box-shadow:0 2px 8px var(--c-pri-shadow)}
+.btn-p:hover{background:var(--c-pri-h);transform:translateY(-1px);box-shadow:0 4px 12px var(--c-pri-shadow)}
+.btn-p:active{background:var(--c-pri-a);transform:translateY(0);box-shadow:none}
+.btn-w{color:#dc2626;border-color:#fca5a5}
+.btn-w:hover{background:#fef2f2;transform:translateY(-1px);box-shadow:0 2px 6px rgba(220,38,38,.1)}
 .status{margin-top:16px;padding:12px 16px;border-radius:8px;font-size:13px;display:none;animation:fadeIn .2s}
-.status.success{display:block;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
-.status.error{display:block;background:#fef2f2;color:#991b1b;border:1px solid #fca5a5}
-.unknown-warn{margin-top:12px;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e}
+.status.success{display:block;background:var(--c-ok-bg);color:var(--c-ok-txt);border:1px solid var(--c-ok-bdr)}
+.status.error{display:block;background:var(--c-err-bg);color:var(--c-err-txt);border:1px solid var(--c-err-bdr)}
+.unknown-warn{margin-top:12px;padding:10px 14px;background:var(--c-warn-bg);border:1px solid var(--c-warn-bdr);border-radius:8px;font-size:12px;color:var(--c-warn-txt)}
+.modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.3);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;opacity:0;pointer-events:none;transition:opacity .2s}
+.modal-ov.show{opacity:1;pointer-events:auto}
+.modal{background:var(--c-srf);border-radius:12px;padding:24px;width:360px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.15);transform:scale(.95);transition:transform .2s}
+.modal-ov.show .modal{transform:scale(1)}
+.modal h2{font-size:15px;font-weight:600;margin-bottom:12px;color:var(--c-txt)}
+.modal p{font-size:13px;color:var(--c-txt3);margin-bottom:16px;line-height:1.5}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end}
+.modal-btns .btn{padding:7px 16px;font-size:12px}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#94a3b8}
 @keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
-@media(max-width:600px){#app{padding:16px 12px 48px}.actions{flex-direction:column}.btn-save,.btn-reset{width:100%;text-align:center}header{flex-direction:column;gap:8px}}
+@media(max-width:600px){#app{padding:16px 12px 120px}.footer{flex-wrap:wrap;justify-content:center}header{flex-direction:column;gap:8px}}
 </style>
 </head>
 <body>
@@ -74,20 +91,30 @@ h1{font-size:22px;font-weight:700;margin-bottom:4px}
   </header>
   <div id="groups"></div>
   <div id="unknown-area"></div>
-  <div class="actions">
-    <button class="btn-save" id="save-btn">Save</button>
-    <button class="btn-reset" id="reset-btn">Reset to Defaults</button>
-  </div>
   <div class="status" id="status"></div>
+</div>
+<div class="footer">
+  <button class="btn btn-p" id="save-btn" title="">Save</button>
+  <button class="btn" id="reset-btn" title="">Reset</button>
+  <button class="btn btn-w" id="exit-btn" title="">Exit</button>
+</div>
+<div class="modal-ov" id="modal-ov">
+  <div class="modal" id="modal-box">
+    <h2 id="modal-title"></h2>
+    <p id="modal-msg"></p>
+    <div class="modal-btns" id="modal-btns"></div>
+  </div>
 </div>
 <script>
 (function(){
 var config=null,lang="en",dirty=false,overrides={};
 
+var ICONS={llm_api:"🧠",impact:"📊",injection:"📥",timeline:"📅",post_verify:"✅",system:"⚙️",claude_code:"🤖"};
+
 var TEXT={
   en:{title:"Remy Configuration",titleProject:"Remy Project Configuration",
       subtitle:"Editing: ~/.claude/settings.json",
-      save:"✓ Save",reset:"↺ Reset to Defaults",langBtn:"中文",
+      save:"✓ Save",reset:"↺ Reset to Defaults",exit:"✕ Exit",langBtn:"中文",
       modeGlobal:"Global",modeProject:"Project",
       saved:"Settings saved. Backup written to .bak.",
       resetDone:"Form reset to defaults (not yet saved).",
@@ -96,10 +123,20 @@ var TEXT={
       show:"Show",hide:"Hide",
       inherit:"Inherit global",custom:"Custom",
       validationInt:" must be a number.",
-      validationMin:" minimum value is ",validationMax:" maximum value is "},
+      validationMin:" minimum value is ",validationMax:" maximum value is ",
+      tipSave:"Save settings to disk (Ctrl+S)",
+      tipReset:"Reset all parameters to default values",
+      tipExit:"Close configuration UI",
+      modalResetTitle:"Reset to Defaults",
+      modalResetMsg:"This will reset all parameters to their default values. Unsaved changes will be lost.",
+      modalResetConfirm:"Reset",modalResetCancel:"Cancel",
+      modalExitTitle:"Unsaved Changes",
+      modalExitMsg:"Current settings have unsaved changes. Save before exiting?",
+      modalExitSave:"Save & Exit",modalExitDiscard:"Discard",modalExitCancel:"Cancel",
+      closed:"Server closed. You may close this tab."},
   "zh-CN":{title:"Remy 配置",titleProject:"Remy 项目配置",
       subtitle:"编辑: ~/.claude/settings.json",
-      save:"✓ 保存",reset:"↺ 恢复默认值",langBtn:"English",
+      save:"✓ 保存",reset:"↺ 恢复默认",exit:"✕ 退出",langBtn:"English",
       modeGlobal:"全局",modeProject:"项目",
       saved:"设置已保存。备份已写入 .bak。",
       resetDone:"表单已恢复默认值（尚未保存）。",
@@ -108,7 +145,17 @@ var TEXT={
       show:"显示",hide:"隐藏",
       inherit:"继承全局",custom:"自定义",
       validationInt:" 必须为数字。",
-      validationMin:" 最小值为 ",validationMax:" 最大值为 "}
+      validationMin:" 最小值为 ",validationMax:" 最大值为 ",
+      tipSave:"保存设置到磁盘 (Ctrl+S)",
+      tipReset:"将所有参数重置为默认值",
+      tipExit:"关闭配置界面",
+      modalResetTitle:"恢复默认值",
+      modalResetMsg:"所有参数将恢复为默认值。未保存的修改将丢失。",
+      modalResetConfirm:"恢复",modalResetCancel:"取消",
+      modalExitTitle:"未保存的修改",
+      modalExitMsg:"当前设置已修改但未保存。是否先保存再退出？",
+      modalExitSave:"保存并退出",modalExitDiscard:"放弃修改",modalExitCancel:"取消",
+      closed:"服务已关闭，可关闭此标签页。"}
 };
 
 function t(key){return(TEXT[lang]||TEXT.en)[key]||(TEXT.en)[key]||key}
@@ -143,8 +190,12 @@ function render(){
   document.getElementById("title").textContent=document.title;
   document.getElementById("save-btn").textContent=t("save");
   document.getElementById("reset-btn").textContent=t("reset");
+  document.getElementById("exit-btn").textContent=t("exit");
   document.getElementById("lang-btn").textContent=t("langBtn");
   document.getElementById("mode-tag").textContent=proj?t("modeProject"):t("modeGlobal");
+  document.getElementById("save-btn").title=t("tipSave");
+  document.getElementById("reset-btn").title=t("tipReset");
+  document.getElementById("exit-btn").title=t("tipExit");
 
   if(proj){
     document.getElementById("subtitle").textContent=config.target||"";
@@ -163,7 +214,8 @@ function render(){
     var header=document.createElement("div");
     header.className="group-header";
     var label=lang==="zh-CN"?group.label_zh:group.label_en;
-    header.innerHTML='<span>'+label+'<span class="badge">'+params.length+'</span></span><span class="arrow">▾</span>';
+    var icon=ICONS[group.id]||"📋";
+    header.innerHTML='<span><span class="gicon">'+icon+'</span>'+label+'<span class="badge">'+params.length+'</span></span><span class="arrow">▾</span>';
     var body=document.createElement("div");
     body.className="group-body";
     header.addEventListener("click",function(){
@@ -363,7 +415,14 @@ function save(){
   }).catch(function(e){showStatus("error",t("error")+e.message)});
 }
 
-function resetDefaults(){
+function confirmReset(){
+  showModal(t("modalResetTitle"),t("modalResetMsg"),[
+    {text:t("modalResetCancel"),cls:"btn",action:hideModal},
+    {text:t("modalResetConfirm"),cls:"btn btn-w",action:function(){hideModal();doReset()}}
+  ]);
+}
+
+function doReset(){
   if(isProject()){
     overrides={};
     config.registry.forEach(function(param){
@@ -381,6 +440,57 @@ function resetDefaults(){
   showStatus("success",t("resetDone"));
 }
 
+function exitUI(){
+  if(dirty){
+    showModal(t("modalExitTitle"),t("modalExitMsg"),[
+      {text:t("modalExitCancel"),cls:"btn",action:hideModal},
+      {text:t("modalExitDiscard"),cls:"btn btn-w",action:function(){hideModal();doShutdown()}},
+      {text:t("modalExitSave"),cls:"btn btn-p",action:function(){hideModal();save();setTimeout(doShutdown,300)}}
+    ]);
+  }else{
+    doShutdown();
+  }
+}
+
+function doShutdown(){
+  fetch("/api/shutdown",{method:"POST"}).catch(function(){});
+  dirty=false;
+  var ov=document.getElementById("modal-ov");
+  var box=document.getElementById("modal-box");
+  document.getElementById("modal-title").textContent="";
+  document.getElementById("modal-msg").textContent="";
+  document.getElementById("modal-btns").innerHTML="";
+  box.querySelector("h2").textContent=t("closed");
+  box.querySelector("p").textContent="";
+  var btns=document.getElementById("modal-btns");
+  var okBtn=document.createElement("button");
+  okBtn.className="btn";
+  okBtn.textContent="OK";
+  okBtn.addEventListener("click",function(){window.close()});
+  btns.appendChild(okBtn);
+  ov.classList.add("show");
+  ov.onclick=null;
+}
+
+function showModal(title,msg,buttons){
+  document.getElementById("modal-title").textContent=title;
+  document.getElementById("modal-msg").textContent=msg;
+  var btnsEl=document.getElementById("modal-btns");
+  btnsEl.innerHTML="";
+  buttons.forEach(function(b){
+    var btn=document.createElement("button");
+    btn.className=b.cls;
+    btn.textContent=b.text;
+    btn.addEventListener("click",b.action);
+    btnsEl.appendChild(btn);
+  });
+  document.getElementById("modal-ov").classList.add("show");
+}
+
+function hideModal(){
+  document.getElementById("modal-ov").classList.remove("show");
+}
+
 function showStatus(type,msg){
   var el=document.getElementById("status");
   el.className="status "+type;
@@ -391,14 +501,18 @@ function showStatus(type,msg){
 }
 
 document.getElementById("save-btn").addEventListener("click",save);
-document.getElementById("reset-btn").addEventListener("click",resetDefaults);
+document.getElementById("reset-btn").addEventListener("click",confirmReset);
+document.getElementById("exit-btn").addEventListener("click",exitUI);
+document.getElementById("modal-ov").addEventListener("click",function(e){
+  if(e.target===this)hideModal();
+});
 document.getElementById("groups").addEventListener("input",function(){dirty=true});
 document.getElementById("groups").addEventListener("change",function(){dirty=true});
+document.addEventListener("keydown",function(e){
+  if((e.ctrlKey||e.metaKey)&&e.key==="s"){e.preventDefault();save()}
+});
 window.addEventListener("beforeunload",function(e){
   if(dirty){e.preventDefault();e.returnValue=""}
-});
-window.addEventListener("pagehide",function(){
-  navigator.sendBeacon("/api/shutdown","");
 });
 init();
 })();

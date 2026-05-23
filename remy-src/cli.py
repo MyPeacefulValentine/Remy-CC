@@ -61,6 +61,17 @@ def cmd_project(args):
     _load_config_ui().main(mode="project", target_path=str(project_dir))
 
 
+def cmd_config(args):
+    if args.path:
+        project_dir = Path(args.path).resolve()
+        if not project_dir.is_dir():
+            print("Error: directory not found: " + str(project_dir), file=sys.stderr)
+            sys.exit(1)
+        _load_config_ui().main(mode="project", target_path=str(project_dir))
+    else:
+        _load_config_ui().main()
+
+
 def _load_logic_scope_ui():
     script = Path(__file__).resolve().parent / "logic_scope_ui.py"
     if not script.exists():
@@ -395,11 +406,18 @@ def cmd_uninstall(args):
 
 
 def main():
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "ui":
+            sys.argv[1:2] = ["config"]
+        elif sys.argv[1] == "project" and len(sys.argv) > 2:
+            project_path = sys.argv[2]
+            sys.argv[1:3] = ["config", "--path", project_path]
+
     parser = argparse.ArgumentParser(prog="remy-cc", description="Remy - CLI for Claude Code configuration")
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("ui", help="Open global configuration UI in browser")
-    p_project = sub.add_parser("project", help="Open project-level configuration UI")
-    p_project.add_argument("path", help="Project root directory (absolute path)")
+    p_config = sub.add_parser("config", help="Open configuration UI (global by default, or --path for project)")
+    p_config.add_argument("--path", default=None, help="Project root directory (opens project-level config)")
+    p_config.add_argument("--global", dest="global_flag", action="store_true", help="Explicitly open global config")
     p_scope = sub.add_parser("logic-scope", help="Configure logic index injection scope")
     p_scope.add_argument("--path", default=None, help="Project root directory (default: current directory)")
     sub.add_parser("update", help="Fetch and install latest version from remote")
@@ -409,7 +427,7 @@ def main():
     sub.add_parser("version", help="Show installed version")
     args = parser.parse_args()
 
-    commands = {"ui": cmd_ui, "project": cmd_project, "logic-scope": cmd_logic_scope, "update": cmd_update, "uninstall": cmd_uninstall, "verify": cmd_verify, "version": cmd_version}
+    commands = {"config": cmd_config, "logic-scope": cmd_logic_scope, "update": cmd_update, "uninstall": cmd_uninstall, "verify": cmd_verify, "version": cmd_version}
     handler = commands.get(args.command)
     if handler:
         handler(args)
