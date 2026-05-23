@@ -333,6 +333,21 @@ def merge_settings(template: dict, target_path: Path, claude_home: Path, lang_ov
             else:
                 ext_entries.append(tpl_entry)
 
+        # --- upgrade cleanup: remove matcher-less entries superseded by matched ones ---
+        matched_commands = set()
+        for entry in ext_entries:
+            if entry.get("matcher"):
+                for hook in entry.get("hooks", []):
+                    matched_commands.add(hook.get("command", "").strip())
+        if matched_commands:
+            ext_hooks[event] = [
+                entry for entry in ext_entries
+                if entry.get("matcher") or not all(
+                    hook.get("command", "").strip() in matched_commands
+                    for hook in entry.get("hooks", [])
+                )
+            ]
+
     # --- permissions.allow: array dedup append ---
     tpl_perms = template.get("permissions", {}).get("allow", [])
     ext_perms = existing.setdefault("permissions", {}).setdefault("allow", [])
