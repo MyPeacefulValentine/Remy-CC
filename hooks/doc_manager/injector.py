@@ -19,6 +19,10 @@ CLAUDE_MD = "CLAUDE.md"
 SETTINGS_FILE = os.path.join(".claude", "settings.local.json")
 TIMELINE_FILE = os.path.join(".claude", "history", "timeline.md")
 TIMELINE_VIEW_FILE = os.path.join(".claude", "history", "timeline_view.md")
+LOGIC_TREE_FILE = os.path.join(".claude", "logic_tree.md")
+LOGIC_TREE_VIEW_FILE = os.path.join(".claude", "logic_tree_view.md")
+SELECTION_FILE = os.path.join(".claude", "logic_inject_selection.json")
+CACHE_FILE = os.path.join(".claude", "logic_index.json")
 
 # Registry of content to be injected.
 # Format: { "tag_name": "relative_file_path" }
@@ -29,7 +33,7 @@ TIMELINE_VIEW_FILE = os.path.join(".claude", "history", "timeline_view.md")
 REGISTRY = {
     "project_structure": ".claude/project_tree.md",
     "history_timeline": ".claude/history/timeline_view.md",
-    "logic_tree": ".claude/logic_tree.md"
+    "logic_tree": ".claude/logic_tree_view.md"
 }
 
 TAG_POLICY_MAP = {
@@ -206,6 +210,141 @@ def generate_timeline_view(cwd):
         f.writelines(filtered)
 
 
+def generate_logic_tree_view(cwd):
+    """Generates logic_tree_view.md by filtering logic_tree.md based on selection.json."""
+    tree_path = os.path.join(cwd, LOGIC_TREE_FILE)
+    view_path = os.path.join(cwd, LOGIC_TREE_VIEW_FILE)
+    selection_path = os.path.join(cwd, SELECTION_FILE)
+
+    if not os.path.exists(tree_path):
+        return
+
+    if not os.path.exists(selection_path):
+        with open(tree_path, "r", encoding="utf-8") as src:
+            content = src.read()
+        with open(view_path, "w", encoding="utf-8") as dst:
+            dst.write(content)
+        return
+
+    try:
+        with open(selection_path, "r", encoding="utf-8") as f:
+            selection = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        with open(tree_path, "r", encoding="utf-8") as src:
+            content = src.read()
+        with open(view_path, "w", encoding="utf-8") as dst:
+            dst.write(content)
+        return
+
+    selected_files = set(
+        p.replace("\\", "/") for p in selection.get("selected_files", [])
+    )
+
+    with open(tree_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    header_lines = []
+    layers = []
+    current_layer = None
+    current_file = None
+    in_header = True
+
+    for line in lines:
+        if line.startswith("## 🏗️"):
+            in_header = False
+            if current_file is not None and current_layer is not None:
+                current_layer["files"].append(current_file)
+                current_file = None
+            if current_layer is not None:
+                layers.append(current_layer)
+            current_layer = {"header": line, "files": []}
+            continue
+
+        if line.startswith("### 📄"):
+            in_header = False
+            if current_file is not None and current_layer is not None:
+                current_layer["files"].append(current_file)
+            if current_layer is None:
+                current_layer = {"header": "## 🏗️ Uncategorized\n", "files": []}
+            path_match = re.search(r"`([^`]+)`", line)
+            path = path_match.group(1).replace("\\", "/") if path_match else ""
+            current_file = {"header": line, "path": path, "body": []}
+            continue
+
+        if in_header:
+            header_lines.append(line)
+        elif current_file is not None:
+            current_file["body"].append(line)
+
+    if current_file is not None and current_layer is not None:
+        current_layer["files"].append(current_file)
+    if current_layer is not None:
+        layers.append(current_layer)
+
+    total_files = sum(len(layer["files"]) for layer in layers)
+
+    if not selected_files:
+        lang = os.environ.get("REMY_LANG", "en")
+        meta = _meta_line(lang, 0, total_files)
+        with open(view_path, "w", encoding="utf-8") as f:
+            f.write(meta)
+            f.writelines(header_lines)
+        return
+
+    filtered_layers = []
+    selected_count = 0
+    for layer in layers:
+        kept = [fb for fb in layer["files"] if fb["path"] in selected_files]
+        if kept:
+            filtered_layers.append({"header": layer["header"], "files": kept})
+            selected_count += len(kept)
+
+    lang = os.environ.get("REMY_LANG", "en")
+    output = []
+    if selected_count < total_files:
+        output.append(_meta_line(lang, selected_count, total_files))
+    output.extend(header_lines)
+    for layer in filtered_layers:
+        output.append(layer["header"])
+        for fb in layer["files"]:
+            output.append(fb["header"])
+            output.extend(fb["body"])
+
+    os.makedirs(os.path.dirname(view_path), exist_ok=True)
+    with open(view_path, "w", encoding="utf-8") as f:
+        f.writelines(output)
+
+
+def _meta_line(lang, shown, total):
+    if lang == "zh-CN":
+        return "> 注：逻辑索引已过滤，当前显示 {}/{} 个文件。完整索引见 `.claude/logic_tree.md`。\n\n".format(shown, total)
+    return "> Note: Logic index filtered, showing {}/{} files. Full index in `.claude/logic_tree.md`.\n\n".format(shown, total)
+
+
+def detect_new_logic_files(cwd):
+    """Returns file paths present in logic_index.json but absent from selection.json known_files."""
+    selection_path = os.path.join(cwd, SELECTION_FILE)
+    cache_path = os.path.join(cwd, CACHE_FILE)
+
+    if not os.path.exists(selection_path) or not os.path.exists(cache_path):
+        return []
+
+    try:
+        with open(selection_path, "r", encoding="utf-8") as f:
+            selection = json.load(f)
+        with open(cache_path, "r", encoding="utf-8") as f:
+            cache = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+
+    known = set(selection.get("known_files", []))
+    if not known:
+        return []
+
+    cache_files = set(k for k in cache if k != "_meta")
+    return sorted(cache_files - known)
+
+
 def remove_block(content, tag):
     """Removes a specific tag block from content."""
     pattern = f"\\n*<{tag}>.*?<\\/{tag}>\\n*"
@@ -215,6 +354,7 @@ def remove_block(content, tag):
 def inject_all(cwd):
     """Injects all registered references into CLAUDE.md."""
     generate_timeline_view(cwd)
+    generate_logic_tree_view(cwd)
 
     claude_md_path = os.path.join(cwd, CLAUDE_MD)
 

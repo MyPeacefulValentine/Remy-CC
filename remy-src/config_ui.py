@@ -49,6 +49,12 @@ PARAM_REGISTRY = [
      "option_desc_zh": ["每次更新自动注入", "注入前询问确认", "仅生成文件，不注入"],
      "desc_en": "Auto-inject logic_tree.md into CLAUDE.md",
      "desc_zh": "自动将 logic_tree.md 注入 CLAUDE.md"},
+    {"key": "LOGIC_INDEX_INTERACTIVE", "group": "injection", "type": "enum", "default": "true",
+     "options": ["true", "false"],
+     "option_desc_en": ["Show scope selector on session start", "Use saved selection silently"],
+     "option_desc_zh": ["会话开始时弹出范围选择器", "静默使用已保存的选择"],
+     "desc_en": "Show logic index scope selector UI on SessionStart",
+     "desc_zh": "SessionStart 时显示逻辑索引范围选择器"},
 
     {"key": "IMPACT_DEPTH_UP", "group": "impact", "type": "int", "default": "2",
      "min": 1, "max": 10,
@@ -205,6 +211,7 @@ def release_lock():
 
 
 class ConfigHandler(http.server.BaseHTTPRequestHandler):
+    timeout = 10
     html_path = None
     server_ref = None
     mode = "global"
@@ -367,7 +374,7 @@ def main(mode="global", target_path=None):
     else:
         ConfigHandler.target_path = None
 
-    server = http.server.HTTPServer(("127.0.0.1", 0), ConfigHandler)
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), ConfigHandler)
     port = server.server_address[1]
     ConfigHandler.server_ref = server
 
@@ -380,10 +387,7 @@ def main(mode="global", target_path=None):
         print("  Target: " + str(ConfigHandler.target_path))
     print("Press Ctrl+C to stop.\n")
 
-    try:
-        webbrowser.open(url)
-    except Exception:
-        pass
+    threading.Timer(0.3, lambda: webbrowser.open(url)).start()
 
     try:
         server.serve_forever()

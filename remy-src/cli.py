@@ -61,6 +61,26 @@ def cmd_project(args):
     _load_config_ui().main(mode="project", target_path=str(project_dir))
 
 
+def _load_logic_scope_ui():
+    script = Path(__file__).resolve().parent / "logic_scope_ui.py"
+    if not script.exists():
+        print("Error: logic_scope_ui.py not found at " + str(script), file=sys.stderr)
+        sys.exit(1)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("logic_scope_ui", str(script))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def cmd_logic_scope(args):
+    project_dir = Path(args.path).resolve() if args.path else Path.cwd()
+    if not project_dir.is_dir():
+        print("Error: directory not found: " + str(project_dir), file=sys.stderr)
+        sys.exit(1)
+    _load_logic_scope_ui().main(cwd=str(project_dir))
+
+
 def cmd_verify(_args):
     claude_home = get_claude_home()
     errors = []
@@ -380,6 +400,8 @@ def main():
     sub.add_parser("ui", help="Open global configuration UI in browser")
     p_project = sub.add_parser("project", help="Open project-level configuration UI")
     p_project.add_argument("path", help="Project root directory (absolute path)")
+    p_scope = sub.add_parser("logic-scope", help="Configure logic index injection scope")
+    p_scope.add_argument("--path", default=None, help="Project root directory (default: current directory)")
     sub.add_parser("update", help="Fetch and install latest version from remote")
     p_uninstall = sub.add_parser("uninstall", help="Remove all Remy-CC files and settings")
     p_uninstall.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
@@ -387,7 +409,7 @@ def main():
     sub.add_parser("version", help="Show installed version")
     args = parser.parse_args()
 
-    commands = {"ui": cmd_ui, "project": cmd_project, "update": cmd_update, "uninstall": cmd_uninstall, "verify": cmd_verify, "version": cmd_version}
+    commands = {"ui": cmd_ui, "project": cmd_project, "logic-scope": cmd_logic_scope, "update": cmd_update, "uninstall": cmd_uninstall, "verify": cmd_verify, "version": cmd_version}
     handler = commands.get(args.command)
     if handler:
         handler(args)

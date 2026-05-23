@@ -177,6 +177,17 @@ Based on the `LOGIC_INDEX_AUTO_INJECT` policy:
 | `ASK` | Prompts user for confirmation before injection |
 | `NEVER` | Only generates files, no injection |
 
+### Scope Selection (Injection Filtering)
+
+For large projects where `logic_tree.md` exceeds the context window budget, a scope selector filters which files are injected. The document injector generates `logic_tree_view.md` — a filtered subset of `logic_tree.md` — based on user selection stored in `.claude/logic_inject_selection.json`.
+
+Configuration methods:
+- **SessionStart UI**: When `LOGIC_INDEX_INTERACTIVE` is `true`, a browser-based selector UI launches on session start (startup/clear/compact events). Users check/uncheck files and layers to control injection scope.
+- **CLI**: Run `remy-cc logic-scope [--path <dir>]` to open the selector at any time.
+- **Profiles**: The selector supports saving/loading named profiles (up to 20) for quick switching between scope configurations.
+
+If no selection file exists, the full `logic_tree.md` is injected (equivalent to selecting all files).
+
 ## Output Format
 
 `logic_tree.md` is structured as:
@@ -245,6 +256,8 @@ Configure in `settings.local.json` (project-level) or `~/.claude/settings.json` 
 | `OPENAI_MAX_TOKENS` | `8192` | Response token limit |
 | `LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
 | `LOGIC_INDEX_FILTER_SMALL` | `false` | Skip LLM summarization for small functions without docstrings |
+| `LOGIC_INDEX_INTERACTIVE` | `true` | Launch scope selector UI on SessionStart (`true` / `false`) |
+| `LOGIC_SCOPE_TIMEOUT` | `300` | Scope selector UI auto-close timeout in seconds (0 = no timeout) |
 | `REMY_LANG` | `en` | Summary output language (`en` / `zh-CN`) |
 | `IMPACT_DEPTH_UP` | `2` | Default upstream (callers) BFS depth for `impact.py` |
 | `IMPACT_DEPTH_DOWN` | `2` | Default downstream (callees) BFS depth for `impact.py` |

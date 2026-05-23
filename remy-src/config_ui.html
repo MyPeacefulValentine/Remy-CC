@@ -46,11 +46,12 @@ h1{font-size:22px;font-weight:700;margin-bottom:4px}
 .toggle.active::after{transform:translateX(16px)}
 .toggle-label{font-size:11px;color:#9ca3af;white-space:nowrap}
 .actions{margin-top:28px;display:flex;gap:10px;flex-wrap:wrap}
-.btn-save{background:var(--accent);color:#fff;border:none;padding:10px 28px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500;transition:background .15s}
-.btn-save:hover{background:var(--accent-hover)}
-.btn-save:active{background:var(--accent-active)}
-.btn-reset{background:#fff;border:1px solid #d1d5db;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;color:#374151;transition:background .15s}
-.btn-reset:hover{background:#f3f4f6}
+.btn-save{background:var(--accent);color:#fff;border:none;padding:10px 28px;border-radius:20px;cursor:pointer;font-size:14px;font-weight:500;box-shadow:0 2px 8px rgba(99,102,241,.3);transition:all .15s}
+.btn-save:hover{background:var(--accent-hover);transform:translateY(-1px);box-shadow:0 4px 12px rgba(99,102,241,.35)}
+.btn-save:active{background:var(--accent-active);transform:translateY(0);box-shadow:none}
+.btn-reset{background:#fff;border:1px solid #d1d5db;padding:10px 20px;border-radius:20px;cursor:pointer;font-size:14px;color:#374151;transition:all .15s}
+.btn-reset:hover{background:#f3f4f6;transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.btn-reset:active{transform:translateY(0);box-shadow:none}
 .status{margin-top:16px;padding:12px 16px;border-radius:8px;font-size:13px;display:none;animation:fadeIn .2s}
 .status.success{display:block;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
 .status.error{display:block;background:#fef2f2;color:#991b1b;border:1px solid #fca5a5}
@@ -86,7 +87,7 @@ var config=null,lang="en",dirty=false,overrides={};
 var TEXT={
   en:{title:"Remy Configuration",titleProject:"Remy Project Configuration",
       subtitle:"Editing: ~/.claude/settings.json",
-      save:"Save",reset:"Reset to Defaults",langBtn:"中文",
+      save:"✓ Save",reset:"↺ Reset to Defaults",langBtn:"中文",
       modeGlobal:"Global",modeProject:"Project",
       saved:"Settings saved. Backup written to .bak.",
       resetDone:"Form reset to defaults (not yet saved).",
@@ -98,7 +99,7 @@ var TEXT={
       validationMin:" minimum value is ",validationMax:" maximum value is "},
   "zh-CN":{title:"Remy 配置",titleProject:"Remy 项目配置",
       subtitle:"编辑: ~/.claude/settings.json",
-      save:"保存",reset:"恢复默认值",langBtn:"English",
+      save:"✓ 保存",reset:"↺ 恢复默认值",langBtn:"English",
       modeGlobal:"全局",modeProject:"项目",
       saved:"设置已保存。备份已写入 .bak。",
       resetDone:"表单已恢复默认值（尚未保存）。",

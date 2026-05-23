@@ -69,8 +69,8 @@ These layers are coupled by design. Hooks maintain the context that skills depen
 | Pre-Tool Guard | Before each tool use | Converts absolute paths to relative; injects Conda/Mamba activation and UTF-8 encoding into shell commands; enforces snake_case file naming |
 | Logic Enrichment | Before Read/Grep/Glob | Consumes dirty file entries for incremental re-parsing; appends caller/callee relationships and architecture layer for the target file (requires logic index) |
 | Dirty File Tracker | After Edit/Write | Records modified file paths for incremental logic index updates on the next Read |
-| Lifecycle Manager | Session start/end, pre-compaction | Regenerates the project tree snapshot and language directive; triggers full structural scan to refresh symbol line numbers and call graph |
-| Document Injector | On demand | Injects project tree, logic index, and timeline references into `CLAUDE.md` |
+| Lifecycle Manager | Session start/end, pre-compaction | Regenerates the project tree snapshot and language directive; triggers full structural scan to refresh symbol line numbers and call graph; optionally launches scope selector UI for logic index injection filtering |
+| Document Injector | On demand | Injects project tree, logic index (filtered by scope selection), and timeline references into `CLAUDE.md` |
 
 ### Skills (User-Invoked)
 
@@ -171,6 +171,7 @@ After installation, the `remy-cc` command is available system-wide:
 | :--- | :--- |
 | `remy-cc ui` | Open browser-based settings editor for `~/.claude/settings.json` |
 | `remy-cc project <path>` | Open project-level settings editor for `<path>/.claude/settings.local.json` |
+| `remy-cc logic-scope [--path <dir>]` | Configure which logic index files are injected at session start |
 | `remy-cc update` | Fetch and install the latest version |
 | `remy-cc uninstall` | Remove all Remy files and settings |
 | `remy-cc verify` | Check installation integrity |

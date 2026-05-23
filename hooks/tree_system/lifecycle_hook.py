@@ -18,6 +18,10 @@ STRUCT_SCAN_SCRIPT = os.path.join(
     os.path.expanduser("~"), ".claude",
     "skills", "update-logic-index", "struct_scan.py"
 )
+SCOPE_UI_SCRIPT = os.path.join(
+    os.path.expanduser("~"), ".claude",
+    "remy-src", "logic_scope_ui.py"
+)
 
 LANGUAGE_DIRECTIVES = {
     "zh-CN": "Always respond in Chinese-simplified",
@@ -59,6 +63,55 @@ def run_struct_scan(cwd):
         print(f"[StructScan] Failed: {e.stderr.decode('utf-8', errors='replace')}", file=sys.stderr)
     except Exception as e:
         print(f"[StructScan] Unexpected error: {e}", file=sys.stderr)
+
+
+def maybe_launch_scope_ui(cwd):
+    if not os.path.exists(SCOPE_UI_SCRIPT):
+        return
+
+    inject_policy = os.environ.get("LOGIC_INDEX_AUTO_INJECT", "ALWAYS")
+    if inject_policy != "ALWAYS":
+        return
+
+    cache_file = os.path.join(cwd, ".claude", "logic_index.json")
+    if not os.path.exists(cache_file):
+        return
+
+    interactive = os.environ.get("LOGIC_INDEX_INTERACTIVE", "true").lower()
+    selection_file = os.path.join(cwd, ".claude", "logic_inject_selection.json")
+    launch = False
+
+    if interactive == "true":
+        launch = True
+    elif os.path.exists(selection_file):
+        injector_dir = os.path.join(os.path.expanduser("~"), ".claude", "hooks", "doc_manager")
+        sys.path.insert(0, injector_dir)
+        try:
+            import injector as _inj
+            new_files = _inj.detect_new_logic_files(cwd)
+            if new_files:
+                launch = True
+        except Exception:
+            pass
+        finally:
+            if injector_dir in sys.path:
+                sys.path.remove(injector_dir)
+
+    if not launch:
+        return
+
+    try:
+        scope_timeout = int(os.environ.get("LOGIC_SCOPE_TIMEOUT", "300"))
+        subprocess.run(
+            [sys.executable, SCOPE_UI_SCRIPT, "--cwd", cwd, "--timeout", str(scope_timeout)],
+            cwd=cwd,
+            check=False,
+            timeout=scope_timeout,
+        )
+    except subprocess.TimeoutExpired:
+        print("[ScopeUI] Timed out, using existing selection", file=sys.stderr)
+    except Exception as e:
+        print(f"[ScopeUI] Error: {e}", file=sys.stderr)
 
 
 def update_tree(cwd):
@@ -106,25 +159,34 @@ def main():
 
         # Trigger update on specific lifecycle events
         if event_name == "SessionStart":
+            resume_only = "--resume-only" in sys.argv
+
+            if not resume_only:
+                maybe_launch_scope_ui(cwd)
+
             update_tree(cwd)
             run_struct_scan(cwd)
-            generate_language_md()
 
-            lang = os.environ.get("REMY_LANG", "en")
-            if lang == "zh-CN":
-                advice = (
-                    "\n💡 提示：如果之前从未使用过 /update-tree 或刚安装 hooks，建议手动执行 /update-tree 以刷新项目结构上下文。\n"
-                    "🛡️ 建议：请将 .claude/ 加入 .gitignore 以避免提交自动生成的元数据；执行/compact 前使用 /milestone 以固化历史记录。"
-                )
+            if not resume_only:
+                generate_language_md()
+
+                lang = os.environ.get("REMY_LANG", "en")
+                if lang == "zh-CN":
+                    advice = (
+                        "\n💡 提示：如果之前从未使用过 /update-tree 或刚安装 hooks，建议手动执行 /update-tree 以刷新项目结构上下文。\n"
+                        "🛡️ 建议：请将 .claude/ 加入 .gitignore 以避免提交自动生成的元数据；执行/compact 前使用 /milestone 以固化历史记录。"
+                    )
+                else:
+                    advice = (
+                        "\n💡 Tip: If you have never used /update-tree or just installed hooks, run /update-tree manually to refresh the project structure context.\n"
+                        "🛡️ Recommendation: Add .claude/ to .gitignore to avoid committing auto-generated metadata; use /milestone before /compact to persist history."
+                    )
+
+                print(json.dumps({
+                    "systemMessage": advice
+                }))
             else:
-                advice = (
-                    "\n💡 Tip: If you have never used /update-tree or just installed hooks, run /update-tree manually to refresh the project structure context.\n"
-                    "🛡️ Recommendation: Add .claude/ to .gitignore to avoid committing auto-generated metadata; use /milestone before /compact to persist history."
-                )
-
-            print(json.dumps({
-                "systemMessage": advice
-            }))
+                print(json.dumps({}))
 
             sys.exit(0)
 

@@ -12,6 +12,7 @@
     "PROJECT_TREE_AUTO_INJECT": "ALWAYS",
     "TIMELINE_AUTO_INJECT": "ALWAYS",
     "LOGIC_INDEX_AUTO_INJECT": "ALWAYS",
+    "LOGIC_INDEX_INTERACTIVE": "true",
     "LOGIC_INDEX_FILTER_SMALL": "false",
     "REMY_LANG": "en",
     "REPO_AUDIT_ROOT": "~/claude_audit",
@@ -119,10 +120,20 @@
     ],
     "SessionStart": [
       {
+        "matcher": "startup|clear|compact",
         "hooks": [
           {
             "type": "command",
             "command": "python \"~/.claude/hooks/tree_system/lifecycle_hook.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"~/.claude/hooks/tree_system/lifecycle_hook.py\" --resume-only"
           }
         ]
       }

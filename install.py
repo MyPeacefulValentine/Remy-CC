@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-SUITE_VERSION = "0.8.1"
+SUITE_VERSION = "0.9.0"
 MANIFEST_FILE = ".installer_manifest.json"
 
 DEPLOY_DIRS = ["hooks", "skills", "output-styles"]
@@ -34,6 +34,8 @@ DEPLOY_FILES_MAP = {
     "remy-src/cli.py": "remy-src/cli.py",
     "remy-src/config_ui.py": "remy-src/config_ui.py",
     "remy-src/config_ui.html": "remy-src/config_ui.html",
+    "remy-src/logic_scope_ui.py": "remy-src/logic_scope_ui.py",
+    "remy-src/logic_scope_ui.html": "remy-src/logic_scope_ui.html",
     "remy-assets/logo.svg": "remy-assets/logo.svg",
 }
 SETTINGS_TEMPLATE = "settings.example.json"
