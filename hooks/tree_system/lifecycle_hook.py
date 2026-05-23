@@ -106,6 +106,7 @@ def maybe_launch_scope_ui(cwd):
             [sys.executable, SCOPE_UI_SCRIPT, "--cwd", cwd, "--timeout", str(scope_timeout)],
             cwd=cwd,
             check=False,
+            stdout=subprocess.DEVNULL,
             timeout=scope_timeout,
         )
     except subprocess.TimeoutExpired:

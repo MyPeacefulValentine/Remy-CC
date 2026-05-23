@@ -427,7 +427,7 @@ def main(cwd, timeout=300):
     url = "http://127.0.0.1:{}".format(port)
     acquire_lock(url)
 
-    print("Logic Scope UI: {}".format(url))
+    print("Logic Scope UI: {}".format(url), file=sys.stderr)
 
     watchdog = threading.Thread(target=_heartbeat_watchdog, args=(server,), daemon=True)
     watchdog.start()
