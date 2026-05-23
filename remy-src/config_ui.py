@@ -101,6 +101,19 @@ PARAM_REGISTRY = [
      "desc_en": "Default effort level (low = no agents, medium = 3 agents, high = 6 agents)",
      "desc_zh": "默认努力级别（low = 无 Agent，medium = 3 Agent，high = 6 Agent）"},
 
+    {"key": "SECURITY_AUDIT_EFFORT", "group": "security_audit", "type": "enum", "default": "medium",
+     "options": ["low", "medium", "high"],
+     "desc_en": "Default effort level (low = regex only, medium = 3 agents, high = 5 agents)",
+     "desc_zh": "默认分析级别（low = 仅正则，medium = 3 Agent，high = 5 Agent）"},
+    {"key": "SECURITY_AUDIT_MAX_FILTER_AGENTS", "group": "security_audit", "type": "int", "default": "15",
+     "min": 1, "max": 50,
+     "desc_en": "Max parallel false-positive filter agents",
+     "desc_zh": "最大并行误报过滤 Agent 数"},
+    {"key": "SECURITY_AUDIT_CONFIDENCE_THRESHOLD", "group": "security_audit", "type": "int", "default": "8",
+     "min": 1, "max": 10,
+     "desc_en": "Minimum confidence score (1-10) for findings in final report",
+     "desc_zh": "最终报告中发现的最低置信度分数（1-10）"},
+
     {"key": "BASH_DEFAULT_TIMEOUT_MS", "group": "system", "type": "int", "default": "600000",
      "min": 10000, "max": 600000,
      "desc_en": "Default Bash command timeout in milliseconds",
@@ -145,6 +158,7 @@ GROUPS = [
     {"id": "injection", "label_en": "Context Injection", "label_zh": "上下文注入"},
     {"id": "timeline", "label_en": "Timeline", "label_zh": "时间线"},
     {"id": "post_verify", "label_en": "Post-Verify", "label_zh": "后验测试"},
+    {"id": "security_audit", "label_en": "Security Audit", "label_zh": "安全审计"},
     {"id": "system", "label_en": "System", "label_zh": "系统"},
     {"id": "claude_code", "label_en": "Claude Code", "label_zh": "Claude Code"},
 ]

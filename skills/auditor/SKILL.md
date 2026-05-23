@@ -15,6 +15,18 @@ You are an **Adversarial Code Auditor**. You have just been spawned and have ZER
 - **Task Packet** (optional): If a `task_packet_file` argument is provided, read `.claude/temp_task/{task_packet_file}`. Extract `sender_payload.plan` and `sender_payload.analysis` as the "初始计划" source for Table 1. If the file is absent or no argument was provided, mark the "初始计划" column as `N/A` and proceed with two-way verification (Change Log vs Code) only.
 - **Source Code**: You MUST read the actual code files mentioned in the log.
 
+## 1.5 Dependency Discovery (Automated)
+
+Before performing verification, map the dependency context of modified files:
+
+1.  **Check**: Run `Bash("test -f .claude/logic_index.json && echo EXISTS || echo MISSING")`.
+2.  **EXISTS**: Run `Bash("python \"~/.claude/skills/update-logic-index/impact.py\" <modified_file_1> <modified_file_2> ...")` using files mentioned in the Change Log.
+    -   If exit code = 0: record the output as the **Impact Report**. Read all files listed at Downstream Depth 1 (these are consumers that may need adaptation).
+    -   If exit code = 2 (no call graph data): fall through to manual path.
+3.  **MISSING or exit 2**: Use `Grep` to find files that import or call symbols from the modified files. Read those files.
+
+This data feeds into Dimension 6 (Ripple Effects) of the verification checklist.
+
 ## 2. Verification Dimensions (Strict Checklist)
 You must verify the code against the log across these specific dimensions:
 
@@ -33,7 +45,8 @@ You must verify the code against the log across these specific dimensions:
 5.  **Pipeline Impact**:
     - Does this break existing functionality pipelines?
 6.  **Ripple Effects**:
-    - Check 1-level deep imports/usages of modified functions.
+    - If Impact Report is available: verify that ALL Downstream Depth 1 consumers have been adapted to the changes. Flag any downstream file that still references the old interface/behavior.
+    - If no Impact Report: check 1-level deep imports/usages of modified functions via `Grep`.
 7.  **Performance & Safety**:
     - **OOM Risk**: Check for large array copies, unbound loops, or memory leaks.
     - **Complexity**: Is the algorithm optimal?
@@ -61,12 +74,12 @@ Output your analysis in the following two markdown tables. **Add 1 empty line be
 ### 🛡️ Table 2: Defensive Audit (深度防御性审计)
 
 *   **Side Effects**: Check for global state pollution or unintended decorator states.
-*   **Ripple Effects**: Check 1-level deep imports/usages of modified functions.
+*   **Ripple Effects**: Check downstream consumers using Impact Report data (or grep results).
 
 | 审计项 | 状态 | 证据/理由 | 定位 |
 | :--- | :--- | :--- | :--- |
 | **副作用** | Pass/Warn | (Check global variables) | `path:line` |
-| **涟漪效应** | Pass/Warn | (Check import references) | `path:line` |
+| **涟漪效应** | Pass/Warn | (Verify downstream consumers adapted; cite Impact Report) | `path:line` |
 | **测试策略** | Pass/Fail | (Check for integration tests) | `tests/...` |
 | **性能安全** | Pass/Fail | (Check loops/memory) | `path:line` |
 

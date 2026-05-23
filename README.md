@@ -81,6 +81,7 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 | `/deep-plan` | Deep analysis and planning before writing code — 5-table audit with reuse scan and verification plan | [📖](skills/deep-plan/README.md) |
 | `/code-modification` | Apply code changes with dependency tracing and integrity checks | [📖](skills/code-modification/README.md) |
 | `/post-verify` | Multi-angle defect prediction + test execution + semantic quality audit (effort: low/medium/high) | [📖](skills/post-verify/README.md) |
+| `/security-audit` | Security-focused review of branch changes — regex pre-scan + parallel category agents + false-positive filtering | [📖](skills/security-audit/README.md) |
 | `/log-change` | Generate a structured changelog recording modifications and impact | [📖](skills/log-change/README.md) |
 | `/auditor` | Verify consistency between plan, changelog, and actual code | [📖](skills/auditor/README.md) |
 | `/milestone` | Generate a history report and update the project timeline | [📖](skills/milestone/README.md) |
@@ -88,7 +89,6 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 | `/read-logic-index` | Display the current logic index | [📖](skills/read-logic-index/README.md) |
 | `/update-tree` | Regenerate the project directory snapshot | [📖](skills/update-tree/README.md) |
 | `/repo-audit` | Inspect a GitHub repository in a sandboxed temporary directory | [📖](skills/repo-audit/README.md) |
-| `/receiving-feedback` | Process code review feedback with verification before implementation | [📖](skills/receiving-feedback/README.md) |
 
 ### Development Cycle
 

@@ -1,0 +1,117 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Deterministic regex patterns for Phase 0 pre-scan. Matches are reported directly without agent confirmation.",
+  "patterns": [
+    {
+      "id": "P-001",
+      "name": "hardcoded_aws_key",
+      "severity": "HIGH",
+      "description": "AWS access key ID pattern detected in source code.",
+      "languages": ["*"],
+      "regex": ["(?:AKIA|ASIA)[0-9A-Z]{16}"]
+    },
+    {
+      "id": "P-002",
+      "name": "hardcoded_generic_secret",
+      "severity": "HIGH",
+      "description": "Generic secret/token assignment pattern (key = 'value' with high entropy).",
+      "languages": ["python", "javascript", "typescript"],
+      "regex": [
+        "(?:api_key|apikey|secret|token|password|passwd|credential)\\s*[=:]\\s*[\"'][A-Za-z0-9+/=_\\-]{20,}[\"']"
+      ]
+    },
+    {
+      "id": "P-003",
+      "name": "hardcoded_private_key",
+      "severity": "HIGH",
+      "description": "Private key material embedded in source.",
+      "languages": ["*"],
+      "regex": ["-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"]
+    },
+    {
+      "id": "P-004",
+      "name": "eval_exec_usage",
+      "severity": "MEDIUM",
+      "description": "Use of eval() or exec() with potentially dynamic input.",
+      "languages": ["python"],
+      "regex": ["(?:eval|exec)\\s*\\("]
+    },
+    {
+      "id": "P-005",
+      "name": "pickle_loads",
+      "severity": "HIGH",
+      "description": "Deserialization via pickle.loads or pickle.load without trust boundary.",
+      "languages": ["python"],
+      "regex": ["pickle\\.loads?\\s*\\("]
+    },
+    {
+      "id": "P-006",
+      "name": "yaml_unsafe_load",
+      "severity": "HIGH",
+      "description": "YAML deserialization via yaml.load without SafeLoader.",
+      "languages": ["python"],
+      "regex": ["yaml\\.load\\s*\\([^)]*(?!Loader\\s*=\\s*yaml\\.SafeLoader)"]
+    },
+    {
+      "id": "P-007",
+      "name": "os_system_subprocess_shell",
+      "severity": "MEDIUM",
+      "description": "Shell command execution with potential for injection.",
+      "languages": ["python"],
+      "regex": [
+        "os\\.system\\s*\\(",
+        "subprocess\\.(?:call|run|Popen)\\s*\\([^)]*shell\\s*=\\s*True"
+      ]
+    },
+    {
+      "id": "P-008",
+      "name": "sql_string_concat",
+      "severity": "MEDIUM",
+      "description": "SQL query constructed via string concatenation or f-string.",
+      "languages": ["python"],
+      "regex": [
+        "(?:execute|cursor\\.execute)\\s*\\(\\s*f[\"']",
+        "(?:execute|cursor\\.execute)\\s*\\([^)]*\\+\\s*"
+      ]
+    },
+    {
+      "id": "P-009",
+      "name": "md5_sha1_password",
+      "severity": "MEDIUM",
+      "description": "Weak hash algorithm used in password or credential context.",
+      "languages": ["python"],
+      "regex": ["hashlib\\.(?:md5|sha1)\\s*\\("]
+    },
+    {
+      "id": "P-010",
+      "name": "jwt_none_algorithm",
+      "severity": "HIGH",
+      "description": "JWT decode without algorithm restriction (allows 'none' algorithm attack).",
+      "languages": ["python"],
+      "regex": ["jwt\\.decode\\s*\\([^)]*algorithms\\s*=\\s*None"]
+    },
+    {
+      "id": "P-011",
+      "name": "dangerous_deserialization_js",
+      "severity": "HIGH",
+      "description": "Unsafe deserialization in JavaScript/Node.js.",
+      "languages": ["javascript", "typescript"],
+      "regex": [
+        "(?:unserialize|deserialize)\\s*\\(",
+        "node-serialize",
+        "js-yaml\\.load\\s*\\("
+      ]
+    },
+    {
+      "id": "P-012",
+      "name": "innerHTML_assignment",
+      "severity": "MEDIUM",
+      "description": "Direct innerHTML assignment with potentially untrusted content.",
+      "languages": ["javascript", "typescript"],
+      "regex": [
+        "\\.innerHTML\\s*=",
+        "dangerouslySetInnerHTML"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Output schema for security-audit false-positive filter agents. Each agent evaluates one finding.",
+  "type": "object",
+  "required": ["original_finding_file", "original_finding_line", "confidence", "reasoning"],
+  "properties": {
+    "original_finding_file": {
+      "type": "string",
+      "description": "File path from the original finding being evaluated."
+    },
+    "original_finding_line": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Line number from the original finding being evaluated."
+    },
+    "confidence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "description": "Confidence that this is a true positive. 1-3 = false positive, 4-6 = uncertain, 7-10 = true positive."
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "2-3 sentences explaining the confidence score assignment."
+    },
+    "exclusion_match": {
+      "type": ["string", "null"],
+      "description": "ID of matched exclusion rule (e.g., 'EX-003'), or null if none match."
+    },
+    "precedent_match": {
+      "type": ["string", "null"],
+      "description": "ID of matched precedent (e.g., 'PR-006'), or null if none match."
+    }
+  },
+  "additionalProperties": false
+}

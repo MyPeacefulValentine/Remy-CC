@@ -5,11 +5,10 @@
 *   **File Operations**: **Mandatory**:
     *   **Read-Modify-Read**: Pre-Read (confirm context) → `Edit` → Post-Read (verify change). All steps silent.
     *   **Edit Failure Path** ("String not found"): (1) Grep `new_string`—found → abort as success; (2) re-check `old_string` for whitespace/indent mismatches, retry once; (3) request permission for full Read-Modify-Write-Read.
-*   **Git Workflow**: See `skills/git-workflow`. **Mandatory**: Conventional Commits, Dangerous Ops Confirmation.
+*   **Git Workflow**: **Mandatory**: Conventional Commits format (`<type>(<scope>): <subject>`). Dangerous operations (push, reset --hard, clean) require explicit user confirmation.
 *   **Debugging**: See `skills/systematic-debugging`. **Mandatory**: Root Cause Analysis -> Hypothesis -> Fix.
 *   **TDD**: See `skills/test-driven-development`. **Mandatory**: RED -> GREEN -> REFACTOR.
-*   **Tool Guide**: See `skills/tool-guide`. **Reference**: MCP Tool Selection Strategy.
-*   **Doc Updater**: See `skills/doc-updater`. **Mandatory**: Keep `CLAUDE.md` core docs in sync with code changes.
+*   **Doc Sync**: Keep `CLAUDE.md` core docs (`@`-referenced files) in sync with code changes. Verify after structural modifications.
 *   **Update Tree**: See `skills/update-tree`. **Mandatory**: Keep `.claude/project_tree.md` fresh after batch ops.
 *   **Update Logic Index**: See `skills/update-logic-index`. **Mandatory**: Update `.claude/logic_tree.md` after major refactors.
 *   **Hooks System**:

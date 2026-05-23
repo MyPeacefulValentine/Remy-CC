@@ -81,6 +81,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | `/deep-plan` | 在编写代码前深度分析并制定方案——五表审计含复用扫描和验证计划 | [📖](skills/deep-plan/README_zh.md) |
 | `/code-modification` | 带依赖追踪和完整性检查的代码修改 | [📖](skills/code-modification/README_zh.md) |
 | `/post-verify` | 多角度缺陷预判 + 测试执行 + 语义质量审计（支持 low/medium/high 级别） | [📖](skills/post-verify/README_zh.md) |
+| `/security-audit` | 面向分支变更的安全审查——正则预扫描 + 并行分类 Agent + 误报过滤 | [📖](skills/security-audit/README_zh.md) |
 | `/log-change` | 生成结构化变更日志，记录修改内容和影响 | [📖](skills/log-change/README_zh.md) |
 | `/auditor` | 验证计划、变更日志与实际代码之间的一致性 | [📖](skills/auditor/README_zh.md) |
 | `/milestone` | 生成历史报告并更新项目时间线 | [📖](skills/milestone/README_zh.md) |
@@ -88,7 +89,6 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | `/read-logic-index` | 显示当前逻辑索引 | [📖](skills/read-logic-index/README_zh.md) |
 | `/update-tree` | 重新生成项目目录快照 | [📖](skills/update-tree/README_zh.md) |
 | `/repo-audit` | 在沙盒临时目录中检查 GitHub 仓库 | [📖](skills/repo-audit/README_zh.md) |
-| `/receiving-feedback` | 处理代码审查反馈，先验证再实现 | [📖](skills/receiving-feedback/README_zh.md) |
 
 ### 开发循环
 

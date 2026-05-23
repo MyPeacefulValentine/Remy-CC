@@ -20,6 +20,9 @@
     "TIMELINE_INJECT_VALUE": "",
     "POST_VERIFY_MAX_RETRIES": "-1",
     "POST_VERIFY_EFFORT": "medium",
+    "SECURITY_AUDIT_EFFORT": "medium",
+    "SECURITY_AUDIT_MAX_FILTER_AGENTS": "15",
+    "SECURITY_AUDIT_CONFIDENCE_THRESHOLD": "8",
     "IMPACT_DEPTH_UP": "2",
     "IMPACT_DEPTH_DOWN": "2",
     "PRECISION_READ_THRESHOLD": "500",
@@ -53,10 +56,7 @@
       "Skill(code-modification)",
       "Skill(systematic-debugging)",
       "Skill(test-driven-development)",
-      "Skill(receiving-feedback)",
       "Skill(auditor)",
-      "Skill(tool-guide)",
-      "Skill(doc-updater)",
       "Skill(deep-plan)",
       "Skill(milestone)",
       "Skill(log-change)",
@@ -64,7 +64,8 @@
       "Skill(read-logic-index)",
       "Skill(update-logic-index)",
       "Skill(repo-audit)",
-      "Skill(post-verify)"
+      "Skill(post-verify)",
+      "Skill(security-audit)"
     ]
   },
   "hooks": {

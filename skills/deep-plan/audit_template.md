@@ -1,6 +1,6 @@
 # Deep Plan Analysis Tables Template
 
-You must output your analysis in the following **four** Markdown tables in this exact order. **Add 1 empty line before and after each table.**
+You must output your analysis in the following **five** Markdown tables in this exact order. **Add 1 empty line before and after each table.**
 
 ### 🧩 Table 1: Ambiguity Resolution Matrix (歧义消除矩阵)
 
@@ -56,3 +56,7 @@ You must output your analysis in the following **four** Markdown tables in this 
 | *Example: Unit test* | `pytest tests/test_auth.py -v` | All tests pass | Revert commit |
 | *Example: Integration* | Manual invocation of modified endpoint | Response matches Table 2 invariant | Mark as partial implementation |
 | *Example: Regression* | Run full test suite | No new failures | Investigate before proceeding |
+
+---
+
+> **⚠ CHECKPOINT**: All 5 tables are complete. Do **NOT** emit the stop prompt yet. You **MUST** proceed to **Section 5.5 (Evidence Packet Generation)** and execute all 5 steps (timestamp → git commit → ensure directory → write packet → update .active_packet) before outputting the final stop prompt.
