@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-SUITE_VERSION = "0.9.3"
+SUITE_VERSION = "0.9.4"
 MANIFEST_FILE = ".installer_manifest.json"
 
 DEPLOY_DIRS = ["hooks", "skills", "output-styles"]

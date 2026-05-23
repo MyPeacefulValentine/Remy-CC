@@ -41,8 +41,7 @@ CORE SKILLS MANIFEST (Explicitly Listed for Awareness)
 - systematic-debugging: MANDATORY for all debugging/testing tasks. Enforces rigorous root cause analysis.
 - test-driven-development: MANDATORY for new features/fixes. "No production code without a failing test first."
 - code-modification: MANDATORY for refactoring/editing. Enforces safety, framework integrity, and incremental change.
-- git-workflow: MANDATORY for version control. Enforces atomic commits and conventional messages.
-- receiving-feedback: MANDATORY for handling reviews. Verify before implementing.
+- security-audit: Security-focused review of branch changes. Regex pre-scan + parallel agents + false-positive filtering.
 -->
 
 <system-reminder>
