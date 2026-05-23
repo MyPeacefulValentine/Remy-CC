@@ -96,6 +96,10 @@ PARAM_REGISTRY = [
      "min": -1, "max": 100,
      "desc_en": "Max test-fix iterations (-1 = unlimited)",
      "desc_zh": "最大测试修复迭代次数（-1 = 无限制）"},
+    {"key": "POST_VERIFY_EFFORT", "group": "post_verify", "type": "enum", "default": "medium",
+     "options": ["low", "medium", "high"],
+     "desc_en": "Default effort level (low = no agents, medium = 3 agents, high = 6 agents)",
+     "desc_zh": "默认努力级别（low = 无 Agent，medium = 3 Agent，high = 6 Agent）"},
 
     {"key": "BASH_DEFAULT_TIMEOUT_MS", "group": "system", "type": "int", "default": "600000",
      "min": 10000, "max": 600000,
