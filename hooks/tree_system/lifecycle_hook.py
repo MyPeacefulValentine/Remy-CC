@@ -29,6 +29,15 @@ LANGUAGE_DIRECTIVES = {
 }
 
 
+def _get_version():
+    manifest = os.path.join(os.path.expanduser("~"), ".claude", ".installer_manifest.json")
+    try:
+        with open(manifest, "r", encoding="utf-8") as f:
+            return json.load(f).get("version", "dev")
+    except (OSError, json.JSONDecodeError):
+        return "dev"
+
+
 def generate_language_md():
     lang = os.environ.get("REMY_LANG", "en")
     directive = LANGUAGE_DIRECTIVES.get(lang, LANGUAGE_DIRECTIVES["en"])
@@ -84,18 +93,17 @@ def maybe_launch_scope_ui(cwd):
     if interactive == "true":
         launch = True
     elif os.path.exists(selection_file):
-        injector_dir = os.path.join(os.path.expanduser("~"), ".claude", "hooks", "doc_manager")
-        sys.path.insert(0, injector_dir)
+        injector_path = os.path.join(os.path.expanduser("~"), ".claude", "hooks", "doc_manager", "injector.py")
         try:
-            import injector as _inj
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("injector", injector_path)
+            _inj = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(_inj)
             new_files = _inj.detect_new_logic_files(cwd)
             if new_files:
                 launch = True
         except Exception:
             pass
-        finally:
-            if injector_dir in sys.path:
-                sys.path.remove(injector_dir)
 
     if not launch:
         return
@@ -172,16 +180,14 @@ def main():
                 generate_language_md()
 
                 lang = os.environ.get("REMY_LANG", "en")
-                if lang == "zh-CN":
-                    advice = (
-                        "\n💡 提示：如果之前从未使用过 /update-tree 或刚安装 hooks，建议手动执行 /update-tree 以刷新项目结构上下文。\n"
-                        "🛡️ 建议：请将 .claude/ 加入 .gitignore 以避免提交自动生成的元数据；执行/compact 前使用 /milestone 以固化历史记录。"
-                    )
-                else:
-                    advice = (
-                        "\n💡 Tip: If you have never used /update-tree or just installed hooks, run /update-tree manually to refresh the project structure context.\n"
-                        "🛡️ Recommendation: Add .claude/ to .gitignore to avoid committing auto-generated metadata; use /milestone before /compact to persist history."
-                    )
+                version = _get_version()
+                banner_file = "banner_zh.md" if lang == "zh-CN" else "banner_en.md"
+                banner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), banner_file)
+                try:
+                    with open(banner_path, "r", encoding="utf-8") as f:
+                        advice = "\n" + f.read().strip().format(version=version)
+                except (OSError, KeyError, ValueError):
+                    advice = "\n\U0001f42d Remy v" + version
 
                 print(json.dumps({
                     "systemMessage": advice

@@ -22,7 +22,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-SUITE_VERSION = "0.9.6"
+_version_file = Path(__file__).resolve().parent / "VERSION"
+if not _version_file.exists():
+    print("Fatal: VERSION file not found at " + str(_version_file), file=sys.stderr)
+    sys.exit(1)
+_version_lines = _version_file.read_text(encoding="utf-8").splitlines()
+SUITE_VERSION = _version_lines[0].strip().lstrip("﻿") if _version_lines else ""
+if not SUITE_VERSION:
+    print("Fatal: VERSION file is empty", file=sys.stderr)
+    sys.exit(1)
 MANIFEST_FILE = ".installer_manifest.json"
 
 DEPLOY_DIRS = ["hooks", "skills", "output-styles"]

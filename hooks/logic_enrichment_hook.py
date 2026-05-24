@@ -52,6 +52,8 @@ def _consume_dirty_files(cwd, target_path):
             import subprocess
             args = [sys.executable, struct_scan_path, "--cwd", cwd, "--files"] + list(relevant)
             subprocess.run(args, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=30)
+    except subprocess.TimeoutExpired:
+        pass
     except Exception:
         return
 

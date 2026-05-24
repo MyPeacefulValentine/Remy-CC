@@ -156,23 +156,20 @@ def cmd_version(_args):
 
 REPO_URL = "https://github.com/MyPeacefulValentine/Remy-CC.git"
 BRANCH = "main"
-VERSION_RAW_URL = "https://raw.githubusercontent.com/MyPeacefulValentine/Remy-CC/{}/install.py".format(BRANCH)
+VERSION_RAW_URL = "https://raw.githubusercontent.com/MyPeacefulValentine/Remy-CC/{}/VERSION".format(BRANCH)
 
 
 def _fetch_remote_version():
-    import re
     import urllib.request
     try:
         req = urllib.request.Request(VERSION_RAW_URL, headers={"User-Agent": "remy-cc"})
         with urllib.request.urlopen(req, timeout=10) as resp:
-            for line in resp:
-                decoded = line.decode("utf-8", errors="ignore")
-                m = re.match(r'^SUITE_VERSION\s*=\s*["\'](.+?)["\']', decoded)
-                if m:
-                    return m.group(1)
+            raw = resp.read().decode("utf-8", errors="ignore").strip()
+            if not raw or len(raw) > 20 or "<" in raw:
+                return None
+            return raw
     except (OSError, urllib.request.URLError):
         return None
-    return None
 
 
 def cmd_update(_args):
