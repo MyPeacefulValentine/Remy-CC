@@ -66,6 +66,17 @@ You MUST execute the following loop until NO ambiguities remain:
     *   **Behavioral Boundary**: Timeouts, retries, failure modes, edge-case handling, empty/null inputs.
     *   **Execution Order**: Temporal dependencies, concurrency model, race conditions.
     *   **Change Boundary**: What is in-scope vs. out-of-scope for this modification.
+
+    **MANDATORY FORMAT** — Output the scan result as a fenced block BEFORE any `AskUserQuestion` call:
+    ```
+    **Ambiguity Scan:**
+    1. Interface Contract — ambiguity identified: <brief description>
+    2. Resource & Dependency — ambiguity identified: <brief description>
+    3. Behavioral Boundary — N/A (no decision needed)
+    4. Execution Order — ambiguity identified: <brief description>
+    5. Change Boundary — N/A (no decision needed)
+    ```
+    Skipping this output block is a protocol violation.
 2.  **Check**: Are there unresolved ambiguities?
     *   **NO**: Break loop and proceed to "Step 2.8: Assumption Manifest & Scenario Probes".
     *   **YES**: Continue to next sub-step.
@@ -90,6 +101,15 @@ This step targets **unknown unknowns** — assumptions Claude considers obvious 
     *   A 1-sentence statement of what is assumed.
     *   A confidence level (Level 2–5).
     *   The category it belongs to (Interface / Resource / Behavior / Ordering / Boundary).
+
+    **MANDATORY FORMAT** — Output the manifest as a numbered list BEFORE the `AskUserQuestion` call:
+    ```
+    **Assumption Manifest:**
+    1. [Level 3 | Behavior] Redis 连接失败时 fallback 到本地缓存而非直接抛出异常。
+    2. [Level 4 | Interface] 缓存 key 使用 UTF-8 编码，不含二进制数据。
+    3. [Level 5 | Resource] 生产环境 Redis 版本 ≥ 6.0。
+    ```
+    Each entry MUST include the `[Level N | Category]` prefix. Omitting the level number is a protocol violation.
 
     **Exclusion Rule**: Do NOT duplicate entries already present in Table 1 (resolved ambiguities).
 
