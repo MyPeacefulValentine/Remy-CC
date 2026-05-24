@@ -23,15 +23,25 @@ If a `task_packet_file` argument is provided, the skill reads `.claude/temp_task
 
 ### Phase 2: Framework Compliance
 
-Checks JIT/Numba compatibility and numpy/JAX array operation safety for modified code.
+Checks target files for compiler decorators or metaprogramming patterns that impose language/feature constraints. If detected, verifies the new code is compatible. Skipped if no such patterns are found.
 
 ### Phase 3: Execution
 
-Pre-read → Edit → Post-read verification for each file.
+For each file to be modified:
+
+1. **Pre-Read & Cache** — Read the file and cache original content for potential rollback.
+2. **Discovery Checkpoint** (packet mode only) — Before each Edit call, checks 3 conditions:
+   - H1: File not in `proposed_changes[]` (scope overflow)
+   - H2: Target function signature changed since audit (stale plan)
+   - H3: Edit would violate a constraint in `sender_payload.analysis` (constraint conflict)
+
+   If any condition is true, a **hard interrupt** fires: the AI halts and presents the user with options to expand scope, abort with rollback, or ignore and continue.
+3. **Edit & Verify** — Apply the change and verify via post-read.
+4. **Soft Decision Log** (packet mode only) — Behavioral choices not covered by the packet are recorded to `.claude/temp_decisions/decisions_{PACKET_ID}.md`. No file is created if no undocumented decisions were made.
 
 ### Phase 4: Validation
 
-Runs tests specified in the plan.
+Runs relevant tests. On failure, presents options to fix, revert, or ignore.
 
 ## Pipeline Integration
 

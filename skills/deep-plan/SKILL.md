@@ -60,22 +60,53 @@ Use this path when `logic_index.json` is unavailable or contains no call graph d
 **Step 2: Recursive Ambiguity Elimination (Loop-Until-Saturated)**
 You MUST execute the following loop until NO ambiguities remain:
 
-1.  **Scan**: Identify current architectural decision points based on *saturated* context.
+1.  **Scan**: Identify current architectural decision points based on *saturated* context. You MUST explicitly check each of the following 5 categories and mark each as either "ambiguity identified" or "N/A (no decision needed)":
+    *   **Interface Contract**: Function signatures, return types, error types, API shape.
+    *   **Resource & Dependency**: Library choices, external services, infrastructure requirements.
+    *   **Behavioral Boundary**: Timeouts, retries, failure modes, edge-case handling, empty/null inputs.
+    *   **Execution Order**: Temporal dependencies, concurrency model, race conditions.
+    *   **Change Boundary**: What is in-scope vs. out-of-scope for this modification.
 2.  **Check**: Are there unresolved ambiguities?
-    *   **NO**: Break loop and proceed to "Step 2.5: Plan-Code Alignment Check".
+    *   **NO**: Break loop and proceed to "Step 2.8: Assumption Manifest & Scenario Probes".
     *   **YES**: Continue to next sub-step.
 3.  **Ask**: Use `AskUserQuestion` to resolve *current layer* ambiguities.
-    *   **Multi-Question Batching**: Present all currently visible ambiguities.
+    *   **Multi-Question Batching**: Present all currently visible ambiguities that have NO dependency between them. If question B's options depend on question A's answer, present A first; present B in the next iteration after A is resolved.
     *   **Language**: Follow the `REMY_LANG` environment variable (`zh-CN` → Chinese, `en` → English).
-    *   **Format**: Short header, reasonable options, recommended option marked.
+    *   **Format**: Short header, reasonable options.
+    *   **Recommendation (MUST)**: Every question MUST have exactly 1 recommended option. Append `（推荐）` to the recommended label and include a 1-sentence reason in its description. Omitting the recommendation is a protocol violation.
 4.  **Saturate (Again) - ACTION REQUIRED**:
     *   **Trigger**: Immediately upon receiving the user's choice.
     *   **Mandate**: You **MUST** invoke `Grep`/`Glob` targeting the specific keywords of the choice (e.g., if user selected "Redis", grep for "redis", "cache", "sentinel").
     *   **Read**: You **MUST** read any newly discovered configuration/utility files.
-    *   **Blocker**: Do NOT proceed to Step 5 until these new tool outputs are visible in the context.
+    *   **Cross-Constraint Validation**: Compare the newly locked decision against ALL previously locked decisions. If a logical contradiction exists (e.g., "use Redis" vs. prior "no new runtime dependencies"), mark the conflicting prior decision as `invalidated` and re-present it in the next loop iteration.
+    *   **Blocker**: Do NOT proceed to Step 5 until these new tool outputs are visible in the context AND no contradictions remain unresolved.
 5.  **Repeat**: Go back to sub-step 1.
 
-**Step 2.5: Plan-Code Alignment Check**
+**Step 2.8: Assumption Manifest & Scenario Probes (Post-Loop Second Pass)**
+
+This step targets **unknown unknowns** — assumptions Claude considers obvious but which may conflict with the user's intent. It runs ONCE after the Step 2 loop exits. A re-entry counter (`_manifest_pass`) tracks executions; if `_manifest_pass >= 1`, skip this step entirely and proceed to Step 2.9.
+
+1.  **Generate Assumption Manifest**: List ALL implicit assumptions (implementation-level and behavioral-level) that are NOT already locked in Table 1. Each assumption MUST include:
+    *   A 1-sentence statement of what is assumed.
+    *   A confidence level (Level 2–5).
+    *   The category it belongs to (Interface / Resource / Behavior / Ordering / Boundary).
+
+    **Exclusion Rule**: Do NOT duplicate entries already present in Table 1 (resolved ambiguities).
+
+2.  **Contradiction Detection**: Before presenting to the user, cross-check every assumption against every locked decision in Table 1. If a contradiction is found, flag it as a new ambiguity (do not present it as an assumption — route it directly to re-entry in sub-step 5).
+
+3.  **Conditional Scenario Probes**: For each assumption with confidence ≤ Level 4, construct a concrete scenario that illustrates the behavioral consequence of that assumption. The scenario is embedded in the `AskUserQuestion` option description (inline format).
+
+4.  **Present to User**: Use `AskUserQuestion` to present assumptions in batches of ≤ 4 items per call, sorted by confidence (lowest first). Each item offers:
+    *   Option A: "确认该假设 (Confirm)" — assumption is correct.
+    *   Option B: The scenario-driven alternative (for Level ≤ 4) or "否决 (Reject)" (for Level 5).
+    *   User rejections or contradictions become new ambiguities.
+
+5.  **Re-entry Decision**:
+    *   If ALL assumptions are confirmed and no contradictions were detected: increment `_manifest_pass`, proceed to **Step 2.9**.
+    *   If any assumption was rejected or a contradiction was detected: increment `_manifest_pass`, return to **Step 2** loop to resolve the new ambiguities. After this re-entry, the loop will eventually exit again; since `_manifest_pass >= 1`, Step 2.8 is skipped and flow proceeds directly to Step 2.9.
+
+**Step 2.9: Plan-Code Alignment Check**
 Before generating the final tables, verify that your plan assumptions still match the code:
 1.  For each file you intend to modify (future Table 4 targets), `Read` the target function's current signature and first 5 lines of body.
 2.  Confirm:

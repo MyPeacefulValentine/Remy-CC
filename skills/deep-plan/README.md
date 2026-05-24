@@ -17,9 +17,17 @@ A **reuse scan** is performed: for any planned new function or utility, the proj
 
 ### 2. Interactive Ambiguity Resolution (Loop)
 
-If multiple technical paths exist (e.g., Regex vs AST, Redis vs in-memory), the AI **must** pause and use `AskUserQuestion` (language follows `REMY_LANG`) to ask the user. Upon receiving an answer, the AI must search for related code before proceeding. This loop repeats until all "TBD" items are converted to "Fixed" constraints.
+The AI scans for ambiguities using a mandatory 5-category checklist (Interface Contract, Resource & Dependency, Behavioral Boundary, Execution Order, Change Boundary). If multiple technical paths exist, the AI **must** pause and use `AskUserQuestion` to ask the user — each question must include exactly one recommended option with a 1-sentence reason. Questions with inter-dependencies are presented sequentially rather than batched.
 
-### 2.5. Plan-Code Alignment Check
+Upon receiving an answer, the AI searches for related code and performs **cross-constraint validation** against all previously locked decisions before proceeding. If a contradiction is found, the conflicting prior decision is invalidated and re-presented. This loop repeats until all "TBD" items are converted to "Fixed" constraints.
+
+### 2.8. Assumption Manifest & Scenario Probes
+
+After the loop exits, the AI generates a list of ALL implicit assumptions (implementation-level and behavioral-level) not already in Table 1. Each assumption includes a confidence level and category. Assumptions with confidence ≤ Level 4 trigger concrete scenario probes — the AI constructs a specific execution scenario to help the user judge whether the assumption is correct.
+
+Assumptions are presented in batches via `AskUserQuestion`. User rejections trigger a one-time re-entry into the Step 2 loop to resolve the new ambiguity. A second re-entry is prohibited.
+
+### 2.9. Plan-Code Alignment Check
 
 Before generating the final tables, the AI re-reads target function signatures to confirm no concurrent external modifications invalidated the plan's assumptions. If a contradiction is detected, the ambiguity resolution loop is re-entered.
 

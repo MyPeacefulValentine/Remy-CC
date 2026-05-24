@@ -78,8 +78,8 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 | 命令 | 功能 | 文档（链接） |
 | :--- | :--- | :--- |
-| `/deep-plan` | 在编写代码前深度分析并制定方案——五表审计含复用扫描和验证计划 | [📖](skills/deep-plan/README_zh.md) |
-| `/code-modification` | 带依赖追踪和完整性检查的代码修改 | [📖](skills/code-modification/README_zh.md) |
+| `/deep-plan` | 在编写代码前深度分析并制定方案——五表审计含假设清单、场景探测和验证计划 | [📖](skills/deep-plan/README_zh.md) |
+| `/code-modification` | 带依赖追踪、发现检查点和决策日志的代码修改 | [📖](skills/code-modification/README_zh.md) |
 | `/post-verify` | 多角度缺陷预判 + 测试执行 + 语义质量审计（支持 low/medium/high 级别） | [📖](skills/post-verify/README_zh.md) |
 | `/security-audit` | 面向分支变更的安全审查——正则预扫描 + 并行分类 Agent + 误报过滤 | [📖](skills/security-audit/README_zh.md) |
 | `/log-change` | 生成结构化变更日志，记录修改内容和影响 | [📖](skills/log-change/README_zh.md) |

@@ -92,9 +92,67 @@ Although strict schema validation is disabled, you MUST internally structure you
 3.  **If not detected**: Skip this phase.
 
 **Phase 3: Execution (Read-Plan-Edit)**
-1.  **Pre-Read**: Read the file to be edited.
-2.  **Edit**: Apply the change.
-3.  **Post-Read**: Verify the change was applied correctly.
+
+For each file to be modified, execute the following sub-steps in order. Maintain a `_rollback_cache` (mapping file path → original content) for the duration of Phase 3.
+
+### 3.1 Pre-Read & Cache
+
+1.  **Read** the file to be edited.
+2.  **Cache**: Store the full original content in `_rollback_cache[file_path]`.
+
+### 3.2 Discovery Checkpoint (Packet Mode Only)
+
+*Skip this sub-step entirely if no packet was loaded in Phase 0.*
+
+**Before each `Edit` call**, evaluate the following 3 conditions:
+
+| # | Condition | Trigger |
+| :--- | :--- | :--- |
+| H1 | The file about to be edited is NOT listed in any `proposed_changes[].description` or referenced `evidence[].path` | Scope overflow |
+| H2 | The target function's signature or structure has changed since the audit's `evidence[].excerpt` | Stale plan |
+| H3 | The edit would violate a constraint stated in `sender_payload.analysis` | Constraint conflict |
+
+**If ANY condition is TRUE → Hard Interrupt:**
+1.  HALT editing.
+2.  Report which condition triggered and what was discovered.
+3.  Use `AskUserQuestion` with 3 options:
+    *   "扩展范围并继续 (Expand scope)" — add the new file/change to scope, continue editing immediately.
+    *   "中止并重新审计 (Abort & re-audit)" — revert ALL Phase 3 edits using `_rollback_cache`, then print: "已回滚所有修改。请重新运行 /deep-plan 进行审计。"
+    *   "忽略并继续 (Ignore & continue)" — proceed despite the violation (user accepts risk).
+4.  **If user chooses Abort**: For each entry in `_rollback_cache`, use `Edit` or `Write` to restore the original content. Then HALT Phase 3. Do NOT proceed to Phase 4.
+
+**If ALL conditions are FALSE → Proceed to Edit.**
+
+### 3.3 Soft Decision Log (Packet Mode Only)
+
+*Skip if no packet was loaded in Phase 0.*
+
+During editing, if you make a behavioral choice NOT explicitly covered by `proposed_changes[]` or `sender_payload.analysis` (e.g., choosing a specific error type, deciding on a default value, selecting between two valid patterns):
+
+1.  Record the decision in memory.
+2.  After ALL edits in Phase 3 are complete, if any decisions were recorded:
+    *   Ensure directory: `mkdir -p ".claude/temp_decisions"`
+    *   Write to `.claude/temp_decisions/decisions_{PACKET_ID}.md`:
+
+    ```markdown
+    # Decisions Log — {PACKET_ID}
+
+    | 文件路径 | 决策描述 | 类别 |
+    | :--- | :--- | :--- |
+    | path/to/file | 选择抛出 ValueError 而非返回 None | Behavior |
+    ```
+
+    Categories: `Interface` / `Resource` / `Behavior` / `Ordering` / `Boundary`.
+3.  If NO undocumented decisions were made, do NOT create the file.
+
+### 3.4 Edit & Verify
+
+1.  **Edit**: Apply the change.
+2.  **Post-Read**: Verify the change was applied correctly.
+
+### 3.5 Repeat
+
+Repeat sub-steps 3.1–3.4 for each file in the modification set.
 
 **Phase 4: Validation**
 

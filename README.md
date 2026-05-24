@@ -78,8 +78,8 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 
 | Command | Purpose | Doc (Link) |
 | :--- | :--- | :--- |
-| `/deep-plan` | Deep analysis and planning before writing code — 5-table audit with reuse scan and verification plan | [📖](skills/deep-plan/README.md) |
-| `/code-modification` | Apply code changes with dependency tracing and integrity checks | [📖](skills/code-modification/README.md) |
+| `/deep-plan` | Deep analysis and planning before writing code — 5-table audit with assumption manifest, scenario probes, and verification plan | [📖](skills/deep-plan/README.md) |
+| `/code-modification` | Apply code changes with dependency tracing, discovery checkpoint, and decision logging | [📖](skills/code-modification/README.md) |
 | `/post-verify` | Multi-angle defect prediction + test execution + semantic quality audit (effort: low/medium/high) | [📖](skills/post-verify/README.md) |
 | `/security-audit` | Security-focused review of branch changes — regex pre-scan + parallel category agents + false-positive filtering | [📖](skills/security-audit/README.md) |
 | `/log-change` | Generate a structured changelog recording modifications and impact | [📖](skills/log-change/README.md) |
