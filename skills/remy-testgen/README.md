@@ -1,11 +1,11 @@
-# remy-test
+# remy-testgen — Automated Test Generation Skill
 
 Generate persistent unit tests for existing or stub code. Supports post-hoc testing (default) and TDD mode (`--tdd`). Multi-angle agent analysis at medium/high effort levels.
 
 ## Usage
 
 ```
-/remy-test [low|medium|high] [--tdd [packet_file]] [target_files...]
+/remy-testgen [low|medium|high] [--tdd [packet_file]] [target_files...]
 ```
 
 ### Modes
@@ -24,17 +24,17 @@ Generate persistent unit tests for existing or stub code. Supports post-hoc test
 ### Examples
 
 ```bash
-/remy-test                           # Auto-detect changed files, medium effort
-/remy-test high src/auth.py          # High effort on specific file
-/remy-test --tdd                     # TDD mode, detect stubs in changed files
-/remy-test --tdd task_20260525.json  # TDD mode with remy-plan packet
-/remy-test low src/utils.py          # Quick heuristic-only generation
+/remy-testgen                           # Auto-detect changed files, medium effort
+/remy-testgen high src/auth.py          # High effort on specific file
+/remy-testgen --tdd                     # TDD mode, detect stubs in changed files
+/remy-testgen --tdd task_20260525.json  # TDD mode with remy-plan packet
+/remy-testgen low src/utils.py          # Quick heuristic-only generation
 ```
 
 ## Workflow Chain
 
 ```
-/remy-plan → /remy-test --tdd {packet} → /remy-patch {packet} → /remy-inspect
+/remy-plan → /remy-testgen --tdd {packet} → /remy-patch {packet} → /remy-inspect
 ```
 
 ## Configuration
@@ -48,8 +48,8 @@ Generate persistent unit tests for existing or stub code. Supports post-hoc test
 ## Output
 
 - **Test files**: Written to the project's test directory (auto-detected or user-specified).
-- **Report**: `.claude/temp_test/testgen_{timestamp}.md`
-- **Coverage report** (if supplement declined): `.claude/temp_test/coverage_{timestamp}.md`
+- **Report**: `.claude/temp_testgen/testgen_{timestamp}.md`
+- **Coverage report** (if supplement declined): `.claude/temp_testgen/coverage_{timestamp}.md`
 - **TDD packet** (TDD mode only): `.claude/temp_task/testgen_{timestamp}.json` — pass to `/remy-patch`.
 
 ## External Files

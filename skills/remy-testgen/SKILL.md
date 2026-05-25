@@ -1,5 +1,5 @@
 ---
-name: remy-test
+name: remy-testgen
 description: Generate persistent unit tests for existing or stub code. Supports post-hoc testing (default) and TDD mode (--tdd). Multi-angle agent analysis at medium/high effort levels.
 allowed-tools: Read, Edit, Write, Grep, Glob, Bash, PowerShell, AskUserQuestion, Agent
 argument-hint: "[low|medium|high] [--tdd [packet_file]] [target_files_or_functions (optional)]"
@@ -15,21 +15,21 @@ Generate persistent unit tests and write them into the project's test directory.
 
 ## External Files
 
-> **Path Convention**: All paths below are relative to `~/.claude/`. Use `Read("~/.claude/skills/remy-test/...")` to access them.
+> **Path Convention**: All paths below are relative to `~/.claude/`. Use `Read("~/.claude/skills/remy-testgen/...")` to access them.
 
 | File | Purpose |
 | :--- | :--- |
-| `skills/remy-test/frameworks.json` | Test framework detection rules (Phase 2). User-extensible. |
-| `skills/remy-test/schemas/test_scenario.json` | Output schema for test generation agents (Phase 3). |
-| `skills/remy-test/prompts/generate_behavioral.md` | Agent A: Behavioral contract analysis prompt (medium+). |
-| `skills/remy-test/prompts/generate_boundary.md` | Agent B: Boundary exploration prompt (medium+). |
-| `skills/remy-test/prompts/generate_property.md` | Agent C: Property-based testing prompt (high only). |
-| `skills/remy-test/templates/test_python.py.j2` | Jinja2 template for Python test files. |
-| `skills/remy-test/templates/test_typescript.ts.j2` | Jinja2 template for TypeScript test files. |
-| `skills/remy-test/templates/test_go.go.j2` | Jinja2 template for Go test files. |
-| `skills/remy-test/templates/report.md.j2` | Jinja2 template for the coverage report. |
-| `skills/remy-test/render.py` | Template rendering helper. Uses Jinja2 when available, falls back to built-in formatting. |
-| `skills/remy-test/output_schema.json` | Final output schema (coverage report structure). |
+| `skills/remy-testgen/frameworks.json` | Test framework detection rules (Phase 2). User-extensible. |
+| `skills/remy-testgen/schemas/test_scenario.json` | Output schema for test generation agents (Phase 3). |
+| `skills/remy-testgen/prompts/generate_behavioral.md` | Agent A: Behavioral contract analysis prompt (medium+). |
+| `skills/remy-testgen/prompts/generate_boundary.md` | Agent B: Boundary exploration prompt (medium+). |
+| `skills/remy-testgen/prompts/generate_property.md` | Agent C: Property-based testing prompt (high only). |
+| `skills/remy-testgen/templates/test_python.py.j2` | Jinja2 template for Python test files. |
+| `skills/remy-testgen/templates/test_typescript.ts.j2` | Jinja2 template for TypeScript test files. |
+| `skills/remy-testgen/templates/test_go.go.j2` | Jinja2 template for Go test files. |
+| `skills/remy-testgen/templates/report.md.j2` | Jinja2 template for the coverage report. |
+| `skills/remy-testgen/render.py` | Template rendering helper. Uses Jinja2 when available, falls back to built-in formatting. |
+| `skills/remy-testgen/output_schema.json` | Final output schema (coverage report structure). |
 
 ## Optional Dependency: Jinja2
 
@@ -46,7 +46,7 @@ Generate persistent unit tests and write them into the project's test directory.
 ### Argument Parsing
 
 ```
-/remy-test [effort] [--tdd [packet_file]] [target_files_or_functions...]
+/remy-testgen [effort] [--tdd [packet_file]] [target_files_or_functions...]
 ```
 
 1. If the first argument matches `low`, `medium`, or `high` (case-insensitive): use it as effort level, remaining args are parsed further.
@@ -154,7 +154,7 @@ For each uncovered symbol in `target_set`:
 
 ### 3.2 Medium/High Effort (Agent-Assisted)
 
-Read the prompt templates from `~/.claude/skills/remy-test/prompts/`:
+Read the prompt templates from `~/.claude/skills/remy-testgen/prompts/`:
 
 | Effort | Agents Launched (in parallel) |
 | :--- | :--- |
@@ -165,7 +165,7 @@ For each agent, construct the Agent call:
 
 ```
 Agent({
-  description: "remy-test: [angle name]",
+  description: "remy-testgen: [angle name]",
   prompt: "[prompt template content]\n\n---\n\n## Provided Context\n\n### Source\n```\n{source}\n```\n\n### Signatures\n{signatures}\n\n### Existing Tests\n{existing_test_names}\n\n### Caller/Callee Context\n{impact_summary}\n\n### Mode\n{post-hoc|tdd}"
 })
 ```
@@ -346,9 +346,9 @@ LOOP:
 
 ### 7.1 Report Generation
 
-1. Ensure directory: `Bash("mkdir -p '.claude/temp_test'")`.
+1. Ensure directory: `Bash("mkdir -p '.claude/temp_testgen'")`.
 2. Get timestamp: `Bash("date +\"%Y%m%d_%H%M%S\"")` → `{TIMESTAMP}`.
-3. Use `render.save_report()` to generate and persist the report to `.claude/temp_test/testgen_{TIMESTAMP}.md`.
+3. Use `render.save_report()` to generate and persist the report to `.claude/temp_testgen/testgen_{TIMESTAMP}.md`.
 
 Populate the context dict:
 
@@ -373,7 +373,7 @@ Populate the context dict:
 
 If the user declined supplement in Phase 6.3:
 
-1. Write coverage report to `.claude/temp_test/coverage_{TIMESTAMP}.md`.
+1. Write coverage report to `.claude/temp_testgen/coverage_{TIMESTAMP}.md`.
 2. Include: uncovered branches, suggested test scenarios for each.
 
 ### 7.3 TDD Packet Generation (TDD Mode Only)
@@ -444,7 +444,7 @@ Generated:      {test_count} tests in {file_count} files
 Results:        {passed}/{total} {passed_text} | Status: {PASS|FAIL|RED}
 Coverage:       {min}% - {max}% (threshold: {TEST_COVERAGE_THRESHOLD}%)
 Supplement:     {rounds} rounds
-Report:         .claude/temp_test/testgen_{TIMESTAMP}.md
+Report:         .claude/temp_testgen/testgen_{TIMESTAMP}.md
 {Packet:        .claude/temp_task/testgen_{TIMESTAMP}.json | Execute: /remy-patch testgen_{TIMESTAMP}.json}
 ```
 

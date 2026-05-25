@@ -69,7 +69,7 @@
       "Skill(remy-reposcout)",
       "Skill(remy-inspect)",
       "Skill(remy-secure)",
-      "Skill(remy-test)"
+      "Skill(remy-testgen)"
     ]
   },
   "hooks": {

@@ -81,7 +81,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | `/remy-plan` | 在编写代码前深度分析并制定方案——五表审计含假设清单、场景探测和验证计划 | [📖](skills/remy-plan/README_zh.md) |
 | `/remy-patch` | 带依赖追踪、发现检查点和决策日志的代码修改 | [📖](skills/remy-patch/README_zh.md) |
 | `/remy-inspect` | 多角度缺陷预判 + 测试执行 + 语义质量审计（支持 low/medium/high 级别） | [📖](skills/remy-inspect/README_zh.md) |
-| `/remy-test` | 生成持久化单元测试——后补测试（默认）或 TDD 模式，支持多角度 Agent 分析 | [📖](skills/remy-test/README_zh.md) |
+| `/remy-testgen` | 生成持久化单元测试——后补测试（默认）或 TDD 模式，支持多角度 Agent 分析 | [📖](skills/remy-testgen/README_zh.md) |
 | `/remy-secure` | 面向分支变更的安全审查——正则预扫描 + 并行分类 Agent + 误报过滤 | [📖](skills/remy-secure/README_zh.md) |
 | `/remy-changelog` | 生成结构化变更日志，记录修改内容和影响 | [📖](skills/remy-changelog/README_zh.md) |
 | `/remy-audit` | 验证计划、变更日志与实际代码之间的一致性 | [📖](skills/remy-audit/README_zh.md) |
@@ -99,7 +99,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 0. **`/remy-index`**（**初始化**）：为项目生成语义代码索引（需要安装时配置的 LLM API）。在第一次全量扫描后，后续调用此指令会增量更新索引。（[文档](skills/remy-index/README_zh.md)）
 1. **`/remy-plan`** — 审查架构风险，消除歧义，五表审计含验证计划，输出任务包。（[文档](skills/remy-plan/README_zh.md)）
 2. **`/remy-patch [任务包]`** — 带依赖追踪的代码修改。可选使用任务包作为变更约束。（[文档](skills/remy-patch/README_zh.md)）
-3. **`/remy-test`** — 生成单元测试。默认后补测试模式，也可选 TDD 模式（从计划任务包生成红色测试骨架）。（[文档](skills/remy-test/README_zh.md)）
+3. **`/remy-testgen`** — 生成单元测试。默认后补测试模式，也可选 TDD 模式（从计划任务包生成红色测试骨架）。（[文档](skills/remy-testgen/README_zh.md)）
 4. **`/remy-inspect`** — 多角度缺陷预判、测试执行、分支覆盖率、语义质量审计。支持努力级别。（[文档](skills/remy-inspect/README_zh.md)）
 5. **`/remy-changelog`** — 生成结构化变更日志，记录变更内容和原因。（[文档](skills/remy-changelog/README_zh.md)）
 6. **`/rewind`** — （Claude Code 内置命令）将对话上下文回退到修改前的检查点，消除实现偏见。
@@ -124,14 +124,14 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 > [!NOTE]
 > **TDD（红绿重构）vs. 后补测试**
 >
-> `/remy-test` 支持两种工作流，取决于测试相对于实现代码的编写时机：
+> `/remy-testgen` 支持两种工作流，取决于测试相对于实现代码的编写时机：
 >```
 > TDD 工作流 (--tdd)：
->   /remy-plan → /remy-test --tdd <任务包> → /remy-patch <任务包> → /remy-inspect
+>   /remy-plan → /remy-testgen --tdd <任务包> → /remy-patch <任务包> → /remy-inspect
 >   （规划 → 红色测试 → 绿色实现 → 验证）
 >
 > 后补测试工作流（默认）：
->   /remy-plan → /remy-patch <任务包> → /remy-test → /remy-inspect
+>   /remy-plan → /remy-patch <任务包> → /remy-testgen → /remy-inspect
 >   （规划 → 实现 → 生成测试 → 验证）
 >```
 > TDD 模式从接口规约（计划任务包或桩函数）生成预期失败的测试骨架，并输出任务包供 `/remy-patch` 消费。后补模式读取已有实现代码，生成验证当前行为的测试。两种模式均支持 effort 分级（low/medium/high）和可配置的覆盖率阈值。

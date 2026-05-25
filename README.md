@@ -81,7 +81,7 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 | `/remy-plan` | Deep analysis and planning before writing code — 5-table audit with assumption manifest, scenario probes, and verification plan | [📖](skills/remy-plan/README.md) |
 | `/remy-patch` | Apply code changes with dependency tracing, discovery checkpoint, and decision logging | [📖](skills/remy-patch/README.md) |
 | `/remy-inspect` | Multi-angle defect prediction + test execution + semantic quality audit (effort: low/medium/high) | [📖](skills/remy-inspect/README.md) |
-| `/remy-test` | Generate persistent unit tests — post-hoc (default) or TDD mode with multi-angle agent analysis | [📖](skills/remy-test/README.md) |
+| `/remy-testgen` | Generate persistent unit tests — post-hoc (default) or TDD mode with multi-angle agent analysis | [📖](skills/remy-testgen/README.md) |
 | `/remy-secure` | Security-focused review of branch changes — regex pre-scan + parallel category agents + false-positive filtering | [📖](skills/remy-secure/README.md) |
 | `/remy-changelog` | Generate a structured changelog recording modifications and impact | [📖](skills/remy-changelog/README.md) |
 | `/remy-audit` | Verify consistency between plan, changelog, and actual code | [📖](skills/remy-audit/README.md) |
@@ -99,7 +99,7 @@ A full development cycle follows this sequence. Not every step is required for e
 0. **`/remy-index`** (**initialization**): Generate the semantic code index for your project (requires LLM API configured during installation). After the first full scan, subsequent invocations update incrementally. ([doc](skills/remy-index/README.md))
 1. **`/remy-plan`** — Review architecture risks. Resolve ambiguities. 5-table audit with verification plan. Outputs a task packet. ([doc](skills/remy-plan/README.md))
 2. **`/remy-patch [packet]`** — Apply changes with dependency tracing. Optionally constrained by the task packet. ([doc](skills/remy-patch/README.md))
-3. **`/remy-test`** — Generate unit tests. Post-hoc mode (default) or TDD mode (generates red test skeletons from plan packets or stubs). Supports effort levels and configurable coverage thresholds. ([doc](skills/remy-test/README.md))
+3. **`/remy-testgen`** — Generate unit tests. Post-hoc mode (default) or TDD mode (generates red test skeletons from plan packets or stubs). Supports effort levels and configurable coverage thresholds. ([doc](skills/remy-testgen/README.md))
 4. **`/remy-inspect`** — Multi-angle defect prediction, test execution, branch coverage, semantic quality audit. Supports effort levels. ([doc](skills/remy-inspect/README.md))
 5. **`/remy-changelog`** — Generate a structured changelog recording what changed and why. ([doc](skills/remy-changelog/README.md))
 6. **`/rewind`** — (Claude Code built-in) Restore conversation context to the pre-modification checkpoint, removing implementation bias.
@@ -124,14 +124,14 @@ For small, low-risk changes, steps 3–6 can be skipped.
 > [!NOTE]
 > **TDD (Red-Green-Refactor) vs. Post-hoc Testing**
 >
-> `/remy-test` supports two workflows depending on when tests are written relative to implementation:
+> `/remy-testgen` supports two workflows depending on when tests are written relative to implementation:
 >```
 > TDD workflow (--tdd):
->   /remy-plan → /remy-test --tdd <packet> → /remy-patch <packet> → /remy-inspect
+>   /remy-plan → /remy-testgen --tdd <packet> → /remy-patch <packet> → /remy-inspect
 >   (plan → RED tests → GREEN implementation → verify)
 >
 > Post-hoc workflow (default):
->   /remy-plan → /remy-patch <packet> → /remy-test → /remy-inspect
+>   /remy-plan → /remy-patch <packet> → /remy-testgen → /remy-inspect
 >   (plan → implement → generate tests → verify)
 >```
 > TDD mode generates failing test skeletons from interface specifications (plan packets or stub functions) and outputs a packet for `/remy-patch`. Post-hoc mode reads existing implementation and generates tests that validate current behavior. Both support effort levels (low/medium/high) and configurable coverage thresholds.

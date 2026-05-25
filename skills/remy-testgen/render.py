@@ -1,4 +1,4 @@
-"""Template rendering helper for remy-test skill."""
+"""Template rendering helper for remy-testgen skill."""
 
 import json
 import os
@@ -181,7 +181,7 @@ def _render_go_test_fallback(ctx):
 
 
 def save_report(project_root, context):
-    report_dir = os.path.join(project_root, ".claude", "temp_test")
+    report_dir = os.path.join(project_root, ".claude", "temp_testgen")
     os.makedirs(report_dir, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -196,7 +196,7 @@ def save_report(project_root, context):
 
 
 def save_coverage_report(project_root, context):
-    report_dir = os.path.join(project_root, ".claude", "temp_test")
+    report_dir = os.path.join(project_root, ".claude", "temp_testgen")
     os.makedirs(report_dir, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

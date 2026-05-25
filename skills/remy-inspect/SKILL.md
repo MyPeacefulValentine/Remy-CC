@@ -49,7 +49,7 @@ Supports three effort levels for multi-angle analysis:
 | :--- | :--- | :--- |
 | `POST_VERIFY_MAX_RETRIES` | `-1` (unlimited) | Maximum test-fix iterations. `-1` = no limit. Positive integer = hard cap. |
 | `POST_VERIFY_EFFORT` | `medium` | Fallback effort level when not specified as argument. |
-| `TEST_COVERAGE_THRESHOLD` | `80` | Branch coverage percentage target. Shared with `/remy-test`. |
+| `TEST_COVERAGE_THRESHOLD` | `80` | Branch coverage percentage target. Shared with `/remy-testgen`. |
 
 ### Argument Parsing
 
