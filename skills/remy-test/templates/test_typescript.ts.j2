@@ -1,0 +1,23 @@
+// Tests for {{ module_name }}
+{% if imports %}
+{% for imp in imports %}
+{{ imp }}
+{% endfor %}
+{% endif %}
+
+{% for tc in test_cases %}
+{% if tc.is_property %}
+test.prop('{{ tc.description }}', [{{ tc.arbitraries }}], {% if tc.is_async %}async {% endif %}({{ tc.params }}) => {
+{% for line in tc.body_lines %}
+  {{ line }}
+{% endfor %}
+});
+{% else %}
+test('{{ tc.description }}', {% if tc.is_async %}async {% endif %}() => {
+{% for line in tc.body_lines %}
+  {{ line }}
+{% endfor %}
+});
+{% endif %}
+
+{% endfor %}

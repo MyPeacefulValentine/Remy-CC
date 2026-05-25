@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Test Generation Output",
+  "type": "object",
+  "required": ["project_name", "mode", "effort_level", "target_set", "test_plan", "generated_files", "test_results", "final_status"],
+  "properties": {
+    "project_name": { "type": "string" },
+    "mode": { "type": "string", "enum": ["post-hoc", "tdd"] },
+    "effort_level": { "type": "string", "enum": ["low", "medium", "high"] },
+    "target_set": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "symbol", "type"],
+        "properties": {
+          "file": { "type": "string" },
+          "symbol": { "type": "string" },
+          "type": { "type": "string" },
+          "signature": { "type": "string" }
+        }
+      }
+    },
+    "test_plan": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["symbol", "test_name", "category", "priority"],
+        "properties": {
+          "symbol": { "type": "string" },
+          "test_name": { "type": "string" },
+          "category": { "type": "string", "enum": ["behavioral", "boundary", "property", "heuristic"] },
+          "description": { "type": "string" },
+          "priority": { "type": "string", "enum": ["high", "medium", "low"] }
+        }
+      }
+    },
+    "generated_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "test_count"],
+        "properties": {
+          "path": { "type": "string" },
+          "test_count": { "type": "integer" }
+        }
+      }
+    },
+    "test_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status"],
+        "properties": {
+          "name": { "type": "string" },
+          "status": { "type": "string", "enum": ["PASS", "FAIL", "ERROR", "SKIP"] }
+        }
+      }
+    },
+    "passed": { "type": "integer" },
+    "total": { "type": "integer" },
+    "coverage_data": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["symbol", "branches", "covered", "percent", "status"],
+        "properties": {
+          "symbol": { "type": "string" },
+          "branches": { "type": "integer" },
+          "covered": { "type": "integer" },
+          "percent": { "type": "number" },
+          "status": { "type": "string", "enum": ["PASS", "FAIL"] }
+        }
+      }
+    },
+    "supplement_rounds": { "type": "integer" },
+    "final_status": { "type": "string", "enum": ["PASS", "FAIL", "RED"] }
+  }
+}

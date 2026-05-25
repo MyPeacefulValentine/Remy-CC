@@ -49,6 +49,7 @@ Supports three effort levels for multi-angle analysis:
 | :--- | :--- | :--- |
 | `POST_VERIFY_MAX_RETRIES` | `-1` (unlimited) | Maximum test-fix iterations. `-1` = no limit. Positive integer = hard cap. |
 | `POST_VERIFY_EFFORT` | `medium` | Fallback effort level when not specified as argument. |
+| `TEST_COVERAGE_THRESHOLD` | `80` | Branch coverage percentage target. Shared with `/remy-test`. |
 
 ### Argument Parsing
 
@@ -69,7 +70,7 @@ Supports three effort levels for multi-angle analysis:
 
 ## Report Persistence
 
-Final reports are saved to `.claude/temp_test/report_{timestamp}.md` in the project directory via `render.save_report()`. This directory is created automatically if absent.
+Final reports are saved to `.claude/temp_inspect/report_{timestamp}.md` in the project directory via `render.save_report()`. This directory is created automatically if absent.
 
 ---
 
@@ -297,7 +298,7 @@ LOOP:
 
 1. **If coverage tool available**: Use the `coverage_command` from `frameworks.json` (e.g., `pytest --cov={module} --cov-branch --cov-report=term-missing`).
 2. **If coverage tool unavailable**: Perform static analysis — enumerate branches (if/elif/else, try/except, ternary, loop conditions) in changed functions and check whether tests exercise both sides.
-3. **Threshold**: Branch coverage of changed functions/classes >= 80%.
+3. **Threshold**: Branch coverage of changed functions/classes >= `TEST_COVERAGE_THRESHOLD`% (default: 80).
 
 ### 5.2 Coverage Report
 
@@ -310,7 +311,7 @@ Print a table:
 
 ### 5.3 Below Threshold
 
-If any symbol is below 80%:
+If any symbol is below `TEST_COVERAGE_THRESHOLD`%:
 
 1. Identify uncovered branches (from `--cov-report=term-missing` or static analysis).
 2. **Create additional tests** targeting those branches (same rules as Phase 3).
@@ -385,7 +386,7 @@ Print findings table. Critical findings from either layer MUST be fixed (followi
 
 ## 8. Final Report
 
-Use `render.save_report()` to generate and persist the report to `.claude/temp_test/report_{timestamp}.md`.
+Use `render.save_report()` to generate and persist the report to `.claude/temp_inspect/report_{timestamp}.md`.
 
 Populate the context dict:
 
@@ -420,10 +421,10 @@ Change Set:     {N} symbols across {M} files
 Prediction:     {scenarios} scenarios identified, {confirmed}/{scenarios} confirmed by tests
 Tests:          {existing} existing, {created} temporary (cleaned)
 Results:        {passed}/{total} passed | Fix iterations: {iterations}
-Branch Coverage: {min}% - {max}% (threshold: 80%)
+Branch Coverage: {min}% - {max}% (threshold: {TEST_COVERAGE_THRESHOLD}%)
 Audit:          {critical} critical, {warning} warnings ({regex_count} regex + {semantic_count} semantic)
 Status:         PASS / FAIL
-Report:         .claude/temp_test/report_{timestamp}.md
+Report:         .claude/temp_inspect/report_{timestamp}.md
 ```
 
 ---
@@ -433,7 +434,7 @@ Report:         .claude/temp_test/report_{timestamp}.md
 1. **Never modify production code without user confirmation** via `AskUserQuestion`.
 2. **Never skip failure triage**. Blaming implementation by default is a protocol violation.
 3. **Never leave temporary files behind**. Phase 7 is mandatory even on early abort.
-4. **Never lower the coverage threshold**. 80% branch coverage is non-negotiable.
+4. **Never lower the coverage threshold** below `TEST_COVERAGE_THRESHOLD` (default: 80%). The env var is the single source of truth.
 5. **Never trust a passing test without auditing it** (Phase 6). A tautological test is worse than no test.
 6. **Clean separation**: This skill does not write permanent tests for the project unless the user explicitly requests it. All created tests are temporary by default.
 7. **Agent failure tolerance**: If an Agent call fails (permission denied, timeout, malformed response), log a warning and continue without that angle's results. Do NOT halt the entire workflow.

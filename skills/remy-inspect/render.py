@@ -213,8 +213,8 @@ def _render_go_test_fallback(ctx):
 
 
 def save_report(project_root, context):
-    """Render and save the report to .claude/temp_test/."""
-    report_dir = os.path.join(project_root, ".claude", "temp_test")
+    """Render and save the report to .claude/temp_inspect/."""
+    report_dir = os.path.join(project_root, ".claude", "temp_inspect")
     os.makedirs(report_dir, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

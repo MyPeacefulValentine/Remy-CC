@@ -76,7 +76,7 @@ remy-inspect 发现已有测试、为未覆盖代码创建临时测试、运行�
 
 ### Phase 8: 报告
 
-将结构化报告保存到 `.claude/temp_test/report_{timestamp}.md`，包含预判准确率指标、语义审计发现，以及标准的覆盖率/结果摘要。
+将结构化报告保存到 `.claude/temp_inspect/report_{timestamp}.md`，包含预判准确率指标、语义审计发现，以及标准的覆盖率/结果摘要。
 
 ## 配置
 

@@ -46,5 +46,9 @@
   "remy-secure": {
     "en": "Review branch changes for security vulnerabilities. Multi-stage: regex pre-scan, parallel agents, and false-positive filtering.",
     "zh-CN": "审查分支变更中的安全漏洞。多阶段：正则预扫描、并行 Agent 和误报过滤。"
+  },
+  "remy-test": {
+    "en": "Generate persistent unit tests for existing or stub code. Supports post-hoc testing (default) and TDD mode (--tdd). Multi-angle agent analysis at medium/high effort levels.",
+    "zh-CN": "为现有代码或桩代码生成持久化单元测试。支持后补测试（默认）和 TDD 模式（--tdd）。medium/high 级别使用多角度 Agent 并行分析。"
   }
 }

@@ -76,7 +76,7 @@ Deletes all temporary test files created in Phase 3.
 
 ### Phase 8: Report
 
-Saves a structured report to `.claude/temp_test/report_{timestamp}.md` including prediction accuracy metrics, semantic audit findings, and the standard coverage/results summary.
+Saves a structured report to `.claude/temp_inspect/report_{timestamp}.md` including prediction accuracy metrics, semantic audit findings, and the standard coverage/results summary.
 
 ## Configuration
 

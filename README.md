@@ -81,6 +81,7 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 | `/remy-plan` | Deep analysis and planning before writing code — 5-table audit with assumption manifest, scenario probes, and verification plan | [📖](skills/remy-plan/README.md) |
 | `/remy-patch` | Apply code changes with dependency tracing, discovery checkpoint, and decision logging | [📖](skills/remy-patch/README.md) |
 | `/remy-inspect` | Multi-angle defect prediction + test execution + semantic quality audit (effort: low/medium/high) | [📖](skills/remy-inspect/README.md) |
+| `/remy-test` | Generate persistent unit tests — post-hoc (default) or TDD mode with multi-angle agent analysis | [📖](skills/remy-test/README.md) |
 | `/remy-secure` | Security-focused review of branch changes — regex pre-scan + parallel category agents + false-positive filtering | [📖](skills/remy-secure/README.md) |
 | `/remy-changelog` | Generate a structured changelog recording modifications and impact | [📖](skills/remy-changelog/README.md) |
 | `/remy-audit` | Verify consistency between plan, changelog, and actual code | [📖](skills/remy-audit/README.md) |
@@ -98,13 +99,14 @@ A full development cycle follows this sequence. Not every step is required for e
 0. **`/remy-index`** (**initialization**): Generate the semantic code index for your project (requires LLM API configured during installation). After the first full scan, subsequent invocations update incrementally. ([doc](skills/remy-index/README.md))
 1. **`/remy-plan`** — Review architecture risks. Resolve ambiguities. 5-table audit with verification plan. Outputs a task packet. ([doc](skills/remy-plan/README.md))
 2. **`/remy-patch [packet]`** — Apply changes with dependency tracing. Optionally constrained by the task packet. ([doc](skills/remy-patch/README.md))
-3. **`/remy-inspect`** — Multi-angle defect prediction, test execution, branch coverage (≥ 80%), semantic quality audit. Supports effort levels. ([doc](skills/remy-inspect/README.md))
-4. **`/remy-changelog`** — Generate a structured changelog recording what changed and why. ([doc](skills/remy-changelog/README.md))
-5. **`/rewind`** — (Claude Code built-in) Restore conversation context to the pre-modification checkpoint, removing implementation bias.
-6. **`/remy-audit [log] [packet]`** — Verify consistency between plan, changelog, and code. ([doc](skills/remy-audit/README.md))
-7. **`bash (git commit)`** — Commit the verified changes.
-8. **`/remy-milestone`** — Record a history report and update the project timeline. ([doc](skills/remy-milestone/README.md))
-9. **`/remy-tree`** (optional) — Refresh the project tree snapshot if file structure changed. Hooks normally handle this automatically. ([doc](skills/remy-tree/README.md))
+3. **`/remy-test`** — Generate unit tests. Post-hoc mode (default) or TDD mode (generates red test skeletons from plan packets or stubs). Supports effort levels and configurable coverage thresholds. ([doc](skills/remy-test/README.md))
+4. **`/remy-inspect`** — Multi-angle defect prediction, test execution, branch coverage, semantic quality audit. Supports effort levels. ([doc](skills/remy-inspect/README.md))
+5. **`/remy-changelog`** — Generate a structured changelog recording what changed and why. ([doc](skills/remy-changelog/README.md))
+6. **`/rewind`** — (Claude Code built-in) Restore conversation context to the pre-modification checkpoint, removing implementation bias.
+7. **`/remy-audit [log] [packet]`** — Verify consistency between plan, changelog, and code. ([doc](skills/remy-audit/README.md))
+8. **`bash (git commit)`** — Commit the verified changes.
+9. **`/remy-milestone`** — Record a history report and update the project timeline. ([doc](skills/remy-milestone/README.md))
+10. **`/remy-tree`** (optional) — Refresh the project tree snapshot if file structure changed. Hooks normally handle this automatically. ([doc](skills/remy-tree/README.md))
 
 For small, low-risk changes, steps 3–6 can be skipped.
 
@@ -118,6 +120,21 @@ For small, low-risk changes, steps 3–6 can be skipped.
 >        └→ /remy-audit <log> <packet>  → three-way verification (plan vs. log vs. code)
 >```
 > Each step is independent. Skipping `/remy-plan` removes the boundary constraints on `/remy-patch` and reduces `/remy-audit` to a two-way check (log vs. code only).
+
+> [!NOTE]
+> **TDD (Red-Green-Refactor) vs. Post-hoc Testing**
+>
+> `/remy-test` supports two workflows depending on when tests are written relative to implementation:
+>```
+> TDD workflow (--tdd):
+>   /remy-plan → /remy-test --tdd <packet> → /remy-patch <packet> → /remy-inspect
+>   (plan → RED tests → GREEN implementation → verify)
+>
+> Post-hoc workflow (default):
+>   /remy-plan → /remy-patch <packet> → /remy-test → /remy-inspect
+>   (plan → implement → generate tests → verify)
+>```
+> TDD mode generates failing test skeletons from interface specifications (plan packets or stub functions) and outputs a packet for `/remy-patch`. Post-hoc mode reads existing implementation and generates tests that validate current behavior. Both support effort levels (low/medium/high) and configurable coverage thresholds.
 
 ---
 
@@ -178,7 +195,7 @@ After installation, the `remy-cc` command is available system-wide:
 | `remy-cc verify` | Check installation integrity |
 | `remy-cc version` | Print installed version |
 
-The settings editor provides a bilingual interface (English / 中文) for managing environment variables across 7 groups (LLM API, impact analysis, context injection, timeline, remy-inspect, system, Claude Code). Project-level settings inherit from global by default; individual parameters can be overridden.
+The settings editor provides a bilingual interface (English / 中文) for managing environment variables across 10 groups (Logic Index, Impact Analysis, Context Injection, Timeline, Post-Verify, Security Audit, Debug, Test Generation, System, Claude Code). Project-level settings inherit from global by default; individual parameters can be overridden.
 
 ---
 

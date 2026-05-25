@@ -1,0 +1,24 @@
+"""Tests for {{ module_name }}."""
+{% if imports %}
+{% for imp in imports %}
+{{ imp }}
+{% endfor %}
+{% endif %}
+
+{% for tc in test_cases %}
+{% if tc.is_property %}
+@given({{ tc.strategy }})
+def test_{{ tc.name }}({{ tc.params }}):
+    """{{ tc.description }}"""
+{% for line in tc.body_lines %}
+    {{ line }}
+{% endfor %}
+{% else %}
+def test_{{ tc.name }}():
+    """{{ tc.description }}"""
+{% for line in tc.body_lines %}
+    {{ line }}
+{% endfor %}
+{% endif %}
+
+{% endfor %}

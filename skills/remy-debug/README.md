@@ -28,7 +28,7 @@ Reads the failing code path using logic index impact analysis (if available) or 
 
 ### Phase 3: Diagnosis Report
 
-Outputs a structured report containing:
+Outputs a structured report to `.claude/temp_debug/debug_{timestamp}.md` containing:
 - Symptom description
 - Hypothesis chain with evidence
 - Root cause conclusion

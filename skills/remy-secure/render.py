@@ -114,7 +114,7 @@ def save_report(project_root, context):
 
     report_content = render_template("report.md.j2", context)
 
-    report_dir = Path(project_root) / ".claude" / "temp_test"
+    report_dir = Path(project_root) / ".claude" / "temp_secure"
     report_dir.mkdir(parents=True, exist_ok=True)
 
     report_path = report_dir / f"security_audit_{timestamp}.md"

@@ -1,0 +1,18 @@
+// Tests for {{ package_name }}
+package {{ package_name }}_test
+
+import (
+	"testing"
+{% for imp in imports %}
+	"{{ imp }}"
+{% endfor %}
+)
+
+{% for tc in test_cases %}
+func Test{{ tc.name }}(t *testing.T) {
+{% for line in tc.body_lines %}
+	{{ line }}
+{% endfor %}
+}
+
+{% endfor %}

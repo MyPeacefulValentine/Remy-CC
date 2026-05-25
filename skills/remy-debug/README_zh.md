@@ -28,7 +28,7 @@ remy-debug 通过结构化假设循环与熔断器追踪 Bug 根因。它生成�
 
 ### Phase 3: 诊断报告
 
-输出结构化报告，包含：
+输出结构化报告到 `.claude/temp_debug/debug_{timestamp}.md`，包含：
 - 症状描述
 - 假设链及证据
 - 根因结论

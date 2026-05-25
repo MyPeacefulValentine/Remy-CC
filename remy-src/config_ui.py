@@ -119,6 +119,19 @@ PARAM_REGISTRY = [
      "desc_en": "Max hypothesis iterations before circuit breaker triggers",
      "desc_zh": "假设循环熔断器触发前的最大迭代次数"},
 
+    {"key": "TEST_GEN_EFFORT", "group": "test_gen", "type": "enum", "default": "medium",
+     "options": ["low", "medium", "high"],
+     "desc_en": "Default effort level (low = no agents, medium = 2 agents, high = 3 agents)",
+     "desc_zh": "默认生成级别（low = 无 Agent，medium = 2 Agent，high = 3 Agent）"},
+    {"key": "TEST_COVERAGE_THRESHOLD", "group": "test_gen", "type": "int", "default": "80",
+     "min": 0, "max": 100,
+     "desc_en": "Branch coverage target percentage (shared with /remy-inspect)",
+     "desc_zh": "分支覆盖率目标百分比（与 /remy-inspect 共享）"},
+    {"key": "TEST_COVERAGE_MAX_SUPPLEMENT_ROUNDS", "group": "test_gen", "type": "int", "default": "3",
+     "min": 1, "max": 10,
+     "desc_en": "Max coverage supplement iterations before stopping",
+     "desc_zh": "覆盖率补充最大轮数"},
+
     {"key": "BASH_DEFAULT_TIMEOUT_MS", "group": "system", "type": "int", "default": "600000",
      "min": 10000, "max": 600000,
      "desc_en": "Default Bash command timeout in milliseconds",
@@ -165,6 +178,7 @@ GROUPS = [
     {"id": "post_verify", "label_en": "Post-Verify", "label_zh": "后验测试"},
     {"id": "security_audit", "label_en": "Security Audit", "label_zh": "安全审计"},
     {"id": "debug", "label_en": "Debug", "label_zh": "调试"},
+    {"id": "test_gen", "label_en": "Test Generation", "label_zh": "测试生成"},
     {"id": "system", "label_en": "System", "label_zh": "系统"},
     {"id": "claude_code", "label_en": "Claude Code", "label_zh": "Claude Code"},
 ]

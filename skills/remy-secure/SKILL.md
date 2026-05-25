@@ -193,7 +193,7 @@ For each finding, output a Markdown block:
 
 ### 4.3 Report Persistence
 
-Use `render.save_report()` to persist the report to `.claude/temp_test/security_audit_{timestamp}.md`.
+Use `render.save_report()` to persist the report to `.claude/temp_secure/security_audit_{timestamp}.md`.
 
 ### 4.4 Summary
 
@@ -208,7 +208,7 @@ Files Analyzed:  {file_count}
 Pre-Scan:        {prescan_count} deterministic findings
 Agent Findings:  {agent_count} raw → {verified_count} verified (threshold: {threshold}/10)
 Final Report:    {total} findings (HIGH: {h}, MEDIUM: {m}, LOW: {l})
-Report:          .claude/temp_test/security_audit_{timestamp}.md
+Report:          .claude/temp_secure/security_audit_{timestamp}.md
 ```
 
 ---

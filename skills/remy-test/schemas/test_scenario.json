@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Output schema for test generation agents. Each agent returns an array of test case scenarios.",
+  "type": "array",
+  "maxItems": 8,
+  "items": {
+    "type": "object",
+    "required": ["symbol", "test_name", "category", "description", "setup", "assertion", "priority"],
+    "properties": {
+      "symbol": {
+        "type": "string",
+        "description": "Target function or method name (e.g., 'load_policy' or 'MyClass.method')"
+      },
+      "test_name": {
+        "type": "string",
+        "description": "Proposed test function name following test_{func}_{scenario}_{expected} convention"
+      },
+      "category": {
+        "type": "string",
+        "enum": ["behavioral", "boundary", "property"],
+        "description": "Which generation angle produced this test case"
+      },
+      "description": {
+        "type": "string",
+        "description": "One-line description of what the test verifies"
+      },
+      "setup": {
+        "type": "string",
+        "description": "Code snippet for test setup (imports, fixtures, input construction)"
+      },
+      "assertion": {
+        "type": "string",
+        "description": "Code snippet for the assertion (assert statement or expect call)"
+      },
+      "priority": {
+        "type": "string",
+        "enum": ["high", "medium", "low"],
+        "description": "high = core behavior, medium = edge case, low = defensive/rare path"
+      }
+    },
+    "additionalProperties": false
+  }
+}

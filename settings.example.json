@@ -28,6 +28,9 @@
     "PRECISION_READ_THRESHOLD": "500",
     "DEBUG_MAX_HYPOTHESES": "3",
     "STRUCT_SCAN_TIMEOUT": "60",
+    "TEST_GEN_EFFORT": "medium",
+    "TEST_COVERAGE_THRESHOLD": "80",
+    "TEST_COVERAGE_MAX_SUPPLEMENT_ROUNDS": "3",
     "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
   },
   "permissions": {
@@ -65,7 +68,8 @@
       "Skill(remy-index)",
       "Skill(remy-reposcout)",
       "Skill(remy-inspect)",
-      "Skill(remy-secure)"
+      "Skill(remy-secure)",
+      "Skill(remy-test)"
     ]
   },
   "hooks": {

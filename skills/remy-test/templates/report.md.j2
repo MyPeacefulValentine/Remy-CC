@@ -1,0 +1,54 @@
+# Test Generation Report
+
+> Generated: {{ timestamp }}
+> Project: {{ project_name }}
+> Mode: {{ mode }}
+> Effort: {{ effort_level }}
+
+## Target Set
+
+| File | Symbol | Type |
+| :--- | :--- | :--- |
+{% for item in target_set %}
+| `{{ item.file }}` | `{{ item.symbol }}` | {{ item.type }} |
+{% endfor %}
+
+## Test Plan
+
+| # | Symbol | Test Name | Category | Priority |
+| :--- | :--- | :--- | :--- | :--- |
+{% for i, tp in enumerate(test_plan, 1) %}
+| {{ i }} | `{{ tp.symbol }}` | `{{ tp.test_name }}` | {{ tp.category }} | {{ tp.priority }} |
+{% endfor %}
+
+## Generated Files
+
+| Path | Test Count |
+| :--- | :--- |
+{% for gf in generated_files %}
+| `{{ gf.path }}` | {{ gf.test_count }} |
+{% endfor %}
+
+## Test Results
+
+| Test | Status |
+| :--- | :--- |
+{% for t in test_results %}
+| `{{ t.name }}` | {{ t.status }} |
+{% endfor %}
+
+**Summary**: {{ passed }}/{{ total }} passed
+
+{% if coverage_data %}
+## Branch Coverage
+
+| Symbol | Branches | Covered | Coverage | Status |
+| :--- | :--- | :--- | :--- | :--- |
+{% for c in coverage_data %}
+| `{{ c.symbol }}` | {{ c.branches }} | {{ c.covered }} | {{ c.percent }}% | {{ c.status }} |
+{% endfor %}
+
+Supplement rounds: {{ supplement_rounds }}
+{% endif %}
+
+## Status: {{ final_status }}

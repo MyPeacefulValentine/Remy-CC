@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Test framework detection rules for remy-test skill.",
+  "frameworks": [
+    {
+      "name": "pytest",
+      "language": "python",
+      "priority": 1,
+      "indicators": [
+        {"type": "file", "pattern": "pytest.ini"},
+        {"type": "file_contains", "pattern": "pyproject.toml", "contains": "[tool.pytest"},
+        {"type": "file_contains", "pattern": "setup.cfg", "contains": "[tool:pytest]"}
+      ],
+      "run_command": "pytest {test_files} -v",
+      "coverage_command": "pytest {test_files} --cov={module} --cov-branch --cov-report=term-missing",
+      "test_file_pattern": "test_*.py",
+      "test_dir_patterns": ["tests/", "test/"]
+    },
+    {
+      "name": "unittest",
+      "language": "python",
+      "priority": 2,
+      "indicators": [
+        {"type": "grep", "pattern": "import unittest", "glob": "*.py"}
+      ],
+      "run_command": "python -m pytest {test_files} -v",
+      "coverage_command": "python -m pytest {test_files} --cov={module} --cov-branch --cov-report=term-missing",
+      "test_file_pattern": "test_*.py",
+      "test_dir_patterns": ["tests/", "test/"]
+    },
+    {
+      "name": "jest",
+      "language": "javascript",
+      "priority": 1,
+      "indicators": [
+        {"type": "file", "pattern": "jest.config.*"},
+        {"type": "file_contains", "pattern": "package.json", "contains": "\"jest\""}
+      ],
+      "run_command": "npx jest {test_files} --verbose",
+      "coverage_command": "npx jest {test_files} --coverage --collectCoverageFrom='{module}'",
+      "test_file_pattern": "*.test.{js,ts,jsx,tsx}",
+      "test_dir_patterns": ["__tests__/", "tests/", "test/"]
+    },
+    {
+      "name": "vitest",
+      "language": "javascript",
+      "priority": 2,
+      "indicators": [
+        {"type": "file", "pattern": "vitest.config.*"},
+        {"type": "file_contains", "pattern": "package.json", "contains": "\"vitest\""}
+      ],
+      "run_command": "npx vitest run {test_files}",
+      "coverage_command": "npx vitest run {test_files} --coverage",
+      "test_file_pattern": "*.test.{js,ts,jsx,tsx}",
+      "test_dir_patterns": ["__tests__/", "tests/", "test/"]
+    },
+    {
+      "name": "go_test",
+      "language": "go",
+      "priority": 1,
+      "indicators": [
+        {"type": "file", "pattern": "*_test.go"}
+      ],
+      "run_command": "go test -v -run {test_pattern} ./{package}",
+      "coverage_command": "go test -v -coverprofile=coverage.out -run {test_pattern} ./{package}",
+      "test_file_pattern": "*_test.go",
+      "test_dir_patterns": ["."]
+    },
+    {
+      "name": "make_test",
+      "language": "any",
+      "priority": 10,
+      "indicators": [
+        {"type": "file_contains", "pattern": "Makefile", "contains": "test:"}
+      ],
+      "run_command": "make test",
+      "coverage_command": null,
+      "test_file_pattern": null,
+      "test_dir_patterns": []
+    }
+  ]
+}

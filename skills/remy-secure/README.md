@@ -64,4 +64,4 @@ If the logic index is unavailable, the skill degrades gracefully to diff-only an
 
 ## Report Output
 
-Reports are saved to `.claude/temp_test/security_audit_{timestamp}.md` in the project directory.
+Reports are saved to `.claude/temp_secure/security_audit_{timestamp}.md` in the project directory.

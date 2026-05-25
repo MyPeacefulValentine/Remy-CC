@@ -64,4 +64,4 @@ Phase 3: 置信度阈值（≥ 8/10）→ 报告生成
 
 ## 报告输出
 
-报告保存至项目目录的 `.claude/temp_test/security_audit_{timestamp}.md`。
+报告保存至项目目录的 `.claude/temp_secure/security_audit_{timestamp}.md`。
