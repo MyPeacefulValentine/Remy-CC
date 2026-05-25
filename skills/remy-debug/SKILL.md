@@ -1,6 +1,6 @@
 ---
 name: remy-debug
-description: Diagnosis-only debugging skill. Traces root cause via hypothesis loop with circuit breaker. Integrates with logic index and produces evidence packets for /code-modification.
+description: Diagnosis-only debugging skill. Traces root cause via hypothesis loop with circuit breaker. Integrates with logic index and produces evidence packets for /remy-patch.
 allowed-tools: Read, Grep, Glob, Bash, PowerShell, Write, AskUserQuestion
 argument-hint: "[error_description | test_command | file:line] [--since <ref>]"
 disable-model-invocation: true
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 # Remy Debug Protocol
 
-Diagnosis-only debugging skill. Produces a structured diagnosis report and an evidence packet compatible with `/code-modification`. Does NOT modify source code.
+Diagnosis-only debugging skill. Produces a structured diagnosis report and an evidence packet compatible with `/remy-patch`. Does NOT modify source code.
 
 ## 0. Configuration
 
@@ -78,7 +78,7 @@ If no parseable paths exist:
 ### 1.2 Impact Analysis (Conditional)
 
 1. Check: `Bash("test -f .claude/logic_index.json && echo EXISTS || echo MISSING")`.
-2. **EXISTS**: Run `Bash("python \"~/.claude/skills/update-logic-index/impact.py\" <suspect_file_1> <suspect_file_2> ...")`.
+2. **EXISTS**: Run `Bash("python \"~/.claude/skills/remy-index/impact.py\" <suspect_file_1> <suspect_file_2> ...")`.
    - If exit code = 0: record output as **Dependency Map**.
    - If exit code = 2: skip (no call graph data).
 3. **MISSING**: Skip impact analysis.
@@ -167,7 +167,7 @@ Return to 2.1 with updated evidence context.
 
 ## Phase 4: Packet Generation
 
-**Goal**: Produce an evidence packet compatible with `/code-modification`.
+**Goal**: Produce an evidence packet compatible with `/remy-patch`.
 
 1. Get git commit (if available): `Bash("git rev-parse HEAD 2>/dev/null || echo NO_GIT")`.
 2. Ensure directory: `Bash("mkdir -p '.claude/temp_task'")`.
@@ -233,5 +233,5 @@ After writing the report and packet:
 
 1. Print the diagnosis summary (root cause or inconclusive status).
 2. Print: `📦 Report: debug_{TIMESTAMP}.md | Packet: debug_{TIMESTAMP}.json`
-3. Print: `执行修复: /code-modification debug_{TIMESTAMP}.json` (only if mode = "write").
+3. Print: `执行修复: /remy-patch debug_{TIMESTAMP}.json` (only if mode = "write").
 4. **STOP**. Do NOT apply any code changes.

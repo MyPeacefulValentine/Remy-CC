@@ -48,9 +48,9 @@ The system is built on three coordinated layers:
 
 - **System prompts** (`CLAUDE.md`, `style.md`, output styles) define engineering principles, communication constraints, and prohibited behaviors. They form the static behavioral baseline, loaded at session start.
 - **Runtime hooks** fire automatically on Claude Code events — before every tool call, on every user message, and at session lifecycle boundaries. They re-inject behavioral rules to counteract instruction decay, normalize paths and shell environments, enrich file reads with caller/callee context from the logic index, and keep the project tree snapshot current. Hooks are the continuous enforcement layer: they run without user intervention.
-- **Skills** are slash commands (`/deep-plan`, `/code-modification`, `/auditor`, etc.) that you invoke manually to execute structured, multi-step development tasks. Each skill defines its own workflow with explicit inputs, outputs, and stop conditions.
+- **Skills** are slash commands (`/remy-plan`, `/remy-patch`, `/remy-audit`, etc.) that you invoke manually to execute structured, multi-step development tasks. Each skill defines its own workflow with explicit inputs, outputs, and stop conditions.
 
-These layers are coupled by design. Hooks maintain the context that skills depend on — file tree, semantic code index, and session history are all updated automatically through lifecycle events. In the other direction, skills produce artifacts (task packets, changelogs, audit reports) that hooks validate at tool-call time. For example, `/deep-plan` writes a task packet that constrains which files `/code-modification` is allowed to edit, and `pre_tool_guard` enforces that boundary on every `Edit` call.
+These layers are coupled by design. Hooks maintain the context that skills depend on — file tree, semantic code index, and session history are all updated automatically through lifecycle events. In the other direction, skills produce artifacts (task packets, changelogs, audit reports) that hooks validate at tool-call time. For example, `/remy-plan` writes a task packet that constrains which files `/remy-patch` is allowed to edit, and `pre_tool_guard` enforces that boundary on every `Edit` call.
 
 ### Prompts (Static Rules)
 
@@ -78,33 +78,33 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 
 | Command | Purpose | Doc (Link) |
 | :--- | :--- | :--- |
-| `/deep-plan` | Deep analysis and planning before writing code — 5-table audit with assumption manifest, scenario probes, and verification plan | [📖](skills/deep-plan/README.md) |
-| `/code-modification` | Apply code changes with dependency tracing, discovery checkpoint, and decision logging | [📖](skills/code-modification/README.md) |
-| `/post-verify` | Multi-angle defect prediction + test execution + semantic quality audit (effort: low/medium/high) | [📖](skills/post-verify/README.md) |
-| `/security-audit` | Security-focused review of branch changes — regex pre-scan + parallel category agents + false-positive filtering | [📖](skills/security-audit/README.md) |
-| `/log-change` | Generate a structured changelog recording modifications and impact | [📖](skills/log-change/README.md) |
-| `/auditor` | Verify consistency between plan, changelog, and actual code | [📖](skills/auditor/README.md) |
-| `/milestone` | Generate a history report and update the project timeline | [📖](skills/milestone/README.md) |
-| `/update-logic-index` | Parse source code to generate semantic summaries and call graph data | [📖](skills/update-logic-index/README.md) |
-| `/read-logic-index` | Display the current logic index | [📖](skills/read-logic-index/README.md) |
-| `/update-tree` | Regenerate the project directory snapshot | [📖](skills/update-tree/README.md) |
+| `/remy-plan` | Deep analysis and planning before writing code — 5-table audit with assumption manifest, scenario probes, and verification plan | [📖](skills/remy-plan/README.md) |
+| `/remy-patch` | Apply code changes with dependency tracing, discovery checkpoint, and decision logging | [📖](skills/remy-patch/README.md) |
+| `/remy-inspect` | Multi-angle defect prediction + test execution + semantic quality audit (effort: low/medium/high) | [📖](skills/remy-inspect/README.md) |
+| `/remy-secure` | Security-focused review of branch changes — regex pre-scan + parallel category agents + false-positive filtering | [📖](skills/remy-secure/README.md) |
+| `/remy-changelog` | Generate a structured changelog recording modifications and impact | [📖](skills/remy-changelog/README.md) |
+| `/remy-audit` | Verify consistency between plan, changelog, and actual code | [📖](skills/remy-audit/README.md) |
+| `/remy-milestone` | Generate a history report and update the project timeline | [📖](skills/remy-milestone/README.md) |
+| `/remy-index` | Parse source code to generate semantic summaries and call graph data | [📖](skills/remy-index/README.md) |
+| `/remy-lookup` | Display the current logic index | [📖](skills/remy-lookup/README.md) |
+| `/remy-tree` | Regenerate the project directory snapshot | [📖](skills/remy-tree/README.md) |
 | `/remy-debug` | Diagnosis-only debugging with hypothesis loop, circuit breaker, and evidence packet output | |
-| `/repo-audit` | Inspect a GitHub repository in a sandboxed temporary directory | [📖](skills/repo-audit/README.md) |
+| `/remy-reposcout` | Inspect a GitHub repository in a sandboxed temporary directory | [📖](skills/remy-reposcout/README.md) |
 
 ### Development Cycle
 
 A full development cycle follows this sequence. Not every step is required for every change — scale to the task complexity.
 
-0. **`/update-logic-index`** (**initialization**): Generate the semantic code index for your project (requires LLM API configured during installation). After the first full scan, subsequent invocations update incrementally. ([doc](skills/update-logic-index/README.md))
-1. **`/deep-plan`** — Review architecture risks. Resolve ambiguities. 5-table audit with verification plan. Outputs a task packet. ([doc](skills/deep-plan/README.md))
-2. **`/code-modification [packet]`** — Apply changes with dependency tracing. Optionally constrained by the task packet. ([doc](skills/code-modification/README.md))
-3. **`/post-verify`** — Multi-angle defect prediction, test execution, branch coverage (≥ 80%), semantic quality audit. Supports effort levels. ([doc](skills/post-verify/README.md))
-4. **`/log-change`** — Generate a structured changelog recording what changed and why. ([doc](skills/log-change/README.md))
+0. **`/remy-index`** (**initialization**): Generate the semantic code index for your project (requires LLM API configured during installation). After the first full scan, subsequent invocations update incrementally. ([doc](skills/remy-index/README.md))
+1. **`/remy-plan`** — Review architecture risks. Resolve ambiguities. 5-table audit with verification plan. Outputs a task packet. ([doc](skills/remy-plan/README.md))
+2. **`/remy-patch [packet]`** — Apply changes with dependency tracing. Optionally constrained by the task packet. ([doc](skills/remy-patch/README.md))
+3. **`/remy-inspect`** — Multi-angle defect prediction, test execution, branch coverage (≥ 80%), semantic quality audit. Supports effort levels. ([doc](skills/remy-inspect/README.md))
+4. **`/remy-changelog`** — Generate a structured changelog recording what changed and why. ([doc](skills/remy-changelog/README.md))
 5. **`/rewind`** — (Claude Code built-in) Restore conversation context to the pre-modification checkpoint, removing implementation bias.
-6. **`/auditor [log] [packet]`** — Verify consistency between plan, changelog, and code. ([doc](skills/auditor/README.md))
+6. **`/remy-audit [log] [packet]`** — Verify consistency between plan, changelog, and code. ([doc](skills/remy-audit/README.md))
 7. **`bash (git commit)`** — Commit the verified changes.
-8. **`/milestone`** — Record a history report and update the project timeline. ([doc](skills/milestone/README.md))
-9. **`/update-tree`** (optional) — Refresh the project tree snapshot if file structure changed. Hooks normally handle this automatically. ([doc](skills/update-tree/README.md))
+8. **`/remy-milestone`** — Record a history report and update the project timeline. ([doc](skills/remy-milestone/README.md))
+9. **`/remy-tree`** (optional) — Refresh the project tree snapshot if file structure changed. Hooks normally handle this automatically. ([doc](skills/remy-tree/README.md))
 
 For small, low-risk changes, steps 3–6 can be skipped.
 
@@ -113,11 +113,11 @@ For small, low-risk changes, steps 3–6 can be skipped.
 >
 > Three skills can be chained via JSON task packets in `.claude/temp_task/`:
 >```
->/deep-plan                          → writes task packet
->  └→ /code-modification <packet>    → uses packet as change boundary
->        └→ /auditor <log> <packet>  → three-way verification (plan vs. log vs. code)
+>/remy-plan                          → writes task packet
+>  └→ /remy-patch <packet>           → uses packet as change boundary
+>        └→ /remy-audit <log> <packet>  → three-way verification (plan vs. log vs. code)
 >```
-> Each step is independent. Skipping `/deep-plan` removes the boundary constraints on `/code-modification` and reduces `/auditor` to a two-way check (log vs. code only).
+> Each step is independent. Skipping `/remy-plan` removes the boundary constraints on `/remy-patch` and reduces `/remy-audit` to a two-way check (log vs. code only).
 
 ---
 
@@ -129,9 +129,9 @@ For small, low-risk changes, steps 3–6 can be skipped.
 | :--- | :--- |
 | Claude Code CLI ≥ 2.1.139 | Event hooks and skill invocation |
 | Python 3.7+ | Hook and installer scripts |
-| OpenAI-compatible LLM API | Semantic summarization for `/update-logic-index` |
+| OpenAI-compatible LLM API | Semantic summarization for `/remy-index` |
 | Conda or Mamba (optional) | Auto-injected into shell environment when present |
-| `gh` CLI (optional) | Required by `/repo-audit` |
+| `gh` CLI (optional) | Required by `/remy-reposcout` |
 | tree-sitter Python packages (optional) | Higher-precision C/C++/TypeScript parsing and call graph extraction |
 
 Language is configurable via the `REMY_LANG` environment variable (`en` or `zh-CN`).
@@ -161,7 +161,7 @@ The installer:
 - Copies hooks, skills, output styles, and config files to `~/.claude/`
 - Merges hook registrations and environment variables into `~/.claude/settings.json` (existing values are preserved)
 - Expands hook paths to absolute paths for the current machine
-- Prompts for LLM API configuration (URL, model, API key) used by `/update-logic-index`
+- Prompts for LLM API configuration (URL, model, API key) used by `/remy-index`
 - Creates the `remy-cc` CLI command and optionally adds it to system PATH
 
 ### CLI & Configuration
@@ -178,7 +178,7 @@ After installation, the `remy-cc` command is available system-wide:
 | `remy-cc verify` | Check installation integrity |
 | `remy-cc version` | Print installed version |
 
-The settings editor provides a bilingual interface (English / 中文) for managing environment variables across 7 groups (LLM API, impact analysis, context injection, timeline, post-verify, system, Claude Code). Project-level settings inherit from global by default; individual parameters can be overridden.
+The settings editor provides a bilingual interface (English / 中文) for managing environment variables across 7 groups (LLM API, impact analysis, context injection, timeline, remy-inspect, system, Claude Code). Project-level settings inherit from global by default; individual parameters can be overridden.
 
 ---
 

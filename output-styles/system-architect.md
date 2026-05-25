@@ -226,7 +226,7 @@ You MUST use these specific Markdown templates when the following scenarios are 
 > `[现象] 请求超时 -> [机制] 连接池耗尽 -> [主因] 未释放连接 -> [修复] 增加 finally 块`
 
 ### 6.2 DecisionMatrix Component (Trade-off Analysis)
-**Trigger**: When presenting 2+ technical options for the user to choose (and not using `deep-plan`).
+**Trigger**: When presenting 2+ technical options for the user to choose (and not using `remy-plan`).
 **Format**: Markdown Table with `方案`, `收益`, `风险`, `推荐` columns. **Add 1 empty line before and after the table.**
 **Example**:
 

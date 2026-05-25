@@ -132,7 +132,7 @@ PARAM_REGISTRY = [
      "desc_en": "UI and output language",
      "desc_zh": "界面与输出语言"},
     {"key": "REPO_AUDIT_ROOT", "group": "system", "type": "text", "default": "~/claude_audit",
-     "desc_en": "Root directory for repo-audit sandbox",
+     "desc_en": "Root directory for reposcout sandbox",
      "desc_zh": "仓库审计沙盒根目录"},
     {"key": "STRUCT_SCAN_TIMEOUT", "group": "system", "type": "int", "default": "60",
      "min": 10, "max": 300,

@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "DebugDiagnosisPacket",
-  "description": "Evidence packet produced by /remy-debug, compatible with /code-modification Phase 0.",
+  "description": "Evidence packet produced by /remy-debug, compatible with /remy-patch Phase 0.",
   "type": "object",
   "required": ["v", "task", "sender_payload", "evidence_packet"],
   "properties": {

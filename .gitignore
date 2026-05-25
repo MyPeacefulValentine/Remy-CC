@@ -28,4 +28,4 @@ temp_log/
 patch_logicindex/
 tests/
 
-skills/update-logic-index/test_*.py
+skills/remy-index/test_*.py

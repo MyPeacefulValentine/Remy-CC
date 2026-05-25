@@ -48,9 +48,9 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 - **系统提示词**（`CLAUDE.md`、`style.md`、输出风格定义）规定了工程原则、沟通约束和禁止行为，构成会话启动时加载的静态行为基线。
 - **运行时钩子**（hooks）在 Claude Code 事件上自动触发——每次工具调用前、每条用户消息发送时、以及会话生命周期的关键节点。它们负责重新注入行为规则以对抗指令衰减、规范路径和 Shell 环境、在文件读取时追加调用者/被调用者上下文，以及保持项目文件树快照的时效性。钩子是持续执行的约束层，无需用户介入。
-- **技能**（skills）是需要手动调用的斜杠命令（`/deep-plan`、`/code-modification`、`/auditor` 等），用于执行结构化的多步骤开发任务。每个技能都定义了明确的输入、输出和停止条件。
+- **技能**（skills）是需要手动调用的斜杠命令（`/remy-plan`、`/remy-patch`、`/remy-audit` 等），用于执行结构化的多步骤开发任务。每个技能都定义了明确的输入、输出和停止条件。
 
-这三层之间存在设计上的耦合。钩子负责维护技能所依赖的上下文——文件树、语义代码索引、会话历史都通过生命周期事件自动更新。反过来，技能产出的工件（任务包、变更日志、审计报告）也会被钩子在工具调用时校验。例如，`/deep-plan` 写入的任务包会约束 `/code-modification` 允许编辑的文件范围，而 `pre_tool_guard` 钩子在每次 `Edit` 调用时执行这一边界检查。
+这三层之间存在设计上的耦合。钩子负责维护技能所依赖的上下文——文件树、语义代码索引、会话历史都通过生命周期事件自动更新。反过来，技能产出的工件（任务包、变更日志、审计报告）也会被钩子在工具调用时校验。例如，`/remy-plan` 写入的任务包会约束 `/remy-patch` 允许编辑的文件范围，而 `pre_tool_guard` 钩子在每次 `Edit` 调用时执行这一边界检查。
 
 ### Prompts（静态规则）
 
@@ -78,33 +78,33 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 | 命令 | 功能 | 文档（链接） |
 | :--- | :--- | :--- |
-| `/deep-plan` | 在编写代码前深度分析并制定方案——五表审计含假设清单、场景探测和验证计划 | [📖](skills/deep-plan/README_zh.md) |
-| `/code-modification` | 带依赖追踪、发现检查点和决策日志的代码修改 | [📖](skills/code-modification/README_zh.md) |
-| `/post-verify` | 多角度缺陷预判 + 测试执行 + 语义质量审计（支持 low/medium/high 级别） | [📖](skills/post-verify/README_zh.md) |
-| `/security-audit` | 面向分支变更的安全审查——正则预扫描 + 并行分类 Agent + 误报过滤 | [📖](skills/security-audit/README_zh.md) |
-| `/log-change` | 生成结构化变更日志，记录修改内容和影响 | [📖](skills/log-change/README_zh.md) |
-| `/auditor` | 验证计划、变更日志与实际代码之间的一致性 | [📖](skills/auditor/README_zh.md) |
-| `/milestone` | 生成历史报告并更新项目时间线 | [📖](skills/milestone/README_zh.md) |
-| `/update-logic-index` | 解析源代码，生成语义摘要和调用图数据 | [📖](skills/update-logic-index/README_zh.md) |
-| `/read-logic-index` | 显示当前逻辑索引 | [📖](skills/read-logic-index/README_zh.md) |
-| `/update-tree` | 重新生成项目目录快照 | [📖](skills/update-tree/README_zh.md) |
+| `/remy-plan` | 在编写代码前深度分析并制定方案——五表审计含假设清单、场景探测和验证计划 | [📖](skills/remy-plan/README_zh.md) |
+| `/remy-patch` | 带依赖追踪、发现检查点和决策日志的代码修改 | [📖](skills/remy-patch/README_zh.md) |
+| `/remy-inspect` | 多角度缺陷预判 + 测试执行 + 语义质量审计（支持 low/medium/high 级别） | [📖](skills/remy-inspect/README_zh.md) |
+| `/remy-secure` | 面向分支变更的安全审查——正则预扫描 + 并行分类 Agent + 误报过滤 | [📖](skills/remy-secure/README_zh.md) |
+| `/remy-changelog` | 生成结构化变更日志，记录修改内容和影响 | [📖](skills/remy-changelog/README_zh.md) |
+| `/remy-audit` | 验证计划、变更日志与实际代码之间的一致性 | [📖](skills/remy-audit/README_zh.md) |
+| `/remy-milestone` | 生成历史报告并更新项目时间线 | [📖](skills/remy-milestone/README_zh.md) |
+| `/remy-index` | 解析源代码，生成语义摘要和调用图数据 | [📖](skills/remy-index/README_zh.md) |
+| `/remy-lookup` | 显示当前逻辑索引 | [📖](skills/remy-lookup/README_zh.md) |
+| `/remy-tree` | 重新生成项目目录快照 | [📖](skills/remy-tree/README_zh.md) |
 | `/remy-debug` | 仅诊断的调试技能——假设循环、熔断器和证据包输出 | |
-| `/repo-audit` | 在沙盒临时目录中检查 GitHub 仓库 | [📖](skills/repo-audit/README_zh.md) |
+| `/remy-reposcout` | 在沙盒临时目录中检查 GitHub 仓库 | [📖](skills/remy-reposcout/README_zh.md) |
 
 ### 开发循环
 
 一次完整的开发循环按以下顺序进行。并非每次修改都需要全部步骤——根据任务复杂度选择。
 
-0. **`/update-logic-index`**（**初始化**）：为项目生成语义代码索引（需要安装时配置的 LLM API）。在第一次全量扫描后，后续调用此指令会增量更新索引。（[文档](skills/update-logic-index/README_zh.md)）
-1. **`/deep-plan`** — 审查架构风险，消除歧义，五表审计含验证计划，输出任务包。（[文档](skills/deep-plan/README_zh.md)）
-2. **`/code-modification [任务包]`** — 带依赖追踪的代码修改。可选使用任务包作为变更约束。（[文档](skills/code-modification/README_zh.md)）
-3. **`/post-verify`** — 多角度缺陷预判、测试执行、分支覆盖率（≥ 80%）、语义质量审计。支持努力级别。（[文档](skills/post-verify/README_zh.md)）
-4. **`/log-change`** — 生成结构化变更日志，记录变更内容和原因。（[文档](skills/log-change/README_zh.md)）
+0. **`/remy-index`**（**初始化**）：为项目生成语义代码索引（需要安装时配置的 LLM API）。在第一次全量扫描后，后续调用此指令会增量更新索引。（[文档](skills/remy-index/README_zh.md)）
+1. **`/remy-plan`** — 审查架构风险，消除歧义，五表审计含验证计划，输出任务包。（[文档](skills/remy-plan/README_zh.md)）
+2. **`/remy-patch [任务包]`** — 带依赖追踪的代码修改。可选使用任务包作为变更约束。（[文档](skills/remy-patch/README_zh.md)）
+3. **`/remy-inspect`** — 多角度缺陷预判、测试执行、分支覆盖率（≥ 80%）、语义质量审计。支持努力级别。（[文档](skills/remy-inspect/README_zh.md)）
+4. **`/remy-changelog`** — 生成结构化变更日志，记录变更内容和原因。（[文档](skills/remy-changelog/README_zh.md)）
 5. **`/rewind`** — （Claude Code 内置命令）将对话上下文回退到修改前的检查点，消除实现偏见。
-6. **`/auditor [日志] [任务包]`** — 校验计划、变更日志与代码之间的一致性。（[文档](skills/auditor/README_zh.md)）
+6. **`/remy-audit [日志] [任务包]`** — 校验计划、变更日志与代码之间的一致性。（[文档](skills/remy-audit/README_zh.md)）
 7. **`bash (git commit)`** — 提交已验证的变更。
-8. **`/milestone`** — 记录历史报告并更新项目时间线。（[文档](skills/milestone/README_zh.md)）
-9. **`/update-tree`**（可选） — 如文件结构发生变化，刷新项目树快照。一般情况下，hooks 会自动更新和注入，无需手动调用。（[文档](skills/update-tree/README_zh.md)）
+8. **`/remy-milestone`** — 记录历史报告并更新项目时间线。（[文档](skills/remy-milestone/README_zh.md)）
+9. **`/remy-tree`**（可选） — 如文件结构发生变化，刷新项目树快照。一般情况下，hooks 会自动更新和注入，无需手动调用。（[文档](skills/remy-tree/README_zh.md)）
 
 对于小型、低风险的变更，可跳过步骤 3–6。
 
@@ -113,11 +113,11 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 >
 > 三个 Skills 通过 `.claude/temp_task/` 目录下的 JSON 任务包串联：
 >```
->/deep-plan                          → 写入任务包
->  └→ /code-modification <任务包>    → 以任务包作为变更边界
->        └→ /auditor <日志> <任务包> → 三方校验（计划 vs. 日志 vs. 代码）
+>/remy-plan                          → 写入任务包
+>  └→ /remy-patch <任务包>           → 以任务包作为变更边界
+>        └→ /remy-audit <日志> <任务包> → 三方校验（计划 vs. 日志 vs. 代码）
 >```
-> 每个步骤相互独立。跳过 `/deep-plan` 会移除对 `/code-modification` 的边界约束，并使 `/auditor` 退化为两方校验（仅日志 vs. 代码）。
+> 每个步骤相互独立。跳过 `/remy-plan` 会移除对 `/remy-patch` 的边界约束，并使 `/remy-audit` 退化为两方校验（仅日志 vs. 代码）。
 
 ---
 
@@ -129,9 +129,9 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | :--- | :--- |
 | Claude Code CLI ≥ 2.1.139 | 事件 Hooks 和 Skill 调用 |
 | Python 3.7+ | Hook 和安装脚本 |
-| OpenAI 兼容的 LLM API | `/update-logic-index` 的语义摘要生成 |
+| OpenAI 兼容的 LLM API | `/remy-index` 的语义摘要生成 |
 | Conda 或 Mamba（可选） | 存在时自动注入到 Shell 环境 |
-| `gh` CLI（可选） | `/repo-audit` 依赖 |
+| `gh` CLI（可选） | `/remy-reposcout` 依赖 |
 | tree-sitter Python 包（可选） | C/C++/TypeScript 的高精度解析和调用图提取 |
 
 语言可通过 `REMY_LANG` 环境变量配置（`en` 或 `zh-CN`）。
@@ -161,7 +161,7 @@ python install.py --lang zh-CN   # 简体中文
 - 将 Hooks、Skills、输出风格和配置文件复制到 `~/.claude/`
 - 将 Hook 注册和环境变量合并到 `~/.claude/settings.json`（不覆盖已有值）
 - 将 Hook 路径展开为当前机器的绝对路径
-- 交互式配置 `/update-logic-index` 使用的 LLM API（URL、模型、API Key）
+- 交互式配置 `/remy-index` 使用的 LLM API（URL、模型、API Key）
 - 创建 `remy-cc` CLI 命令，可选将其加入系统 PATH
 
 ### 命令与配置

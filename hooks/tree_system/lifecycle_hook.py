@@ -16,7 +16,7 @@ import subprocess
 GENERATOR_SCRIPT = "generate_smart_tree.py"
 STRUCT_SCAN_SCRIPT = os.path.join(
     os.path.expanduser("~"), ".claude",
-    "skills", "update-logic-index", "struct_scan.py"
+    "skills", "remy-index", "struct_scan.py"
 )
 SCOPE_UI_SCRIPT = os.path.join(
     os.path.expanduser("~"), ".claude",

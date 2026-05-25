@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Assertion anti-pattern detection rules for remy-inspect skill.",
+  "patterns": [
+    {
+      "id": "AP-001",
+      "name": "tautological_true",
+      "severity": "critical",
+      "description": "Assertion is always true (assert True, assert 1, self-comparison).",
+      "languages": ["python"],
+      "regex": [
+        "assert\\s+True\\b",
+        "assert\\s+1\\b",
+        "assertEqual\\(\\s*(.+?)\\s*,\\s*\\1\\s*\\)",
+        "assertIs\\(\\s*(.+?)\\s*,\\s*\\1\\s*\\)"
+      ]
+    },
+    {
+      "id": "AP-002",
+      "name": "tautological_true_js",
+      "severity": "critical",
+      "description": "Assertion is always true in JS test frameworks.",
+      "languages": ["javascript", "typescript"],
+      "regex": [
+        "expect\\(true\\)\\.toBe\\(true\\)",
+        "expect\\(1\\)\\.toBe\\(1\\)",
+        "expect\\((.+?)\\)\\.toBe\\(\\1\\)",
+        "expect\\((.+?)\\)\\.toEqual\\(\\1\\)"
+      ]
+    },
+    {
+      "id": "AP-003",
+      "name": "no_assertion",
+      "severity": "critical",
+      "description": "Test function body contains no assertion statement.",
+      "languages": ["python"],
+      "detection": "ast_scan",
+      "rule": "Function name starts with 'test_' but body contains no 'assert' keyword, pytest.raises, or self.assert* call."
+    },
+    {
+      "id": "AP-004",
+      "name": "no_assertion_js",
+      "severity": "critical",
+      "description": "Test block contains no expect() or assert() call.",
+      "languages": ["javascript", "typescript"],
+      "detection": "ast_scan",
+      "rule": "test() or it() block body contains no expect() or assert() call."
+    },
+    {
+      "id": "AP-005",
+      "name": "mock_only_assertion",
+      "severity": "warning",
+      "description": "All assertions in the test verify mock call counts or arguments, never real output.",
+      "languages": ["python"],
+      "regex": [
+        "(?:assert_called|assert_called_once|assert_called_with|call_count)"
+      ],
+      "negative_regex": [
+        "assert(?!.*(?:called|mock|patch)).*=="
+      ],
+      "rule": "Flag when all assertions in a test function match mock patterns and none match real-value assertions."
+    },
+    {
+      "id": "AP-006",
+      "name": "mock_only_assertion_js",
+      "severity": "warning",
+      "description": "All assertions verify mock calls, never real output.",
+      "languages": ["javascript", "typescript"],
+      "regex": [
+        "expect\\(.*(?:mock|spy|fn).*\\)\\.toHave(?:Been)?Called"
+      ],
+      "negative_regex": [
+        "expect\\((?!.*(?:mock|spy|fn)).*\\)\\.toBe",
+        "expect\\((?!.*(?:mock|spy|fn)).*\\)\\.toEqual"
+      ],
+      "rule": "Flag when all assertions reference mock/spy objects."
+    },
+    {
+      "id": "AP-007",
+      "name": "broad_exception_swallow",
+      "severity": "warning",
+      "description": "Test catches broad exception and suppresses it.",
+      "languages": ["python"],
+      "regex": [
+        "except\\s+(?:Exception|BaseException)\\s*:(?:\\s*$|\\s*pass)"
+      ]
+    },
+    {
+      "id": "AP-008",
+      "name": "broad_exception_swallow_js",
+      "severity": "warning",
+      "description": "Test catches all errors and suppresses them.",
+      "languages": ["javascript", "typescript"],
+      "regex": [
+        "catch\\s*\\(.*\\)\\s*\\{\\s*\\}"
+      ]
+    },
+    {
+      "id": "AP-009",
+      "name": "magic_number",
+      "severity": "info",
+      "description": "Assertion compares against a numeric literal without descriptive variable name.",
+      "languages": ["python"],
+      "regex": [
+        "assert\\w*\\(.*,\\s*\\d{2,}\\s*\\)",
+        "==\\s*\\d{3,}"
+      ]
+    },
+    {
+      "id": "AP-010",
+      "name": "sleep_in_test",
+      "severity": "warning",
+      "description": "Test uses time.sleep or setTimeout instead of condition-based waiting.",
+      "languages": ["python", "javascript", "typescript"],
+      "regex": [
+        "time\\.sleep\\(",
+        "setTimeout\\(",
+        "asyncio\\.sleep\\("
+      ]
+    }
+  ]
+}

@@ -51,6 +51,35 @@ SETTINGS_TEMPLATE = "settings.example.json"
 BACKUP_SUFFIX = ".bak"
 API_KEY_PLACEHOLDER = "YOUR_API_KEY_HERE"
 
+MIGRATIONS = {
+    "permissions": {
+        "Skill(update-logic-index)": "Skill(remy-index)",
+        "Skill(read-logic-index)": "Skill(remy-lookup)",
+        "Skill(deep-plan)": "Skill(remy-plan)",
+        "Skill(code-modification)": "Skill(remy-patch)",
+        "Skill(post-verify)": "Skill(remy-inspect)",
+        "Skill(auditor)": "Skill(remy-audit)",
+        "Skill(log-change)": "Skill(remy-changelog)",
+        "Skill(milestone)": "Skill(remy-milestone)",
+        "Skill(security-audit)": "Skill(remy-secure)",
+        "Skill(update-tree)": "Skill(remy-tree)",
+        "Skill(repo-audit)": "Skill(remy-reposcout)",
+    },
+    "directories": {
+        "skills/update-logic-index": "skills/remy-index",
+        "skills/read-logic-index": "skills/remy-lookup",
+        "skills/deep-plan": "skills/remy-plan",
+        "skills/code-modification": "skills/remy-patch",
+        "skills/post-verify": "skills/remy-inspect",
+        "skills/auditor": "skills/remy-audit",
+        "skills/log-change": "skills/remy-changelog",
+        "skills/milestone": "skills/remy-milestone",
+        "skills/security-audit": "skills/remy-secure",
+        "skills/update-tree": "skills/remy-tree",
+        "skills/repo-audit": "skills/remy-reposcout",
+    },
+}
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 # ── Bilingual UI Messages ─────────────────────────────────────
@@ -68,11 +97,12 @@ UI = {
         "settings_tpl_missing": "  [!] {name} missing, skipping settings.json merge",
         "env_new_keys": "  [i] New keys added to env (configure actual values): {keys}",
         "manifest_written": "  [+] {name}",
+        "removed_old_dir": "  [-] Removed obsolete: {name}/",
         "ts_installed": "  [i] tree-sitter already installed, skipping",
         "ts_prompt": "Install tree-sitter (high-precision C/C++/TypeScript parsing)? [Y/n] ",
         "ts_installing": "  Installing tree-sitter ...",
         "j2_installed": "  [i] Jinja2 already installed, skipping",
-        "j2_prompt": "Install Jinja2 (post-verify template rendering)? [Y/n] ",
+        "j2_prompt": "Install Jinja2 (remy-inspect template rendering)? [Y/n] ",
         "j2_installing": "  Installing Jinja2 ...",
         "api_config_new": "Configure LLM API for Logic Index? [Y/n] ",
         "api_config_existing": "Existing API config detected. Reconfigure? [y/N] ",
@@ -142,6 +172,7 @@ UI = {
         "settings_tpl_missing": "  [!] {name} 缺失，跳过 settings.json 合并",
         "env_new_keys": "  [i] env 中新增以下 key（需手动配置实际值）：{keys}",
         "manifest_written": "  [+] {name}",
+        "removed_old_dir": "  [-] 已删除旧目录：{name}/",
         "ts_installed": "  [i] tree-sitter 已安装，跳过",
         "ts_prompt": "是否安装 tree-sitter（C/C++/TypeScript 高精度解析）？[Y/n] ",
         "ts_installing": "  正在安装 tree-sitter ...",
@@ -455,6 +486,46 @@ def remove_suite_permissions(settings: dict, template: dict) -> None:
             settings.pop("permissions", None)
 
 
+def migrate_permissions(settings_path: Path) -> None:
+    """Replace renamed skill permissions in settings.json."""
+    perm_map = MIGRATIONS.get("permissions", {})
+    if not perm_map:
+        return
+    try:
+        with open(settings_path, "r", encoding="utf-8") as f:
+            settings = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return
+    perms = settings.get("permissions", {}).get("allow", [])
+    if not perms:
+        return
+    migrated = []
+    seen = set()
+    for p in perms:
+        replacement = perm_map.get(p, p)
+        if replacement not in seen:
+            migrated.append(replacement)
+            seen.add(replacement)
+    if migrated != perms:
+        settings["permissions"]["allow"] = migrated
+        with open(settings_path, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        if sys.platform != "win32":
+            os.chmod(settings_path, 0o600)
+
+
+def cleanup_old_skill_dirs(claude_home: Path) -> None:
+    """Remove old skill directories superseded by renames."""
+    dir_map = MIGRATIONS.get("directories", {})
+    for old_rel, new_rel in dir_map.items():
+        old_path = claude_home / old_rel
+        new_path = claude_home / new_rel
+        if old_path.exists() and new_path.exists():
+            shutil.rmtree(old_path)
+            print(_t("removed_old_dir", name=old_rel))
+
+
 def prompt_language() -> str:
     """Interactive bilingual language selection."""
     print("Select language / 选择语言:")
@@ -694,6 +765,8 @@ def do_install() -> None:
             template = json.load(f)
         settings_path = claude_home / "settings.json"
         settings_backup = merge_settings(template, settings_path, claude_home, lang_override=_ui_lang)
+        migrate_permissions(settings_path)
+        cleanup_old_skill_dirs(claude_home)
         print(_t("settings_merged"))
         print()
         configure_api(settings_path)

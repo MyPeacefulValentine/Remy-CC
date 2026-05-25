@@ -46,7 +46,7 @@ def _consume_dirty_files(cwd, target_path):
 
     try:
         claude_home = os.path.join(os.path.expanduser("~"), ".claude")
-        struct_scan_path = os.path.join(claude_home, "skills", "update-logic-index", "struct_scan.py")
+        struct_scan_path = os.path.join(claude_home, "skills", "remy-index", "struct_scan.py")
 
         if os.path.exists(struct_scan_path):
             import subprocess
