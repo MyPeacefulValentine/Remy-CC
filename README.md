@@ -58,7 +58,7 @@ These layers are coupled by design. Hooks maintain the context that skills depen
 | :--- | :--- |
 | `CLAUDE.md` | Protocol entry point. References other prompt files, declares anti-hallucination rules (recursive context integrity), lists core skills manifest, injects dynamic context (project tree, logic index, timeline) |
 | `style.md` | Behavioral baseline. Defines role positioning, 5-level epistemic calibration, communication protocol (modification blocking, silent execution, agent degradation), unified tool invocation strategy |
-| `tools_ref.md` | Technical execution reference. Specifies file operation procedures (Read-Modify-Read), Git workflow, debugging and TDD protocols, hooks system overview |
+| `tools_ref.md` | Technical execution reference. File operation procedures, Git workflow, doc sync rules, GitHub CLI constraints |
 | `output-styles/system-architect.md` | Output style definition. Sets system architect role, engineering philosophy (SOLID/KISS/DRY/YAGNI), prohibited vocabulary, structured output templates (LogicChain, DecisionMatrix) |
 
 ### Hooks (Automated)
@@ -88,6 +88,7 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 | `/update-logic-index` | Parse source code to generate semantic summaries and call graph data | [📖](skills/update-logic-index/README.md) |
 | `/read-logic-index` | Display the current logic index | [📖](skills/read-logic-index/README.md) |
 | `/update-tree` | Regenerate the project directory snapshot | [📖](skills/update-tree/README.md) |
+| `/remy-debug` | Diagnosis-only debugging with hypothesis loop, circuit breaker, and evidence packet output | |
 | `/repo-audit` | Inspect a GitHub repository in a sandboxed temporary directory | [📖](skills/repo-audit/README.md) |
 
 ### Development Cycle
@@ -105,7 +106,7 @@ A full development cycle follows this sequence. Not every step is required for e
 8. **`/milestone`** — Record a history report and update the project timeline. ([doc](skills/milestone/README.md))
 9. **`/update-tree`** (optional) — Refresh the project tree snapshot if file structure changed. Hooks normally handle this automatically. ([doc](skills/update-tree/README.md))
 
-For small, low-risk changes, steps 3–6 can be skipped. Other skills (debugging, TDD, git workflow, etc.) are loaded automatically based on context and require no manual invocation.
+For small, low-risk changes, steps 3–6 can be skipped.
 
 > [!NOTE]
 > **Plan → Modify → Audit and Three-Way Verification**
@@ -178,12 +179,6 @@ After installation, the `remy-cc` command is available system-wide:
 | `remy-cc version` | Print installed version |
 
 The settings editor provides a bilingual interface (English / 中文) for managing environment variables across 7 groups (LLM API, impact analysis, context injection, timeline, post-verify, system, Claude Code). Project-level settings inherit from global by default; individual parameters can be overridden.
-
----
-
-## 🤝Credits
-
-Some skills in this project (such as TDD development principles) were inspired by **[superpowers](https://github.com/obra/superpowers)** by Jesse Vincent.
 
 ---
 

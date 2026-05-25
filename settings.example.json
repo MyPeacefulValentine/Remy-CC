@@ -26,6 +26,7 @@
     "IMPACT_DEPTH_UP": "2",
     "IMPACT_DEPTH_DOWN": "2",
     "PRECISION_READ_THRESHOLD": "500",
+    "DEBUG_MAX_HYPOTHESES": "3",
     "STRUCT_SCAN_TIMEOUT": "60",
     "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
   },
@@ -54,8 +55,7 @@
       "WebSearch",
       "Write",
       "Skill(code-modification)",
-      "Skill(systematic-debugging)",
-      "Skill(test-driven-development)",
+      "Skill(remy-debug)",
       "Skill(auditor)",
       "Skill(deep-plan)",
       "Skill(milestone)",

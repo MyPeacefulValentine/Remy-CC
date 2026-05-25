@@ -114,6 +114,11 @@ PARAM_REGISTRY = [
      "desc_en": "Minimum confidence score (1-10) for findings in final report",
      "desc_zh": "最终报告中发现的最低置信度分数（1-10）"},
 
+    {"key": "DEBUG_MAX_HYPOTHESES", "group": "debug", "type": "int", "default": "3",
+     "min": 1, "max": 10,
+     "desc_en": "Max hypothesis iterations before circuit breaker triggers",
+     "desc_zh": "假设循环熔断器触发前的最大迭代次数"},
+
     {"key": "BASH_DEFAULT_TIMEOUT_MS", "group": "system", "type": "int", "default": "600000",
      "min": 10000, "max": 600000,
      "desc_en": "Default Bash command timeout in milliseconds",
@@ -159,6 +164,7 @@ GROUPS = [
     {"id": "timeline", "label_en": "Timeline", "label_zh": "时间线"},
     {"id": "post_verify", "label_en": "Post-Verify", "label_zh": "后验测试"},
     {"id": "security_audit", "label_en": "Security Audit", "label_zh": "安全审计"},
+    {"id": "debug", "label_en": "Debug", "label_zh": "调试"},
     {"id": "system", "label_en": "System", "label_zh": "系统"},
     {"id": "claude_code", "label_en": "Claude Code", "label_zh": "Claude Code"},
 ]

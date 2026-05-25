@@ -100,30 +100,34 @@ When static analysis is insufficient to determine the behavior of a function, li
 
 **Constraints**:
 *   **Read-Only**: Probes must not modify workspace files, state, or environment.
-*   **Ephemeral**: Use temporary directories (`/tmp`, `$TMPDIR`) for any file I/O.
+*   **Ephemeral**: Use the system temporary directory for any file I/O (Unix: `$TMPDIR` or `/tmp`; Windows: `$env:TEMP`).
 *   **Sandboxed**: If importing workspace code, ensure no side-effects occur on import (no top-level execution, no file writes, no network calls).
 
 **Examples**:
 
-**Python**:
+**Python** (cross-platform — use system temp directory):
 
 ```python
 # Acceptable: Isolated test using only installed libraries
-Bash: "cd /tmp && python3 -c \"import numpy as np; print(np.__version__)\""
+# Unix:
+Bash: "cd \"${TMPDIR:-/tmp}\" && python3 -c \"import numpy as np; print(np.__version__)\""
+# Windows (PowerShell):
+PowerShell: "cd $env:TEMP; python -c \"import numpy as np; print(np.__version__)\""
 
 # Unacceptable: Direct execution with potential side-effects
 Bash: "python3 src/main.py"                                    # WRONG: Runs full application
 ```
 
-**C/C++**:
+**C/C++** (cross-platform — use system temp directory):
 
 ```bash
 # Acceptable: Compile and run a minimal probe in temp directory
-Bash: "cd /tmp && cat > probe.c << 'EOF'
+# Unix:
+Bash: "cd \"${TMPDIR:-/tmp}\" && cat > probe.c << 'EOF'
 #include <stdio.h>
 int main(void) { printf(\"sizeof(int)=%zu\\n\", sizeof(int)); return 0; }
-EOF"
-Bash: "cd /tmp && gcc -o probe probe.c && ./probe"
+EOF
+gcc -o probe probe.c && ./probe"
 
 # Unacceptable: Direct execution with potential side-effects
 Bash: "make -C /path/to/project"                               # WRONG: Builds full project
@@ -219,7 +223,7 @@ You MUST use these specific Markdown templates when the following scenarios are 
 **Trigger**: When analyzing a Bug, an Error Log, or explaining a complex mechanism.
 **Format**: `[Tag] Description -> [Tag] Description` (Use `->` for causality).
 **Example**:
-> `[现象] 请求超时 -> [机制] 连接池耗尽 -> [根因] 未释放连接 -> [修复] 增加 finally 块`
+> `[现象] 请求超时 -> [机制] 连接池耗尽 -> [主因] 未释放连接 -> [修复] 增加 finally 块`
 
 ### 6.2 DecisionMatrix Component (Trade-off Analysis)
 **Trigger**: When presenting 2+ technical options for the user to choose (and not using `deep-plan`).

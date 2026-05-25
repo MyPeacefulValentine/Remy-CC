@@ -58,7 +58,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | :--- | :--- |
 | `CLAUDE.md` | 协议入口。引用其它提示词文件，声明反幻觉规则（递归上下文完整性），列出核心 Skills 清单，注入动态上下文（项目树、逻辑索引、时间线） |
 | `style.md` | 行为基线。定义角色定位、5 级置信度分层、沟通协议（修改阻塞、静默执行、Agent 降级），统一工具调用策略 |
-| `tools_ref.md` | 技术执行参考。规定文件操作流程（Read-Modify-Read）、Git 工作流、调试与 TDD 协议、Hooks 系统概述 |
+| `tools_ref.md` | 技术执行参考。文件操作流程、Git 工作流、文档同步规则、GitHub CLI 约束 |
 | `output-styles/system-architect.md` | 输出风格定义。设定系统架构师角色、工程哲学（SOLID/KISS/DRY/YAGNI）、禁用词汇表、结构化输出模板（LogicChain、DecisionMatrix） |
 
 ### Hooks（自动执行）
@@ -88,6 +88,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | `/update-logic-index` | 解析源代码，生成语义摘要和调用图数据 | [📖](skills/update-logic-index/README_zh.md) |
 | `/read-logic-index` | 显示当前逻辑索引 | [📖](skills/read-logic-index/README_zh.md) |
 | `/update-tree` | 重新生成项目目录快照 | [📖](skills/update-tree/README_zh.md) |
+| `/remy-debug` | 仅诊断的调试技能——假设循环、熔断器和证据包输出 | |
 | `/repo-audit` | 在沙盒临时目录中检查 GitHub 仓库 | [📖](skills/repo-audit/README_zh.md) |
 
 ### 开发循环
@@ -105,7 +106,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 8. **`/milestone`** — 记录历史报告并更新项目时间线。（[文档](skills/milestone/README_zh.md)）
 9. **`/update-tree`**（可选） — 如文件结构发生变化，刷新项目树快照。一般情况下，hooks 会自动更新和注入，无需手动调用。（[文档](skills/update-tree/README_zh.md)）
 
-对于小型、低风险的变更，可跳过步骤 3–6。其他 Skills（调试、TDD、Git 工作流等）根据上下文自动加载，无需手动调用。
+对于小型、低风险的变更，可跳过步骤 3–6。
 
 > [!NOTE]
 > **计划 → 修改 → 审计 与 三方校验**
@@ -178,12 +179,6 @@ python install.py --lang zh-CN   # 简体中文
 | `remy-cc version` | 显示版本号 |
 
 设置编辑器提供双语界面（English / 中文），管理 7 组环境变量（LLM API、影响分析、上下文注入、时间线、后验测试、系统、Claude Code）。项目级设置默认继承全局配置，可逐参数覆盖。
-
----
-
-## 🤝鸣谢
-
-本项目中的部分其它 Skills （如 TDD 开发原则）借鉴自 **[superpowers](https://github.com/obra/superpowers)** 项目（作者 Jesse Vincent）。
 
 ---
 

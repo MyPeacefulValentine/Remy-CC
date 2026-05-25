@@ -36,13 +36,6 @@
 <!-- They will be loaded on-demand based on the user's intent.              -->
 <!-- ====================================================================== -->
 
-<!--
-CORE SKILLS MANIFEST (Explicitly Listed for Awareness)
-- systematic-debugging: MANDATORY for all debugging/testing tasks. Enforces rigorous root cause analysis.
-- test-driven-development: MANDATORY for new features/fixes. "No production code without a failing test first."
-- code-modification: MANDATORY for refactoring/editing. Enforces safety, framework integrity, and incremental change.
-- security-audit: Security-focused review of branch changes. Regex pre-scan + parallel agents + false-positive filtering.
--->
 
 <system-reminder>
 
