@@ -5,7 +5,7 @@
 <h1 align="center">Remy</h1>
 
 <p align="center">
-  <b>为 <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> 打造的工程纪律层——</b><br>
+  <b>为 <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> 打造的工程约束层——</b><br>
   规则注入、工具拦截、依赖追踪、上下文持久化与结构化工作流，让长会话不再失控。
 </p>
 
@@ -21,7 +21,7 @@
 
 ---
 
-## ❓Remy 是什么？
+## ❓ Remy 是什么？
 
 在大型项目中，尤其是在接入能力较弱的模型时，Claude Code 可能面临**模型幻觉**或**上下文腐败**问题。尽管 Claude Code 提供了 `/compact` 等命令，一定程度平衡任务的连续性和上下文窗口的限制，但它们往往会丢失函数签名/接口等结构性细节，也无法持久化保留重要的开发记录和项目架构。
 
@@ -36,7 +36,7 @@ Remy 针对这些局限，在 Claude Code 之上添加了一层**自动化执行
 
 ---
 
-## ✨核心功能
+## ✨ 核心功能
 
 ### 设计原则
 
@@ -88,7 +88,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | `/remy-index` | 解析源代码，生成语义摘要和调用图数据 | [📖](skills/remy-index/README_zh.md) |
 | `/remy-lookup` | 显示当前逻辑索引 | [📖](skills/remy-lookup/README_zh.md) |
 | `/remy-tree` | 重新生成项目目录快照 | [📖](skills/remy-tree/README_zh.md) |
-| `/remy-debug` | 仅诊断的调试技能——假设循环、熔断器和证据包输出 | |
+| `/remy-debug` | 仅诊断的调试技能——假设循环、熔断器和证据包输出 | [📖](skills/remy-debug/README_zh.md) |
 | `/remy-reposcout` | 在沙盒临时目录中检查 GitHub 仓库 | [📖](skills/remy-reposcout/README_zh.md) |
 
 ### 开发循环
@@ -121,7 +121,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 ---
 
-## 🚀快速开始
+## 🚀 快速开始
 
 ### 环境要求
 

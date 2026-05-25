@@ -5,7 +5,7 @@
 <h1 align="center">Remy</h1>
 
 <p align="center">
-  <b>The engineering discipline layer for <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> —</b><br>
+  <b>The engineering constraint layer for <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> —</b><br>
   rule injection, tool interception, dependency tracking, persistent context, and structured workflows to keep long sessions under control.
 </p>
 
@@ -21,7 +21,7 @@
 
 ---
 
-## ❓What is Remy?
+## ❓ What is Remy?
 
 In large projects — especially when using less capable models — Claude Code can suffer from **AI hallucination** or **context rot**. Although Claude Code provides commands like `/compact` to balance task continuity with context window limits, they tend to lose structural details such as function signatures and interfaces, and cannot persistently preserve development records or project architecture.
 
@@ -36,7 +36,7 @@ Remy addresses these limitations by adding a layer of **automated enforcement** 
 
 ---
 
-## ✨Core Features
+## ✨ Core Features
 
 ### Design Principles
 
@@ -88,7 +88,7 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 | `/remy-index` | Parse source code to generate semantic summaries and call graph data | [📖](skills/remy-index/README.md) |
 | `/remy-lookup` | Display the current logic index | [📖](skills/remy-lookup/README.md) |
 | `/remy-tree` | Regenerate the project directory snapshot | [📖](skills/remy-tree/README.md) |
-| `/remy-debug` | Diagnosis-only debugging with hypothesis loop, circuit breaker, and evidence packet output | |
+| `/remy-debug` | Diagnosis-only debugging with hypothesis loop, circuit breaker, and evidence packet output | [📖](skills/remy-debug/README.md) |
 | `/remy-reposcout` | Inspect a GitHub repository in a sandboxed temporary directory | [📖](skills/remy-reposcout/README.md) |
 
 ### Development Cycle
@@ -121,7 +121,7 @@ For small, low-risk changes, steps 3–6 can be skipped.
 
 ---
 
-## 🚀Quick Start
+## 🚀 Quick Start
 
 ### Requirements
 
