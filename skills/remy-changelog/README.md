@@ -1,6 +1,6 @@
-# Log Change (Changelog Generation)
+# remy-changelog (Change Log Generation)
 
-Log Change generates a structured changelog recording modifications, Q&A decisions, and systemic impact. The changelog serves as an audit source for `/remy-audit` and a context preservation mechanism for `/rewind`.
+remy-changelog generates a structured changelog recording modifications, Q&A decisions, and systemic impact. The changelog serves as an audit source for `/remy-audit` and a context preservation mechanism for `/rewind`.
 
 ## When to Use
 

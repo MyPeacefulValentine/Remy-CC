@@ -1,6 +1,6 @@
 ---
 name: remy-index
-description: Update the semantic logic index (.claude/logic_tree.md) using LLM AST analysis.
+description: Scan source files (Python, C/C++, TypeScript) and generate semantic logic index via LLM. Index is injected into CLAUDE.md and used by hooks/skills for dependency analysis. Run after repo init or major changes.
 allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 disable-model-invocation: true
 ---

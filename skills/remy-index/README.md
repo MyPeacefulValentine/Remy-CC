@@ -1,6 +1,6 @@
-# Logic Indexer v3 (Semantic Code Index)
+# remy-index (Semantic Code Index)
 
-Logic Indexer is a semantic indexing tool based on multi-language source code parsing and an OpenAI-compatible API. It parses Python, C, C++, and TypeScript/TSX code to generate architecture-layered semantic summaries with call graph data, enabling Claude Code to understand project structure and function relationships without reading full source files.
+remy-index is a semantic indexing tool based on multi-language source code parsing and an OpenAI-compatible API. It parses Python, C, C++, and TypeScript/TSX code to generate architecture-layered semantic summaries with call graph data, enabling Claude Code to understand project structure and function relationships without reading full source files.
 
 ## Architecture Overview
 
@@ -15,7 +15,7 @@ Phase 1: Structural Scanning (no LLM, Hook-driven)
 │  ├── Architecture layer assignment                       │
 │  ├── struct_hash (raw source MD5, skip-if-unchanged)     │
 │  Triggers: SessionStart, PreCompact (full scan)          │
-│            PreToolUse via dirty file consumer (incremental│
+│            PreToolUse via dirty file consumer            │
 └──────────────────────────────────────────────────────────┘
 
 Phase 2: LLM Summarization (API-dependent, manual invocation)
@@ -50,7 +50,7 @@ Phase 2: LLM Summarization (API-dependent, manual invocation)
 │  ├── PostToolUse: dirty file tracker records Edit/Write  │
 │  ├── PreToolUse: enrichment hook consumes dirty files,   │
 │  │   triggers incremental struct_scan, appends           │
-│  │   callers/callees/layer + [L{start}-L{end}] ranges   │
+│  │   callers/callees/layer + [L{start}-L{end}] ranges    │
 │  └── Lifecycle: full struct_scan on SessionStart/PreCompact
 │  Purpose: Continuous structural accuracy without manual  │
 │           invocation                                     │

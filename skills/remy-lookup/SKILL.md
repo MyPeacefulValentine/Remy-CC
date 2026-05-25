@@ -1,6 +1,6 @@
 ---
 name: remy-lookup
-description: Read and display the current logic index tree from .claude/logic_tree.md.
+description: Display the current logic index tree (.claude/logic_tree.md) without regenerating.
 allowed-tools: Read, Grep, Glob
 disable-model-invocation: true
 ---

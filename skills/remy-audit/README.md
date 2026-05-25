@@ -1,6 +1,6 @@
-# Auditor (Consistency Verification)
+# remy-audit (Blind Consistency Verification)
 
-Auditor performs independent consistency verification between the initial plan, change log, and actual code. It operates as an adversarial auditor with zero prior knowledge of the coding session — the change log is its only source of intent.
+remy-audit performs independent consistency verification between the initial plan, change log, and actual code. It operates as an adversarial auditor with zero prior knowledge of the coding session — the change log is its only source of intent.
 
 ## When to Use
 

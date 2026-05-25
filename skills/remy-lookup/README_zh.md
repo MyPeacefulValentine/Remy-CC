@@ -1,6 +1,6 @@
-# Read Logic Index（索引查看）
+# remy-lookup（索引查看）
 
-Read Logic Index 显示 `.claude/logic_tree.md` 中的当前语义代码索引。如果索引不存在，提供生成选项。
+remy-lookup 显示 `.claude/logic_tree.md` 中的当前语义代码索引。如果索引不存在，提供生成选项。
 
 ## 何时使用
 

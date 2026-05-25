@@ -1,6 +1,6 @@
-# Repo Audit (Repository Inspection)
+# remy-reposcout (Repository Inspection)
 
-Repo Audit inspects a GitHub repository in a sandboxed temporary directory. It operates in two stages to prevent unnecessary cloning of large repositories.
+remy-reposcout inspects a GitHub repository in a sandboxed temporary directory. It operates in two stages to prevent unnecessary cloning of large repositories.
 
 ## When to Use
 

@@ -1,6 +1,6 @@
-# Deep Plan (Architecture Pre-Review)
+# remy-plan (Architecture Pre-Review)
 
-Deep Plan is a **zero-code** architecture audit protocol. It forces the AI to complete thorough ambiguity elimination, invariant definition, and logic simulation before writing any implementation code. The core principle is **"Decide first, code later."**
+remy-plan is a **zero-code** architecture audit protocol. It forces the AI to complete thorough ambiguity elimination, invariant definition, and logic simulation before writing any implementation code. The core principle is **"Decide first, code later."**
 
 ## Core Workflow
 
@@ -63,7 +63,7 @@ No code is written during this phase.
 
 ## Plan-Modify-Audit Pipeline
 
-Deep Plan is the first stage of a three-skill pipeline:
+remy-plan is the first stage of a three-skill pipeline:
 
 ```
 /remy-plan

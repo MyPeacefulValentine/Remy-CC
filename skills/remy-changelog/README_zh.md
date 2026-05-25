@@ -1,6 +1,6 @@
-# Log Change（变更日志）
+# remy-changelog（变更日志）
 
-Log Change 生成结构化变更日志，记录修改内容、Q&A 决策和系统影响。变更日志作为 `/remy-audit` 的审计来源，同时为 `/rewind` 提供上下文保存。
+remy-changelog 生成结构化变更日志，记录修改内容、Q&A 决策和系统影响。变更日志作为 `/remy-audit` 的审计来源，同时为 `/rewind` 提供上下文保存。
 
 ## 何时使用
 

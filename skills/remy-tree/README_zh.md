@@ -1,6 +1,6 @@
-# Update Tree（项目树快照）
+# remy-tree（项目树快照）
 
-Update Tree 生成项目目录结构的文本快照，保存到 `.claude/project_tree.md`。该快照被注入 `CLAUDE.md`，作为 AI 的结构导航参考。项目树也会在会话生命周期事件中自动更新。
+remy-tree 生成项目目录结构的文本快照，保存到 `.claude/project_tree.md`。该快照被注入 `CLAUDE.md`，作为 AI 的结构导航参考。项目树也会在会话生命周期事件中自动更新。
 
 ## 何时使用
 

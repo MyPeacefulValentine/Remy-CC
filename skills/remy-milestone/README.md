@@ -1,6 +1,6 @@
-# Milestone (History Reporting)
+# remy-milestone (History Reporting)
 
-Milestone creates standardized phase reports during the development cycle and maintains a project timeline index. It enforces a "audit first, then document" workflow to ensure technical decisions and experiment results are fully recorded.
+remy-milestone creates standardized phase reports during the development cycle and maintains a project timeline index. It enforces a "audit first, then document" workflow to ensure technical decisions and experiment results are fully recorded.
 
 ## Core Functions
 

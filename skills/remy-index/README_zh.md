@@ -1,6 +1,6 @@
-# Logic Indexer v3（语义代码索引）
+# remy-index（语义代码索引）
 
-Logic Indexer 是一个基于多语言源码解析和 OpenAI 兼容 API 的语义索引工具。它解析 Python、C、C++ 和 TypeScript/TSX 代码，生成按架构分层组织的语义摘要和调用图数据，使 Claude Code 无需阅读完整源码即可理解项目结构和函数关系。
+remy-index 是一个基于多语言源码解析和 OpenAI 兼容 API 的语义索引工具。它解析 Python、C、C++ 和 TypeScript/TSX 代码，生成按架构分层组织的语义摘要和调用图数据，使 Claude Code 无需阅读完整源码即可理解项目结构和函数关系。
 
 ## 何时使用
 
@@ -55,7 +55,7 @@ Phase 2: LLM 摘要生成（依赖 API，手动调用）
 │  Hooks（自动化管道）                                     │
 │  ├── PostToolUse：脏文件追踪器记录 Edit/Write 目标       │
 │  ├── PreToolUse：富化 hook 消费脏文件，触发增量          │
-│  │   struct_scan，追加 callers/callees/layer +            │
+│  │   struct_scan，追加 callers/callees/layer +           │
 │  │   [L{start}-L{end}] 行号范围                          │
 │  └── Lifecycle：SessionStart/PreCompact 全量 struct_scan │
 │  用途：无需手动调用即可持续维护结构准确性                │

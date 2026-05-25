@@ -1,6 +1,6 @@
 ---
 name: remy-inspect
-description: Use after code modification to discover/create tests, run them, assess coverage, and fix failures. Supports multi-angle defect prediction and semantic audit via parallel agents.
+description: Discover and run tests after code modification. Supports multi-angle defect prediction and coverage analysis. Recommended after large-scale edits or accumulated working tree changes.
 allowed-tools: Read, Edit, Write, Grep, Glob, Bash, AskUserQuestion, Agent
 argument-hint: "[low|medium|high] [target_files or changed_functions (optional)]"
 disable-model-invocation: true

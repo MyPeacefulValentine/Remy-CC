@@ -4,3 +4,4 @@
 • Add .claude/ to .gitignore
 • Use /remy-milestone before /compact to persist history
 ⚡ /remy-plan(plan) | /remy-patch(implement) | /remy-inspect(verify) | /remy-secure(security)
+📦 GitHub: https://github.com/MyPeacefulValentine/Remy-CC by MyPeacefulValentine | MIT License

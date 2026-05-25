@@ -1,6 +1,6 @@
-# Post-Verify (Test Verification)
+# remy-inspect (Post-Modification Verification)
 
-Post-Verify discovers existing tests, creates temporary tests for uncovered code, runs them, evaluates branch coverage, and audits assertion quality. It operates after code modification — complementary to TDD, which operates before implementation.
+remy-inspect discovers existing tests, creates temporary tests for uncovered code, runs them, evaluates branch coverage, and audits assertion quality. It operates after code modification — complementary to TDD, which operates before implementation.
 
 Supports multi-angle defect prediction and semantic test quality audit via parallel agents, inspired by the `/code-review` multi-perspective pattern.
 

@@ -1,6 +1,6 @@
 ---
 name: remy-plan
-description: Use when an implementation plan is proposed but requires a deep architectural audit for risks, side effects, and ambiguities before writing any code.
+description: Audit architecture for risks, side effects, and ambiguities before writing code. Produces evidence packets for /remy-patch. Recommended for large or complex tasks.
 allowed-tools: Read, Grep, Glob, Bash, Write
 argument-hint: "[plan_summary (optional)]"
 disable-model-invocation: true

@@ -1,6 +1,6 @@
 ---
 name: remy-tree
-description: Manually update the project tree snapshot (.claude/project_tree.md).
+description: Refresh the project directory tree snapshot (.claude/project_tree.md). Use after file operations that alter structure.
 allowed-tools: Bash, Read
 disable-model-invocation: false
 ---

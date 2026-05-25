@@ -1,0 +1,50 @@
+{
+  "remy-plan": {
+    "en": "Audit architecture for risks, side effects, and ambiguities before writing code. Produces evidence packets for /remy-patch. Recommended for large or complex tasks.",
+    "zh-CN": "编码前审计架构，识别风险、副作用和歧义。为 /remy-patch 生成证据包。建议在大型或复杂任务规划时使用。"
+  },
+  "remy-patch": {
+    "en": "Apply code modifications under engineering constraints. Accepts plan packets from /remy-plan as argument, or use standalone with a modification request.",
+    "zh-CN": "在工程约束下执行代码修改。可接受 /remy-plan 生成的计划文件为参数，也可独立附简要修改需求使用。"
+  },
+  "remy-inspect": {
+    "en": "Discover and run tests after code modification. Supports multi-angle defect prediction and coverage analysis. Recommended after large-scale edits or accumulated working tree changes.",
+    "zh-CN": "代码修改后发现并运行测试。支持多角度缺陷预判和覆盖率分析。建议在大规模编辑或工作区积累较多变更后使用。"
+  },
+  "remy-audit": {
+    "en": "Verify code changes via Intent/Log/Code triangulation. Independent blind audit without prior session context. Paired with /remy-changelog: generate log, rewind context, then audit.",
+    "zh-CN": "通过意图/日志/代码三角验证审查代码变更。无先验上下文的独立盲审。与 /remy-changelog 配对：生成日志、回退上下文、再执行审计。"
+  },
+  "remy-index": {
+    "en": "Scan source files (Python, C/C++, TypeScript) and generate semantic logic index via LLM. Index is injected into CLAUDE.md and used by hooks/skills for dependency analysis. Run after repo init or major changes.",
+    "zh-CN": "扫描源文件（Python、C/C++、TypeScript）并通过 LLM 生成语义逻辑索引（代码语义摘要）。索引注入 CLAUDE.md 并供钩子和技能进行依赖分析。建议在仓库初始化或重大修改后运行。"
+  },
+  "remy-lookup": {
+    "en": "Display the current logic index tree (.claude/logic_tree.md) without regenerating.",
+    "zh-CN": "显示当前逻辑索引树（.claude/logic_tree.md），无需重新生成。"
+  },
+  "remy-debug": {
+    "en": "Diagnose bugs via hypothesis loop with circuit breaker. Diagnosis only — produces evidence packets for /remy-patch without modifying code.",
+    "zh-CN": "通过假设循环与熔断器诊断 Bug。仅诊断，为 /remy-patch 生成证据包，不修改代码。"
+  },
+  "remy-changelog": {
+    "en": "Generate a temporary change log recording code modifications. Paired with /remy-audit: generate log, rewind AI context (preserving code changes), then run blind audit.",
+    "zh-CN": "生成临时变更日志记录代码修改。与 /remy-audit 配对：生成日志后回退 AI 上下文（保留代码修改），再执行盲审。"
+  },
+  "remy-milestone": {
+    "en": "Record technical decisions and progress as a persistent milestone report. Use before /compact or at task completion.",
+    "zh-CN": "将技术决策和进展记录为持久化里程碑报告。在 /compact 前或任务完成时使用。"
+  },
+  "remy-tree": {
+    "en": "Refresh the project directory tree snapshot (.claude/project_tree.md). Use after file operations that alter structure.",
+    "zh-CN": "刷新项目目录树快照（.claude/project_tree.md）。在改变目录结构后使用。"
+  },
+  "remy-reposcout": {
+    "en": "Analyze a GitHub repository in two stages: metadata assessment via GH CLI, then sandboxed deep inspection upon confirmation.",
+    "zh-CN": "分两阶段分析 GitHub 仓库：通过 GH CLI 评估元数据，确认后沙箱深度检查。"
+  },
+  "remy-secure": {
+    "en": "Review branch changes for security vulnerabilities. Multi-stage: regex pre-scan, parallel agents, and false-positive filtering.",
+    "zh-CN": "审查分支变更中的安全漏洞。多阶段：正则预扫描、并行 Agent 和误报过滤。"
+  }
+}

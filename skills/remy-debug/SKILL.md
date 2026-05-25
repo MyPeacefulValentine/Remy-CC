@@ -1,6 +1,6 @@
 ---
 name: remy-debug
-description: Diagnosis-only debugging skill. Traces root cause via hypothesis loop with circuit breaker. Integrates with logic index and produces evidence packets for /remy-patch.
+description: Diagnose bugs via hypothesis loop with circuit breaker. Diagnosis only — produces evidence packets for /remy-patch without modifying code.
 allowed-tools: Read, Grep, Glob, Bash, PowerShell, Write, AskUserQuestion
 argument-hint: "[error_description | test_command | file:line] [--since <ref>]"
 disable-model-invocation: true

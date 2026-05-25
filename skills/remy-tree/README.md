@@ -1,6 +1,6 @@
-# Update Tree (Project Tree Snapshot)
+# remy-tree (Project Tree Snapshot)
 
-Update Tree generates a text snapshot of the project directory structure and saves it to `.claude/project_tree.md`. This snapshot is injected into `CLAUDE.md` as a structural navigation reference for the AI. The tree is also auto-updated on session lifecycle events.
+remy-tree generates a text snapshot of the project directory structure and saves it to `.claude/project_tree.md`. This snapshot is injected into `CLAUDE.md` as a structural navigation reference for the AI. The tree is also auto-updated on session lifecycle events.
 
 ## When to Use
 

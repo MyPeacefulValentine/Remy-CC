@@ -1,6 +1,6 @@
 ---
 name: remy-audit
-description: Independent code auditor performing triangulation verification (Intent/Log/Code) without prior context.
+description: Verify code changes via Intent/Log/Code triangulation. Independent blind audit without prior session context. Paired with /remy-changelog: generate log, rewind context, then audit.
 allowed-tools: Read, Grep, Glob, Bash
 argument-hint: "[log_file_path] [task_packet_file (optional)] [git_diff_range (optional)]"
 disable-model-invocation: true

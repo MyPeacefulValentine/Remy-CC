@@ -1,6 +1,6 @@
-# Read Logic Index (Index Viewer)
+# remy-lookup (Index Viewer)
 
-Read Logic Index displays the current semantic code index from `.claude/logic_tree.md`. If the index does not exist, it offers to generate one.
+remy-lookup displays the current semantic code index from `.claude/logic_tree.md`. If the index does not exist, it offers to generate one.
 
 ## When to Use
 

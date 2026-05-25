@@ -1,6 +1,6 @@
 ---
 name: remy-changelog
-description: Generate a standardized change log for context compression.
+description: Generate a temporary change log recording code modifications. Paired with /remy-audit: generate log, rewind AI context (preserving code changes), then run blind audit.
 argument-hint: "[task_id] [status]"
 allowed-tools: Bash, Read, Write
 disable-model-invocation: true

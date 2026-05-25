@@ -1,6 +1,6 @@
-# Code Modification (Engineered Change Protocol)
+# remy-patch (Engineered Code Modification)
 
-Code Modification applies code changes with dependency tracing, framework integrity checks, and incremental change enforcement. It operates in a "forked context" — the AI independently discovers the call chain and dependencies rather than relying on conversation memory.
+remy-patch applies code changes with dependency tracing, framework integrity checks, and incremental change enforcement. It operates in a "forked context" — the AI independently discovers the call chain and dependencies rather than relying on conversation memory.
 
 ## When to Use
 

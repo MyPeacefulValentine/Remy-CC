@@ -1,6 +1,6 @@
 ---
 name: remy-patch
-description: Use this skill when modifying, refactoring, or optimizing code. Enforces strict engineering standards and project-specific constraints.
+description: Apply code modifications under engineering constraints. Accepts plan packets from /remy-plan as argument, or use standalone with a modification request.
 allowed-tools: Read, Edit, Write, Grep, Glob, Bash, AskUserQuestion
 argument-hint: "[task_packet_file (optional)]"
 disable-model-invocation: true

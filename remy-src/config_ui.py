@@ -335,6 +335,15 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
             f.write("\n")
         if sys.platform != "win32":
             os.chmod(path, 0o600)
+        claude_home = path.parent
+        lang = current_env.get("REMY_LANG", "en")
+        patch_script = claude_home / "remy-src" / "patch_descriptions.py"
+        if patch_script.exists():
+            subprocess.run(
+                [sys.executable, str(patch_script),
+                 "--claude-home", str(claude_home), "--lang", lang],
+                check=False,
+            )
         self._send_json({"status": "ok"})
 
     def _save_project(self, data):

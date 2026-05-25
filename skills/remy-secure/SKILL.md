@@ -1,6 +1,6 @@
 ---
 name: remy-secure
-description: Security-focused code review of branch changes. Identifies high-confidence vulnerabilities via regex pre-scan, parallel category agents, and independent false-positive filtering.
+description: Review branch changes for security vulnerabilities. Multi-stage: regex pre-scan, parallel agents, and false-positive filtering.
 allowed-tools: Read, Grep, Glob, Bash, AskUserQuestion, Agent
 argument-hint: "[low|medium|high] [diff_range (optional, e.g. HEAD~3...HEAD)]"
 disable-model-invocation: true

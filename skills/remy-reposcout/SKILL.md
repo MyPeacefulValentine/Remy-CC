@@ -1,6 +1,6 @@
 ---
 name: remy-reposcout
-description: Analyzes a GitHub repository. Stage 1: Fetches metadata (README, Size) using GH CLI to assess complexity. Stage 2: Clones to a temporary sandbox for deep inspection upon user confirmation.
+description: Analyze a GitHub repository in two stages: metadata assessment via GH CLI, then sandboxed deep inspection upon confirmation.
 disable-model-invocation: true
 allowed-tools: Bash, Glob, Grep, Read
 ---

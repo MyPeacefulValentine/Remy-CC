@@ -45,6 +45,7 @@ DEPLOY_FILES_MAP = {
     "remy-src/logic_scope_ui.py": "remy-src/logic_scope_ui.py",
     "remy-src/logic_scope_ui.html": "remy-src/logic_scope_ui.html",
     "remy-assets/logo.svg": "remy-assets/logo.svg",
+    "remy-src/patch_descriptions.py": "remy-src/patch_descriptions.py",
 }
 SETTINGS_TEMPLATE = "settings.example.json"
 
@@ -767,6 +768,13 @@ def do_install() -> None:
         settings_backup = merge_settings(template, settings_path, claude_home, lang_override=_ui_lang)
         migrate_permissions(settings_path)
         cleanup_old_skill_dirs(claude_home)
+        patch_script = claude_home / "remy-src" / "patch_descriptions.py"
+        if patch_script.exists():
+            subprocess.run(
+                [sys.executable, str(patch_script),
+                 "--claude-home", str(claude_home), "--lang", _ui_lang],
+                check=False,
+            )
         print(_t("settings_merged"))
         print()
         configure_api(settings_path)

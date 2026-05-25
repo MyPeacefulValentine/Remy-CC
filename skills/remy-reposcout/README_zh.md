@@ -1,6 +1,6 @@
-# Repo Audit（仓库检查）
+# remy-reposcout（仓库检查）
 
-Repo Audit 在沙盒临时目录中检查 GitHub 仓库。它分两阶段运行，避免对大型仓库进行不必要的克隆。
+remy-reposcout 在沙盒临时目录中检查 GitHub 仓库。它分两阶段运行，避免对大型仓库进行不必要的克隆。
 
 ## 何时使用
 

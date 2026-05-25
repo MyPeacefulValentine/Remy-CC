@@ -1,6 +1,6 @@
 ---
 name: remy-milestone
-description: Use BEFORE running /compact or when a significant task milestone is reached to document technical decisions, experiments, and progress.
+description: Record technical decisions and progress as a persistent milestone report. Use before /compact or at task completion.
 allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 disable-model-invocation: true
 ---
