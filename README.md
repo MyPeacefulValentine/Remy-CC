@@ -34,6 +34,10 @@ Remy addresses these limitations by adding a layer of **automated enforcement** 
 - **Cross-session memory** — The milestone system writes structured history reports to a timeline index. New sessions load a filtered view, providing continuity without flooding the context window.
 - **Environment normalization** — Shell encoding, path formatting, Conda/Mamba activation, and file naming conventions are enforced consistently on every tool call, regardless of platform.
 
+<p align="center">
+  <img src="remy-assets/banner_preview.png" width="700" alt="Remy startup banner">
+</p>
+
 ---
 
 ## ✨ Core Features

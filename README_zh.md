@@ -34,6 +34,10 @@ Remy 针对这些局限，在 Claude Code 之上添加了一层**自动化执行
 - **跨会话记忆** — 里程碑系统将结构化历史报告写入时间线索引。新会话加载过滤视图，在不占满上下文窗口的前提下提供连续性。
 - **环境一致性** — Shell 编码、路径格式、Conda/Mamba 激活和文件命名规范在每次工具调用时统一执行，不受运行平台影响。
 
+<p align="center">
+  <img src="remy-assets/banner_preview.png" width="700" alt="Remy 启动横幅">
+</p>
+
 ---
 
 ## ✨ 核心功能
