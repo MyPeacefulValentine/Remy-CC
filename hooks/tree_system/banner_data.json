@@ -1,0 +1,36 @@
+{
+  "header": {
+    "zh-CN": "欢迎使用 Remy！",
+    "en": "Welcome to Remy!"
+  },
+  "columns": {
+    "zh-CN": ["Skill", "功能", "建议使用时机"],
+    "en": ["Skill", "Description", "When to Use"]
+  },
+  "col_widths": [20, 30],
+  "box_width": 74,
+  "skills": [
+    {"name": "/remy-index",     "desc_zh": "LLM 语义索引生成",       "desc_en": "LLM semantic index",        "timing_zh": "仓库初始化或重大修改后",   "timing_en": "After repo init or major changes"},
+    {"name": "/remy-plan",      "desc_zh": "架构预审 → 证据包",      "desc_en": "Architecture pre-audit",     "timing_zh": "大型/复杂任务规划时",     "timing_en": "Before large/complex tasks"},
+    {"name": "/remy-patch",     "desc_zh": "工程约束下代码修改",      "desc_en": "Constrained code changes",   "timing_zh": "接收 plan 包或独立使用",  "timing_en": "With plan packet or standalone"},
+    {"name": "/remy-testgen",   "desc_zh": "生成持久化单元测试",      "desc_en": "Generate unit tests",        "timing_zh": "代码稳定后补测试",       "timing_en": "After code stabilizes"},
+    {"name": "/remy-inspect",   "desc_zh": "测试发现 + 缺陷预判",    "desc_en": "Test discovery + defects",   "timing_zh": "大规模编辑后",           "timing_en": "After large-scale edits"},
+    {"name": "/remy-debug",     "desc_zh": "假设循环诊断 Bug",       "desc_en": "Hypothesis-loop diagnosis",  "timing_zh": "遇到难以定位的缺陷时",    "timing_en": "Hard-to-locate bugs"},
+    {"name": "/remy-milestone", "desc_zh": "里程碑报告持久化",        "desc_en": "Persist milestone report",   "timing_zh": "compact 前或任务完成时",  "timing_en": "Before /compact or task end"},
+    {"separator": true},
+    {"name": "/remy-secure",    "desc_zh": "安全漏洞审查",           "desc_en": "Security vulnerability scan","timing_zh": "分支提交前",             "timing_en": "Before branch push"},
+    {"name": "/remy-changelog", "desc_zh": "生成变更日志",           "desc_en": "Generate change log",        "timing_zh": "审计前生成",             "timing_en": "Before audit"},
+    {"name": "/remy-audit",     "desc_zh": "意图/日志/代码三角盲审",  "desc_en": "Blind triangulation audit",  "timing_zh": "与 changelog 配对使用",  "timing_en": "Paired with /remy-changelog"},
+    {"name": "/remy-reposcout", "desc_zh": "GitHub 仓库分析",        "desc_en": "GitHub repo analysis",       "timing_zh": "评估外部仓库时",         "timing_en": "Evaluating external repos"},
+    {"name": "/remy-tree",      "desc_zh": "刷新目录树快照",         "desc_en": "Refresh directory tree",     "timing_zh": "目录结构变更后",         "timing_en": "After structure changes"},
+    {"name": "/remy-lookup",    "desc_zh": "查看逻辑索引树",         "desc_en": "View logic index tree",      "timing_zh": "快速查阅索引",           "timing_en": "Quick index lookup"}
+  ],
+  "footer": {
+    "zh-CN": "📦 github.com/MyPeacefulValentine/Remy-CC · MIT License",
+    "en": "📦 github.com/MyPeacefulValentine/Remy-CC · MIT License"
+  },
+  "cli_hint": {
+    "zh-CN": "💡 终端命令: remy-cc update | config | logic-scope | uninstall",
+    "en": "💡 Terminal: remy-cc update | config | logic-scope | uninstall"
+  }
+}

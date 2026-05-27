@@ -12,6 +12,7 @@ import sys
 import json
 import os
 import subprocess
+import unicodedata
 
 GENERATOR_SCRIPT = "generate_smart_tree.py"
 STRUCT_SCAN_SCRIPT = os.path.join(
@@ -27,6 +28,71 @@ LANGUAGE_DIRECTIVES = {
     "zh-CN": "Always respond in Chinese-simplified",
     "en": "Always respond in English",
 }
+
+BANNER_DATA_FILE = "banner_data.json"
+
+
+def _display_width(s):
+    w = 0
+    for ch in s:
+        w += 2 if unicodedata.east_asian_width(ch) in ('W', 'F') else 1
+    return w
+
+
+def _pad(s, target):
+    return s + ' ' * max(0, target - _display_width(s))
+
+
+def _generate_banner(version, lang):
+    hook_dir = os.path.dirname(os.path.abspath(__file__))
+    data_path = os.path.join(hook_dir, BANNER_DATA_FILE)
+    try:
+        with open(data_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return "\n\U0001f42d Remy v" + version
+
+    GRAY = '\033[90m'
+    RESET = '\033[0m'
+    box_width = data.get("box_width", 74)
+    col_widths = data.get("col_widths", [20, 30])
+
+    header_text = data.get("header", {}).get(lang, "Welcome to Remy!")
+    columns = data.get("columns", {}).get(lang, ["Skill", "Description", "When to Use"])
+    footer = data.get("footer", {}).get(lang, "")
+    skills = data.get("skills", [])
+
+    desc_key = "desc_zh" if lang == "zh-CN" else "desc_en"
+    timing_key = "timing_zh" if lang == "zh-CN" else "timing_en"
+
+    lines = []
+    lines.append("╭" + "─" * box_width + "╮")
+    title_line = "  \U0001f42d " + header_text + " " + GRAY + "v" + version + RESET
+    lines.append("│" + title_line + " " * (box_width - _display_width("  \U0001f42d " + header_text + " v" + version)) + "│")
+    lines.append("╰" + "─" * box_width + "╯")
+    lines.append("")
+    lines.append("  " + _pad(columns[0], col_widths[0]) + _pad(columns[1], col_widths[1]) + columns[2])
+    lines.append("  " + "─" * (col_widths[0] - 2) + "  " + "─" * (col_widths[1] - 2) + "  " + "─" * 22)
+
+    for item in skills:
+        if item.get("separator"):
+            lines.append("")
+            continue
+        name = item.get("name", "")
+        desc = item.get(desc_key, "")
+        timing = item.get(timing_key, "")
+        lines.append("  " + _pad(name, col_widths[0]) + _pad(desc, col_widths[1]) + timing)
+
+    lines.append("")
+    lines.append("  " + "─" * box_width)
+
+    cli_hint = data.get("cli_hint", {}).get(lang, "")
+    if cli_hint:
+        lines.append("  " + cli_hint)
+
+    lines.append("  " + footer)
+
+    return "\n" + "\n".join(lines)
 
 
 def _get_version():
@@ -181,17 +247,14 @@ def main():
 
                 lang = os.environ.get("REMY_LANG", "en")
                 version = _get_version()
-                banner_file = "banner_zh.md" if lang == "zh-CN" else "banner_en.md"
-                banner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), banner_file)
-                try:
-                    with open(banner_path, "r", encoding="utf-8") as f:
-                        advice = "\n" + f.read().strip().format(version=version)
-                except (OSError, KeyError, ValueError):
-                    advice = "\n\U0001f42d Remy v" + version
 
-                print(json.dumps({
-                    "systemMessage": advice
-                }))
+                if os.environ.get("REMY_BANNER_ENABLED", "true").lower() != "false":
+                    advice = _generate_banner(version, lang)
+                    print(json.dumps({
+                        "systemMessage": advice
+                    }))
+                else:
+                    print(json.dumps({}))
             else:
                 print(json.dumps({}))
 
