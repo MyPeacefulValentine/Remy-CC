@@ -53,7 +53,7 @@ def _generate_banner(version, lang):
         return "\n\U0001f42d Remy v" + version
 
     GRAY = '\033[90m'
-    RESET = '\033[0m'
+    RESET = '\033[39m'
     box_width = data.get("box_width", 74)
     col_widths = data.get("col_widths", [20, 30])
 
