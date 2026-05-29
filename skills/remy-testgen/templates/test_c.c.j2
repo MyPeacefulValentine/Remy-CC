@@ -1,0 +1,136 @@
+{% if framework == "kunit" %}
+// KUnit tests for {{ module_name }}
+#include <kunit/test.h>
+{% for inc in includes %}
+#include {{ inc }}
+{% endfor %}
+
+{% for tc in test_cases %}
+static void {{ tc.name }}(struct kunit *test)
+{
+{% for line in tc.body_lines %}
+	{{ line }}
+{% endfor %}
+}
+
+{% endfor %}
+static struct kunit_case {{ suite_name }}_cases[] = {
+{% for tc in test_cases %}
+	KUNIT_CASE({{ tc.name }}),
+{% endfor %}
+	{}
+};
+
+static struct kunit_suite {{ suite_name }}_suite = {
+	.name = "{{ suite_name }}",
+	.test_cases = {{ suite_name }}_cases,
+};
+
+kunit_test_suite({{ suite_name }}_suite);
+MODULE_LICENSE("GPL");
+{% elif framework == "cmocka" %}
+// cmocka tests for {{ module_name }}
+#include <stdarg.h>
+#include <stddef.h>
+#include <setjmp.h>
+#include <cmocka.h>
+{% for inc in includes %}
+#include {{ inc }}
+{% endfor %}
+
+{% for tc in test_cases %}
+static void {{ tc.name }}(void **state)
+{
+	(void)state;
+{% for line in tc.body_lines %}
+	{{ line }}
+{% endfor %}
+}
+
+{% endfor %}
+int main(void)
+{
+	const struct CMUnitTest tests[] = {
+{% for tc in test_cases %}
+		cmocka_unit_test({{ tc.name }}),
+{% endfor %}
+	};
+	return cmocka_run_group_tests(tests, NULL, NULL);
+}
+{% elif framework == "unity" %}
+// Unity tests for {{ module_name }}
+#include "unity.h"
+{% for inc in includes %}
+#include {{ inc }}
+{% endfor %}
+
+void setUp(void) {}
+void tearDown(void) {}
+
+{% for tc in test_cases %}
+void {{ tc.name }}(void)
+{
+{% for line in tc.body_lines %}
+	{{ line }}
+{% endfor %}
+}
+
+{% endfor %}
+int main(void)
+{
+	UNITY_BEGIN();
+{% for tc in test_cases %}
+	RUN_TEST({{ tc.name }});
+{% endfor %}
+	return UNITY_END();
+}
+{% elif framework == "criterion" %}
+// Criterion tests for {{ module_name }}
+#include <criterion/criterion.h>
+{% for inc in includes %}
+#include {{ inc }}
+{% endfor %}
+
+{% for tc in test_cases %}
+Test({{ suite_name }}, {{ tc.name }})
+{
+{% for line in tc.body_lines %}
+	{{ line }}
+{% endfor %}
+}
+
+{% endfor %}
+{% else %}
+// Tests for {{ module_name }}
+#include <assert.h>
+#include <stdio.h>
+{% for inc in includes %}
+#include {{ inc }}
+{% endfor %}
+
+{% for tc in test_cases %}
+static int {{ tc.name }}(void)
+{
+{% for line in tc.body_lines %}
+	{{ line }}
+{% endfor %}
+	return 0;
+}
+
+{% endfor %}
+int main(void)
+{
+	int failed = 0;
+{% for tc in test_cases %}
+	printf("  {{ tc.name }}... ");
+	if ({{ tc.name }}() == 0) {
+		printf("PASS\n");
+	} else {
+		printf("FAIL\n");
+		failed++;
+	}
+{% endfor %}
+	printf("%d/%d passed\n", {{ test_cases|length }} - failed, {{ test_cases|length }});
+	return failed ? 1 : 0;
+}
+{% endif %}

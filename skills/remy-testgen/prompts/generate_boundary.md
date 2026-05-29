@@ -49,5 +49,5 @@ Return a strict JSON array. Each element:
 - Each test MUST include a concrete input value in `setup` (not abstract descriptions)
 - Do NOT report scenarios already covered by existing tests
 - Priority ranking: high = crash/data corruption risk, medium = wrong output silently, low = suboptimal but non-breaking
-- Do NOT test implementation internals — only the public interface
+- Do NOT test implementation internals — only the public interface (excludes `static` functions in C/C++, `_`-prefixed in Python, unexported in Go)
 - Output ONLY the JSON array, no surrounding text

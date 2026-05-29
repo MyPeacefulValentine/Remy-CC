@@ -27,6 +27,7 @@ Generate persistent unit tests and write them into the project's test directory.
 | `skills/remy-testgen/templates/test_python.py.j2` | Jinja2 template for Python test files. |
 | `skills/remy-testgen/templates/test_typescript.ts.j2` | Jinja2 template for TypeScript test files. |
 | `skills/remy-testgen/templates/test_go.go.j2` | Jinja2 template for Go test files. |
+| `skills/remy-testgen/templates/test_c.c.j2` | Jinja2 template for C test files (multi-framework: kunit/cmocka/Unity/criterion/plain). |
 | `skills/remy-testgen/templates/report.md.j2` | Jinja2 template for the coverage report. |
 | `skills/remy-testgen/render.py` | Template rendering helper. Uses Jinja2 when available, falls back to built-in formatting. |
 | `skills/remy-testgen/output_schema.json` | Final output schema (coverage report structure). |
@@ -199,6 +200,7 @@ Using `test_output_dir` from Phase 2:
 - **Python**: `{test_output_dir}/test_{source_module}.py`
 - **TypeScript**: `{test_output_dir}/{source_module}.test.ts`
 - **Go**: `{source_dir}/{source_module}_test.go` (Go convention: same directory)
+- **C**: `{test_output_dir}/test_{source_module}.c` (or `{source_dir}/{source_module}_test.c` for kunit)
 
 ### 4.2 Conflict Check
 
@@ -214,6 +216,8 @@ Before writing each test file:
 
 Use `render.render_template()` to generate test files. Populate the context dict:
 
+**Python / TypeScript / Go:**
+
 ```python
 {
     "module_name": "...",
@@ -228,6 +232,26 @@ Use `render.render_template()` to generate test files. Populate the context dict
     ]
 }
 ```
+
+**C (additional keys):**
+
+```python
+{
+    "framework": "kunit|cmocka|unity|criterion|plain_c",
+    "module_name": "...",
+    "suite_name": "...",
+    "includes": ['"header.h"', "<system.h>"],
+    "test_cases": [
+        {
+            "name": "test_func_scenario_expected",
+            "description": "...",
+            "body_lines": ["KUNIT_EXPECT_EQ(test, 2, add(1, 1));"]
+        }
+    ]
+}
+```
+
+The `framework` value is determined by Phase 2 detection. `suite_name` is derived from `module_name` (e.g., `my_module` → `my_module_test`). `includes` replaces `imports` for C — each entry is a literal `#include` argument (with quotes or angle brackets).
 
 If the target language has no matching template, generate tests directly via LLM (no template).
 

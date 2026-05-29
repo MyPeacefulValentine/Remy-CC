@@ -112,6 +112,79 @@
         "\\.innerHTML\\s*=",
         "dangerouslySetInnerHTML"
       ]
+    },
+    {
+      "id": "P-013",
+      "name": "unsafe_string_copy_c",
+      "severity": "HIGH",
+      "description": "Use of unbounded string copy functions (strcpy, strcat, gets) susceptible to buffer overflow.",
+      "languages": ["c", "cpp"],
+      "regex": [
+        "\\b(?:strcpy|strcat|gets)\\s*\\("
+      ]
+    },
+    {
+      "id": "P-014",
+      "name": "unsafe_sprintf_c",
+      "severity": "HIGH",
+      "description": "Use of sprintf without length bound. Use snprintf instead.",
+      "languages": ["c", "cpp"],
+      "regex": [
+        "\\bsprintf\\s*\\("
+      ]
+    },
+    {
+      "id": "P-015",
+      "name": "format_string_vuln_c",
+      "severity": "HIGH",
+      "description": "Printf-family call with non-literal format string allows format string attacks.",
+      "languages": ["c", "cpp"],
+      "regex": [
+        "\\b(?:printf|fprintf|syslog)\\s*\\(\\s*[a-zA-Z_]\\w*\\s*[,)]"
+      ]
+    },
+    {
+      "id": "P-016",
+      "name": "use_after_free_pattern_c",
+      "severity": "HIGH",
+      "description": "Pointer used after free() without reassignment. Pattern: free(p) followed by use of p.",
+      "languages": ["c", "cpp"],
+      "regex": [
+        "free\\s*\\(\\s*(\\w+)\\s*\\)"
+      ],
+      "rule": "Flag when free(ptr) is not immediately followed by ptr = NULL assignment. Requires manual review — regex detects free() calls for triage."
+    },
+    {
+      "id": "P-017",
+      "name": "integer_overflow_c",
+      "severity": "MEDIUM",
+      "description": "Arithmetic on size/length values without overflow check before memory allocation.",
+      "languages": ["c", "cpp"],
+      "regex": [
+        "\\b(?:malloc|calloc|realloc|kmalloc|kzalloc)\\s*\\([^)]*[+*][^)]*\\)"
+      ]
+    },
+    {
+      "id": "P-018",
+      "name": "double_free_pattern_c",
+      "severity": "HIGH",
+      "description": "Multiple free() calls on the same pointer variable without intervening reassignment.",
+      "languages": ["c", "cpp"],
+      "regex": [
+        "free\\s*\\(\\s*(\\w+)\\s*\\)"
+      ],
+      "rule": "Flag when the same pointer name appears in two free() calls within the same function. Requires manual review."
+    },
+    {
+      "id": "P-019",
+      "name": "unchecked_alloc_c",
+      "severity": "MEDIUM",
+      "description": "Memory allocation result not checked for NULL before use.",
+      "languages": ["c", "cpp"],
+      "regex": [
+        "=\\s*(?:malloc|calloc|realloc|kmalloc|kzalloc)\\s*\\("
+      ],
+      "rule": "Flag when malloc/calloc result is assigned but the next statement is not a NULL check. Requires manual review."
     }
   ]
 }

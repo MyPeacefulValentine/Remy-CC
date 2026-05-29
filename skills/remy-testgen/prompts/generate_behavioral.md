@@ -42,7 +42,7 @@ Return a strict JSON array. Each element:
 
 - Maximum 8 test cases
 - Each test MUST verify a single behavioral contract (no multi-assertion bundling)
-- Do NOT generate tests for private/internal methods (prefix `_` in Python, unexported in Go)
+- Do NOT generate tests for private/internal methods (prefix `_` in Python, unexported in Go, `static` functions in C/C++)
 - Do NOT duplicate scenarios already covered by existing tests
 - Priority ranking: high = core documented behavior, medium = implicit contract, low = defensive edge behavior
 - Output ONLY the JSON array, no surrounding text

@@ -67,6 +67,68 @@
       "test_dir_patterns": ["."]
     },
     {
+      "name": "kunit",
+      "language": "c",
+      "priority": 1,
+      "indicators": [
+        {"type": "file_contains", "pattern": "Kconfig", "contains": "kunit"},
+        {"type": "grep", "pattern": "#include.*kunit", "glob": "*.c"}
+      ],
+      "run_command": "./tools/testing/kunit/kunit.py run {test_suite}",
+      "coverage_command": null,
+      "test_file_pattern": "*_test.c",
+      "test_dir_patterns": ["tests/", "test/"]
+    },
+    {
+      "name": "cmocka",
+      "language": "c",
+      "priority": 2,
+      "indicators": [
+        {"type": "grep", "pattern": "#include.*cmocka\\.h", "glob": "*.c"},
+        {"type": "file_contains", "pattern": "CMakeLists.txt", "contains": "cmocka"}
+      ],
+      "run_command": "./{test_binary}",
+      "coverage_command": null,
+      "test_file_pattern": "test_*.c",
+      "test_dir_patterns": ["tests/", "test/"]
+    },
+    {
+      "name": "unity",
+      "language": "c",
+      "priority": 3,
+      "indicators": [
+        {"type": "grep", "pattern": "#include.*unity\\.h", "glob": "*.c"}
+      ],
+      "run_command": "./{test_binary}",
+      "coverage_command": null,
+      "test_file_pattern": "test_*.c",
+      "test_dir_patterns": ["tests/", "test/"]
+    },
+    {
+      "name": "criterion",
+      "language": "c",
+      "priority": 4,
+      "indicators": [
+        {"type": "grep", "pattern": "#include.*criterion/criterion\\.h", "glob": "*.c"}
+      ],
+      "run_command": "./{test_binary}",
+      "coverage_command": null,
+      "test_file_pattern": "test_*.c",
+      "test_dir_patterns": ["tests/", "test/"]
+    },
+    {
+      "name": "plain_c",
+      "language": "c",
+      "priority": 9,
+      "indicators": [
+        {"type": "file", "pattern": "*.c"}
+      ],
+      "run_command": "gcc -o {test_binary} {test_files} && ./{test_binary}",
+      "coverage_command": "gcc --coverage -o {test_binary} {test_files} && ./{test_binary} && gcov {source_files}",
+      "test_file_pattern": "test_*.c",
+      "test_dir_patterns": ["tests/", "test/"]
+    },
+    {
       "name": "make_test",
       "language": "any",
       "priority": 10,

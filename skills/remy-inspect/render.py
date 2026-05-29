@@ -58,21 +58,20 @@ def _render_jinja2(template_name, context):
 
 
 def _render_fallback(template_name, context):
-    """Minimal fallback renderer using regex substitution for simple Jinja2 patterns."""
-    template_path = os.path.join(TEMPLATES_DIR, template_name)
-    with open(template_path, "r", encoding="utf-8") as f:
-        content = f.read()
-
     if template_name.endswith(".md.j2"):
         return _render_report_fallback(context)
-    if "python" in template_name:
+    if template_name == "test_python.py.j2":
         return _render_python_test_fallback(context)
-    if "javascript" in template_name:
+    if template_name == "test_javascript.js.j2":
         return _render_js_test_fallback(context)
-    if "go" in template_name:
+    if template_name == "test_go.go.j2":
         return _render_go_test_fallback(context)
+    if template_name == "test_c.c.j2":
+        return _render_c_test_fallback(context)
 
-    return content
+    template_path = os.path.join(TEMPLATES_DIR, template_name)
+    with open(template_path, "r", encoding="utf-8") as f:
+        return f.read()
 
 
 def _render_report_fallback(ctx):
@@ -209,6 +208,140 @@ def _render_go_test_fallback(ctx):
             lines.append(f"\t{body_line}")
         lines.append("}")
         lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def _render_c_test_fallback(ctx):
+    framework = ctx.get("framework", "plain_c")
+    module = ctx.get("module_name", "module")
+    suite = ctx.get("suite_name", "test_suite")
+    includes = ctx.get("includes", [])
+    test_cases = ctx.get("test_cases", [])
+
+    lines = []
+
+    if framework == "kunit":
+        lines.append(f"// Temporary remy-inspect KUnit tests for {module}")
+        lines.append("#include <kunit/test.h>")
+        for inc in includes:
+            lines.append(f"#include {inc}")
+        lines.append("")
+        for tc in test_cases:
+            lines.append(f"static void {tc['name']}(struct kunit *test)")
+            lines.append("{")
+            for body_line in tc.get("body_lines", []):
+                lines.append(f"\t{body_line}")
+            lines.append("}")
+            lines.append("")
+        lines.append(f"static struct kunit_case {suite}_cases[] = {{")
+        for tc in test_cases:
+            lines.append(f"\tKUNIT_CASE({tc['name']}),")
+        lines.append("\t{}")
+        lines.append("};")
+        lines.append("")
+        lines.append(f"static struct kunit_suite {suite}_suite = {{")
+        lines.append(f'\t.name = "{suite}",')
+        lines.append(f"\t.test_cases = {suite}_cases,")
+        lines.append("};")
+        lines.append("")
+        lines.append(f"kunit_test_suite({suite}_suite);")
+        lines.append('MODULE_LICENSE("GPL");')
+
+    elif framework == "cmocka":
+        lines.append(f"// Temporary remy-inspect cmocka tests for {module}")
+        lines.append("#include <stdarg.h>")
+        lines.append("#include <stddef.h>")
+        lines.append("#include <setjmp.h>")
+        lines.append("#include <cmocka.h>")
+        for inc in includes:
+            lines.append(f"#include {inc}")
+        lines.append("")
+        for tc in test_cases:
+            lines.append(f"static void {tc['name']}(void **state)")
+            lines.append("{")
+            lines.append("\t(void)state;")
+            for body_line in tc.get("body_lines", []):
+                lines.append(f"\t{body_line}")
+            lines.append("}")
+            lines.append("")
+        lines.append("int main(void)")
+        lines.append("{")
+        lines.append("\tconst struct CMUnitTest tests[] = {")
+        for tc in test_cases:
+            lines.append(f"\t\tcmocka_unit_test({tc['name']}),")
+        lines.append("\t};")
+        lines.append("\treturn cmocka_run_group_tests(tests, NULL, NULL);")
+        lines.append("}")
+
+    elif framework == "unity":
+        lines.append(f"// Temporary remy-inspect Unity tests for {module}")
+        lines.append('#include "unity.h"')
+        for inc in includes:
+            lines.append(f"#include {inc}")
+        lines.append("")
+        lines.append("void setUp(void) {}")
+        lines.append("void tearDown(void) {}")
+        lines.append("")
+        for tc in test_cases:
+            lines.append(f"void {tc['name']}(void)")
+            lines.append("{")
+            for body_line in tc.get("body_lines", []):
+                lines.append(f"\t{body_line}")
+            lines.append("}")
+            lines.append("")
+        lines.append("int main(void)")
+        lines.append("{")
+        lines.append("\tUNITY_BEGIN();")
+        for tc in test_cases:
+            lines.append(f"\tRUN_TEST({tc['name']});")
+        lines.append("\treturn UNITY_END();")
+        lines.append("}")
+
+    elif framework == "criterion":
+        lines.append(f"// Temporary remy-inspect Criterion tests for {module}")
+        lines.append("#include <criterion/criterion.h>")
+        for inc in includes:
+            lines.append(f"#include {inc}")
+        lines.append("")
+        for tc in test_cases:
+            lines.append(f"Test({suite}, {tc['name']})")
+            lines.append("{")
+            for body_line in tc.get("body_lines", []):
+                lines.append(f"\t{body_line}")
+            lines.append("}")
+            lines.append("")
+
+    else:
+        lines.append(f"// Temporary remy-inspect tests for {module}")
+        lines.append("#include <assert.h>")
+        lines.append("#include <stdio.h>")
+        for inc in includes:
+            lines.append(f"#include {inc}")
+        lines.append("")
+        for tc in test_cases:
+            lines.append(f"static int {tc['name']}(void)")
+            lines.append("{")
+            for body_line in tc.get("body_lines", []):
+                lines.append(f"\t{body_line}")
+            lines.append("\treturn 0;")
+            lines.append("}")
+            lines.append("")
+        count = len(test_cases)
+        lines.append("int main(void)")
+        lines.append("{")
+        lines.append("\tint failed = 0;")
+        for tc in test_cases:
+            lines.append(f'\tprintf("  {tc["name"]}... ");')
+            lines.append(f"\tif ({tc['name']}() == 0) {{")
+            lines.append('\t\tprintf("PASS\\n");')
+            lines.append("\t} else {")
+            lines.append('\t\tprintf("FAIL\\n");')
+            lines.append("\t\tfailed++;")
+            lines.append("\t}")
+        lines.append(f'\tprintf("%d/%d passed\\n", {count} - failed, {count});')
+        lines.append("\treturn failed ? 1 : 0;")
+        lines.append("}")
+
     return "\n".join(lines) + "\n"
 
 

@@ -36,6 +36,7 @@ Supports three effort levels for multi-angle analysis:
 | `skills/remy-inspect/templates/test_python.py.j2` | Jinja2 template for temporary Python tests (Phase 3). |
 | `skills/remy-inspect/templates/test_javascript.js.j2` | Jinja2 template for temporary JavaScript tests (Phase 3). |
 | `skills/remy-inspect/templates/test_go.go.j2` | Jinja2 template for temporary Go tests (Phase 3). |
+| `skills/remy-inspect/templates/test_c.c.j2` | Jinja2 template for temporary C tests (multi-framework: kunit/cmocka/Unity/criterion/plain). |
 | `skills/remy-inspect/templates/report.md.j2` | Jinja2 template for the final report (Phase 8). |
 | `skills/remy-inspect/render.py` | Template rendering helper. Uses Jinja2 when available, falls back to `str.format()`. |
 
@@ -188,7 +189,9 @@ When Phase 2.5 produced scenarios:
 
 ### 3.3 Template-Based Generation
 
-Use `render.render_template()` to generate test files from the appropriate language template (`test_python.py.j2`, `test_javascript.js.j2`, `test_go.go.j2`). Populate the context dict with:
+Use `render.render_template()` to generate test files from the appropriate language template (`test_python.py.j2`, `test_javascript.js.j2`, `test_go.go.j2`, `test_c.c.j2`).
+
+**Python / JavaScript / Go:**
 
 ```python
 {
@@ -204,6 +207,26 @@ Use `render.render_template()` to generate test files from the appropriate langu
     ]
 }
 ```
+
+**C (additional keys):**
+
+```python
+{
+    "framework": "kunit|cmocka|unity|criterion|plain_c",
+    "module_name": "...",
+    "suite_name": "...",
+    "includes": ['"header.h"', "<system.h>"],
+    "test_cases": [
+        {
+            "name": "test_func_scenario_expected",
+            "description": "...",
+            "body_lines": ["KUNIT_EXPECT_EQ(test, 2, add(1, 1));"]
+        }
+    ]
+}
+```
+
+The `framework` value is determined by Phase 2 detection. `suite_name` is derived from `module_name` (e.g., `my_module` → `my_module_test`). `includes` replaces `imports` for C — each entry is a literal `#include` argument (with quotes or angle brackets).
 
 If the target language has no matching template, generate tests directly via LLM (no template).
 

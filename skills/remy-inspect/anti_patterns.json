@@ -117,6 +117,36 @@
         "setTimeout\\(",
         "asyncio\\.sleep\\("
       ]
+    },
+    {
+      "id": "AP-011",
+      "name": "no_assertion_c",
+      "severity": "critical",
+      "description": "C test function body contains no assertion macro (assert, KUNIT_EXPECT, TEST_ASSERT, cr_assert).",
+      "languages": ["c"],
+      "detection": "ast_scan",
+      "rule": "Function name starts with 'test_' but body contains no assert(), KUNIT_EXPECT_*, KUNIT_ASSERT_*, TEST_ASSERT_*, cr_assert*, or cmocka assert_* call."
+    },
+    {
+      "id": "AP-012",
+      "name": "kunit_succeed_placeholder",
+      "severity": "warning",
+      "description": "KUnit test uses KUNIT_SUCCEED() as sole assertion, which always passes.",
+      "languages": ["c"],
+      "regex": [
+        "KUNIT_SUCCEED\\s*\\("
+      ]
+    },
+    {
+      "id": "AP-013",
+      "name": "unchecked_return_in_test_c",
+      "severity": "warning",
+      "description": "C test calls a function returning int/error_t but discards the return value without checking.",
+      "languages": ["c"],
+      "regex": [
+        "^\\s+\\w+\\s*\\([^)]*\\)\\s*;\\s*$"
+      ],
+      "rule": "Flag when a non-void function call result is discarded in a test body. Requires manual confirmation — regex overapproximates."
     }
   ]
 }

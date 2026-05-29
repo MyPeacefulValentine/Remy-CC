@@ -48,8 +48,9 @@ Return a strict JSON array. Each element:
 
 - Maximum 8 test cases
 - Each property MUST be expressible as a single boolean predicate
-- Include the input generation strategy in `setup` (e.g., `@given(st.text())` for Python)
+- Include the input generation strategy in `setup` (e.g., `@given(st.text())` for Python, `theft` for C)
 - Do NOT generate trivial properties (e.g., "function returns something")
 - Do NOT duplicate scenarios already covered by existing tests
+- Do NOT target private/internal symbols (`static` in C/C++, `_`-prefixed in Python, unexported in Go)
 - Priority ranking: high = fundamental algebraic law, medium = domain invariant, low = statistical property
 - Output ONLY the JSON array, no surrounding text
