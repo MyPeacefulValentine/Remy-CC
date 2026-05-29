@@ -10,6 +10,9 @@ import json
 import os
 
 DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
+SOURCE_EXTENSIONS = frozenset((
+    ".py", ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx", ".ts", ".tsx",
+))
 
 
 def main():
@@ -30,6 +33,10 @@ def main():
 
         file_path = tool_input.get("file_path")
         if not file_path:
+            sys.exit(0)
+
+        _, ext = os.path.splitext(file_path)
+        if ext.lower() not in SOURCE_EXTENSIONS:
             sys.exit(0)
 
         if os.path.isabs(file_path):
