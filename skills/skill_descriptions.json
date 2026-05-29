@@ -54,5 +54,9 @@
   "remy-ci": {
     "en": "Analyze CI/CD failure logs (compile, link, test, sanitizer, QEMU, style, static analysis, build config). Supports GitHub Actions (gh CLI), local files, and pasted logs. Produces evidence packets for /remy-patch.",
     "zh-CN": "分析 CI/CD 失败日志（编译、链接、测试、sanitizer、QEMU、风格、静态分析、构建配置）。支持 GitHub Actions（gh CLI）、本地文件和粘贴日志。为 /remy-patch 生成证据包。"
+  },
+  "remy-insight": {
+    "en": "Deep repository analysis with multi-agent parallel perspectives. Requires /init + /remy-index as prerequisites. Supports global, focus, and compare modes with configurable depth levels.",
+    "zh-CN": "多智能体并行视角的仓库深度分析。需要 /init + /remy-index 作为前置条件。支持全局、聚焦和对照三种模式，可配置分析深度级别。"
   }
 }

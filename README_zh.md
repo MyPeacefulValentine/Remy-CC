@@ -95,6 +95,8 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | `/remy-tree` | 重新生成项目目录快照 | [📖](skills/remy-tree/README_zh.md) |
 | `/remy-debug` | 仅诊断的调试技能——假设循环、熔断器和证据包输出 | [📖](skills/remy-debug/README_zh.md) |
 | `/remy-reposcout` | 在沙盒临时目录中检查 GitHub 仓库 | [📖](skills/remy-reposcout/README_zh.md) |
+| `/remy-insight` | 多智能体仓库深度分析——支持全局、聚焦和对照模式，可配置分析深度 | [📖](skills/remy-insight/README_zh.md) |
+| `/remy-ci` | CI/CD 失败日志分析——编译、链接、测试、sanitizer、QEMU、风格、静态分析、构建配置 | [📖](skills/remy-ci/README_zh.md) |
 
 ### 开发循环
 
@@ -140,6 +142,20 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 >```
 > TDD 模式从接口规约（计划任务包或桩函数）生成预期失败的测试骨架，并输出任务包供 `/remy-patch` 消费。后补模式读取已有实现代码，生成验证当前行为的测试。两种模式均支持 effort 分级（low/medium/high）和可配置的覆盖率阈值。
 
+> [!NOTE]
+> **仓库分析工作流**
+>
+> 使用 `/remy-insight` 分析外部仓库：
+>```
+> 1. 克隆仓库（手动克隆，或先用 /remy-reposcout 评估）
+> 2. cd 进入仓库目录，启动 Claude Code
+> 3. /init                → 生成 CLAUDE.md
+> 4. /remy-index          → 生成 logic_index.json（需要 LLM API）
+> 5. /clear               → 刷新注入的上下文
+> 6. /remy-insight [模式] → 执行分析（global | focus <主题> | compare <文档>）
+>```
+> `/remy-reposcout` 在克隆前进行浅层元数据评估。`/remy-insight` 在索引完成后进行深度语义分析。
+
 ---
 
 ## 🚀 快速开始
@@ -152,7 +168,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | Python 3.7+ | Hook 和安装脚本 |
 | OpenAI 兼容的 LLM API | `/remy-index` 的语义摘要生成 |
 | Conda 或 Mamba（可选） | 存在时自动注入到 Shell 环境 |
-| `gh` CLI（可选） | `/remy-reposcout` 依赖 |
+| `gh` CLI（可选） | `/remy-reposcout` 和 `/remy-ci` GitHub Actions 模式依赖 |
 | tree-sitter Python 包（可选） | C/C++/TypeScript 的高精度解析和调用图提取 |
 
 语言可通过 `REMY_LANG` 环境变量配置（`en` 或 `zh-CN`）。

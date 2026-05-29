@@ -1,0 +1,20 @@
+## Executive Summary
+
+{% if sections %}
+{% for section in sections %}
+### {{ section.name | title }}
+
+{{ section.summary }}
+
+{% if section.findings %}
+| Severity | Count |
+| :--- | :--- |
+| Issue | {{ section.findings | selectattr('severity', 'equalto', 'issue') | list | length }} |
+| Concern | {{ section.findings | selectattr('severity', 'equalto', 'concern') | list | length }} |
+| Observation | {{ section.findings | selectattr('severity', 'equalto', 'observation') | list | length }} |
+{% endif %}
+
+{% endfor %}
+{% else %}
+No analysis sections were completed.
+{% endif %}

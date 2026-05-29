@@ -1,0 +1,26 @@
+## Improvement Roadmap
+
+{{ summary }}
+
+{% if findings %}
+### Findings
+
+{% for f in findings %}
+#### {{ f.id }}: {{ f.claim }}
+
+- **Severity**: {{ f.severity }} | **Confidence**: {{ f.confidence }}/5
+- **Target**: `{{ f.target.file }}`{% if f.target.symbol %} → `{{ f.target.symbol }}`{% endif %}{% if f.target.layer %} ({{ f.target.layer }}){% endif %}
+
+- **Evidence**: {{ f.evidence }}
+{% if f.verified_status and f.verified_status != 'not_verified' %}
+- **Verification**: {{ f.verified_status }}{% if f.vote_detail %} ({{ f.vote_detail }}){% endif %}
+
+{% endif %}
+{% if f.cross_refs %}
+- **See also**: {{ f.cross_refs | join(', ') }}
+{% endif %}
+
+{% endfor %}
+{% else %}
+No improvement findings reported.
+{% endif %}

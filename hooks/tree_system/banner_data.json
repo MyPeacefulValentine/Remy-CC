@@ -18,6 +18,8 @@
     {"name": "/remy-debug",     "desc_zh": "假设循环诊断 Bug",       "desc_en": "Hypothesis-loop diagnosis",  "timing_zh": "遇到难以定位的缺陷时",    "timing_en": "Hard-to-locate bugs"},
     {"name": "/remy-milestone", "desc_zh": "里程碑报告持久化",        "desc_en": "Persist milestone report",   "timing_zh": "compact 前或任务完成时",  "timing_en": "Before /compact or task end"},
     {"separator": true},
+    {"name": "/remy-insight",   "desc_zh": "多智能体仓库深度分析",    "desc_en": "Multi-agent repo analysis",  "timing_zh": "仓库索引后深度研究",      "timing_en": "Deep research after indexing"},
+    {"name": "/remy-ci",        "desc_zh": "CI/CD 失败日志分析",     "desc_en": "CI/CD failure analysis",     "timing_zh": "CI 构建失败时",           "timing_en": "When CI build fails"},
     {"name": "/remy-secure",    "desc_zh": "安全漏洞审查",           "desc_en": "Security vulnerability scan","timing_zh": "分支提交前",             "timing_en": "Before branch push"},
     {"name": "/remy-changelog", "desc_zh": "生成变更日志",           "desc_en": "Generate change log",        "timing_zh": "审计前生成",             "timing_en": "Before audit"},
     {"name": "/remy-audit",     "desc_zh": "意图/日志/代码三角盲审",  "desc_en": "Blind triangulation audit",  "timing_zh": "与 changelog 配对使用",  "timing_en": "Paired with /remy-changelog"},

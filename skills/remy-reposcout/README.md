@@ -37,3 +37,7 @@ Executes only after user confirmation.
 | :--- | :--- |
 | `SKILL.md` | Protocol definition (loaded by Claude Code) |
 | `scripts/audit_runner.py` | Clone, size check, and structure analysis script |
+
+## Next Steps
+
+After `/remy-reposcout` completes a shallow assessment and the user clones the repository locally, use `/remy-insight` for deep multi-agent analysis (requires `/init` + `/remy-index` as prerequisites).

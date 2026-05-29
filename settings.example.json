@@ -32,6 +32,9 @@
     "TEST_COVERAGE_THRESHOLD": "80",
     "TEST_COVERAGE_MAX_SUPPLEMENT_ROUNDS": "3",
     "CI_LOG_MAX_LINES": "500",
+    "INSIGHT_DEFAULT_DEPTH": "standard",
+    "INSIGHT_MAX_CUSTOM_ANGLES": "2",
+    "INSIGHT_MAX_AGENTS": "30",
     "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
   },
   "permissions": {
@@ -71,7 +74,8 @@
       "Skill(remy-inspect)",
       "Skill(remy-secure)",
       "Skill(remy-testgen)",
-      "Skill(remy-ci)"
+      "Skill(remy-ci)",
+      "Skill(remy-insight)"
     ]
   },
   "hooks": {

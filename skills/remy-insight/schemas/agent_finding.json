@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Output schema for individual remy-insight analysis agents. Each agent returns findings and a summary for one analysis dimension.",
+  "type": "object",
+  "required": ["findings", "summary"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "maxItems": 15,
+      "items": {
+        "type": "object",
+        "required": ["id", "dimension", "severity", "target", "claim", "evidence", "confidence"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^F-[0-9]{3}$",
+            "description": "Unique finding ID within this agent's output (e.g., F-001)"
+          },
+          "dimension": {
+            "type": "string",
+            "enum": ["architecture", "innovation", "improvement", "robustness", "doc_consistency", "custom"],
+            "description": "The analysis angle that produced this finding"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["observation", "concern", "issue"],
+            "description": "observation = neutral note, concern = potential risk, issue = actionable problem"
+          },
+          "target": {
+            "type": "object",
+            "required": ["file"],
+            "properties": {
+              "file": {
+                "type": "string",
+                "description": "Repository-relative file path"
+              },
+              "symbol": {
+                "type": "string",
+                "description": "Function, class, or module name (if applicable)"
+              },
+              "layer": {
+                "type": "string",
+                "description": "Architecture layer from logic_index (if available)"
+              }
+            }
+          },
+          "claim": {
+            "type": "string",
+            "description": "One-sentence conclusion. Must use the language specified by REMY_LANG."
+          },
+          "evidence": {
+            "type": "string",
+            "description": "Code reference, logic derivation, or metric supporting the claim. Must use REMY_LANG."
+          },
+          "confidence": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 5,
+            "description": "2=negative speculation, 3=neutral/unknown, 4=positive speculation, 5=verified"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "string",
+      "description": "Overall conclusion for this analysis dimension. Must use REMY_LANG."
+    }
+  },
+  "additionalProperties": false
+}

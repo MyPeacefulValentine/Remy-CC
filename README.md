@@ -95,6 +95,8 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 | `/remy-tree` | Regenerate the project directory snapshot | [📖](skills/remy-tree/README.md) |
 | `/remy-debug` | Diagnosis-only debugging with hypothesis loop, circuit breaker, and evidence packet output | [📖](skills/remy-debug/README.md) |
 | `/remy-reposcout` | Inspect a GitHub repository in a sandboxed temporary directory | [📖](skills/remy-reposcout/README.md) |
+| `/remy-insight` | Deep multi-agent repository analysis — global, focus, and compare modes with configurable depth | [📖](skills/remy-insight/README.md) |
+| `/remy-ci` | Analyze CI/CD failure logs — compile, link, test, sanitizer, QEMU, style, static analysis, build config | [📖](skills/remy-ci/README.md) |
 
 ### Development Cycle
 
@@ -140,6 +142,20 @@ For small, low-risk changes, steps 3–6 can be skipped.
 >```
 > TDD mode generates failing test skeletons from interface specifications (plan packets or stub functions) and outputs a packet for `/remy-patch`. Post-hoc mode reads existing implementation and generates tests that validate current behavior. Both support effort levels (low/medium/high) and configurable coverage thresholds.
 
+> [!NOTE]
+> **Repository Analysis Workflow**
+>
+> To analyze an external repository with `/remy-insight`:
+>```
+> 1. Clone the repository (manually, or use /remy-reposcout to assess first)
+> 2. cd into the repository and launch Claude Code
+> 3. /init                → generate CLAUDE.md
+> 4. /remy-index          → generate logic_index.json (requires LLM API)
+> 5. /clear               → refresh injected context
+> 6. /remy-insight [mode] → run analysis (global | focus <topic> | compare <doc>)
+>```
+> `/remy-reposcout` performs a shallow metadata assessment before cloning. `/remy-insight` performs deep semantic analysis after indexing.
+
 ---
 
 ## 🚀 Quick Start
@@ -152,7 +168,7 @@ For small, low-risk changes, steps 3–6 can be skipped.
 | Python 3.7+ | Hook and installer scripts |
 | OpenAI-compatible LLM API | Semantic summarization for `/remy-index` |
 | Conda or Mamba (optional) | Auto-injected into shell environment when present |
-| `gh` CLI (optional) | Required by `/remy-reposcout` |
+| `gh` CLI (optional) | Required by `/remy-reposcout` and `/remy-ci` GitHub Actions mode |
 | tree-sitter Python packages (optional) | Higher-precision C/C++/TypeScript parsing and call graph extraction |
 
 Language is configurable via the `REMY_LANG` environment variable (`en` or `zh-CN`).

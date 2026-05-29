@@ -37,3 +37,7 @@ remy-reposcout 在沙盒临时目录中检查 GitHub 仓库。它分两阶段运
 | :--- | :--- |
 | `SKILL.md` | 完整协议定义（由 Claude Code 加载） |
 | `scripts/audit_runner.py` | 克隆、大小检查和结构分析脚本 |
+
+## 后续步骤
+
+`/remy-reposcout` 完成浅层评估后，用户将仓库 clone 到本地，可使用 `/remy-insight` 进行多智能体深度分析（需先运行 `/init` + `/remy-index`）。

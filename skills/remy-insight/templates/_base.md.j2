@@ -1,0 +1,38 @@
+# Repository Insight Report
+> Generated: {{ timestamp }}
+> Mode: {{ mode }} | Depth: {{ depth }}
+> Scope: {{ scope_description }}
+
+{% if freshness_warnings %}
+> **⚠ Index Freshness Warnings:**
+{% for w in freshness_warnings %}
+> - {{ w }}
+{% endfor %}
+{% endif %}
+
+---
+
+{% for section in active_sections %}
+{{ section.rendered_content }}
+
+---
+
+{% endfor %}
+
+{% if skipped_sections %}
+## Skipped Sections
+
+| Section | Reason |
+| :--- | :--- |
+{% for s in skipped_sections %}
+| {{ s.name }} | {{ s.reason }} |
+{% endfor %}
+
+---
+
+{% endif %}
+## Methodology Notes
+- Agent count: {{ agent_count.analysis }} analysis + {{ agent_count.adversarial }} adversarial = {{ agent_count.total }} total
+- Depth: {{ depth }}
+- Active sections: {{ active_section_names | join(', ') }}
+- Adversarial verification: {{ 'enabled' if adversarial_enabled else 'disabled' }}

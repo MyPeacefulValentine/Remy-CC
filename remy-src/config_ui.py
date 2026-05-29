@@ -137,6 +137,19 @@ PARAM_REGISTRY = [
      "desc_en": "Max lines retained per failed CI step for /remy-ci analysis",
      "desc_zh": "/remy-ci 分析时每个失败步骤保留的最大日志行数"},
 
+    {"key": "INSIGHT_DEFAULT_DEPTH", "group": "insight", "type": "enum", "default": "standard",
+     "options": ["light", "standard", "deep"],
+     "desc_en": "Default analysis depth (light = 2 agents, standard = per-section, deep = multi-instance + 3-vote)",
+     "desc_zh": "默认分析深度（light = 2 Agent，standard = 按 section 分配，deep = 多实例 + 3 投票）"},
+    {"key": "INSIGHT_MAX_CUSTOM_ANGLES", "group": "insight", "type": "int", "default": "2",
+     "min": 0, "max": 5,
+     "desc_en": "Maximum user-defined custom analysis angles per run",
+     "desc_zh": "每次运行中用户可定义的自定义分析视角上限"},
+    {"key": "INSIGHT_MAX_AGENTS", "group": "insight", "type": "int", "default": "30",
+     "min": 5, "max": 60,
+     "desc_en": "Hard cap on total agents (analysis + adversarial) per run",
+     "desc_zh": "单次运行的 Agent 总数上限（分析 + 对抗性验证）"},
+
     {"key": "BASH_DEFAULT_TIMEOUT_MS", "group": "system", "type": "int", "default": "600000",
      "min": 10000, "max": 600000,
      "desc_en": "Default Bash command timeout in milliseconds",
@@ -188,6 +201,7 @@ GROUPS = [
     {"id": "security_audit", "label_en": "Security Audit", "label_zh": "安全审计"},
     {"id": "debug", "label_en": "Debug", "label_zh": "调试"},
     {"id": "test_gen", "label_en": "Test Generation", "label_zh": "测试生成"},
+    {"id": "insight", "label_en": "Insight", "label_zh": "仓库洞察"},
     {"id": "system", "label_en": "System", "label_zh": "系统"},
     {"id": "claude_code", "label_en": "Claude Code", "label_zh": "Claude Code"},
 ]
