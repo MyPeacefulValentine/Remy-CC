@@ -1,0 +1,58 @@
+[
+  {
+    "type": "compile_error",
+    "name": "Compile Error",
+    "keywords": ["error:", "fatal error:", "compilation terminated", "cannot find", "no such file or directory", "implicit declaration", "incompatible type", "redefinition of", "expected"],
+    "step_hints": ["build", "compile", "make", "cmake", "gcc", "clang", "cc"],
+    "priority": 1
+  },
+  {
+    "type": "link_error",
+    "name": "Link Error",
+    "keywords": ["undefined reference to", "multiple definition of", "ld returned", "collect2: error", "unresolved external symbol", "relocation", "symbol not found"],
+    "step_hints": ["link", "ld", "build"],
+    "priority": 2
+  },
+  {
+    "type": "test_failure",
+    "name": "Test Failure",
+    "keywords": ["FAILED", "FAIL:", "not ok", "AssertionError", "assert", "Expected", "failures=", "errors=", "test failed", "XFAIL"],
+    "step_hints": ["test", "check", "pytest", "unittest", "kunit", "gtest", "kselftest"],
+    "priority": 3
+  },
+  {
+    "type": "sanitizer_report",
+    "name": "Sanitizer Report",
+    "keywords": ["BUG: KASAN:", "UBSAN:", "BUG: KCSAN:", "AddressSanitizer", "ThreadSanitizer", "MemorySanitizer", "LeakSanitizer", "UndefinedBehaviorSanitizer", "heap-buffer-overflow", "use-after-free", "stack-buffer-overflow", "double-free"],
+    "step_hints": ["sanitizer", "asan", "msan", "tsan", "ubsan", "kasan"],
+    "priority": 4
+  },
+  {
+    "type": "qemu_failure",
+    "name": "QEMU / Emulation Failure",
+    "keywords": ["Kernel panic", "BUG:", "Unable to mount root fs", "not syncing", "Oops:", "Call Trace:", "qemu-system", "timeout expired", "machine restart"],
+    "step_hints": ["qemu", "emulation", "boot", "vm", "kvm"],
+    "priority": 5
+  },
+  {
+    "type": "style_check",
+    "name": "Style / Lint Check",
+    "keywords": ["WARNING:", "ERROR:", "checkpatch", "clang-format", "clang-tidy", "flake8", "pylint", "eslint", "coding style", "whitespace"],
+    "step_hints": ["lint", "style", "format", "checkpatch", "check"],
+    "priority": 6
+  },
+  {
+    "type": "static_analysis",
+    "name": "Static Analysis",
+    "keywords": ["sparse", "smatch", "CID", "Coverity", "cppcheck", "clang-tidy", "warning:", "defect", "finding"],
+    "step_hints": ["analysis", "static", "scan", "coverity", "sparse", "smatch"],
+    "priority": 7
+  },
+  {
+    "type": "build_config",
+    "name": "Build Configuration Error",
+    "keywords": ["No rule to make target", "CONFIG_", "not set", "unmet direct dependencies", "Kconfig", "menuconfig", "depends on", "recursive dependency"],
+    "step_hints": ["config", "kconfig", "menuconfig", "configure"],
+    "priority": 8
+  }
+]

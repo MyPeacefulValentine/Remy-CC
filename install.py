@@ -105,6 +105,9 @@ UI = {
         "j2_installed": "  [i] Jinja2 already installed, skipping",
         "j2_prompt": "Install Jinja2 (remy-inspect template rendering)? [Y/n] ",
         "j2_installing": "  Installing Jinja2 ...",
+        "gh_installed": "  [i] GitHub CLI (gh) already installed, skipping",
+        "gh_not_found": "  [i] gh not found. Install from https://cli.github.com for /remy-ci GitHub Actions mode.\n      /remy-ci will still work with paste (--paste) or file input modes.",
+        "verify_gh": "  GitHub CLI (gh): {status}",
         "api_config_new": "Configure LLM API for Logic Index? [Y/n] ",
         "api_config_existing": "Existing API config detected. Reconfigure? [y/N] ",
         "api_cost_hint": "  [i] Logic Index may require many API calls.\n      Cost-effective models recommended (e.g. deepseek-v4-flash, or pay-per-call coding plans).",
@@ -180,6 +183,9 @@ UI = {
         "j2_installed": "  [i] Jinja2 已安装，跳过",
         "j2_prompt": "是否安装 Jinja2（post-verify 模板渲染增强）？[Y/n] ",
         "j2_installing": "  正在安装 Jinja2 ...",
+        "gh_installed": "  [i] GitHub CLI (gh) 已安装，跳过",
+        "gh_not_found": "  [i] 未找到 gh。请从 https://cli.github.com 安装以使用 /remy-ci 的 GitHub Actions 模式。\n      /remy-ci 仍可通过粘贴 (--paste) 或文件输入模式使用。",
+        "verify_gh": "  GitHub CLI (gh): {status}",
         "api_config_new": "是否配置 Logic Index 的 LLM API？[Y/n] ",
         "api_config_existing": "检测到已有 API 配置，是否重新配置？[y/N] ",
         "api_cost_hint": "  [i] Logic Index 可能产生较多 API 调用。\n      建议选择低成本模型（如 deepseek-v4-flash）或按次计费方案。",
@@ -838,6 +844,13 @@ def do_install() -> None:
             )
 
     print()
+    gh_available = shutil.which("gh") is not None
+    if gh_available:
+        print(_t("gh_installed"))
+    else:
+        print(_t("gh_not_found"))
+
+    print()
     bin_dir = create_shim(claude_home)
     register_path(bin_dir)
 
@@ -988,6 +1001,8 @@ def do_verify() -> None:
     print(_t("verify_target", path=claude_home))
     print(_t("verify_ts", status=_t("verify_ts_yes") if ts_available else _t("verify_ts_no")))
     print(_t("verify_j2", status=_t("verify_ts_yes") if j2_available else _t("verify_ts_no")))
+    gh_available = shutil.which("gh") is not None
+    print(_t("verify_gh", status=_t("verify_ts_yes") if gh_available else _t("verify_ts_no")))
 
     api_configured = False
     if settings_path.exists() and settings:

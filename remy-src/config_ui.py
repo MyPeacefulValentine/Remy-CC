@@ -132,6 +132,11 @@ PARAM_REGISTRY = [
      "desc_en": "Max coverage supplement iterations before stopping",
      "desc_zh": "覆盖率补充最大轮数"},
 
+    {"key": "CI_LOG_MAX_LINES", "group": "ci", "type": "int", "default": "500",
+     "min": 50, "max": 10000,
+     "desc_en": "Max lines retained per failed CI step for /remy-ci analysis",
+     "desc_zh": "/remy-ci 分析时每个失败步骤保留的最大日志行数"},
+
     {"key": "BASH_DEFAULT_TIMEOUT_MS", "group": "system", "type": "int", "default": "600000",
      "min": 10000, "max": 600000,
      "desc_en": "Default Bash command timeout in milliseconds",

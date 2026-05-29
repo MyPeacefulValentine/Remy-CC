@@ -50,5 +50,9 @@
   "remy-testgen": {
     "en": "Generate persistent unit tests for existing or stub code. Supports post-hoc testing (default) and TDD mode (--tdd). Multi-angle agent analysis at medium/high effort levels.",
     "zh-CN": "为现有代码或桩代码生成持久化单元测试。支持后补测试（默认）和 TDD 模式（--tdd）。medium/high 级别使用多角度 Agent 并行分析。"
+  },
+  "remy-ci": {
+    "en": "Analyze CI/CD failure logs (compile, link, test, sanitizer, QEMU, style, static analysis, build config). Supports GitHub Actions (gh CLI), local files, and pasted logs. Produces evidence packets for /remy-patch.",
+    "zh-CN": "分析 CI/CD 失败日志（编译、链接、测试、sanitizer、QEMU、风格、静态分析、构建配置）。支持 GitHub Actions（gh CLI）、本地文件和粘贴日志。为 /remy-patch 生成证据包。"
   }
 }

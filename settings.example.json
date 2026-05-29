@@ -31,6 +31,7 @@
     "TEST_GEN_EFFORT": "medium",
     "TEST_COVERAGE_THRESHOLD": "80",
     "TEST_COVERAGE_MAX_SUPPLEMENT_ROUNDS": "3",
+    "CI_LOG_MAX_LINES": "500",
     "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
   },
   "permissions": {
@@ -69,7 +70,8 @@
       "Skill(remy-reposcout)",
       "Skill(remy-inspect)",
       "Skill(remy-secure)",
-      "Skill(remy-testgen)"
+      "Skill(remy-testgen)",
+      "Skill(remy-ci)"
     ]
   },
   "hooks": {
