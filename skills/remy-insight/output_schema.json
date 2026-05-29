@@ -83,7 +83,7 @@
         },
         "dimension": {
           "type": "string",
-          "enum": ["architecture", "innovation", "improvement", "robustness", "doc_consistency", "custom"]
+          "enum": ["architecture", "innovation", "improvement", "robustness", "research", "doc_consistency", "custom"]
         },
         "severity": {
           "type": "string",
@@ -111,6 +111,14 @@
           "minimum": 2,
           "maximum": 5,
           "description": "Epistemic confidence level (2=speculation, 5=verified)"
+        },
+        "mechanism": {
+          "type": "string",
+          "description": "Technical mechanism explanation (2-5 sentences). Required for innovation/research dimensions."
+        },
+        "significance": {
+          "type": "string",
+          "description": "Engineering or academic significance (1-3 sentences). Required for innovation/research dimensions."
         },
         "verified_status": {
           "type": "string",

@@ -34,7 +34,7 @@
     "CI_LOG_MAX_LINES": "500",
     "INSIGHT_DEFAULT_DEPTH": "standard",
     "INSIGHT_MAX_CUSTOM_ANGLES": "2",
-    "INSIGHT_MAX_AGENTS": "30",
+    "INSIGHT_MAX_AGENTS": "40",
     "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
   },
   "permissions": {

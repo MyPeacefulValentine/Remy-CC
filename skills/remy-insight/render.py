@@ -1,10 +1,13 @@
 """
 Template rendering helper for remy-insight skill.
 Uses Jinja2 when available, falls back to string-based rendering.
+Includes CLI entry point for programmatic report generation from JSON findings.
 """
 
+import argparse
 import json
 import os
+import sys
 from collections import defaultdict
 from datetime import datetime
 
@@ -18,6 +21,8 @@ except ImportError:
 SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES_DIR = os.path.join(SKILL_DIR, "templates")
 SCHEMAS_DIR = os.path.join(SKILL_DIR, "schemas")
+
+DIMENSIONS_WITH_MECHANISM = frozenset(("innovation", "research"))
 
 
 def load_schema(name="agent_finding"):
@@ -47,6 +52,10 @@ def _render_fallback(template_name, context):
         return _render_base_fallback(context)
     if template_name == "section_executive.md.j2":
         return _render_executive_fallback(context)
+    if template_name == "section_innovation.md.j2":
+        return _render_innovation_fallback(context)
+    if template_name == "section_research.md.j2":
+        return _render_research_fallback(context)
     if template_name.startswith("section_") and template_name.endswith(".md.j2"):
         section_name = template_name[len("section_"):-len(".md.j2")]
         return _render_section_fallback(section_name, context)
@@ -137,9 +146,78 @@ SECTION_TITLES = {
     "innovation": "Technical Innovation",
     "improvement": "Improvement Roadmap",
     "robustness": "Robustness & Security",
+    "research": "Research & Scientific Improvement",
     "doc_consistency": "Document-Code Consistency",
     "custom": "Custom Analysis",
 }
+
+
+def _render_finding_base(f, lines):
+    target = f.get("target", {})
+    target_str = f"`{target.get('file', '')}`"
+    if target.get("symbol"):
+        target_str += f" → `{target['symbol']}`"
+    if target.get("layer"):
+        target_str += f" ({target['layer']})"
+    lines.append(f"- **Severity**: {f.get('severity', '')} "
+                 f"| **Confidence**: {f.get('confidence', '')}/5")
+    lines.append(f"- **Target**: {target_str}")
+    lines.append(f"- **Evidence**: {f.get('evidence', '')}")
+
+
+def _render_finding_mechanism(f, lines):
+    mechanism = f.get("mechanism")
+    if mechanism:
+        lines.append("")
+        lines.append(f"> **Mechanism**: {mechanism}")
+    significance = f.get("significance")
+    if significance:
+        lines.append("")
+        lines.append(f"> **Significance**: {significance}")
+
+
+def _render_finding_verification(f, lines):
+    vs = f.get("verified_status")
+    if vs and vs != "not_verified":
+        vd = f.get("vote_detail", "")
+        detail = f" ({vd})" if vd else ""
+        lines.append(f"- **Verification**: {vs}{detail}")
+    xrefs = f.get("cross_refs", [])
+    if xrefs:
+        lines.append(f"- **See also**: {', '.join(xrefs)}")
+
+
+def _render_innovation_fallback(ctx):
+    return _render_mechanism_section_fallback("innovation", ctx)
+
+
+def _render_research_fallback(ctx):
+    return _render_mechanism_section_fallback("research", ctx)
+
+
+def _render_mechanism_section_fallback(section_name, ctx):
+    title = SECTION_TITLES.get(section_name, section_name.replace("_", " ").title())
+    lines = [f"## {title}", ""]
+    lines.append(ctx.get("summary", ""))
+    lines.append("")
+
+    findings = ctx.get("findings", [])
+    if not findings:
+        lines.append(f"No {section_name} findings reported.")
+        return "\n".join(lines) + "\n"
+
+    lines.append("### Findings")
+    lines.append("")
+
+    for f in findings:
+        lines.append(f"#### {f.get('id', 'F-???')}: {f.get('claim', '(no claim)')}")
+        lines.append("")
+        _render_finding_base(f, lines)
+        _render_finding_mechanism(f, lines)
+        _render_finding_verification(f, lines)
+        lines.append("")
+
+    return "\n".join(lines) + "\n"
 
 
 def _render_section_fallback(section_name, ctx):
@@ -159,34 +237,14 @@ def _render_section_fallback(section_name, ctx):
     for f in findings:
         lines.append(f"#### {f.get('id', 'F-???')}: {f.get('claim', '(no claim)')}")
         lines.append("")
-        target = f.get("target", {})
-        target_str = f"`{target.get('file', '')}`"
-        if target.get("symbol"):
-            target_str += f" → `{target['symbol']}`"
-        if target.get("layer"):
-            target_str += f" ({target['layer']})"
-        lines.append(f"- **Severity**: {f.get('severity', '')} "
-                     f"| **Confidence**: {f.get('confidence', '')}/5")
-        lines.append(f"- **Target**: {target_str}")
-        lines.append(f"- **Evidence**: {f.get('evidence', '')}")
-
-        vs = f.get("verified_status")
-        if vs and vs != "not_verified":
-            vd = f.get("vote_detail", "")
-            detail = f" ({vd})" if vd else ""
-            lines.append(f"- **Verification**: {vs}{detail}")
-
-        xrefs = f.get("cross_refs", [])
-        if xrefs:
-            lines.append(f"- **See also**: {', '.join(xrefs)}")
-
+        _render_finding_base(f, lines)
+        _render_finding_verification(f, lines)
         lines.append("")
 
     return "\n".join(lines) + "\n"
 
 
 def annotate_cross_references(sections_data):
-    """Scan findings across sections and add cross_refs for shared targets."""
     target_index = defaultdict(list)
     for section in sections_data:
         for finding in section.get("findings", []):
@@ -214,7 +272,6 @@ def annotate_cross_references(sections_data):
 
 
 def assemble_report(mode, depth, sections_config, findings_by_section, metadata):
-    """Assemble the full report from section findings and metadata."""
     sections_data = []
     for section_name in sections_config:
         section_findings = findings_by_section.get(section_name, [])
@@ -273,7 +330,6 @@ def assemble_report(mode, depth, sections_config, findings_by_section, metadata)
 
 
 def save_report(project_root, mode, depth, sections_config, findings_by_section, metadata):
-    """Render and save the insight report."""
     report_dir = os.path.join(project_root, ".claude", "temp_insight")
     os.makedirs(report_dir, exist_ok=True)
 
@@ -290,3 +346,89 @@ def save_report(project_root, mode, depth, sections_config, findings_by_section,
         f.write(report_content)
 
     return report_path
+
+
+def _group_flat_findings(data):
+    mode = data.get("mode", "global")
+    depth = data.get("depth", "standard")
+    dimensions = data.get("dimensions", [])
+    raw_findings = data.get("findings", [])
+    summaries = data.get("summaries", {})
+
+    by_section = {}
+    for f in raw_findings:
+        dim = f.get("dimension", "")
+        matched = False
+        for known_dim in dimensions:
+            if dim == known_dim or dim.startswith(known_dim) or known_dim.startswith(dim):
+                by_section.setdefault(known_dim, []).append(f)
+                matched = True
+                break
+        if not matched:
+            for title_key in SECTION_TITLES:
+                if dim == title_key:
+                    by_section.setdefault(title_key, []).append(f)
+                    matched = True
+                    break
+            if not matched:
+                by_section.setdefault(dim, []).append(f)
+
+    for dim_name, summary_text in summaries.items():
+        if isinstance(summary_text, list):
+            summary_text = "\n\n".join(summary_text)
+        by_section[f"{dim_name}_summary"] = summary_text
+
+    sections_config = [d for d in dimensions if d in by_section]
+
+    severity_counts = data.get("findings_by_severity", {})
+    total_findings = data.get("total_findings", len(raw_findings))
+    adversarial = data.get("adversarial_results", {})
+
+    metadata = {
+        "mode": mode,
+        "depth": depth,
+        "timestamp": data.get("timestamp", datetime.now().isoformat()),
+        "scope_description": data.get("scope_description", f"Full repository ({total_findings} findings)"),
+        "active_section_names": sections_config,
+        "agent_count": data.get("agent_count", {
+            "analysis": data.get("analysis_agent_count", 0),
+            "adversarial": data.get("adversarial_agent_count", 0),
+            "total": data.get("total_agent_count", 0),
+        }),
+        "adversarial_enabled": bool(adversarial) or depth in ("standard", "deep"),
+        "freshness_warnings": data.get("freshness_warnings", []),
+        "skipped_sections": data.get("skipped_sections", []),
+    }
+
+    return mode, depth, sections_config, by_section, metadata
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Render remy-insight report from JSON findings")
+    parser.add_argument("--input", required=True, help="Path to findings JSON file")
+    parser.add_argument("--output", required=True, help="Output markdown file path")
+    parser.add_argument("--mode", default=None, help="Override mode (global/focus/compare)")
+    parser.add_argument("--depth", default=None, help="Override depth (light/standard/deep)")
+    args = parser.parse_args()
+
+    with open(args.input, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if args.mode:
+        data["mode"] = args.mode
+    if args.depth:
+        data["depth"] = args.depth
+
+    mode, depth, sections_config, findings_by_section, metadata = _group_flat_findings(data)
+
+    report_content = assemble_report(mode, depth, sections_config, findings_by_section, metadata)
+
+    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
+    with open(args.output, "w", encoding="utf-8") as f:
+        f.write(report_content)
+
+    print(f"Report written to {args.output} ({len(report_content)} bytes)")
+
+
+if __name__ == "__main__":
+    main()

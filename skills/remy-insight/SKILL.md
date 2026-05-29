@@ -25,7 +25,7 @@ Multi-dimensional, multi-agent deep semantic analysis skill. Consumes logic_inde
 | :--- | :--- | :--- |
 | `INSIGHT_DEFAULT_DEPTH` | `standard` | Depth level when `--depth` is not specified |
 | `INSIGHT_MAX_CUSTOM_ANGLES` | `2` | Maximum user-defined custom analysis angles |
-| `INSIGHT_MAX_AGENTS` | `30` | Hard cap on total agents per run (analysis + adversarial combined) |
+| `INSIGHT_MAX_AGENTS` | `40` | Hard cap on total agents per run (analysis + adversarial combined) |
 
 ## External Files
 
@@ -39,6 +39,7 @@ Multi-dimensional, multi-agent deep semantic analysis skill. Consumes logic_inde
 | `skills/remy-insight/prompts/angle_improvement.md` | Improvement opportunity identification prompt |
 | `skills/remy-insight/prompts/angle_robustness.md` | Security & robustness assessment prompt |
 | `skills/remy-insight/prompts/angle_innovation.md` | Technical innovation identification prompt |
+| `skills/remy-insight/prompts/angle_research.md` | Research & scientific improvement prompt |
 | `skills/remy-insight/prompts/angle_custom.md` | User-defined custom angle framework template |
 | `skills/remy-insight/templates/_base.md.j2` | Report shell (metadata, section loop, methodology) |
 | `skills/remy-insight/templates/section_executive.md.j2` | Executive Summary section |
@@ -46,8 +47,9 @@ Multi-dimensional, multi-agent deep semantic analysis skill. Consumes logic_inde
 | `skills/remy-insight/templates/section_innovation.md.j2` | Innovation analysis section |
 | `skills/remy-insight/templates/section_improvement.md.j2` | Improvement roadmap section |
 | `skills/remy-insight/templates/section_robustness.md.j2` | Robustness analysis section |
+| `skills/remy-insight/templates/section_research.md.j2` | Research & scientific improvement section |
 | `skills/remy-insight/templates/section_custom.md.j2` | Custom dimension section |
-| `skills/remy-insight/render.py` | Template rendering + section assembly + cross-reference annotation |
+| `skills/remy-insight/render.py` | Template rendering + section assembly + cross-reference annotation + CLI entry point |
 
 ## Optional Dependency: Jinja2
 
@@ -79,6 +81,8 @@ Multi-dimensional, multi-agent deep semantic analysis skill. Consumes logic_inde
 | `compare <doc_path>` | executive, doc_consistency, architecture | Document vs code consistency check |
 
 For `focus` mode, `--with <section>` appends additional sections (e.g., `focus auth --with robustness`).
+
+The `research` section is NOT included by default in any mode. Enable it explicitly with `--with research` (e.g., `global --with research`, `focus model --with research --with innovation`). This dimension targets ML/scientific repositories and consumes additional agent budget.
 
 ### Depth Levels
 
@@ -222,6 +226,40 @@ For each active section, launch 2-3 agents with identical base prompt but differ
 - Instance 2: `[BIAS: aggressive-assessment]`
 - Instance 3: `[BIAS: devil-advocate]` (if 3 instances)
 
+**Mode C — Sub-angle dispatch** (focus × deep only):
+
+Activates when **both** conditions are met: mode is `focus` AND depth is `deep`. For `innovation` and `research` dimensions, each agent receives a sub-angle-specific instruction block injected into the `{sub_angle_instructions}` placeholder in the prompt template.
+
+**Default sub-angle sets** (fixed, not user-configurable):
+
+| Dimension | Sub-Angle | Focus |
+| :--- | :--- | :--- |
+| `innovation` | `algorithm` | Algorithms, mathematical techniques, complexity analysis, SOTA comparison |
+| `innovation` | `architecture` | Non-conventional architectural choices, engineering constraints and trade-offs |
+| `innovation` | `limitation` | Technical boundaries, degradation scenarios, unexplored directions |
+| `research` | `methodology` | Training paradigms, loss function design, data pipeline methodology |
+| `research` | `training` | Optimizer selection, learning rate schedules, regularization, multi-stage training |
+| `research` | `scaling` | Parameter efficiency, inference latency, memory footprint, sequence length extrapolation |
+
+**Dispatch procedure**:
+
+For each sub-angle in the active dimension's set:
+1. Read the base prompt (e.g., `angle_innovation.md`).
+2. Replace `{sub_angle_instructions}` with:
+   ```
+   ## Sub-Angle Focus: {sub_angle_name}
+   
+   For this analysis, focus specifically on: {sub_angle_focus_description}
+   
+   Prioritize findings within this sub-angle. You may still report findings outside this sub-angle if they are severity "issue", but allocate at least 80% of your findings budget to the specified focus area.
+   ```
+3. Apply Mode B bias tags on top (each sub-angle × 3 biases = 3 agents per sub-angle).
+4. Launch all agents in parallel.
+
+**Agent count for Mode C**: `(number of sub-angles) × 3 biases × (number of dimensions using sub-angles)`. For innovation alone: 3 × 3 = 9 agents. For innovation + research: 18 agents. Check against `INSIGHT_MAX_AGENTS` before dispatch.
+
+Dimensions without sub-angle sets (architecture, improvement, robustness, custom) use Mode B unchanged. The `{sub_angle_instructions}` placeholder in their prompts (if present) is replaced with an empty string.
+
 ### 3.3 Agent Failure Handling
 
 Track successful and failed agents.
@@ -251,47 +289,58 @@ Track successful and failed agents.
 
 ## Phase 6: Report Generation
 
-### 6.1 Cross-Reference Annotation (Pre-Render)
+### 6.1 Findings JSON Dump
 
-Before rendering, scan all findings across all sections:
+After all analysis and adversarial agents have completed, assemble the full findings data into a single JSON file:
 
-1. Build a target index: map `(file, symbol)` → list of finding IDs.
-2. For each target that appears in ≥ 2 findings across different sections:
-   - Add `cross_refs` field to each finding: list of `"§{section_name} {finding_id}"` strings.
+1. Ensure directory: `mkdir -p ".claude/temp_insight"`
+2. Write `.claude/temp_insight/raw_findings_full.json` containing:
+   ```json
+   {
+     "mode": "<mode>",
+     "depth": "<depth>",
+     "dimensions": ["architecture", "innovation", ...],
+     "total_findings": <N>,
+     "findings_by_severity": {"issue": <n>, "concern": <n>, "observation": <n>},
+     "summaries": {"architecture": "<agent summary text>", ...},
+     "agent_count": {"analysis": <n>, "adversarial": <n>, "total": <n>},
+     "adversarial_results": {"verified_count": <n>, "upheld": <n>, "refuted": <n>, "inconclusive": <n>},
+     "scope_description": "<human-readable scope>",
+     "freshness_warnings": [],
+     "skipped_sections": [],
+     "findings": [<flat array of all findings from all agents>]
+   }
+   ```
+3. Additionally, write per-category raw data files for reference:
+   - `raw_summaries_and_issues.md`: per-dimension agent summaries + all issue-severity findings with full detail
+   - `raw_concerns.md`: all concern-severity findings grouped by dimension
+   - `raw_observations.md`: all observation-severity findings grouped by dimension
+   - `raw_overview.md`: adversarial verification vote reasoning (if applicable)
+   - `raw_crossref_and_stats.md`: cross-reference map, severity/bias/confidence matrices, file hotspot ranking
+   - `workflow_meta.md`: execution metadata and file index
 
-### 6.2 Section Assembly
+### 6.2 Programmatic Report Rendering
 
-1. Read `render.py`: `Read("~/.claude/skills/remy-insight/render.py")`
-2. For `compare` mode with `doc_consistency` section: inject document claims and verification results.
-3. Call render logic (conceptually — actual execution is inline):
+Invoke `render.py` to generate the final Markdown report from the JSON dump:
 
 ```
-active_sections = [locked section list from Phase 2]
-rendered = []
-accumulated = []
-
-for section_name in active_sections:
-    context = {
-        "findings": findings_by_section[section_name],
-        "upstream_findings": accumulated.copy(),
-        "metadata": { mode, depth, scope, agent_count, ... },
-    }
-    content = render_template(f"section_{section_name}.md.j2", context)
-    rendered.append({"name": section_name, "rendered_content": content})
-    accumulated.extend(findings_by_section[section_name])
-
-report = render_template("_base.md.j2", {
-    "active_sections": rendered,
-    "active_section_names": [s["name"] for s in rendered],
-    **metadata,
-})
+python "~/.claude/skills/remy-insight/render.py" \
+  --input ".claude/temp_insight/raw_findings_full.json" \
+  --output ".claude/temp_insight/insight_{timestamp}.md"
 ```
+
+`render.py` performs:
+1. Reads the flat findings JSON
+2. Groups findings by `dimension` field into per-section buckets
+3. Annotates cross-references for targets appearing in ≥ 2 sections
+4. Renders each section via its Jinja2 template (or fallback string renderer)
+5. For `innovation` and `research` sections: renders `mechanism` and `significance` fields as expanded blocks
+6. Assembles the full report via `_base.md.j2`
 
 ### 6.3 Report Output
 
-1. Ensure directory: `mkdir -p ".claude/temp_insight"`
-2. Write report to `.claude/temp_insight/insight_{timestamp}.md`
-3. Print report path and executive summary to the user.
+1. Print the report file path to the user.
+2. Print the executive summary section inline for immediate visibility.
 
 **Skill terminates after report output.** Users may continue discussion in the main conversation using the report as context.
 
@@ -302,9 +351,10 @@ report = render_template("_base.md.j2", {
 | Section Name | Angle Prompt File | Description |
 | :--- | :--- | :--- |
 | `architecture` | `angle_architecture.md` | Module boundaries, coupling, cohesion, dependency direction |
-| `innovation` | `angle_innovation.md` | Novel algorithms, design patterns, unique approaches |
+| `innovation` | `angle_innovation.md` | Novel algorithms, design patterns, unique approaches. Supports `{sub_angle_instructions}` placeholder for focus×deep sub-angle injection |
 | `improvement` | `angle_improvement.md` | Refactoring candidates, missing abstractions, performance bottlenecks |
 | `robustness` | `angle_robustness.md` | Error handling gaps, resource leaks, concurrency hazards |
+| `research` | `angle_research.md` | Methodology, training strategy, scaling properties, ablation opportunities. Supports `{sub_angle_instructions}` placeholder. Not included by default — enable with `--with research` |
 | `doc_consistency` | *(inline in Phase 3)* | Document claims vs code implementation verification |
 | `custom` | `angle_custom.md` | User-defined analysis dimension with `{user_focus}` placeholder |
 

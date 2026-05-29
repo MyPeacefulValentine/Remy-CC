@@ -145,7 +145,7 @@ PARAM_REGISTRY = [
      "min": 0, "max": 5,
      "desc_en": "Maximum user-defined custom analysis angles per run",
      "desc_zh": "每次运行中用户可定义的自定义分析视角上限"},
-    {"key": "INSIGHT_MAX_AGENTS", "group": "insight", "type": "int", "default": "30",
+    {"key": "INSIGHT_MAX_AGENTS", "group": "insight", "type": "int", "default": "40",
      "min": 5, "max": 60,
      "desc_en": "Hard cap on total agents (analysis + adversarial) per run",
      "desc_zh": "单次运行的 Agent 总数上限（分析 + 对抗性验证）"},
