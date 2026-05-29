@@ -32,6 +32,7 @@ from struct_scan import StructScanner
 
 VERSION = "3.0.0"
 CACHE_FILE = os.path.join(".claude", "logic_index.json")
+DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
 CONFIG_FILE = os.path.join(".claude", "logic_index_config")
 OUTPUT_MD = os.path.join(".claude", "logic_tree.md")
 
@@ -530,6 +531,13 @@ class LogicIndexer:
                 f.write(md_content)
 
             print(f"\nLogic index updated at {OUTPUT_MD}")
+
+            dirty_path = os.path.join(self.root_dir, DIRTY_FILE)
+            try:
+                if os.path.exists(dirty_path):
+                    os.remove(dirty_path)
+            except OSError:
+                pass
 
             duration = time.time() - self.stats["start_time"]
             dirty_count = len(self.dirty_nodes)
