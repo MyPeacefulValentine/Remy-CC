@@ -118,12 +118,12 @@ Check if `.claude/logic_index_dirty` exists and is non-empty.
 - Non-empty → Flag as `DIRTY`.
 
 **Layer 2 — File set diff**:
-`Glob` the current source files matching parser extensions (`.py`, `.c`, `.cpp`, `.h`, `.ts`, `.tsx`). Compare against file paths listed in `.claude/logic_index.json`. Detect additions and deletions.
+`Glob` the current source files matching parser extensions (`.py`, `.c`, `.cpp`, `.h`, `.ts`, `.tsx`). Compare against file paths listed in `.claude/logic_index.json` (exclude the `_meta` key). Detect additions and deletions.
 - Any diff → Flag as `STALE_FILES`.
 
 **Layer 3 — Modification time sampling**:
-Read `meta.generated_at` from `logic_index.json`. For up to 10 randomly selected indexed files, compare file modification time (mtime) against `generated_at`. Use seconds-level precision for cross-platform compatibility.
-- Any file mtime > generated_at → Flag as `STALE_MTIME`.
+Read `_meta.last_updated` from `logic_index.json`. **Important**: On Windows, open the file with `encoding='utf-8'` to avoid GBK decode errors. For up to 10 randomly selected indexed files, compare file modification time (mtime) against `last_updated`. Use seconds-level precision for cross-platform compatibility.
+- Any file mtime > last_updated → Flag as `STALE_MTIME`.
 
 **Decision**:
 - If any flag is set: Use `AskUserQuestion`:
