@@ -353,35 +353,42 @@ def _group_flat_findings(data):
     depth = data.get("depth", "standard")
     dimensions = data.get("dimensions", [])
     raw_findings = data.get("findings", [])
+    raw_findings = [f for f in raw_findings if isinstance(f, dict)]
     summaries = data.get("summaries", {})
+
+    dim_lookup = {d: d for d in dimensions}
+    for d in dimensions:
+        for title_key in SECTION_TITLES:
+            if d == title_key:
+                dim_lookup[title_key] = d
 
     by_section = {}
     for f in raw_findings:
-        dim = f.get("dimension", "")
-        matched = False
-        for known_dim in dimensions:
-            if dim == known_dim or dim.startswith(known_dim) or known_dim.startswith(dim):
-                by_section.setdefault(known_dim, []).append(f)
-                matched = True
-                break
-        if not matched:
+        dim = f.get("dimension") or ""
+        target_dim = dim_lookup.get(dim)
+        if target_dim is None:
             for title_key in SECTION_TITLES:
                 if dim == title_key:
-                    by_section.setdefault(title_key, []).append(f)
-                    matched = True
+                    target_dim = title_key
                     break
-            if not matched:
-                by_section.setdefault(dim, []).append(f)
+        if target_dim is not None:
+            by_section.setdefault(target_dim, []).append(f)
+        elif dim:
+            by_section.setdefault(dim, []).append(f)
 
     for dim_name, summary_text in summaries.items():
         if isinstance(summary_text, list):
-            summary_text = "\n\n".join(summary_text)
+            summary_text = "\n\n".join(str(s) for s in summary_text)
+        elif not isinstance(summary_text, str):
+            summary_text = str(summary_text) if summary_text is not None else ""
         by_section[f"{dim_name}_summary"] = summary_text
 
     sections_config = [d for d in dimensions if d in by_section]
+    if not sections_config:
+        sections_config = [k for k in by_section if not k.endswith("_summary")]
 
     severity_counts = data.get("findings_by_severity", {})
-    total_findings = data.get("total_findings", len(raw_findings))
+    total_findings = len(raw_findings)
     adversarial = data.get("adversarial_results", {})
 
     metadata = {

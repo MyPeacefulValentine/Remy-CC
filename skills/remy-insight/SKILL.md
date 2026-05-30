@@ -201,34 +201,174 @@ For each active section, prepare the agent's input context:
 
 Read the relevant source files for the scope. For files > 500 lines, read only the symbol ranges from logic_index.
 
-### 3.2 Agent Dispatch
+### 3.2 Workflow Dispatch
 
-**Mode A — Single-instance per angle** (light / standard):
+Phase 3.1 prepares the context variables. Phase 3.2 constructs and invokes a single `Workflow` call that orchestrates all analysis and adversarial agents.
 
-For each active section's corresponding angle prompt:
+**Pre-dispatch preparation** (executed in main session before Workflow call):
 
-1. Read the prompt template: `Read("~/.claude/skills/remy-insight/prompts/angle_{section_name}.md")`
+1. Read all angle prompt templates for active sections: `Read("~/.claude/skills/remy-insight/prompts/angle_{section_name}.md")`
 2. Read the schema: `Read("~/.claude/skills/remy-insight/schemas/agent_finding.json")`
-3. Construct agent prompt:
-   - Inject logic_index context
-   - Inject relevant source code excerpts
+3. For each active section, construct a full agent prompt string:
+   - Inject logic_index context (from Phase 3.1)
+   - Inject relevant source code excerpts (from Phase 3.1)
    - Inject mode-specific context (focus target, document content for compare)
-   - Append schema requirement
    - Append language instruction: findings must use REMY_LANG for `claim` and `evidence` fields
-4. Launch Agent with the constructed prompt.
+4. Collect all prompt strings into a data structure to be passed as `args` to the Workflow.
 
-Launch all angle agents in parallel using the `Agent` tool.
+**Workflow invocation**: Call `Workflow` with the following script template. Replace `{PLACEHOLDERS}` with the actual values computed above.
 
-**Mode B — Multi-instance per angle** (deep only):
+```javascript
+export const meta = {
+  name: 'remy-insight-analysis',
+  description: 'Multi-agent repository analysis with adversarial verification',
+  phases: [
+    { title: 'Analyze', detail: 'Parallel analysis agents per dimension' },
+    { title: 'Dedup', detail: 'Deduplicate findings across agents' },
+    { title: 'Verify', detail: 'Adversarial verification of concern/issue findings' },
+  ],
+}
 
-For each active section, launch 2-3 agents with identical base prompt but different bias tags appended:
-- Instance 1: `[BIAS: conservative-assessment]`
-- Instance 2: `[BIAS: aggressive-assessment]`
-- Instance 3: `[BIAS: devil-advocate]` (if 3 instances)
+const FINDING_SCHEMA = args.findingSchema
+const SECTIONS = args.sections
+const DEPTH = args.depth
+const MAX_AGENTS = args.maxAgents
 
-**Mode C — Sub-angle dispatch** (focus × deep only):
+phase('Analyze')
 
-Activates when **both** conditions are met: mode is `focus` AND depth is `deep`. For `innovation` and `research` dimensions, each agent receives a sub-angle-specific instruction block injected into the `{sub_angle_instructions}` placeholder in the prompt template.
+const analysisResults = await parallel(
+  SECTIONS.map(section => () =>
+    agent(section.prompt, {
+      label: `analyze:${section.name}`,
+      phase: 'Analyze',
+      schema: FINDING_SCHEMA,
+    })
+  )
+)
+
+const validResults = analysisResults.filter(Boolean)
+const analysisAgentCount = SECTIONS.length
+
+if (validResults.length < Math.ceil(SECTIONS.length / 2)) {
+  return { error: true, reason: 'Over 50% of analysis agents failed', validCount: validResults.length, totalCount: SECTIONS.length }
+}
+
+const allFindings = []
+const summaries = {}
+const skippedSections = []
+
+for (let i = 0; i < SECTIONS.length; i++) {
+  const result = analysisResults[i]
+  const sectionName = SECTIONS[i].name
+  if (!result) {
+    skippedSections.push({ name: sectionName, reason: 'agent error' })
+    continue
+  }
+  summaries[sectionName] = result.summary
+  for (const f of result.findings) {
+    allFindings.push(f)
+  }
+}
+
+phase('Dedup')
+
+const dedupMap = {}
+for (const f of allFindings) {
+  const key = (f.target.file || '') + '::' + (f.target.symbol || '')
+  const severityRank = { issue: 3, concern: 2, observation: 1 }
+  const existing = dedupMap[key]
+  if (!existing || (severityRank[f.severity] || 0) > (severityRank[existing.severity] || 0)) {
+    dedupMap[key] = f
+  }
+}
+const uniqueFindings = Object.values(dedupMap)
+const issueFindings = uniqueFindings.filter(f => f.severity === 'issue')
+const concernFindings = uniqueFindings.filter(f => f.severity === 'concern')
+
+log(`Dedup: ${allFindings.length} → ${uniqueFindings.length} unique (${issueFindings.length} issue, ${concernFindings.length} concern)`)
+
+if (DEPTH === 'light') {
+  for (const f of allFindings) { f.verified_status = 'not_verified' }
+  return { findings: allFindings, summaries, skippedSections, analysisAgentCount, adversarialAgentCount: 0 }
+}
+
+phase('Verify')
+
+let remainingBudget = MAX_AGENTS - analysisAgentCount
+let adversarialAgentCount = 0
+
+const issueVerified = await parallel(
+  issueFindings.slice(0, Math.floor(remainingBudget / 3)).map(f => () => {
+    const votesNeeded = DEPTH === 'deep' ? 3 : 1
+    const votePromises = Array.from({ length: votesNeeded }, (_, vi) => () =>
+      agent(
+        `Attempt to REFUTE this finding. Provide evidence for or against.\n\nFinding: ${f.claim}\nEvidence: ${f.evidence}\nTarget: ${f.target.file} → ${f.target.symbol || '(module-level)'}\n\nOutput ONLY one of: refuted / upheld / inconclusive`,
+        { label: `verify:issue:${f.id}:v${vi}`, phase: 'Verify' }
+      )
+    )
+    return parallel(votePromises).then(votes => {
+      const validVotes = votes.filter(Boolean).map(v => {
+        const t = (typeof v === 'string' ? v : '').toLowerCase()
+        if (t.includes('refuted')) return 'refuted'
+        if (t.includes('upheld')) return 'upheld'
+        return 'inconclusive'
+      })
+      const counts = { upheld: 0, refuted: 0, inconclusive: 0 }
+      for (const v of validVotes) counts[v]++
+      const verdict = counts.upheld >= 2 ? 'upheld' : counts.refuted >= 2 ? 'refuted' : 'inconclusive'
+      f.verified_status = verdict
+      f.vote_detail = `${counts.upheld} upheld / ${counts.refuted} refuted / ${counts.inconclusive} inconclusive`
+      return f
+    })
+  })
+)
+
+adversarialAgentCount += issueFindings.slice(0, Math.floor(remainingBudget / 3)).length * (DEPTH === 'deep' ? 3 : 1)
+remainingBudget -= adversarialAgentCount
+
+if (remainingBudget > 0 && concernFindings.length > 0) {
+  const concernSlice = concernFindings.slice(0, remainingBudget)
+  const concernVerified = await parallel(
+    concernSlice.map(f => () =>
+      agent(
+        `Attempt to REFUTE this finding. Provide evidence for or against.\n\nFinding: ${f.claim}\nEvidence: ${f.evidence}\nTarget: ${f.target.file} → ${f.target.symbol || '(module-level)'}\n\nOutput ONLY one of: refuted / upheld / inconclusive`,
+        { label: `verify:concern:${f.id}`, phase: 'Verify' }
+      ).then(v => {
+        const t = (typeof v === 'string' ? v : '').toLowerCase()
+        f.verified_status = t.includes('refuted') ? 'refuted' : t.includes('upheld') ? 'upheld' : 'inconclusive'
+        return f
+      })
+    )
+  )
+  adversarialAgentCount += concernSlice.length
+}
+
+for (const f of allFindings) {
+  if (!f.verified_status) f.verified_status = 'not_verified'
+}
+
+return { findings: allFindings, summaries, skippedSections, analysisAgentCount, adversarialAgentCount }
+```
+
+**Workflow `args` structure** — constructed by the main session and passed verbatim:
+
+```json
+{
+  "findingSchema": <contents of agent_finding.json>,
+  "sections": [
+    {"name": "architecture", "prompt": "<full constructed prompt>"},
+    {"name": "innovation", "prompt": "<full constructed prompt>"}
+  ],
+  "depth": "standard",
+  "maxAgents": 40
+}
+```
+
+**Mode dispatch rules** (determine the `sections` array content):
+
+- **Mode A** (light / standard): One entry per active section. Prompt = angle template + context + language instruction.
+- **Mode B** (deep): For each active section, 2-3 entries with identical prompt but different bias tags appended (`[BIAS: conservative-assessment]`, `[BIAS: aggressive-assessment]`, `[BIAS: devil-advocate]`).
+- **Mode C** (focus × deep): For `innovation` and `research` dimensions with sub-angle sets, expand into sub-angle × bias entries. Each entry's prompt has `{sub_angle_instructions}` replaced with the sub-angle focus block.
 
 **Default sub-angle sets** (fixed, not user-configurable):
 
@@ -241,87 +381,99 @@ Activates when **both** conditions are met: mode is `focus` AND depth is `deep`.
 | `research` | `training` | Optimizer selection, learning rate schedules, regularization, multi-stage training |
 | `research` | `scaling` | Parameter efficiency, inference latency, memory footprint, sequence length extrapolation |
 
-**Dispatch procedure**:
+**Sub-angle injection** (Mode C only):
 
-For each sub-angle in the active dimension's set:
-1. Read the base prompt (e.g., `angle_innovation.md`).
-2. Replace `{sub_angle_instructions}` with:
-   ```
-   ## Sub-Angle Focus: {sub_angle_name}
-   
-   For this analysis, focus specifically on: {sub_angle_focus_description}
-   
-   Prioritize findings within this sub-angle. You may still report findings outside this sub-angle if they are severity "issue", but allocate at least 80% of your findings budget to the specified focus area.
-   ```
-3. Apply Mode B bias tags on top (each sub-angle × 3 biases = 3 agents per sub-angle).
-4. Launch all agents in parallel.
+Replace `{sub_angle_instructions}` in the prompt template with:
+```
+## Sub-Angle Focus: {sub_angle_name}
 
-**Agent count for Mode C**: `(number of sub-angles) × 3 biases × (number of dimensions using sub-angles)`. For innovation alone: 3 × 3 = 9 agents. For innovation + research: 18 agents. Check against `INSIGHT_MAX_AGENTS` before dispatch.
+For this analysis, focus specifically on: {sub_angle_focus_description}
 
-Dimensions without sub-angle sets (architecture, improvement, robustness, custom) use Mode B unchanged. The `{sub_angle_instructions}` placeholder in their prompts (if present) is replaced with an empty string.
+Prioritize findings within this sub-angle. You may still report findings outside this sub-angle if they are severity "issue", but allocate at least 80% of your findings budget to the specified focus area.
+```
 
-### 3.3 Agent Failure Handling
+Dimensions without sub-angle sets (architecture, improvement, robustness, custom) replace `{sub_angle_instructions}` with an empty string and use Mode B unchanged.
 
-Track successful and failed agents.
+**Agent count**: Total `sections` array length. Check against `INSIGHT_MAX_AGENTS` before invoking Workflow. If exceeded, warn user and suggest reducing depth or sections.
 
-- Failed agent (timeout, malformed output, schema violation): Mark section as `[skipped: agent error]`.
-- If failed count ≥ 50% of active sections: HALT. Report error to user.
-- Otherwise: Continue with available results. Record skipped sections in methodology notes.
+### 3.3 Workflow Failure Handling
+
+If the Workflow call returns an error (script error, timeout, or returns `{error: true}`):
+
+1. **HALT** immediately.
+2. Report the error details to the user.
+3. Do NOT attempt to fall back to Agent-based dispatch.
+4. Print: "Workflow execution failed: {error details}. The Workflow script may need correction, or the context may be too large for the current configuration."
 
 ### 3.4 Adversarial Verification
 
-**Trigger**: Only for `standard` and `deep` depth levels.
+Adversarial verification is embedded within the Workflow script (see Phase 3.2). The Workflow handles it in its `Verify` phase.
 
-**standard mode**:
-- For each finding with `severity: "issue"`: Launch 1 adversarial Agent.
-- Agent prompt: "Attempt to refute this finding. Provide evidence for or against. Output: `refuted` / `upheld` / `inconclusive`."
-- Append `verified_status` field to the finding.
+**Dedup-then-verify strategy**:
 
-**deep mode**:
-- For each finding with `severity: "concern"` or `"issue"`: Launch 3 adversarial Agents.
-- Each agent independently attempts to refute.
-- Consensus rule: ≥2 agents agree → adopt that verdict. Otherwise → `inconclusive`.
-- Append `verified_status` and `vote_detail` fields to the finding.
+After all analysis agents return, the Workflow deduplicates findings by `target.file + target.symbol` exact match before verification. When multiple findings share the same target, the one with highest severity is retained as the representative. This reduces the verification target count (observed ~50-65% reduction in testing).
 
-**Agent cap enforcement**: Before launching adversarial agents, check cumulative agent count against `INSIGHT_MAX_AGENTS`. If launching all would exceed the cap, prioritize `issue`-severity findings over `concern`, and skip remaining.
+**Dynamic budget allocation**:
+
+1. Compute `remaining_budget = INSIGHT_MAX_AGENTS - analysis_agent_count`.
+2. Allocate verification agents in priority order:
+   - **issue findings** (3-vote in deep, 1-vote in standard) — allocated first, up to budget.
+   - **concern findings** (1-vote) — allocated with remaining budget.
+3. Findings that cannot be verified due to budget exhaustion are marked `verified_status: "not_verified"`.
+
+**Verification modes by depth**:
+
+| Depth | issue findings | concern findings | observation findings |
+| :--- | :--- | :--- | :--- |
+| `light` | not_verified | not_verified | not_verified |
+| `standard` | 1-vote refute | not_verified | not_verified |
+| `deep` | 3-vote consensus (≥2 agrees) | 1-vote refute (budget permitting) | not_verified |
+
+**Consensus rule** (deep mode, issue findings): ≥2 of 3 votes agree → adopt that verdict. Otherwise → `inconclusive`.
 
 ---
 
 ## Phase 6: Report Generation
 
-### 6.1 Findings JSON Dump
+### 6.1 Process Workflow Return Value
 
-After all analysis and adversarial agents have completed, assemble the full findings data into a single JSON file:
+The Workflow returns a structured JavaScript object. The main session processes it as follows:
 
-1. Ensure directory: `mkdir -p ".claude/temp_insight"`
-2. Write `.claude/temp_insight/raw_findings_full.json` containing:
-   ```json
-   {
-     "mode": "<mode>",
-     "depth": "<depth>",
-     "dimensions": ["architecture", "innovation", ...],
-     "total_findings": <N>,
-     "findings_by_severity": {"issue": <n>, "concern": <n>, "observation": <n>},
-     "summaries": {"architecture": "<agent summary text>", ...},
-     "agent_count": {"analysis": <n>, "adversarial": <n>, "total": <n>},
-     "adversarial_results": {"verified_count": <n>, "upheld": <n>, "refuted": <n>, "inconclusive": <n>},
-     "scope_description": "<human-readable scope>",
-     "freshness_warnings": [],
-     "skipped_sections": [],
-     "findings": [<flat array of all findings from all agents>]
-   }
-   ```
-3. Additionally, write per-category raw data files for reference:
-   - `raw_summaries_and_issues.md`: per-dimension agent summaries + all issue-severity findings with full detail
-   - `raw_concerns.md`: all concern-severity findings grouped by dimension
-   - `raw_observations.md`: all observation-severity findings grouped by dimension
-   - `raw_overview.md`: adversarial verification vote reasoning (if applicable)
-   - `raw_crossref_and_stats.md`: cross-reference map, severity/bias/confidence matrices, file hotspot ranking
-   - `workflow_meta.md`: execution metadata and file index
+1. **Check for error**: If the return value contains `{error: true}`, follow Phase 3.3 (HALT).
+2. **Extract fields** from the return value:
+   - `findings` — flat array of all findings (with `verified_status` already set by the Workflow)
+   - `summaries` — per-section summary texts
+   - `skippedSections` — sections that failed during analysis
+   - `analysisAgentCount` — number of analysis agents used
+   - `adversarialAgentCount` — number of adversarial agents used
 
-### 6.2 Programmatic Report Rendering
+### 6.2 Findings JSON Dump
 
-Invoke `render.py` to generate the final Markdown report from the JSON dump:
+1. Ensure directory: `mkdir -p ".claude/temp_insight"` (or PowerShell equivalent)
+2. Assemble and write `.claude/temp_insight/raw_findings_full.json`:
+
+```json
+{
+  "mode": "<mode>",
+  "depth": "<depth>",
+  "dimensions": ["<active section names>"],
+  "total_findings": <N>,
+  "findings_by_severity": {"issue": <n>, "concern": <n>, "observation": <n>},
+  "summaries": {"<section_name>": "<summary text>", ...},
+  "agent_count": {"analysis": <n>, "adversarial": <n>, "total": <n>},
+  "adversarial_results": {"verified_count": <n>, "upheld": <n>, "refuted": <n>, "inconclusive": <n>},
+  "scope_description": "<human-readable scope>",
+  "freshness_warnings": [],
+  "skipped_sections": [],
+  "findings": [<flat array from Workflow return>]
+}
+```
+
+Count `findings_by_severity` and `adversarial_results` by iterating the findings array in the main session. The `timestamp` field is generated in the main session (Workflow scripts cannot call `Date.now()`).
+
+### 6.3 Programmatic Report Rendering
+
+Invoke `render.py` to generate the final Markdown report:
 
 ```
 python "~/.claude/skills/remy-insight/render.py" \
@@ -337,7 +489,9 @@ python "~/.claude/skills/remy-insight/render.py" \
 5. For `innovation` and `research` sections: renders `mechanism` and `significance` fields as expanded blocks
 6. Assembles the full report via `_base.md.j2`
 
-### 6.3 Report Output
+**Do NOT hand-assemble the report in the conversation.** Always use `render.py`.
+
+### 6.4 Report Output
 
 1. Print the report file path to the user.
 2. Print the executive summary section inline for immediate visibility.
