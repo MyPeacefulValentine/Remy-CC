@@ -56,7 +56,7 @@
     "zh-CN": "分析 CI/CD 失败日志（编译、链接、测试、sanitizer、QEMU、风格、静态分析、构建配置）。支持 GitHub Actions（gh CLI）、本地文件和粘贴日志。为 /remy-patch 生成证据包。"
   },
   "remy-insight": {
-    "en": "Deep repository analysis via Workflow-orchestrated parallel agents with schema enforcement. Supports global, focus, and compare modes. Dedup-then-verify adversarial pipeline with dynamic budget allocation. Optional research dimension for ML/scientific repos (--with research).",
-    "zh-CN": "通过 Workflow 编排的并行 agent 进行仓库深度分析，含 schema 强制验证。支持全局、聚焦和对照三种模式。去重后动态预算分配的对抗验证管线。可选 research 维度用于 ML/科研仓库（--with research）。"
+    "en": "Deep repository analysis via Workflow-orchestrated parallel agents with schema enforcement. Supports global, focus, and compare modes. Dedup-then-verify adversarial pipeline with dynamic budget allocation.",
+    "zh-CN": "通过 Workflow 编排的并行 agent 进行仓库深度分析，含 schema 强制验证。支持全局、聚焦和对照三种模式。去重后动态预算分配的对抗验证管线。"
   }
 }

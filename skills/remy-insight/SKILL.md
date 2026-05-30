@@ -39,7 +39,6 @@ Multi-dimensional, multi-agent deep semantic analysis skill. Consumes logic_inde
 | `skills/remy-insight/prompts/angle_improvement.md` | Improvement opportunity identification prompt |
 | `skills/remy-insight/prompts/angle_robustness.md` | Security & robustness assessment prompt |
 | `skills/remy-insight/prompts/angle_innovation.md` | Technical innovation identification prompt |
-| `skills/remy-insight/prompts/angle_research.md` | Research & scientific improvement prompt |
 | `skills/remy-insight/prompts/angle_custom.md` | User-defined custom angle framework template |
 | `skills/remy-insight/templates/_base.md.j2` | Report shell (metadata, section loop, methodology) |
 | `skills/remy-insight/templates/section_executive.md.j2` | Executive Summary section |
@@ -47,7 +46,6 @@ Multi-dimensional, multi-agent deep semantic analysis skill. Consumes logic_inde
 | `skills/remy-insight/templates/section_innovation.md.j2` | Innovation analysis section |
 | `skills/remy-insight/templates/section_improvement.md.j2` | Improvement roadmap section |
 | `skills/remy-insight/templates/section_robustness.md.j2` | Robustness analysis section |
-| `skills/remy-insight/templates/section_research.md.j2` | Research & scientific improvement section |
 | `skills/remy-insight/templates/section_custom.md.j2` | Custom dimension section |
 | `skills/remy-insight/render.py` | Template rendering + section assembly + cross-reference annotation + CLI entry point |
 
@@ -81,8 +79,6 @@ Multi-dimensional, multi-agent deep semantic analysis skill. Consumes logic_inde
 | `compare <doc_path>` | executive, doc_consistency, architecture | Document vs code consistency check |
 
 For `focus` mode, `--with <section>` appends additional sections (e.g., `focus auth --with robustness`).
-
-The `research` section is NOT included by default in any mode. Enable it explicitly with `--with research` (e.g., `global --with research`, `focus model --with research --with innovation`). This dimension targets ML/scientific repositories and consumes additional agent budget.
 
 ### Depth Levels
 
@@ -368,7 +364,7 @@ return { findings: allFindings, summaries, skippedSections, analysisAgentCount, 
 
 - **Mode A** (light / standard): One entry per active section. Prompt = angle template + context + language instruction.
 - **Mode B** (deep): For each active section, 2-3 entries with identical prompt but different bias tags appended (`[BIAS: conservative-assessment]`, `[BIAS: aggressive-assessment]`, `[BIAS: devil-advocate]`).
-- **Mode C** (focus × deep): For `innovation` and `research` dimensions with sub-angle sets, expand into sub-angle × bias entries. Each entry's prompt has `{sub_angle_instructions}` replaced with the sub-angle focus block.
+- **Mode C** (focus × deep): For the `innovation` dimension with sub-angle sets, expand into sub-angle × bias entries. Each entry's prompt has `{sub_angle_instructions}` replaced with the sub-angle focus block.
 
 **Default sub-angle sets** (fixed, not user-configurable):
 
@@ -377,9 +373,6 @@ return { findings: allFindings, summaries, skippedSections, analysisAgentCount, 
 | `innovation` | `algorithm` | Algorithms, mathematical techniques, complexity analysis, SOTA comparison |
 | `innovation` | `architecture` | Non-conventional architectural choices, engineering constraints and trade-offs |
 | `innovation` | `limitation` | Technical boundaries, degradation scenarios, unexplored directions |
-| `research` | `methodology` | Training paradigms, loss function design, data pipeline methodology |
-| `research` | `training` | Optimizer selection, learning rate schedules, regularization, multi-stage training |
-| `research` | `scaling` | Parameter efficiency, inference latency, memory footprint, sequence length extrapolation |
 
 **Sub-angle injection** (Mode C only):
 
@@ -486,7 +479,7 @@ python "~/.claude/skills/remy-insight/render.py" \
 2. Groups findings by `dimension` field into per-section buckets
 3. Annotates cross-references for targets appearing in ≥ 2 sections
 4. Renders each section via its Jinja2 template (or fallback string renderer)
-5. For `innovation` and `research` sections: renders `mechanism` and `significance` fields as expanded blocks
+5. For the `innovation` section: renders `mechanism` and `significance` fields as expanded blocks
 6. Assembles the full report via `_base.md.j2`
 
 **Do NOT hand-assemble the report in the conversation.** Always use `render.py`.
@@ -508,7 +501,6 @@ python "~/.claude/skills/remy-insight/render.py" \
 | `innovation` | `angle_innovation.md` | Novel algorithms, design patterns, unique approaches. Supports `{sub_angle_instructions}` placeholder for focus×deep sub-angle injection |
 | `improvement` | `angle_improvement.md` | Refactoring candidates, missing abstractions, performance bottlenecks |
 | `robustness` | `angle_robustness.md` | Error handling gaps, resource leaks, concurrency hazards |
-| `research` | `angle_research.md` | Methodology, training strategy, scaling properties, ablation opportunities. Supports `{sub_angle_instructions}` placeholder. Not included by default — enable with `--with research` |
 | `doc_consistency` | *(inline in Phase 3)* | Document claims vs code implementation verification |
 | `custom` | `angle_custom.md` | User-defined analysis dimension with `{user_focus}` placeholder |
 

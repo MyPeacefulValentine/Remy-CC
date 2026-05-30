@@ -22,7 +22,7 @@ SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES_DIR = os.path.join(SKILL_DIR, "templates")
 SCHEMAS_DIR = os.path.join(SKILL_DIR, "schemas")
 
-DIMENSIONS_WITH_MECHANISM = frozenset(("innovation", "research"))
+DIMENSIONS_WITH_MECHANISM = frozenset(("innovation",))
 
 
 def load_schema(name="agent_finding"):
@@ -54,8 +54,6 @@ def _render_fallback(template_name, context):
         return _render_executive_fallback(context)
     if template_name == "section_innovation.md.j2":
         return _render_innovation_fallback(context)
-    if template_name == "section_research.md.j2":
-        return _render_research_fallback(context)
     if template_name.startswith("section_") and template_name.endswith(".md.j2"):
         section_name = template_name[len("section_"):-len(".md.j2")]
         return _render_section_fallback(section_name, context)
@@ -146,7 +144,6 @@ SECTION_TITLES = {
     "innovation": "Technical Innovation",
     "improvement": "Improvement Roadmap",
     "robustness": "Robustness & Security",
-    "research": "Research & Scientific Improvement",
     "doc_consistency": "Document-Code Consistency",
     "custom": "Custom Analysis",
 }
@@ -189,10 +186,6 @@ def _render_finding_verification(f, lines):
 
 def _render_innovation_fallback(ctx):
     return _render_mechanism_section_fallback("innovation", ctx)
-
-
-def _render_research_fallback(ctx):
-    return _render_mechanism_section_fallback("research", ctx)
 
 
 def _render_mechanism_section_fallback(section_name, ctx):
