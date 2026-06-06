@@ -194,8 +194,18 @@ class StructScanner:
             "language": parser.__class__.__name__,
             "layer": self._match_file_to_layer(rel_path),
             "symbols": [],
-            "calls": [{"caller": e.caller, "callee": e.callee, "line": e.line} for e in call_edges],
+            "calls": [],
         }
+
+        for e in call_edges:
+            call_entry = {"caller": e.caller, "callee": e.callee, "line": e.line}
+            if e.provenance:
+                call_entry["provenance"] = e.provenance
+            if e.synthesized_from:
+                call_entry["synthesized_from"] = e.synthesized_from
+            if e.via:
+                call_entry["via"] = e.via
+            file_node["calls"].append(call_entry)
 
         if cached_file and "hash" in cached_file:
             file_node["hash"] = cached_file["hash"]
@@ -219,7 +229,7 @@ class StructScanner:
                 elif self.filter_small and len(sym_info.source_segment.splitlines()) < 3:
                     summary = "Small utility function."
 
-            file_node["symbols"].append({
+            sym_entry = {
                 "name": sym_info.name,
                 "args": sym_info.args,
                 "type": sym_info.type,
@@ -227,9 +237,31 @@ class StructScanner:
                 "end_lineno": sym_info.end_lineno,
                 "hash": symbol_hash,
                 "summary": summary,
-            })
+            }
+            if sym_info.bases:
+                sym_entry["bases"] = sym_info.bases
+            file_node["symbols"].append(sym_entry)
 
         return file_node
+
+    def _purge_heuristic_edges(self, source_paths):
+        for path, file_data in self.cache.items():
+            if path == "_meta" or "calls" not in file_data:
+                continue
+            file_data["calls"] = [
+                c for c in file_data["calls"]
+                if c.get("provenance") != "heuristic"
+                or c.get("synthesized_from") not in source_paths
+            ]
+
+    def _run_synthesizers(self):
+        import importlib
+        import sys
+        synth_dir = os.path.join(os.path.dirname(__file__), 'synthesizers')
+        if synth_dir not in sys.path:
+            sys.path.insert(0, os.path.dirname(__file__))
+        from synthesizers import run_all_synthesizers
+        run_all_synthesizers(self.cache, self.root_dir)
 
     def _resolve_call_edges(self):
         for path, file_data in self.cache.items():
@@ -290,10 +322,12 @@ class StructScanner:
 
         self.cache = new_cache
         self._resolve_call_edges()
+        self._run_synthesizers()
         self._save_cache()
 
     def scan_files(self, file_paths):
         self.old_cache = dict(self.cache)
+        scanned_rel_paths = []
         for file_path in file_paths:
             if os.path.isabs(file_path):
                 full_path = file_path
@@ -310,7 +344,9 @@ class StructScanner:
             result = self.scan_file(full_path, parser)
             if result:
                 self.cache[result["path"]] = result
+                scanned_rel_paths.append(result["path"])
 
+        self._purge_heuristic_edges(scanned_rel_paths)
         self._resolve_call_edges()
         self._save_cache()
 

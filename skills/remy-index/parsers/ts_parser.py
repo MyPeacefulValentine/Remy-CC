@@ -344,6 +344,11 @@ class TSParser(LanguageParser):
         name_node = node.child_by_field_name('name')
         name = _ts_node_text(name_node) if name_node else '<default>'
         full_name = f"{parent_name}.{name}" if parent_name else name
+        bases_list = []
+        for child in node.children:
+            if child.type in ('extends_clause', 'implements_clause'):
+                for type_node in child.named_children:
+                    bases_list.append(_ts_node_text(type_node))
         symbols.append(SymbolInfo(
             name=full_name,
             args="",
@@ -352,6 +357,7 @@ class TSParser(LanguageParser):
             source_segment=_ts_node_text(node),
             end_lineno=node.end_point[0] + 1,
             docstring=_ts_extract_jsdoc(source_bytes, node),
+            bases=bases_list or None,
         ))
         body = node.child_by_field_name('body')
         if body:

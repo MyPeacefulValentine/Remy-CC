@@ -17,6 +17,7 @@ class SymbolInfo:
     source_segment: str
     end_lineno: Optional[int] = None
     docstring: Optional[str] = None
+    bases: Optional[list] = None
 
 
 @dataclass
@@ -25,6 +26,9 @@ class EdgeInfo:
     caller: str
     callee: str
     line: int
+    provenance: Optional[str] = None
+    synthesized_from: Optional[str] = None
+    via: Optional[str] = None
 
 
 class LanguageParser(ABC):

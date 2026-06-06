@@ -172,6 +172,15 @@ class PythonParser(LanguageParser):
 
         docstring = ast.get_docstring(node)
 
+        bases_list = None
+        if isinstance(node, ast.ClassDef) and node.bases:
+            bases_list = []
+            for base in node.bases:
+                if isinstance(base, ast.Name):
+                    bases_list.append(base.id)
+                elif isinstance(base, ast.Attribute):
+                    bases_list.append(base.attr)
+
         return SymbolInfo(
             name=symbol_name,
             args=args_str,
@@ -180,6 +189,7 @@ class PythonParser(LanguageParser):
             source_segment=segment,
             end_lineno=node.end_lineno,
             docstring=docstring,
+            bases=bases_list,
         )
 
     def extract_call_graph(self, source, file_path):
