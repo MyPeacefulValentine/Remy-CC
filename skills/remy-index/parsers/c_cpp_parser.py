@@ -43,8 +43,8 @@ RE_FUNC = re.compile(
     re.MULTILINE
 )
 
-RE_STRUCT = re.compile(r'^[ \t]*(?:typedef\s+)?struct\s+(\w+)\s*\{', re.MULTILINE)
-RE_CLASS = re.compile(r'^[ \t]*(?:template\s*<[^>]*>\s*)?class\s+(\w+)\s*(?:final\s*)?(?::\s*[^{]+)?\{', re.MULTILINE)
+RE_STRUCT = re.compile(r'^[ \t]*(?:typedef\s+)?struct\s+(\w+)\s*(?::\s*([^{]+))?\{', re.MULTILINE)
+RE_CLASS = re.compile(r'^[ \t]*(?:template\s*<[^>]*>\s*)?class\s+(\w+)\s*(?:final\s*)?(?::\s*([^{]+))?\{', re.MULTILINE)
 RE_ENUM = re.compile(r'^[ \t]*(?:typedef\s+)?enum\s+(?:class\s+)?(\w+)\s*(?::\s*\w+\s*)?\{', re.MULTILINE)
 RE_TYPEDEF = re.compile(r'^[ \t]*typedef\s+.+?\s+(\w+)\s*;', re.MULTILINE)
 RE_NAMESPACE = re.compile(r'^[ \t]*namespace\s+(\w+)\s*\{', re.MULTILINE)
@@ -52,6 +52,46 @@ RE_FUNC_MACRO = re.compile(r'^[ \t]*#\s*define\s+(\w+)\s*\(([^)]*)\)', re.MULTIL
 
 
 # --- Shared Utilities ---
+
+
+def _split_bases(raw):
+    """Split base class declarations respecting angle bracket nesting."""
+    parts = []
+    depth = 0
+    current = []
+    for ch in raw:
+        if ch == '<':
+            depth += 1
+            current.append(ch)
+        elif ch == '>':
+            depth -= 1
+            current.append(ch)
+        elif ch == ',' and depth == 0:
+            parts.append(''.join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        parts.append(''.join(current).strip())
+    return parts
+
+
+_RE_ACCESS_PREFIX = re.compile(r'^(public|protected|private|virtual)\s+')
+
+
+def _parse_cpp_bases(raw):
+    """Parse C++ inheritance clause into a list of base class names."""
+    if not raw:
+        return None
+    bases = []
+    for part in _split_bases(raw):
+        part = _RE_ACCESS_PREFIX.sub('', part)
+        part = _RE_ACCESS_PREFIX.sub('', part)
+        name = re.sub(r'<.*>$', '', part.strip()).strip()
+        if name:
+            bases.append(name)
+    return bases or None
+
 
 def _find_matching_brace(source, start_pos):
     """Find the position of the closing brace matching the opening brace at start_pos."""
@@ -406,6 +446,17 @@ class CCppParser(LanguageParser):
         full_name = f"{parent_name}.{name}" if parent_name else name
         sym_type = "class" if node.type == 'class_specifier' else "struct"
 
+        bases_list = []
+        for child in node.children:
+            if child.type == 'base_class_clause':
+                for sub in child.children:
+                    if sub.type == 'type_identifier':
+                        bases_list.append(_ts_node_text(sub))
+                    elif sub.type == 'template_type':
+                        tn = sub.child_by_field_name('name')
+                        if tn:
+                            bases_list.append(_ts_node_text(tn))
+
         symbols.append(SymbolInfo(
             name=full_name,
             args="",
@@ -414,6 +465,7 @@ class CCppParser(LanguageParser):
             source_segment=_ts_node_text(node),
             end_lineno=node.end_point[0] + 1,
             docstring=_ts_extract_doxygen(source_bytes, node),
+            bases=bases_list or None,
         ))
 
         body = node.child_by_field_name('body')
@@ -494,6 +546,7 @@ class CCppParser(LanguageParser):
             name = f"{prefix}.{m.group(1)}" if prefix else m.group(1)
             class_sym = _add_braced_symbol(m, name, "class")
             if class_sym:
+                class_sym.bases = _parse_cpp_bases(m.group(2))
                 self._regex_extract_class_methods(source, m, class_sym.name, symbols, seen_ranges)
 
         for m in RE_STRUCT.finditer(source):
@@ -501,6 +554,7 @@ class CCppParser(LanguageParser):
             name = f"{prefix}.{m.group(1)}" if prefix else m.group(1)
             struct_sym = _add_braced_symbol(m, name, "struct")
             if struct_sym:
+                struct_sym.bases = _parse_cpp_bases(m.group(2))
                 self._regex_extract_class_methods(source, m, struct_sym.name, symbols, seen_ranges)
 
         for m in RE_ENUM.finditer(source):

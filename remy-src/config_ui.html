@@ -28,7 +28,7 @@ h1{font-size:22px;font-weight:700;margin-bottom:4px}
 .group-header .gicon{margin-right:8px;font-size:16px}
 .group-body{padding:4px 18px 18px;display:block}
 .group-body.hidden{display:none}
-.param{margin-bottom:16px}
+.param{margin-bottom:16px;position:relative}
 .param:last-child{margin-bottom:0}
 .param-top{display:flex;align-items:center;gap:8px;margin-bottom:2px}
 .param-label{font-size:13px;font-weight:600;color:var(--c-txt2)}
@@ -73,7 +73,8 @@ h1{font-size:22px;font-weight:700;margin-bottom:4px}
 ::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:#94a3b8}
-@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.toast-constraint{position:absolute;right:-8px;top:50%;transform:translateX(100%) translateY(-50%);background:var(--c-err-bg);color:var(--c-err-txt);border:1px solid var(--c-err-bdr);padding:4px 10px;border-radius:6px;font-size:11px;white-space:nowrap;z-index:50;animation:fadeIn .2s;pointer-events:none}
+@keyframes fadeIn{from{opacity:0;transform:translateX(100%) translateY(-50%) translateX(4px)}to{opacity:1;transform:translateX(100%) translateY(-50%)}}
 @media(max-width:600px){#app{padding:16px 12px 120px}.footer{flex-wrap:wrap;justify-content:center}header{flex-direction:column;gap:8px}}
 </style>
 </head>
@@ -402,19 +403,40 @@ function validateConstraints(data){
   var eTierFull=parseInt(data["ENRICHMENT_TIER_FULL_MAX"]||"200",10);
   var eTierMid=parseInt(data["ENRICHMENT_TIER_MID_MAX"]||"1000",10);
   var errors=[];
-  if(fullMax>compactMax)errors.push("LOGIC_DENSITY_FULL_MAX > COMPACT_MAX");
-  if(compactMax>coreMax)errors.push("LOGIC_DENSITY_COMPACT_MAX > CORE_MAX");
-  if(eCap<eCapLarge)errors.push("ENRICHMENT_CAP < ENRICHMENT_CAP_LARGE");
-  if(eTierFull>eTierMid)errors.push("ENRICHMENT_TIER_FULL_MAX > TIER_MID_MAX");
-  return errors.length?errors.join("; "):null;
+  if(fullMax>compactMax)errors.push({key:"LOGIC_DENSITY_FULL_MAX",msg:"must be ≤ COMPACT_MAX"});
+  if(compactMax>coreMax)errors.push({key:"LOGIC_DENSITY_COMPACT_MAX",msg:"must be ≤ CORE_MAX"});
+  if(eCap<eCapLarge)errors.push({key:"ENRICHMENT_CAP",msg:"must be ≥ CAP_LARGE"});
+  if(eTierFull>eTierMid)errors.push({key:"ENRICHMENT_TIER_FULL_MAX",msg:"must be ≤ TIER_MID_MAX"});
+  return errors.length?errors:null;
+}
+
+function clearToasts(){
+  var old=document.querySelectorAll(".toast-constraint");
+  for(var i=0;i<old.length;i++)old[i].parentNode.removeChild(old[i]);
+}
+
+function showToast(key,msg){
+  var input=document.getElementById("p-"+key);
+  if(!input)return;
+  var container=input.closest(".param");
+  if(!container)return;
+  var el=document.createElement("span");
+  el.className="toast-constraint";
+  el.textContent=msg;
+  container.appendChild(el);
+  setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el)},3000);
 }
 
 function save(){
   var data=collectFormData();
+  clearToasts();
   var err=validate(data);
   if(err){showStatus("error",err);return}
-  var constraintErr=validateConstraints(data);
-  if(constraintErr){showStatus("error",constraintErr);return}
+  var constraintErrors=validateConstraints(data);
+  if(constraintErrors){
+    for(var i=0;i<constraintErrors.length;i++)showToast(constraintErrors[i].key,constraintErrors[i].msg);
+    return;
+  }
 
   var body;
   if(isProject()){
