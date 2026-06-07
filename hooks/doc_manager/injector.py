@@ -24,6 +24,80 @@ LOGIC_TREE_VIEW_FILE = os.path.join(".claude", "logic_tree_view.md")
 SELECTION_FILE = os.path.join(".claude", "logic_inject_selection.json")
 CACHE_FILE = os.path.join(".claude", "logic_index.json")
 
+
+def _load_density_config():
+    """Load density tier thresholds from environment variables."""
+    full_max = 200
+    compact_max = 500
+    core_max = 2000
+    try:
+        full_max = int(os.environ.get("LOGIC_DENSITY_FULL_MAX", 200))
+    except (ValueError, TypeError):
+        pass
+    try:
+        compact_max = int(os.environ.get("LOGIC_DENSITY_COMPACT_MAX", 500))
+    except (ValueError, TypeError):
+        pass
+    try:
+        core_max = int(os.environ.get("LOGIC_DENSITY_CORE_MAX", 2000))
+    except (ValueError, TypeError):
+        pass
+
+    if any(v < 0 for v in (full_max, compact_max, core_max)):
+        print("[Injector] Warning: negative density threshold detected, using defaults", file=sys.stderr)
+        return 200, 500, 2000
+    if not (full_max <= compact_max <= core_max):
+        print("[Injector] Warning: LOGIC_DENSITY thresholds not monotonic, using defaults", file=sys.stderr)
+        return 200, 500, 2000
+    return full_max, compact_max, core_max
+
+
+def _get_injection_density(file_count):
+    """Return density strategy based on project file count."""
+    full_max, compact_max, core_max = _load_density_config()
+    if file_count <= full_max:
+        return "full"
+    if file_count <= compact_max:
+        return "compact"
+    if file_count <= core_max:
+        return "core_only"
+    return "top_n"
+
+
+def _find_symbol_lineno(cache_data, file_path, md_line):
+    """Extract lineno from cache for a symbol referenced in a Markdown line."""
+    sym_name = _extract_symbol_name(md_line)
+    if not sym_name or not cache_data:
+        return None
+    file_data = cache_data.get(file_path)
+    if not file_data:
+        return None
+    for s in file_data.get("symbols", []):
+        if s["name"] == sym_name:
+            return s.get("lineno")
+    return None
+
+
+def _extract_symbol_name(md_line):
+    """Extract symbol name from a logic_tree.md body line like '- **[f]** `name(args)`: ...'."""
+    m = re.search(r"`([^`(\[]+)", md_line)
+    if m:
+        return m.group(1).strip()
+    return None
+
+
+def _compute_caller_counts(cache_data):
+    """Compute how many callers each qualified symbol has (in-degree)."""
+    counts = {}
+    for path, data in cache_data.items():
+        if path == "_meta":
+            continue
+        for call in data.get("calls", []):
+            qualified = call.get("callee_qualified")
+            if qualified:
+                counts[qualified] = counts.get(qualified, 0) + 1
+    return counts
+
 # Registry of content to be injected.
 # Format: { "tag_name": "relative_file_path" }
 # The script injects:
@@ -299,16 +373,113 @@ def generate_logic_tree_view(cwd):
             filtered_layers.append({"header": layer["header"], "files": kept})
             selected_count += len(kept)
 
+    cache_path = os.path.join(cwd, CACHE_FILE)
+    file_count = 0
+    cache_data = None
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+            file_count = sum(1 for k in cache_data if k != "_meta")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    density = _get_injection_density(file_count)
+
     lang = os.environ.get("REMY_LANG", "en")
     output = []
     if selected_count < total_files:
         output.append(_meta_line(lang, selected_count, total_files))
     output.extend(header_lines)
-    for layer in filtered_layers:
-        output.append(layer["header"])
-        for fb in layer["files"]:
-            output.append(fb["header"])
-            output.extend(fb["body"])
+
+    if density == "full":
+        for layer in filtered_layers:
+            output.append(layer["header"])
+            for fb in layer["files"]:
+                output.append(fb["header"])
+                output.extend(fb["body"])
+
+    elif density == "compact":
+        for layer in filtered_layers:
+            output.append(layer["header"])
+            for fb in layer["files"]:
+                output.append(fb["header"])
+                for line in fb["body"]:
+                    if line.startswith("- **["):
+                        colon_pos = line.find("`: ")
+                        if colon_pos != -1:
+                            sym_part = line[:colon_pos + 1]
+                            sym_data = _find_symbol_lineno(cache_data, fb["path"], line) if cache_data else None
+                            if sym_data:
+                                output.append(f"{sym_part} L{sym_data}\n")
+                            else:
+                                output.append(f"{sym_part}\n")
+                        else:
+                            output.append(line)
+                    elif line.startswith("> Imports:"):
+                        output.append(line)
+
+    elif density == "core_only" and cache_data:
+        core_paths = set()
+        for path, data in cache_data.items():
+            if path == "_meta":
+                continue
+            if data.get("layer") == "Core":
+                core_paths.add(path)
+        caller_counts = _compute_caller_counts(cache_data)
+        for layer in filtered_layers:
+            core_files = [fb for fb in layer["files"] if fb["path"] in core_paths]
+            if not core_files:
+                continue
+            output.append(layer["header"])
+            for fb in core_files:
+                output.append(fb["header"])
+                for line in fb["body"]:
+                    if line.startswith("- **["):
+                        colon_pos = line.find("`: ")
+                        if colon_pos != -1:
+                            sym_part = line[:colon_pos + 1]
+                            sym_name = _extract_symbol_name(line)
+                            qualified = f"{fb['path']}::{sym_name}" if sym_name else None
+                            count = caller_counts.get(qualified, 0) if qualified else 0
+                            sym_data = _find_symbol_lineno(cache_data, fb["path"], line) if cache_data else None
+                            ln = f" L{sym_data}" if sym_data else ""
+                            output.append(f"{sym_part}{ln} [called by: {count}]\n")
+                        else:
+                            output.append(line)
+
+    elif density == "top_n" and cache_data:
+        caller_counts = _compute_caller_counts(cache_data)
+        top_symbols = sorted(caller_counts.items(), key=lambda x: x[1], reverse=True)[:30]
+        if top_symbols:
+            output.append("## 🏗️ Top Symbols by Connectivity\n")
+            for qualified, count in top_symbols:
+                fpath, sym_name = qualified.split("::", 1) if "::" in qualified else (qualified, "")
+                file_layer = cache_data.get(fpath, {}).get("layer", "")
+                sym = None
+                for s in cache_data.get(fpath, {}).get("symbols", []):
+                    if s["name"] == sym_name:
+                        sym = s
+                        break
+                ln = ""
+                summary = ""
+                if sym:
+                    start = sym.get("lineno")
+                    end = sym.get("end_lineno")
+                    if start and end:
+                        ln = f" [L{start}-L{end}]"
+                    elif start:
+                        ln = f" [L{start}]"
+                    summary = sym.get("summary", "")
+                desc = f": {summary}" if summary else ""
+                output.append(f"- `{qualified}`{ln} ({file_layer}) [called by: {count}]{desc}\n")
+
+    else:
+        for layer in filtered_layers:
+            output.append(layer["header"])
+            for fb in layer["files"]:
+                output.append(fb["header"])
+                output.extend(fb["body"])
 
     os.makedirs(os.path.dirname(view_path), exist_ok=True)
     with open(view_path, "w", encoding="utf-8") as f:

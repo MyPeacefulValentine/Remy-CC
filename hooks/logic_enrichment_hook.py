@@ -79,11 +79,60 @@ def _normalize_path(file_path, cwd):
     return file_path.replace(os.sep, "/")
 
 
-def _build_enrichment(target_path, cache):
+def _build_enrichment(target_path, cache, file_count):
     """Build enrichment text for a target file from the cache."""
     file_data = cache.get(target_path)
     if not file_data:
         return None
+
+    tier_full_max = 200
+    tier_mid_max = 1000
+    cap = 15
+    cap_large = 10
+    sig_max = 80
+    try:
+        tier_full_max = int(os.environ.get("ENRICHMENT_TIER_FULL_MAX", 200))
+    except (ValueError, TypeError):
+        pass
+    try:
+        tier_mid_max = int(os.environ.get("ENRICHMENT_TIER_MID_MAX", 1000))
+    except (ValueError, TypeError):
+        pass
+    try:
+        cap = int(os.environ.get("ENRICHMENT_CAP", 15))
+    except (ValueError, TypeError):
+        pass
+    try:
+        cap_large = int(os.environ.get("ENRICHMENT_CAP_LARGE", 10))
+    except (ValueError, TypeError):
+        pass
+    try:
+        sig_max = int(os.environ.get("ENRICHMENT_SIG_MAX_CHARS", 80))
+    except (ValueError, TypeError):
+        pass
+
+    if tier_full_max > tier_mid_max:
+        print("[Enrichment] Warning: ENRICHMENT_TIER_FULL_MAX > ENRICHMENT_TIER_MID_MAX, using defaults",
+              file=sys.stderr)
+        tier_full_max, tier_mid_max = 200, 1000
+    if cap < cap_large:
+        print("[Enrichment] Warning: ENRICHMENT_CAP < ENRICHMENT_CAP_LARGE, using defaults",
+              file=sys.stderr)
+        cap, cap_large = 15, 10
+    if any(v < 0 for v in (tier_full_max, tier_mid_max, cap, cap_large, sig_max)):
+        print("[Enrichment] Warning: negative parameter value detected, using defaults",
+              file=sys.stderr)
+        tier_full_max, tier_mid_max, cap, cap_large, sig_max = 200, 1000, 15, 10, 80
+
+    if file_count > tier_mid_max:
+        active_cap = cap_large
+        detail_level = "minimal"
+    elif file_count > tier_full_max:
+        active_cap = cap
+        detail_level = "mid"
+    else:
+        active_cap = cap
+        detail_level = "full"
 
     parts = []
 
@@ -93,7 +142,44 @@ def _build_enrichment(target_path, cache):
     else:
         parts.append(f"[Logic Context] {target_path}")
 
-    symbol_names = {s["name"] for s in file_data.get("symbols", [])}
+    symbol_map = {}
+    for s in file_data.get("symbols", []):
+        symbol_map[s["name"]] = s
+
+    def _format_sig(sym):
+        args_str = sym.get("args", "")
+        if not args_str or sig_max <= 0:
+            return ""
+        if len(args_str) <= sig_max:
+            return f" | {args_str}"
+        arg_count = args_str.count(",") + 1
+        return f" | {args_str[:sig_max]}... ({arg_count} args)"
+
+    def _format_range(sym):
+        start = sym.get("lineno")
+        end = sym.get("end_lineno")
+        if start and end:
+            return f" [L{start}-L{end}]"
+        elif start:
+            return f" [L{start}]"
+        return ""
+
+    def _format_entry(qualified, detail):
+        fpath, fname = qualified.split("::", 1) if "::" in qualified else (qualified, "")
+        sym = None
+        fdata = cache.get(fpath)
+        if fdata and fname:
+            for s in fdata.get("symbols", []):
+                if s["name"] == fname:
+                    sym = s
+                    break
+        if detail == "full" and sym:
+            f_layer = fdata.get("layer", "") if fdata else ""
+            return f"{qualified}{_format_range(sym)} ({f_layer}){_format_sig(sym)}"
+        elif detail == "mid" and sym:
+            f_layer = fdata.get("layer", "") if fdata else ""
+            return f"{qualified}{_format_range(sym)} ({f_layer})"
+        return qualified
 
     callees = []
     for call in file_data.get("calls", []):
@@ -101,8 +187,9 @@ def _build_enrichment(target_path, cache):
         if qualified:
             callees.append(qualified)
     if callees:
-        unique = list(dict.fromkeys(callees))
-        parts.append(f"  Calls into: {', '.join(unique[:15])}")
+        unique = list(dict.fromkeys(callees))[:active_cap]
+        formatted = [_format_entry(q, detail_level) for q in unique]
+        parts.append(f"  Calls into: {', '.join(formatted)}")
 
     callers = []
     for path, data in cache.items():
@@ -114,8 +201,9 @@ def _build_enrichment(target_path, cache):
                 caller_qualified = f"{path}::{call['caller']}"
                 callers.append(caller_qualified)
     if callers:
-        unique = list(dict.fromkeys(callers))
-        parts.append(f"  Called by: {', '.join(unique[:15])}")
+        unique = list(dict.fromkeys(callers))[:active_cap]
+        formatted = [_format_entry(q, detail_level) for q in unique]
+        parts.append(f"  Called by: {', '.join(formatted)}")
 
     if len(parts) <= 1 and not callees and not callers:
         imports = file_data.get("imports", [])
@@ -163,7 +251,8 @@ def main():
         except (json.JSONDecodeError, IOError):
             sys.exit(0)
 
-        enrichment = _build_enrichment(target, cache)
+        file_count = sum(1 for k in cache if k != "_meta")
+        enrichment = _build_enrichment(target, cache, file_count)
         if not enrichment:
             sys.exit(0)
 

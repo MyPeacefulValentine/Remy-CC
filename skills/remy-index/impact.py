@@ -12,6 +12,15 @@ DEFAULT_DEPTH_UP = 2
 DEFAULT_DEPTH_DOWN = 2
 
 
+def _auto_depth(file_count):
+    """Return (depth_up, depth_down) based on project size."""
+    if file_count < 200:
+        return (3, 3)
+    if file_count < 1000:
+        return (2, 2)
+    return (1, 2)
+
+
 def load_cache(cwd):
     path = os.path.join(cwd, CACHE_FILE)
     if not os.path.exists(path):
@@ -21,26 +30,30 @@ def load_cache(cwd):
         return json.load(f)
 
 
-def build_reverse_index(cache):
+def build_reverse_index(cache, static_only=False):
     """Map callee_qualified -> list of (caller_file, caller_func)."""
     rev = {}
     for path, data in cache.items():
         if path == "_meta":
             continue
         for call in data.get("calls", []):
+            if static_only and call.get("provenance") == "heuristic":
+                continue
             qualified = call.get("callee_qualified")
             if qualified:
                 rev.setdefault(qualified, []).append((path, call["caller"]))
     return rev
 
 
-def build_forward_index(cache):
+def build_forward_index(cache, static_only=False):
     """Map caller_qualified -> list of (callee_file, callee_func)."""
     fwd = {}
     for path, data in cache.items():
         if path == "_meta":
             continue
         for call in data.get("calls", []):
+            if static_only and call.get("provenance") == "heuristic":
+                continue
             qualified = call.get("callee_qualified")
             if qualified:
                 caller_q = f"{path}::{call['caller']}"
@@ -163,17 +176,24 @@ def main():
     parser.add_argument("--depth-down", type=int, default=None, help="Max downstream (callees) BFS depth")
     parser.add_argument("--direction", choices=["reverse", "forward", "both"], default="both",
                         help="BFS direction (default: both)")
+    parser.add_argument("--static-only", action="store_true",
+                        help="Exclude heuristic (synthesized) edges from BFS")
     parser.add_argument("--cwd", default=os.getcwd(), help="Project root directory")
     args = parser.parse_args()
 
-    env_depth_up = DEFAULT_DEPTH_UP
-    env_depth_down = DEFAULT_DEPTH_DOWN
+    cache = load_cache(args.cwd)
+
+    file_count = sum(1 for k in cache if k != "_meta")
+    auto_up, auto_down = _auto_depth(file_count)
+
+    env_depth_up = auto_up
+    env_depth_down = auto_down
     try:
-        env_depth_up = int(os.environ.get("IMPACT_DEPTH_UP", DEFAULT_DEPTH_UP))
+        env_depth_up = int(os.environ.get("IMPACT_DEPTH_UP", auto_up))
     except ValueError:
         pass
     try:
-        env_depth_down = int(os.environ.get("IMPACT_DEPTH_DOWN", DEFAULT_DEPTH_DOWN))
+        env_depth_down = int(os.environ.get("IMPACT_DEPTH_DOWN", auto_down))
     except ValueError:
         pass
 
@@ -181,8 +201,6 @@ def main():
     base_depth_down = args.depth if args.depth is not None else env_depth_down
     depth_up = args.depth_up if args.depth_up is not None else base_depth_up
     depth_down = args.depth_down if args.depth_down is not None else base_depth_down
-
-    cache = load_cache(args.cwd)
 
     has_calls = any(
         data.get("calls") for path, data in cache.items() if path != "_meta"
@@ -213,11 +231,11 @@ def main():
     downstream_levels = {}
 
     if args.direction in ("reverse", "both") and depth_up > 0:
-        reverse_index = build_reverse_index(cache)
+        reverse_index = build_reverse_index(cache, static_only=args.static_only)
         upstream_levels = bfs(cache, reverse_index, target_files, depth_up)
 
     if args.direction in ("forward", "both") and depth_down > 0:
-        forward_index = build_forward_index(cache)
+        forward_index = build_forward_index(cache, static_only=args.static_only)
         downstream_levels = bfs(cache, forward_index, target_files, depth_down)
 
     print(format_output(cache, seeds, upstream_levels, downstream_levels, target_files))

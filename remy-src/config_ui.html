@@ -393,10 +393,28 @@ function validate(data){
   return null;
 }
 
+function validateConstraints(data){
+  var fullMax=parseInt(data["LOGIC_DENSITY_FULL_MAX"]||"200",10);
+  var compactMax=parseInt(data["LOGIC_DENSITY_COMPACT_MAX"]||"500",10);
+  var coreMax=parseInt(data["LOGIC_DENSITY_CORE_MAX"]||"2000",10);
+  var eCap=parseInt(data["ENRICHMENT_CAP"]||"15",10);
+  var eCapLarge=parseInt(data["ENRICHMENT_CAP_LARGE"]||"10",10);
+  var eTierFull=parseInt(data["ENRICHMENT_TIER_FULL_MAX"]||"200",10);
+  var eTierMid=parseInt(data["ENRICHMENT_TIER_MID_MAX"]||"1000",10);
+  var errors=[];
+  if(fullMax>compactMax)errors.push("LOGIC_DENSITY_FULL_MAX > COMPACT_MAX");
+  if(compactMax>coreMax)errors.push("LOGIC_DENSITY_COMPACT_MAX > CORE_MAX");
+  if(eCap<eCapLarge)errors.push("ENRICHMENT_CAP < ENRICHMENT_CAP_LARGE");
+  if(eTierFull>eTierMid)errors.push("ENRICHMENT_TIER_FULL_MAX > TIER_MID_MAX");
+  return errors.length?errors.join("; "):null;
+}
+
 function save(){
   var data=collectFormData();
   var err=validate(data);
   if(err){showStatus("error",err);return}
+  var constraintErr=validateConstraints(data);
+  if(constraintErr){showStatus("error",constraintErr);return}
 
   var body;
   if(isProject()){
