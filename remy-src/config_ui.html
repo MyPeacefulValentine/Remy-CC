@@ -73,8 +73,8 @@ h1{font-size:22px;font-weight:700;margin-bottom:4px}
 ::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:#94a3b8}
-.toast-constraint{position:absolute;right:-8px;top:50%;transform:translateX(100%) translateY(-50%);background:var(--c-err-bg);color:var(--c-err-txt);border:1px solid var(--c-err-bdr);padding:4px 10px;border-radius:6px;font-size:11px;white-space:nowrap;z-index:50;animation:fadeIn .2s;pointer-events:none}
-@keyframes fadeIn{from{opacity:0;transform:translateX(100%) translateY(-50%) translateX(4px)}to{opacity:1;transform:translateX(100%) translateY(-50%)}}
+.toast-constraint{position:fixed;background:var(--c-err-bg);color:var(--c-err-txt);border:1px solid var(--c-err-bdr);padding:4px 10px;border-radius:6px;font-size:11px;white-space:nowrap;z-index:200;animation:fadeIn .2s;pointer-events:none}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @media(max-width:600px){#app{padding:16px 12px 120px}.footer{flex-wrap:wrap;justify-content:center}header{flex-direction:column;gap:8px}}
 </style>
 </head>
@@ -385,6 +385,7 @@ function validate(data){
     var param=config.registry[i];
     if(param.type!=="int")continue;
     if(keysToCheck&&!keysToCheck[param.key])continue;
+    if(!(param.key in data))continue;
     var val=data[param.key];
     var num=parseInt(val,10);
     if(isNaN(num))return param.key+t("validationInt");
@@ -403,10 +404,22 @@ function validateConstraints(data){
   var eTierFull=parseInt(data["ENRICHMENT_TIER_FULL_MAX"]||"200",10);
   var eTierMid=parseInt(data["ENRICHMENT_TIER_MID_MAX"]||"1000",10);
   var errors=[];
-  if(fullMax>compactMax)errors.push({key:"LOGIC_DENSITY_FULL_MAX",msg:"must be ≤ COMPACT_MAX"});
-  if(compactMax>coreMax)errors.push({key:"LOGIC_DENSITY_COMPACT_MAX",msg:"must be ≤ CORE_MAX"});
-  if(eCap<eCapLarge)errors.push({key:"ENRICHMENT_CAP",msg:"must be ≥ CAP_LARGE"});
-  if(eTierFull>eTierMid)errors.push({key:"ENRICHMENT_TIER_FULL_MAX",msg:"must be ≤ TIER_MID_MAX"});
+  if(fullMax>compactMax){
+    errors.push({key:"LOGIC_DENSITY_FULL_MAX",msg:"must be ≤ COMPACT_MAX ("+compactMax+")"});
+    errors.push({key:"LOGIC_DENSITY_COMPACT_MAX",msg:"must be ≥ FULL_MAX ("+fullMax+")"});
+  }
+  if(compactMax>coreMax){
+    errors.push({key:"LOGIC_DENSITY_COMPACT_MAX",msg:"must be ≤ CORE_MAX ("+coreMax+")"});
+    errors.push({key:"LOGIC_DENSITY_CORE_MAX",msg:"must be ≥ COMPACT_MAX ("+compactMax+")"});
+  }
+  if(eCap<eCapLarge){
+    errors.push({key:"ENRICHMENT_CAP",msg:"must be ≥ CAP_LARGE ("+eCapLarge+")"});
+    errors.push({key:"ENRICHMENT_CAP_LARGE",msg:"must be ≤ CAP ("+eCap+")"});
+  }
+  if(eTierFull>eTierMid){
+    errors.push({key:"ENRICHMENT_TIER_FULL_MAX",msg:"must be ≤ TIER_MID_MAX ("+eTierMid+")"});
+    errors.push({key:"ENRICHMENT_TIER_MID_MAX",msg:"must be ≥ TIER_FULL_MAX ("+eTierFull+")"});
+  }
   return errors.length?errors:null;
 }
 
@@ -418,12 +431,14 @@ function clearToasts(){
 function showToast(key,msg){
   var input=document.getElementById("p-"+key);
   if(!input)return;
-  var container=input.closest(".param");
-  if(!container)return;
+  var rect=input.getBoundingClientRect();
   var el=document.createElement("span");
   el.className="toast-constraint";
   el.textContent=msg;
-  container.appendChild(el);
+  el.style.top=(rect.top+rect.height/2)+"px";
+  el.style.left=(rect.right+8)+"px";
+  el.style.transform="translateY(-50%)";
+  document.body.appendChild(el);
   setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el)},3000);
 }
 

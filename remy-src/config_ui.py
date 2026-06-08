@@ -233,6 +233,7 @@ GROUPS = [
     {"id": "security_audit", "label_en": "Security Audit", "label_zh": "安全审计"},
     {"id": "debug", "label_en": "Debug", "label_zh": "调试"},
     {"id": "test_gen", "label_en": "Test Generation", "label_zh": "测试生成"},
+    {"id": "ci", "label_en": "CI/CD", "label_zh": "持续集成"},
     {"id": "insight", "label_en": "Insight", "label_zh": "仓库洞察"},
     {"id": "system", "label_en": "System", "label_zh": "系统"},
     {"id": "claude_code", "label_en": "Claude Code", "label_zh": "Claude Code"},
