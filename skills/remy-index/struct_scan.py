@@ -197,7 +197,13 @@ class StructScanner:
             "calls": [],
         }
 
+        seen_edges = {}
         for e in call_edges:
+            key = (e.caller, e.callee)
+            if key in seen_edges:
+                if e.line < seen_edges[key]["line"]:
+                    seen_edges[key]["line"] = e.line
+                continue
             call_entry = {"caller": e.caller, "callee": e.callee, "line": e.line}
             if e.provenance:
                 call_entry["provenance"] = e.provenance
@@ -205,7 +211,8 @@ class StructScanner:
                 call_entry["synthesized_from"] = e.synthesized_from
             if e.via:
                 call_entry["via"] = e.via
-            file_node["calls"].append(call_entry)
+            seen_edges[key] = call_entry
+        file_node["calls"] = list(seen_edges.values())
 
         if cached_file and "hash" in cached_file:
             file_node["hash"] = cached_file["hash"]

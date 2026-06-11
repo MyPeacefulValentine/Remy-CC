@@ -6,8 +6,13 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from pathlib import Path
+
+HEARTBEAT_INTERVAL = 1
+HEARTBEAT_TIMEOUT = 3
+STARTUP_GRACE = 30
 
 PARAM_REGISTRY = [
     {"key": "LOGIC_INDEX_FILTER_SMALL", "group": "llm_api", "type": "enum", "default": "false",
@@ -310,6 +315,7 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
     server_ref = None
     mode = "global"
     target_path = None
+    last_heartbeat = 0
 
     def log_message(self, format, *args):
         pass
@@ -348,6 +354,9 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(body)
             else:
                 self.send_error(404)
+        elif self.path == "/api/heartbeat":
+            ConfigHandler.last_heartbeat = time.monotonic()
+            self._send_json({"status": "ok"})
         elif self.path == "/api/config":
             try:
                 global_settings = load_settings()
@@ -464,6 +473,21 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(404)
 
 
+def _heartbeat_watchdog(server):
+    start_time = time.monotonic()
+    while True:
+        time.sleep(HEARTBEAT_INTERVAL)
+        if ConfigHandler.last_heartbeat > 0:
+            elapsed = time.monotonic() - ConfigHandler.last_heartbeat
+            if elapsed > HEARTBEAT_TIMEOUT:
+                threading.Thread(target=server.shutdown, daemon=True).start()
+                break
+        else:
+            if time.monotonic() - start_time > STARTUP_GRACE:
+                threading.Thread(target=server.shutdown, daemon=True).start()
+                break
+
+
 def main(mode="global", target_path=None):
     html_path = Path(__file__).resolve().parent / "config_ui.html"
     ConfigHandler.html_path = html_path
@@ -480,6 +504,7 @@ def main(mode="global", target_path=None):
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), ConfigHandler)
     port = server.server_address[1]
     ConfigHandler.server_ref = server
+    ConfigHandler.last_heartbeat = 0
 
     url = "http://127.0.0.1:{}".format(port)
     acquire_lock(url, mode, target_path)
@@ -489,6 +514,9 @@ def main(mode="global", target_path=None):
     if mode == "project":
         print("  Target: " + str(ConfigHandler.target_path))
     print("Press Ctrl+C to stop.\n")
+
+    watchdog = threading.Thread(target=_heartbeat_watchdog, args=(server,), daemon=True)
+    watchdog.start()
 
     threading.Timer(0.3, lambda: webbrowser.open(url)).start()
 

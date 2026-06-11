@@ -569,6 +569,7 @@ document.addEventListener("keydown",function(e){
 window.addEventListener("beforeunload",function(e){
   if(dirty){e.preventDefault();e.returnValue=""}
 });
+setInterval(function(){fetch("/api/heartbeat").catch(function(){})},1000);
 init();
 })();
 </script>
