@@ -17,15 +17,15 @@ This skill enforces a rigorous **Zero-Decision** pre-implementation review. It f
 
 **Step 0: Context Infrastructure Check**
 Before saturating context, check whether structured call graph data is available.
-1.  **Check**: Run `Bash("test -f .claude/logic_index.json && echo EXISTS || echo MISSING")`.
+1.  **Check**: Run `Bash("test -f .claude/logic_index.db && echo EXISTS || echo MISSING")`.
 2.  **Branch**:
     *   **EXISTS**: Proceed to **Step 1: Structured Context Saturation**.
     *   **MISSING**: Use `AskUserQuestion` to ask:
-        > "`.claude/logic_index.json` does not exist. Run `/remy-index` to initialize? This enables automated impact analysis. Choosing No uses manual grep-based exploration instead."
+        > "`.claude/logic_index.db` does not exist. Run `/remy-index` to initialize? This enables automated impact analysis. Choosing No uses manual grep-based exploration instead."
         *   **User says Yes**: Invoke the `remy-index` skill, then proceed to **Step 1**.
         *   **User says No**: Proceed to **Step 1-Fallback: Manual Context Saturation**.
 
-**Step 1: Structured Context Saturation (requires logic_index.json)**
+**Step 1: Structured Context Saturation (requires logic_index.db)**
 
 *   **1a — Impact Radius Scan**: Identify the target files from the task description, then run:
     ```
@@ -50,8 +50,8 @@ Before saturating context, check whether structured call graph data is available
 
 After completing Step 1, proceed to **Step 2: Recursive Ambiguity Elimination**.
 
-**Step 1-Fallback: Manual Context Saturation (no logic_index.json)**
-Use this path when `logic_index.json` is unavailable or contains no call graph data.
+**Step 1-Fallback: Manual Context Saturation (no logic_index.db)**
+Use this path when `logic_index.db` is unavailable or contains no call graph data.
 1.  **Self-Correction**: Ask "Do I have the *source definition* of every dependency involved?"
 2.  **Recursive Read**: If you only see usages (e.g., `db.connect()`), you MUST read the definition (e.g., `class DBConnection`).
 3.  **No Hallucinations**: You are FORBIDDEN from assuming implementation details (e.g., "It likely uses requests") without evidence.

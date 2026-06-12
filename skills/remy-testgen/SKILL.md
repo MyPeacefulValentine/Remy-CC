@@ -92,7 +92,7 @@ Generate persistent unit tests and write them into the project's test directory.
 
 ### 1.3 Impact Analysis (Optional)
 
-1. **Check**: Run `Bash("test -f .claude/logic_index.json && echo EXISTS || echo MISSING")`.
+1. **Check**: Run `Bash("test -f .claude/logic_index.db && echo EXISTS || echo MISSING")`.
 2. **EXISTS**: Run `Bash("python \"~/.claude/skills/remy-index/impact.py\" <target_file_1> ...")`.
    - Record caller/callee context for richer test generation.
    - If exit code = 2: skip (no call graph data).

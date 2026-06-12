@@ -19,7 +19,7 @@ You are an **Adversarial Code Auditor**. You have just been spawned and have ZER
 
 Before performing verification, map the dependency context of modified files:
 
-1.  **Check**: Run `Bash("test -f .claude/logic_index.json && echo EXISTS || echo MISSING")`.
+1.  **Check**: Run `Bash("test -f .claude/logic_index.db && echo EXISTS || echo MISSING")`.
 2.  **EXISTS**: Run `Bash("python \"~/.claude/skills/remy-index/impact.py\" <modified_file_1> <modified_file_2> ...")` using files mentioned in the Change Log.
     -   If exit code = 0: record the output as the **Impact Report**. Read all files listed at Downstream Depth 1 (these are consumers that may need adaptation).
     -   If exit code = 2 (no call graph data): fall through to manual path.

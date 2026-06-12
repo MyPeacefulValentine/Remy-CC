@@ -150,7 +150,7 @@ For small, low-risk changes, steps 3–6 can be skipped.
 > 1. Clone the repository (manually, or use /remy-reposcout to assess first)
 > 2. cd into the repository and launch Claude Code
 > 3. /init                → generate CLAUDE.md
-> 4. /remy-index          → generate logic_index.json (requires LLM API)
+> 4. /remy-index          → generate logic_index.db (requires LLM API)
 > 5. /clear               → refresh injected context
 > 6. /remy-insight [mode] → run analysis (global | focus <topic> | compare <doc>)
 >```

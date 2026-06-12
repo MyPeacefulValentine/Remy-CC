@@ -1,6 +1,6 @@
 # remy-lookup（索引查看）
 
-remy-lookup 显示 `.claude/logic_tree.md` 中的当前语义代码索引。如果索引不存在，提供生成选项。
+remy-lookup 显示 `.claude/logic_tree_view.md` 中的当前语义代码索引。如果索引不存在，提供生成选项。
 
 ## 何时使用
 
@@ -9,7 +9,7 @@ remy-lookup 显示 `.claude/logic_tree.md` 中的当前语义代码索引。如�
 
 ## 工作流
 
-1. 检查 `.claude/logic_tree.md` 是否存在。
+1. 检查 `.claude/logic_tree_view.md` 是否存在。
 2. **存在**：读取并显示内容。
 3. **不存在**：询问用户是否运行 `/remy-index` 来生成。
 

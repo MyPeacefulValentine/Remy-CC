@@ -23,11 +23,11 @@ Phase 2: LLM Summarization (API-dependent, manual invocation)
 │  run.py (LLM indexer)                                    │
 │  ├── Delegates Phase 1 to struct_scan.py                 │
 │  ├── Generates semantic summaries for dirty symbols      │
-│  └── Saves logic_index.json + logic_tree.md              │
+│  └── Saves logic_index.db + logic_index.db              │
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────┐
-│  logic_tree.md (injected into CLAUDE.md)                 │
+│  logic_index.db (injected into CLAUDE.md)                 │
 │  ├── Architecture layer grouping (files grouped by layer)│
 │  ├── File-level summaries + imports annotations          │
 │  └── Symbol-level signatures + summaries                 │
@@ -35,7 +35,7 @@ Phase 2: LLM Summarization (API-dependent, manual invocation)
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────┐
-│  logic_index.json (disk cache, not injected)             │
+│  logic_index.db (disk cache, not injected)             │
 │  ├── Symbol hashes + summary cache                       │
 │  ├── struct_hash (per-file raw source fingerprint)       │
 │  ├── end_lineno (symbol end line for precision Read)     │
@@ -103,7 +103,7 @@ After extraction, `_resolve_call_edges` resolves callee names to qualified refer
 
 ### Passive Enrichment Hook
 
-`hooks/logic_enrichment_hook.py` is a PreToolUse hook triggered on Read/Glob/Grep operations. It first consumes any dirty file entries (written by the PostToolUse dirty tracker after Edit/Write operations), triggers incremental `struct_scan` for affected files, then queries `logic_index.json` for the target file and outputs:
+`hooks/logic_enrichment_hook.py` is a PreToolUse hook triggered on Read/Glob/Grep operations. It first consumes any dirty file entries (written by the PostToolUse dirty tracker after Edit/Write operations), triggers incremental `struct_scan` for affected files, then queries `logic_index.db` for the target file and outputs:
 
 ```
 [Logic Context] services/auth.py (Service Layer)
@@ -124,7 +124,7 @@ This provides relationship context without requiring Claude Code to proactively 
 
 - Parses Python `import`, C/C++ `#include "..."`, and TypeScript relative `import` dependencies.
 - Injects upstream module summaries into LLM prompts for context-aware summarization.
-- Displays import list per file in `logic_tree.md` output.
+- Displays import list per file in `logic_index.db` output.
 
 ### Incremental Updates
 
@@ -161,11 +161,11 @@ Runs the Python indexer:
 python "~/.claude/skills/remy-index/run.py"
 ```
 
-On first run (no existing `.claude/logic_tree.md`), a full codebase scan is performed. The indexer:
+On first run (no existing `.claude/logic_index.db`), a full codebase scan is performed. The indexer:
 1. Walks the project tree, parses symbols and call graphs per file
 2. Resolves callee names to qualified references using import maps
 3. Generates LLM summaries for symbols without documentation
-4. Saves results to `.claude/logic_index.json` (cache) and `.claude/logic_tree.md` (output)
+4. Saves results to `.claude/logic_index.db` (cache) and `.claude/logic_index.db` (output)
 
 ### Step 3: Injection Strategy
 
@@ -173,24 +173,24 @@ Based on the `LOGIC_INDEX_AUTO_INJECT` policy:
 
 | Policy | Behavior |
 | :--- | :--- |
-| `ALWAYS` (default) | Automatically injects `logic_tree.md` into `CLAUDE.md` |
+| `ALWAYS` (default) | Automatically injects `logic_index.db` into `CLAUDE.md` |
 | `ASK` | Prompts user for confirmation before injection |
 | `NEVER` | Only generates files, no injection |
 
 ### Scope Selection (Injection Filtering)
 
-For large projects where `logic_tree.md` exceeds the context window budget, a scope selector filters which files are injected. The document injector generates `logic_tree_view.md` — a filtered subset of `logic_tree.md` — based on user selection stored in `.claude/logic_inject_selection.json`.
+For large projects where `logic_index.db` exceeds the context window budget, a scope selector filters which files are injected. The document injector generates `logic_tree_view.md` — a filtered subset of `logic_index.db` — based on user selection stored in `.claude/logic_inject_selection.json`.
 
 Configuration methods:
 - **SessionStart UI**: When `LOGIC_INDEX_INTERACTIVE` is `true`, a browser-based selector UI launches on session start (startup/clear/compact events). Users check/uncheck files and layers to control injection scope.
 - **CLI**: Run `remy-cc logic-scope [--path <dir>]` to open the selector at any time.
 - **Profiles**: The selector supports saving/loading named profiles (up to 20) for quick switching between scope configurations.
 
-If no selection file exists, the full `logic_tree.md` is injected (equivalent to selecting all files).
+If no selection file exists, the full `logic_index.db` is injected (equivalent to selecting all files).
 
 ## Output Format
 
-`logic_tree.md` is structured as:
+`logic_index.db` is structured as:
 
 ```markdown
 ## 🏗️ API Layer
@@ -313,7 +313,7 @@ Set `OPENAI_MAX_WORKERS` to `1` (serial mode), or request a higher quota.
 Check that `OPENAI_API_KEY` is correct and `OPENAI_MODEL` is available on the service.
 
 ### Q: Will progress be lost if interrupted?
-No. The `try...finally` protection mechanism ensures generated summaries are saved to `.claude/logic_index.json`.
+No. The `try...finally` protection mechanism ensures generated summaries are saved to `.claude/logic_index.db`.
 
 ### Q: C/C++/TypeScript call graph not extracted?
 Install `tree-sitter` packages. Call graph extraction requires AST precision that regex mode cannot provide. Python call graph works without tree-sitter (uses stdlib `ast`).

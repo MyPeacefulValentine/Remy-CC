@@ -8,13 +8,13 @@ disable-model-invocation: true
 
 # Repository Insight Protocol
 
-Multi-dimensional, multi-agent deep semantic analysis skill. Consumes logic_index.json to analyze repository architecture, identify improvement opportunities, and verify documentation-code consistency.
+Multi-dimensional, multi-agent deep semantic analysis skill. Consumes logic_index.db (SQLite) to analyze repository architecture, identify improvement opportunities, and verify documentation-code consistency.
 
 **Relationship to other skills:**
 
 | Skill | Relationship |
 | :--- | :--- |
-| remy-index | Data source. Insight consumes logic_index.json |
+| remy-index | Data source. Insight consumes logic_index.db |
 | remy-reposcout | Upstream. reposcout does shallow recon → user decides to clone → insight does deep research |
 | remy-audit | No overlap. audit targets incremental diffs; insight targets whole-repo / focused research |
 | remy-secure | Partial overlap (robustness dimension). insight gives high-level observation; secure does rule-driven scanning |
@@ -104,10 +104,10 @@ Run `Bash("test -f CLAUDE.md && echo EXISTS || echo MISSING")` (or PowerShell eq
 
 ### 1.2 Logic Index Check
 
-Run `Bash("test -f .claude/logic_index.json && echo EXISTS || echo MISSING")`.
+Run `Bash("test -f .claude/logic_index.db && echo EXISTS || echo MISSING")`.
 
 - **MISSING**: Use `AskUserQuestion`:
-  > "`.claude/logic_index.json` does not exist. Run `/remy-index` to generate? This is required for remy-insight."
+  > "`.claude/logic_index.db` does not exist. Run `/remy-index` to generate? This is required for remy-insight."
   - **Yes**: Invoke `remy-index` skill, then continue.
   - **No**: HALT.
 
@@ -118,11 +118,11 @@ Check if `.claude/logic_index_dirty` exists and is non-empty.
 - Non-empty → Flag as `DIRTY`.
 
 **Layer 2 — File set diff**:
-`Glob` the current source files matching parser extensions (`.py`, `.c`, `.cpp`, `.h`, `.ts`, `.tsx`). Compare against file paths listed in `.claude/logic_index.json` (exclude the `_meta` key). Detect additions and deletions.
+`Glob` the current source files matching parser extensions (`.py`, `.c`, `.cpp`, `.h`, `.ts`, `.tsx`). Compare against file paths from `SELECT path FROM files` in `.claude/logic_index.db`. Detect additions and deletions.
 - Any diff → Flag as `STALE_FILES`.
 
 **Layer 3 — Modification time sampling**:
-Read `_meta.last_updated` from `logic_index.json`. **Important**: On Windows, open the file with `encoding='utf-8'` to avoid GBK decode errors. For up to 10 randomly selected indexed files, compare file modification time (mtime) against `last_updated`. Use seconds-level precision for cross-platform compatibility.
+Query `SELECT value FROM meta WHERE key='last_updated'` from `logic_index.db`. For up to 10 randomly selected indexed files, compare file modification time (mtime) against `last_updated`. Use seconds-level precision for cross-platform compatibility.
 - Any file mtime > last_updated → Flag as `STALE_MTIME`.
 
 **Decision**:
@@ -152,7 +152,7 @@ Borrowing from remy-plan's loop-until-saturated mechanism.
 
 For `focus` mode, resolve `<topic>` to a file set:
 
-1. Load `.claude/logic_index.json`.
+1. Open `.claude/logic_index.db` via SQLite.
 2. Search `<topic>` keywords against:
    - Layer names (exact and substring match)
    - File paths (substring match)
@@ -191,9 +191,9 @@ LOOP:
 
 For each active section, prepare the agent's input context:
 
-1. **global mode**: Full logic_index.json content (layer tree + symbols + call graph).
-2. **focus mode**: Filtered subset of logic_index.json (matched files + direct dependencies only).
-3. **compare mode**: Full logic_index.json + document content from Phase 1.4.
+1. **global mode**: Query logic_index.db for full project structure (layer assignments from `files`, symbol signatures from `symbols`, call graph from `edges`). Format as structured text.
+2. **focus mode**: Query filtered subset from logic_index.db (matched files + direct dependencies via `edges` table).
+3. **compare mode**: Full DB query as in global mode + document content from Phase 1.4.
 
 Read the relevant source files for the scope. For files > 500 lines, read only the symbol ranges from logic_index.
 

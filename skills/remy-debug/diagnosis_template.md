@@ -22,7 +22,7 @@ You MUST output the diagnosis using the following structure. Fill each section w
 
 ### Dependency Map (if available)
 
-<Paste impact.py output here, or "N/A — logic_index.json unavailable">
+<Paste impact.py output here, or "N/A — logic_index.db unavailable">
 
 ## 3. Hypothesis Log (假设日志)
 

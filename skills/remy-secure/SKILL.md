@@ -104,7 +104,7 @@ Gather context for agent prompts:
 
 1. **Diff content**: Full unified diff from Phase 0.
 2. **Pre-scan results**: `prescan_findings` list (so agents skip already-flagged patterns).
-3. **Impact data** (optional): If `.claude/logic_index.json` exists in the project:
+3. **Impact data** (optional): If `.claude/logic_index.db` exists in the project:
    - Run: `python "~/.claude/skills/remy-index/impact.py" <changed_files...>`
    - If exit code = 0: include the upstream/downstream summary in agent context.
    - If exit code ≠ 0: skip (graceful degradation).
@@ -218,7 +218,7 @@ Report:          .claude/temp_secure/security_audit_{timestamp}.md
 1. **Read-only by default**: This skill does NOT modify project code. It only reads and reports.
 2. **No speculative findings**: Only report findings with confidence ≥ 8/10 in the final output.
 3. **Pre-scan is authoritative**: Phase 0 regex matches are deterministic and bypass the filter stage.
-4. **Graceful degradation**: If logic_index.json is absent, impact.py fails, or an agent errors, continue without that data source.
+4. **Graceful degradation**: If logic_index.db is absent, impact.py fails, or an agent errors, continue without that data source.
 5. **Agent failure tolerance**: If a category or filter agent fails (timeout, malformed response), log warning and continue. Do NOT halt the pipeline.
 6. **Effort=low backward compatibility**: In low mode, only Phase 0 executes. No agents, no filtering.
 7. **Scope constraint**: Only analyze code newly introduced by the diff. Do NOT report pre-existing vulnerabilities in unchanged code.

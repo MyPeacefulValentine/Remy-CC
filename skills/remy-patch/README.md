@@ -16,7 +16,7 @@ If a `task_packet_file` argument is provided, the skill reads `.claude/temp_task
 
 ### Phase 1: Dependency Discovery
 
-1. Checks for `.claude/logic_index.json`. If present, runs `impact.py` on target files to produce a bidirectional dependency report (upstream callers and downstream callees).
+1. Checks for `.claude/logic_index.db`. If present, runs `impact.py` on target files to produce a bidirectional dependency report (upstream callers and downstream callees).
 2. If the logic index is unavailable, falls back to grep/glob-based manual tracing.
 3. Reads all files at Upstream Depth 1 and Downstream Depth 1.
 4. Verifies signatures of any external functions to be used.

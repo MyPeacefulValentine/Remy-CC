@@ -1,6 +1,6 @@
 ---
 name: remy-lookup
-description: Display the current logic index tree (.claude/logic_tree.md) without regenerating.
+description: Display the current logic index tree (.claude/logic_tree_view.md) without regenerating.
 allowed-tools: Read, Grep, Glob
 disable-model-invocation: true
 ---
@@ -10,12 +10,12 @@ disable-model-invocation: true
 You MUST execute the following steps strictly in order. Do not skip steps.
 
 ## Step 1: Verification
-Check if the file `.claude/logic_tree.md` exists in the current working directory.
-- Use `ls .claude/logic_tree.md` or `Glob` to verify existence.
+Check if the file `.claude/logic_tree_view.md` exists in the current working directory.
+- Use `ls .claude/logic_tree_view.md` or `Glob` to verify existence.
 
 ## Step 2: Branching Logic
 **Case A: File Exists**
-1. Execute `Read` tool on `.claude/logic_tree.md`.
+1. Execute `Read` tool on `.claude/logic_tree_view.md`.
 2. Output the content directly to the user.
 3. Terminate.
 

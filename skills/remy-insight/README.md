@@ -5,7 +5,7 @@ Deep repository analysis with multi-agent parallel perspectives.
 ## Prerequisites
 
 1. Run `/init` to generate `CLAUDE.md`
-2. Run `/remy-index` to generate `logic_index.json`
+2. Run `/remy-index` to generate `logic_index.db`
 3. Run `/clear` to refresh injected context
 
 ## Usage
@@ -62,7 +62,7 @@ Reports are saved to `.claude/temp_insight/insight_{timestamp}.md`.
 
 | Skill | Relationship |
 | :--- | :--- |
-| `/remy-index` | Data source — insight consumes `logic_index.json` |
+| `/remy-index` | Data source — insight consumes `logic_index.db` |
 | `/remy-reposcout` | Upstream — reposcout does shallow recon, insight does deep research |
 | `/remy-secure` | Partial overlap on robustness; insight gives high-level view |
 

@@ -118,8 +118,9 @@ def generate_language_md():
 def run_struct_scan(cwd):
     if not os.path.exists(STRUCT_SCAN_SCRIPT):
         return
-    cache_file = os.path.join(cwd, ".claude", "logic_index.json")
-    if not os.path.exists(cache_file):
+    db_file = os.path.join(cwd, ".claude", "logic_index.db")
+    json_file = os.path.join(cwd, ".claude", "logic_index.json")
+    if not os.path.exists(db_file) and not os.path.exists(json_file):
         return
     try:
         scan_timeout = int(os.environ.get("STRUCT_SCAN_TIMEOUT", "60"))
@@ -148,8 +149,9 @@ def maybe_launch_scope_ui(cwd):
     if inject_policy != "ALWAYS":
         return
 
-    cache_file = os.path.join(cwd, ".claude", "logic_index.json")
-    if not os.path.exists(cache_file):
+    db_file = os.path.join(cwd, ".claude", "logic_index.db")
+    json_file = os.path.join(cwd, ".claude", "logic_index.json")
+    if not os.path.exists(db_file) and not os.path.exists(json_file):
         return
 
     interactive = os.environ.get("LOGIC_INDEX_INTERACTIVE", "true").lower()

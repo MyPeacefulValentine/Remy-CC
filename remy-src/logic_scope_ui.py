@@ -2,6 +2,7 @@
 import http.server
 import json
 import os
+import sqlite3
 import sys
 import threading
 import time
@@ -10,7 +11,7 @@ from pathlib import Path
 
 LOCK_FILE = Path.home() / ".claude" / ".logic_scope_ui.lock"
 SELECTION_FILE = os.path.join(".claude", "logic_inject_selection.json")
-CACHE_FILE = os.path.join(".claude", "logic_index.json")
+DB_FILE = os.path.join(".claude", "logic_index.db")
 CONFIG_FILE = os.path.join(".claude", "logic_index_config")
 SETTINGS_LOCAL = os.path.join(".claude", "settings.local.json")
 PROFILES_FILE = os.path.join(".claude", "logic_scope_profiles.json")
@@ -60,15 +61,16 @@ def release_lock():
         pass
 
 
-def _load_cache(cwd):
-    path = os.path.join(cwd, CACHE_FILE)
-    if not os.path.exists(path):
-        return {}
+def _open_db(cwd):
+    db_path = os.path.join(cwd, DB_FILE)
+    if not os.path.exists(db_path):
+        return None
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
+        db = sqlite3.connect(db_path, timeout=3)
+        db.execute("PRAGMA journal_mode=WAL")
+        return db
+    except sqlite3.Error:
+        return None
 
 
 def _load_selection(cwd):
@@ -102,26 +104,36 @@ def _load_layers_from_config(cwd):
 
 
 def _build_tree_data(cwd):
-    cache = _load_cache(cwd)
+    db = _open_db(cwd)
     selection = _load_selection(cwd)
     layer_names = _load_layers_from_config(cwd)
 
     files = []
     layer_file_map = {}
-    for path, data in cache.items():
-        if path == "_meta":
-            continue
-        symbols = data.get("symbols", [])
-        layer = data.get("layer", "Core")
-        class_count = sum(1 for s in symbols if s.get("type") == "class")
-        func_count = sum(1 for s in symbols if s.get("type") == "function")
-        files.append({
-            "path": path,
-            "layer": layer,
-            "classes": class_count,
-            "functions": func_count,
-        })
-        layer_file_map.setdefault(layer, []).append(path)
+
+    if db:
+        try:
+            rows = db.execute("""
+                SELECT f.path, f.layer,
+                       SUM(CASE WHEN s.type = 'class' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN s.type = 'function' THEN 1 ELSE 0 END)
+                FROM files f
+                LEFT JOIN symbols s ON s.file_path = f.path
+                GROUP BY f.path, f.layer
+            """).fetchall()
+            for path, layer, class_count, func_count in rows:
+                layer = layer or "Core"
+                files.append({
+                    "path": path,
+                    "layer": layer,
+                    "classes": class_count or 0,
+                    "functions": func_count or 0,
+                })
+                layer_file_map.setdefault(layer, []).append(path)
+        except sqlite3.Error:
+            pass
+        finally:
+            db.close()
 
     all_layer_names = []
     seen = set()

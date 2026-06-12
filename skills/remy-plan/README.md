@@ -6,7 +6,7 @@ remy-plan is a **zero-code** architecture audit protocol. It forces the AI to co
 
 ### 1. Context Saturation
 
-The AI first checks whether `.claude/logic_index.json` exists:
+The AI first checks whether `.claude/logic_index.db` exists:
 
 - **Available**: Runs `impact.py` on the target files to produce a bidirectional impact report — upstream (who calls this code) and downstream (what this code calls), with cross-layer warnings. All files at Upstream Depth 1 and Downstream Depth 1 are force-read. Cross-layer impacts are flagged for Table 3 audit.
 - **Unavailable**: Prompts the user to run `/remy-index` or falls back to manual grep/glob-based exploration.

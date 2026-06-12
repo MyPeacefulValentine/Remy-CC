@@ -44,7 +44,7 @@ Phase 3: Threshold Cutoff (≥ 8/10) → Report Generation
 
 ## Integration with logic_index
 
-When `.claude/logic_index.json` exists in the project, the skill runs `impact.py` to obtain caller/callee relationships. This data is injected into category agent prompts to enable cross-file data flow tracing (source → sink analysis).
+When `.claude/logic_index.db` exists in the project, the skill runs `impact.py` to obtain caller/callee relationships. This data is injected into category agent prompts to enable cross-file data flow tracing (source → sink analysis).
 
 If the logic index is unavailable, the skill degrades gracefully to diff-only analysis.
 

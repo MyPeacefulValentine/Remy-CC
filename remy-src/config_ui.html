@@ -396,21 +396,16 @@ function validate(data){
 }
 
 function validateConstraints(data){
-  var fullMax=parseInt(data["LOGIC_DENSITY_FULL_MAX"]||"200",10);
-  var compactMax=parseInt(data["LOGIC_DENSITY_COMPACT_MAX"]||"500",10);
-  var coreMax=parseInt(data["LOGIC_DENSITY_CORE_MAX"]||"2000",10);
+  var navFull=parseInt(data["NAV_TIER_FULL_MAX"]||"200",10);
+  var navCluster=parseInt(data["NAV_TIER_CLUSTER_MAX"]||"2000",10);
   var eCap=parseInt(data["ENRICHMENT_CAP"]||"15",10);
   var eCapLarge=parseInt(data["ENRICHMENT_CAP_LARGE"]||"10",10);
   var eTierFull=parseInt(data["ENRICHMENT_TIER_FULL_MAX"]||"200",10);
   var eTierMid=parseInt(data["ENRICHMENT_TIER_MID_MAX"]||"1000",10);
   var errors=[];
-  if(fullMax>compactMax){
-    errors.push({key:"LOGIC_DENSITY_FULL_MAX",msg:"must be ≤ COMPACT_MAX ("+compactMax+")"});
-    errors.push({key:"LOGIC_DENSITY_COMPACT_MAX",msg:"must be ≥ FULL_MAX ("+fullMax+")"});
-  }
-  if(compactMax>coreMax){
-    errors.push({key:"LOGIC_DENSITY_COMPACT_MAX",msg:"must be ≤ CORE_MAX ("+coreMax+")"});
-    errors.push({key:"LOGIC_DENSITY_CORE_MAX",msg:"must be ≥ COMPACT_MAX ("+compactMax+")"});
+  if(navFull>navCluster){
+    errors.push({key:"NAV_TIER_FULL_MAX",msg:"must be ≤ NAV_TIER_CLUSTER_MAX ("+navCluster+")"});
+    errors.push({key:"NAV_TIER_CLUSTER_MAX",msg:"must be ≥ NAV_TIER_FULL_MAX ("+navFull+")"});
   }
   if(eCap<eCapLarge){
     errors.push({key:"ENRICHMENT_CAP",msg:"must be ≥ CAP_LARGE ("+eCapLarge+")"});

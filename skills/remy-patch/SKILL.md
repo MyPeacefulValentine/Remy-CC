@@ -75,7 +75,7 @@ Although strict schema validation is disabled, you MUST internally structure you
 
 **Phase 1: Discovery & Tracing (Mandatory)**
 1.  **Map Dependencies**:
-    *   **Check**: Run `Bash("test -f .claude/logic_index.json && echo EXISTS || echo MISSING")`.
+    *   **Check**: Run `Bash("test -f .claude/logic_index.db && echo EXISTS || echo MISSING")`.
     *   **EXISTS**: Run `Bash("python \"~/.claude/skills/remy-index/impact.py\" <target_file_1> <target_file_2> ...")` with the files targeted for modification. Use the output as the definitive dependency list. If exit code = 2 (no call graph data), fall through to the manual path below.
     *   **MISSING or exit 2**: Use `grep` or `glob` to locate all files that import or call the `target_files`.
     *   **Read**: For every file at Upstream Depth 1 and Downstream Depth 1 in the impact output (or all grep-discovered files in the manual path):

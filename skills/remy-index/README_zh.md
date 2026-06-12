@@ -29,11 +29,11 @@ Phase 2: LLM 摘要生成（依赖 API，手动调用）
 │  run.py（LLM 索引器）                                    │
 │  ├── 将 Phase 1 委托给 struct_scan.py                    │
 │  ├── 为脏符号生成语义摘要                                │
-│  └── 保存 logic_index.json + logic_tree.md               │
+│  └── 保存 logic_index.db + logic_index.db               │
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────┐
-│  logic_tree.md（注入 CLAUDE.md）                         │
+│  logic_index.db（注入 CLAUDE.md）                         │
 │  ├── 架构层分组（文件按层归类）                          │
 │  ├── 文件级摘要 + imports 注释                           │
 │  └── 符号级签名 + 摘要                                   │
@@ -41,7 +41,7 @@ Phase 2: LLM 摘要生成（依赖 API，手动调用）
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────┐
-│  logic_index.json（磁盘缓存，不注入）                    │
+│  logic_index.db（磁盘缓存，不注入）                    │
 │  ├── 符号哈希 + 摘要缓存                                 │
 │  ├── struct_hash（文件级原始源码指纹）                   │
 │  ├── end_lineno（符号结束行号，用于精准 Read）           │
@@ -108,7 +108,7 @@ Phase 2: LLM 摘要生成（依赖 API，手动调用）
 
 ### 被动富化 Hook
 
-`hooks/logic_enrichment_hook.py` 是一个 PreToolUse Hook，在 Read/Glob/Grep 操作时触发。它首先消费脏文件条目（由 PostToolUse 脏文件追踪器在 Edit/Write 操作后写入），为受影响的文件触发增量 `struct_scan`，然后查询 `logic_index.json` 并输出：
+`hooks/logic_enrichment_hook.py` 是一个 PreToolUse Hook，在 Read/Glob/Grep 操作时触发。它首先消费脏文件条目（由 PostToolUse 脏文件追踪器在 Edit/Write 操作后写入），为受影响的文件触发增量 `struct_scan`，然后查询 `logic_index.db` 并输出：
 
 ```
 [Logic Context] services/auth.py (Service Layer)
@@ -129,7 +129,7 @@ Phase 2: LLM 摘要生成（依赖 API，手动调用）
 
 - 解析 Python `import`、C/C++ `#include "..."`、TypeScript 相对 `import` 依赖。
 - 将上游模块摘要注入 LLM 提示词，实现上下文感知的摘要生成。
-- 在 `logic_tree.md` 输出中显示每文件的 import 列表。
+- 在 `logic_index.db` 输出中显示每文件的 import 列表。
 
 ### 增量更新
 
@@ -166,11 +166,11 @@ Skill 检查 `.claude/logic_index_config` 是否存在。不存在时从默认�
 python "~/.claude/skills/remy-index/run.py"
 ```
 
-首次运行（无 `.claude/logic_tree.md`）时执行全量扫描。索引器：
+首次运行（无 `.claude/logic_index.db`）时执行全量扫描。索引器：
 1. 遍历项目树，逐文件解析符号和调用图
 2. 通过 import 映射将 callee 名称解析为 qualified 引用
 3. 为无文档的符号生成 LLM 摘要
-4. 将结果保存到 `.claude/logic_index.json`（缓存）和 `.claude/logic_tree.md`（输出）
+4. 将结果保存到 `.claude/logic_index.db`（缓存）和 `.claude/logic_index.db`（输出）
 
 ### 步骤 3: 注入策略
 
@@ -178,24 +178,24 @@ python "~/.claude/skills/remy-index/run.py"
 
 | 策略 | 行为 |
 | :--- | :--- |
-| `ALWAYS`（默认） | 自动将 `logic_tree.md` 注入 `CLAUDE.md` |
+| `ALWAYS`（默认） | 自动将 `logic_index.db` 注入 `CLAUDE.md` |
 | `ASK` | 注入前提示用户确认 |
 | `NEVER` | 仅生成文件，不注入 |
 
 ### 范围选择（注入过滤）
 
-对于 `logic_tree.md` 超出上下文窗口预算的大型项目，范围选择器可过滤注入的文件。文档注入器基于 `.claude/logic_inject_selection.json` 中的用户选择，生成 `logic_tree_view.md` —— `logic_tree.md` 的过滤子集。
+对于 `logic_index.db` 超出上下文窗口预算的大型项目，范围选择器可过滤注入的文件。文档注入器基于 `.claude/logic_inject_selection.json` 中的用户选择，生成 `logic_tree_view.md` —— `logic_index.db` 的过滤子集。
 
 配置方式：
 - **SessionStart UI**：当 `LOGIC_INDEX_INTERACTIVE` 为 `true` 时，会话启动（startup/clear/compact 事件）时弹出浏览器选择器 UI。用户可勾选/取消文件和层以控制注入范围。
 - **CLI**：随时运行 `remy-cc logic-scope [--path <目录>]` 打开选择器。
 - **存档**：选择器支持保存/加载命名配置存档（上限 20 个），方便在不同范围配置间切换。
 
-若选择文件不存在，则注入完整的 `logic_tree.md`（等同于选择所有文件）。
+若选择文件不存在，则注入完整的 `logic_index.db`（等同于选择所有文件）。
 
 ## 输出格式
 
-`logic_tree.md` 结构如下：
+`logic_index.db` 结构如下：
 
 ```markdown
 ## 🏗️ API Layer
@@ -318,7 +318,7 @@ pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
 检查 `OPENAI_API_KEY` 是否正确，`OPENAI_MODEL` 在服务端是否可用。
 
 ### Q: 中断后会丢失进度吗？
-不会。`try...finally` 保护机制确保已生成的摘要保存到 `.claude/logic_index.json`。
+不会。`try...finally` 保护机制确保已生成的摘要保存到 `.claude/logic_index.db`。
 
 ### Q: C/C++/TypeScript 调用图未提取？
 安装 `tree-sitter` 包。调用图提取需要 AST 精度，正则模式无法提供。Python 调用图使用标准库 `ast`，无需 tree-sitter。

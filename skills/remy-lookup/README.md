@@ -1,6 +1,6 @@
 # remy-lookup (Index Viewer)
 
-remy-lookup displays the current semantic code index from `.claude/logic_tree.md`. If the index does not exist, it offers to generate one.
+remy-lookup displays the current semantic code index from `.claude/logic_tree_view.md`. If the index does not exist, it offers to generate one.
 
 ## When to Use
 
@@ -9,7 +9,7 @@ remy-lookup displays the current semantic code index from `.claude/logic_tree.md
 
 ## Workflow
 
-1. Checks if `.claude/logic_tree.md` exists.
+1. Checks if `.claude/logic_tree_view.md` exists.
 2. **If found**: Reads and displays the content.
 3. **If missing**: Asks the user whether to run `/remy-index` to generate it.
 

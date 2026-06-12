@@ -99,6 +99,7 @@ UI = {
         "env_new_keys": "  [i] New keys added to env (configure actual values): {keys}",
         "manifest_written": "  [+] {name}",
         "removed_old_dir": "  [-] Removed obsolete: {name}/",
+        "db_migrate_notice": "  [i] Logic Index storage upgraded: JSON → SQLite.\n      Existing projects will auto-migrate on next SessionStart.",
         "ts_installed": "  [i] tree-sitter already installed, skipping",
         "ts_prompt": "Install tree-sitter (high-precision C/C++/TypeScript parsing)? [Y/n] ",
         "ts_installing": "  Installing tree-sitter ...",
@@ -177,6 +178,7 @@ UI = {
         "env_new_keys": "  [i] env 中新增以下 key（需手动配置实际值）：{keys}",
         "manifest_written": "  [+] {name}",
         "removed_old_dir": "  [-] 已删除旧目录：{name}/",
+        "db_migrate_notice": "  [i] Logic Index 存储格式已升级：JSON → SQLite。\n      已有项目将在下次 SessionStart 时自动迁移。",
         "ts_installed": "  [i] tree-sitter 已安装，跳过",
         "ts_prompt": "是否安装 tree-sitter（C/C++/TypeScript 高精度解析）？[Y/n] ",
         "ts_installing": "  正在安装 tree-sitter ...",
@@ -774,6 +776,7 @@ def do_install() -> None:
         settings_backup = merge_settings(template, settings_path, claude_home, lang_override=_ui_lang)
         migrate_permissions(settings_path)
         cleanup_old_skill_dirs(claude_home)
+        print(_t("db_migrate_notice"))
         patch_script = claude_home / "remy-src" / "patch_descriptions.py"
         if patch_script.exists():
             subprocess.run(

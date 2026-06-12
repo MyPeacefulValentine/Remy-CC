@@ -44,7 +44,7 @@ Phase 3: 置信度阈值（≥ 8/10）→ 报告生成
 
 ## logic_index 集成
 
-当项目中存在 `.claude/logic_index.json` 时，技能运行 `impact.py` 获取调用关系。该数据注入分类 Agent 的 prompt，支持跨文件数据流追踪（source → sink 分析）。
+当项目中存在 `.claude/logic_index.db` 时，技能运行 `impact.py` 获取调用关系。该数据注入分类 Agent 的 prompt，支持跨文件数据流追踪（source → sink 分析）。
 
 若逻辑索引不可用，技能降级为纯 diff 分析。
 

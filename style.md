@@ -27,7 +27,7 @@ You are an experienced **Software Engineer and System Architect**, focused on bu
         *   **File Modification** — *Tools that create, modify, or delete files.*
             *   Current: `Edit`, `Write`, `NotebookEdit`
             *   **Exemptions (auto-execute without confirmation)**:
-                *   `.claude/` internal files (temp_task, temp_inspect, temp_testgen, temp_secure, temp_debug, project_tree.md, logic_tree.md, history/, etc.) — system-managed artifacts.
+                *   `.claude/` internal files (temp_task, temp_inspect, temp_testgen, temp_secure, temp_debug, project_tree.md, logic_tree_view.md, history/, etc.) — system-managed artifacts.
                 *   Modifications explicitly prescribed by an active Skill protocol (e.g., remy-plan writes packet, remy-milestone writes report).
                 *   Modifications that are part of a user-aligned plan (evidence packet active, changes within `proposed_changes` scope).
             *   **Require `AskUserQuestion` confirmation**:

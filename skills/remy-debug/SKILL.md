@@ -77,7 +77,7 @@ If no parseable paths exist:
 
 ### 1.2 Impact Analysis (Conditional)
 
-1. Check: `Bash("test -f .claude/logic_index.json && echo EXISTS || echo MISSING")`.
+1. Check: `Bash("test -f .claude/logic_index.db && echo EXISTS || echo MISSING")`.
 2. **EXISTS**: Run `Bash("python \"~/.claude/skills/remy-index/impact.py\" <suspect_file_1> <suspect_file_2> ...")`.
    - If exit code = 0: record output as **Dependency Map**.
    - If exit code = 2: skip (no call graph data).

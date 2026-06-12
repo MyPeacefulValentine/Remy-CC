@@ -150,7 +150,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 > 1. 克隆仓库（手动克隆，或先用 /remy-reposcout 评估）
 > 2. cd 进入仓库目录，启动 Claude Code
 > 3. /init                → 生成 CLAUDE.md
-> 4. /remy-index          → 生成 logic_index.json（需要 LLM API）
+> 4. /remy-index          → 生成 logic_index.db（需要 LLM API）
 > 5. /clear               → 刷新注入的上下文
 > 6. /remy-insight [模式] → 执行分析（global | focus <主题> | compare <文档>）
 >```

@@ -5,7 +5,7 @@
 ## 前置条件
 
 1. 运行 `/init` 生成 `CLAUDE.md`
-2. 运行 `/remy-index` 生成 `logic_index.json`
+2. 运行 `/remy-index` 生成 `logic_index.db`
 3. 运行 `/clear` 刷新注入的上下文
 
 ## 用法
@@ -62,7 +62,7 @@
 
 | 技能 | 关系 |
 | :--- | :--- |
-| `/remy-index` | 数据源 — insight 消费 `logic_index.json` |
+| `/remy-index` | 数据源 — insight 消费 `logic_index.db` |
 | `/remy-reposcout` | 上游 — reposcout 做浅层侦察，insight 做深度研究 |
 | `/remy-secure` | 健壮性维度部分重叠；insight 给出高层面观察 |
 

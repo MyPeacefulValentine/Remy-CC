@@ -175,7 +175,7 @@ For each Error Record with a file path:
 
 ### 3.3 Impact Analysis (Conditional)
 
-1. Check: `Bash("test -f .claude/logic_index.json && echo EXISTS || echo MISSING")`.
+1. Check: `Bash("test -f .claude/logic_index.db && echo EXISTS || echo MISSING")`.
 2. **EXISTS**: Collect all unique file paths from Error Records, then run:
    ```
    Bash("python \"~/.claude/skills/remy-index/impact.py\" {file_1} {file_2} ...")
