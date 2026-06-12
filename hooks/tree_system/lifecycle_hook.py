@@ -84,7 +84,7 @@ def _generate_banner(version, lang, injection_mode=None):
         lines.append("  " + _pad(name, col_widths[0]) + _pad(desc, col_widths[1]) + timing)
 
     lines.append("")
-    lines.append("  " + "─" * box_width)
+    lines.append("─" * (box_width + 2))
 
     if injection_mode:
         im = data.get("injection_mode", {})
@@ -97,16 +97,16 @@ def _generate_banner(version, lang, injection_mode=None):
         hint = im.get(f"switch_hint_{lk}", "")
         COLOR = f'\033[{color_code}m'
         lines.append("")
-        top_dashes = max(0, box_width - _display_width(lbl) - 5)
-        lines.append("  ┌─ " + lbl + " " + "─" * top_dashes + "┐")
+        top_dashes = max(0, box_width - _display_width(lbl) - 3)
+        lines.append("┌─ " + lbl + " " + "─" * top_dashes + "┐")
         mode_display = f"▶  {mode_str}"
         mode_content = f"▶  {COLOR}{mode_str}{RESET}"
-        pad_mode = max(0, box_width - _display_width(mode_display) - 4)
-        lines.append("  │  " + mode_content + " " * pad_mode + "│")
+        pad_mode = max(0, box_width - _display_width(mode_display) - 2)
+        lines.append("│  " + mode_content + " " * pad_mode + "│")
         hint_content = f"↳ {hint}"
-        pad_hint = max(0, box_width - _display_width(hint_content) - 4)
-        lines.append("  │  " + hint_content + " " * pad_hint + "│")
-        lines.append("  └" + "─" * (box_width - 2) + "┘")
+        pad_hint = max(0, box_width - _display_width(hint_content) - 2)
+        lines.append("│  " + hint_content + " " * pad_hint + "│")
+        lines.append("└" + "─" * box_width + "┘")
         lines.append("")
 
     cli_hint = data.get("cli_hint", {}).get(lang, "")
