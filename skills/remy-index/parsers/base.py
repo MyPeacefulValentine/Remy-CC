@@ -68,6 +68,12 @@ class LanguageParser(ABC):
         """Check if this parser handles the given filename."""
         return any(filename.endswith(ext) for ext in self.get_extensions())
 
+    def extract_patterns(self, source: str, file_path: str) -> list:
+        """Extract event/callback registration patterns from source.
+        Returns list of dicts: {pattern_type, signal_name, handler, line, metadata}.
+        """
+        return []
+
     def extract_call_graph(self, source: str, file_path: str) -> list:
         """Extract caller-to-callee edges. Returns list of EdgeInfo. Override in subclasses with AST/tree-sitter support."""
         return []

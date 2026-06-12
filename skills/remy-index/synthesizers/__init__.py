@@ -9,6 +9,6 @@ from .event_emitter import synthesize_event_emitter_edges
 from .interface_dispatch import synthesize_interface_override_edges
 
 
-def run_all_synthesizers(cache, root_dir):
-    synthesize_event_emitter_edges(cache, root_dir)
-    synthesize_interface_override_edges(cache)
+def run_all_synthesizers(db):
+    synthesize_event_emitter_edges(db)
+    synthesize_interface_override_edges(db)

@@ -6,6 +6,7 @@ Extracted from the original run.py Logic Indexer.
 import ast
 import hashlib
 import os
+import re
 import sys
 from .base import LanguageParser, SymbolInfo, EdgeInfo
 
@@ -234,3 +235,106 @@ class PythonParser(LanguageParser):
 
         _walk(tree)
         return edges
+
+    _DJANGO_CONNECT_RE = re.compile(r'(\w+)\.connect\(\s*(\w+)')
+    _DJANGO_SEND_RE = re.compile(r'(\w+)\.send\(')
+    _PYQT_CONNECT_RE = re.compile(r'(\w+)\.connect\(\s*(?:self\.)?(\w+)')
+    _PYQT_EMIT_RE = re.compile(r'(\w+)\.emit\(')
+    _OBSERVER_APPEND_RE = re.compile(r'self\.(\w+)\.(?:append|add|insert)\(')
+    _OBSERVER_ITER_RE = re.compile(r'for\s+(\w+)\s+in\s+self\.(\w+)\s*:')
+    _OBSERVER_INVOKE_RE = re.compile(r'\b(\w+)\s*\(')
+
+    def extract_patterns(self, source: str, file_path: str) -> list:
+        results = []
+        symbols = self.parse_symbols(source, file_path)
+
+        def _line_at(pos):
+            return source[:pos].count('\n') + 1
+
+        def _enclosing_func(line):
+            best = None
+            for sym in symbols:
+                if sym.type != "function":
+                    continue
+                end = sym.end_lineno or sym.lineno
+                if sym.lineno <= line <= end:
+                    if best is None or sym.lineno >= best.lineno:
+                        best = sym
+            return best.name if best else None
+
+        has_django = '.connect(' in source or '.send(' in source
+        has_pyqt = ('from PyQt' in source or 'from PySide' in source) and (
+            '.connect(' in source or '.emit(' in source
+        )
+
+        if has_django:
+            for m in self._DJANGO_SEND_RE.finditer(source):
+                line = _line_at(m.start())
+                handler = _enclosing_func(line)
+                results.append({
+                    "pattern_type": "django_signal_send",
+                    "signal_name": m.group(1),
+                    "handler": handler,
+                    "line": line,
+                    "metadata": None,
+                })
+            for m in self._DJANGO_CONNECT_RE.finditer(source):
+                line = _line_at(m.start())
+                results.append({
+                    "pattern_type": "django_signal_connect",
+                    "signal_name": m.group(1),
+                    "handler": m.group(2),
+                    "line": line,
+                    "metadata": None,
+                })
+
+        if has_pyqt:
+            for m in self._PYQT_EMIT_RE.finditer(source):
+                line = _line_at(m.start())
+                handler = _enclosing_func(line)
+                results.append({
+                    "pattern_type": "pyqt_signal_emit",
+                    "signal_name": m.group(1),
+                    "handler": handler,
+                    "line": line,
+                    "metadata": None,
+                })
+            for m in self._PYQT_CONNECT_RE.finditer(source):
+                line = _line_at(m.start())
+                results.append({
+                    "pattern_type": "pyqt_signal_connect",
+                    "signal_name": m.group(1),
+                    "handler": m.group(2),
+                    "line": line,
+                    "metadata": None,
+                })
+
+        for m in self._OBSERVER_ITER_RE.finditer(source):
+            loop_var = m.group(1)
+            field_name = m.group(2)
+            after_colon = source[m.end():]
+            invoke_match = self._OBSERVER_INVOKE_RE.match(after_colon.lstrip())
+            if invoke_match and invoke_match.group(1) == loop_var:
+                line = _line_at(m.start())
+                handler = _enclosing_func(line)
+                results.append({
+                    "pattern_type": "observer_emit",
+                    "signal_name": field_name,
+                    "handler": handler,
+                    "line": line,
+                    "metadata": None,
+                })
+
+        for m in self._OBSERVER_APPEND_RE.finditer(source):
+            field_name = m.group(1)
+            line = _line_at(m.start())
+            handler = _enclosing_func(line)
+            results.append({
+                "pattern_type": "observer_register",
+                "signal_name": field_name,
+                "handler": handler,
+                "line": line,
+                "metadata": None,
+            })
+
+        return results

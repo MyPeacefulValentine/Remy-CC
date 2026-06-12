@@ -2,14 +2,15 @@
 # -*- coding: utf-8 -*-
 """
 PreToolUse hook that enriches Read/Glob/Grep results with call graph and layer context
-from logic_index.json. Runs independently of pre_tool_guard.py.
+from logic_index.db. Runs independently of pre_tool_guard.py.
 """
 
 import sys
 import json
 import os
+import sqlite3
 
-CACHE_FILE = os.path.join(".claude", "logic_index.json")
+DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
 
 
@@ -25,20 +26,27 @@ def _consume_dirty_files(cwd, target_path):
     if not dirty_paths:
         return
 
-    cache_path = os.path.join(cwd, CACHE_FILE)
-    if not os.path.exists(cache_path):
+    db_rel = os.environ.get("LOGIC_INDEX_DB_PATH", DB_FILE_DEFAULT)
+    db_path = os.path.join(cwd, db_rel)
+    if not os.path.exists(db_path):
         return
 
     try:
-        with open(cache_path, 'r', encoding='utf-8') as f:
-            cache = json.load(f)
+        db = sqlite3.connect(db_path)
+        db.execute("PRAGMA journal_mode=WAL")
+        imports_row = db.execute(
+            "SELECT imports FROM files WHERE path = ?", (target_path,)
+        ).fetchone()
+        db.close()
     except Exception:
         return
 
     deps_of_target = set()
-    target_data = cache.get(target_path)
-    if target_data:
-        deps_of_target = set(target_data.get("imports", []))
+    if imports_row and imports_row[0]:
+        try:
+            deps_of_target = set(json.loads(imports_row[0]))
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     relevant = dirty_paths & ({target_path} | deps_of_target)
     if not relevant:
@@ -52,8 +60,6 @@ def _consume_dirty_files(cwd, target_path):
             import subprocess
             args = [sys.executable, struct_scan_path, "--cwd", cwd, "--files"] + list(relevant)
             subprocess.run(args, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=30)
-    except subprocess.TimeoutExpired:
-        pass
     except Exception:
         return
 
@@ -69,7 +75,6 @@ def _consume_dirty_files(cwd, target_path):
 
 
 def _normalize_path(file_path, cwd):
-    """Convert absolute or relative path to project-relative forward-slash form."""
     if os.path.isabs(file_path):
         try:
             rel = os.path.relpath(file_path, cwd)
@@ -79,11 +84,28 @@ def _normalize_path(file_path, cwd):
     return file_path.replace(os.sep, "/")
 
 
-def _build_enrichment(target_path, cache, file_count):
-    """Build enrichment text for a target file from the cache."""
-    file_data = cache.get(target_path)
-    if not file_data:
+def _open_db(cwd):
+    db_rel = os.environ.get("LOGIC_INDEX_DB_PATH", DB_FILE_DEFAULT)
+    db_path = os.path.join(cwd, db_rel)
+    if not os.path.exists(db_path):
         return None
+    try:
+        db = sqlite3.connect(db_path)
+        db.execute("PRAGMA journal_mode=WAL")
+        return db
+    except Exception:
+        return None
+
+
+def _build_enrichment(target_path, db):
+    file_row = db.execute(
+        "SELECT layer, imports FROM files WHERE path = ?", (target_path,)
+    ).fetchone()
+    if not file_row:
+        return None
+
+    layer, imports_json = file_row
+    file_count = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
 
     tier_full_max = 200
     tier_mid_max = 1000
@@ -112,16 +134,10 @@ def _build_enrichment(target_path, cache, file_count):
         pass
 
     if tier_full_max > tier_mid_max:
-        print("[Enrichment] Warning: ENRICHMENT_TIER_FULL_MAX > ENRICHMENT_TIER_MID_MAX, using defaults",
-              file=sys.stderr)
         tier_full_max, tier_mid_max = 200, 1000
     if cap < cap_large:
-        print("[Enrichment] Warning: ENRICHMENT_CAP < ENRICHMENT_CAP_LARGE, using defaults",
-              file=sys.stderr)
         cap, cap_large = 15, 10
     if any(v < 0 for v in (tier_full_max, tier_mid_max, cap, cap_large, sig_max)):
-        print("[Enrichment] Warning: negative parameter value detected, using defaults",
-              file=sys.stderr)
         tier_full_max, tier_mid_max, cap, cap_large, sig_max = 200, 1000, 15, 10, 80
 
     if file_count > tier_mid_max:
@@ -135,19 +151,12 @@ def _build_enrichment(target_path, cache, file_count):
         detail_level = "full"
 
     parts = []
-
-    layer = file_data.get("layer")
     if layer:
         parts.append(f"[Logic Context] {target_path} ({layer})")
     else:
         parts.append(f"[Logic Context] {target_path}")
 
-    symbol_map = {}
-    for s in file_data.get("symbols", []):
-        symbol_map[s["name"]] = s
-
-    def _format_sig(sym):
-        args_str = sym.get("args", "")
+    def _format_sig(args_str):
         if not args_str or sig_max <= 0:
             return ""
         if len(args_str) <= sig_max:
@@ -155,58 +164,51 @@ def _build_enrichment(target_path, cache, file_count):
         arg_count = args_str.count(",") + 1
         return f" | {args_str[:sig_max]}... ({arg_count} args)"
 
-    def _format_range(sym):
-        start = sym.get("lineno")
-        end = sym.get("end_lineno")
-        if start and end:
-            return f" [L{start}-L{end}]"
-        elif start:
-            return f" [L{start}]"
-        return ""
-
     def _format_entry(qualified, detail):
-        fpath, fname = qualified.split("::", 1) if "::" in qualified else (qualified, "")
-        sym = None
-        fdata = cache.get(fpath)
-        if fdata and fname:
-            for s in fdata.get("symbols", []):
-                if s["name"] == fname:
-                    sym = s
-                    break
-        if detail == "full" and sym:
-            f_layer = fdata.get("layer", "") if fdata else ""
-            return f"{qualified}{_format_range(sym)} ({f_layer}){_format_sig(sym)}"
-        elif detail == "mid" and sym:
-            f_layer = fdata.get("layer", "") if fdata else ""
-            return f"{qualified}{_format_range(sym)} ({f_layer})"
+        if "::" not in qualified:
+            return qualified
+        fpath, fname = qualified.split("::", 1)
+        sym_row = db.execute(
+            "SELECT lineno, end_lineno, args, layer FROM symbols s JOIN files f ON s.file_path = f.path WHERE s.file_path = ? AND s.name = ?",
+            (fpath, fname)
+        ).fetchone()
+        if not sym_row:
+            return qualified
+        lineno, end_lineno, args, f_layer = sym_row
+        range_str = ""
+        if lineno and end_lineno:
+            range_str = f" [L{lineno}-L{end_lineno}]"
+        elif lineno:
+            range_str = f" [L{lineno}]"
+        if detail == "full":
+            return f"{qualified}{range_str} ({f_layer}){_format_sig(args)}"
+        elif detail == "mid":
+            return f"{qualified}{range_str} ({f_layer})"
         return qualified
 
-    callees = []
-    for call in file_data.get("calls", []):
-        qualified = call.get("callee_qualified")
-        if qualified:
-            callees.append(qualified)
+    callees = db.execute(
+        "SELECT DISTINCT callee_qualified FROM edges WHERE source_file = ? AND callee_qualified IS NOT NULL LIMIT ?",
+        (target_path, active_cap)
+    ).fetchall()
     if callees:
-        unique = list(dict.fromkeys(callees))[:active_cap]
-        formatted = [_format_entry(q, detail_level) for q in unique]
+        formatted = [_format_entry(row[0], detail_level) for row in callees]
         parts.append(f"  Calls into: {', '.join(formatted)}")
 
-    callers = []
-    for path, data in cache.items():
-        if path == "_meta" or path == target_path:
-            continue
-        for call in data.get("calls", []):
-            qualified = call.get("callee_qualified", "")
-            if qualified.startswith(target_path + "::"):
-                caller_qualified = f"{path}::{call['caller']}"
-                callers.append(caller_qualified)
+    callers = db.execute(
+        "SELECT DISTINCT source_file || '::' || caller FROM edges WHERE callee_qualified LIKE ? LIMIT ?",
+        (target_path + '::%', active_cap)
+    ).fetchall()
     if callers:
-        unique = list(dict.fromkeys(callers))[:active_cap]
-        formatted = [_format_entry(q, detail_level) for q in unique]
+        formatted = [_format_entry(row[0], detail_level) for row in callers]
         parts.append(f"  Called by: {', '.join(formatted)}")
 
     if len(parts) <= 1 and not callees and not callers:
-        imports = file_data.get("imports", [])
+        imports = []
+        if imports_json:
+            try:
+                imports = json.loads(imports_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
         if imports:
             parts.append(f"  Imports: {', '.join(imports)}")
         else:
@@ -235,24 +237,21 @@ def main():
         if not file_path:
             sys.exit(0)
 
-        cache_path = os.path.join(cwd, CACHE_FILE)
-        if not os.path.exists(cache_path):
-            sys.exit(0)
-
         target = _normalize_path(file_path, cwd)
         if not target:
             sys.exit(0)
 
         _consume_dirty_files(cwd, target)
 
-        try:
-            with open(cache_path, 'r', encoding='utf-8') as f:
-                cache = json.load(f)
-        except (json.JSONDecodeError, IOError):
+        db = _open_db(cwd)
+        if not db:
             sys.exit(0)
 
-        file_count = sum(1 for k in cache if k != "_meta")
-        enrichment = _build_enrichment(target, cache, file_count)
+        try:
+            enrichment = _build_enrichment(target, db)
+        finally:
+            db.close()
+
         if not enrichment:
             sys.exit(0)
 

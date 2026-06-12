@@ -1,163 +1,172 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Impact radius analysis via BFS on logic_index.json call graph data."""
+"""
+Impact radius analysis via BFS on call graph (SQLite backend).
+"""
 
 import json
 import os
 import sys
+import sqlite3
 
-CACHE_FILE = os.path.join(".claude", "logic_index.json")
+DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 
-DEFAULT_DEPTH_UP = 2
-DEFAULT_DEPTH_DOWN = 2
+
+def _env_int(name, default):
+    try:
+        return int(os.environ.get(name, default))
+    except (ValueError, TypeError):
+        return default
 
 
 def _auto_depth(file_count):
-    """Return (depth_up, depth_down) based on project size."""
-    if file_count < 200:
-        return (3, 3)
-    if file_count < 1000:
-        return (2, 2)
-    return (1, 2)
+    if file_count <= 50:
+        return 3, 3
+    elif file_count <= 200:
+        return 2, 2
+    else:
+        return 2, 1
 
 
-def load_cache(cwd):
-    path = os.path.join(cwd, CACHE_FILE)
-    if not os.path.exists(path):
-        print(f"Error: {CACHE_FILE} not found in {cwd}", file=sys.stderr)
-        sys.exit(1)
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+def open_db(cwd):
+    db_rel = os.environ.get("LOGIC_INDEX_DB_PATH", DB_FILE_DEFAULT)
+    db_path = os.path.join(cwd, db_rel)
+    if not os.path.exists(db_path):
+        print(f"Error: Database not found at {db_path}", file=sys.stderr)
+        sys.exit(2)
+    db = sqlite3.connect(db_path)
+    db.execute("PRAGMA journal_mode=WAL")
+    return db
 
 
-def build_reverse_index(cache, static_only=False):
-    """Map callee_qualified -> list of (caller_file, caller_func)."""
-    rev = {}
-    for path, data in cache.items():
-        if path == "_meta":
-            continue
-        for call in data.get("calls", []):
-            if static_only and call.get("provenance") == "heuristic":
-                continue
-            qualified = call.get("callee_qualified")
-            if qualified:
-                rev.setdefault(qualified, []).append((path, call["caller"]))
-    return rev
+def get_file_count(db):
+    row = db.execute("SELECT COUNT(*) FROM files").fetchone()
+    return row[0] if row else 0
 
 
-def build_forward_index(cache, static_only=False):
-    """Map caller_qualified -> list of (callee_file, callee_func)."""
-    fwd = {}
-    for path, data in cache.items():
-        if path == "_meta":
-            continue
-        for call in data.get("calls", []):
-            if static_only and call.get("provenance") == "heuristic":
-                continue
-            qualified = call.get("callee_qualified")
-            if qualified:
-                caller_q = f"{path}::{call['caller']}"
-                callee_file = qualified.split("::")[0]
-                callee_func = qualified.split("::")[-1]
-                fwd.setdefault(caller_q, []).append((callee_file, callee_func))
-    return fwd
+def collect_file_symbols(db, file_path):
+    rows = db.execute(
+        "SELECT file_path || '::' || name FROM symbols WHERE file_path = ?",
+        (file_path,)
+    ).fetchall()
+    return {r[0] for r in rows}
 
 
-def collect_file_symbols(cache, file_path):
-    """Return set of qualified names for all symbols in a file."""
-    data = cache.get(file_path)
-    if not data:
-        return set()
-    return {f"{file_path}::{s['name']}" for s in data.get("symbols", [])}
-
-
-def bfs(cache, adjacency_index, target_files, max_depth):
-    seeds = set()
-    for f in target_files:
-        seeds |= collect_file_symbols(cache, f)
-
-    visited = set(seeds)
+def bfs_callers(db, target_qualified_set, max_depth, static_only=False):
+    visited = set(target_qualified_set)
+    current = set(target_qualified_set)
     levels = {}
+    filter_clause = "AND provenance IS NULL" if static_only else ""
 
-    current = seeds
     for depth in range(1, max_depth + 1):
-        next_level = set()
-        for qualified in current:
-            for neighbor_file, neighbor_func in adjacency_index.get(qualified, []):
-                neighbor_q = f"{neighbor_file}::{neighbor_func}"
-                if neighbor_q not in visited:
-                    next_level.add(neighbor_q)
-                    visited.add(neighbor_q)
+        if not current:
+            break
+        placeholders = ','.join(['?'] * len(current))
+        sql = f"""
+            SELECT DISTINCT source_file || '::' || caller
+            FROM edges
+            WHERE callee_qualified IN ({placeholders})
+            {filter_clause}
+        """
+        rows = db.execute(sql, list(current)).fetchall()
+        next_level = {r[0] for r in rows} - visited
         if not next_level:
             break
         levels[depth] = sorted(next_level)
+        visited |= next_level
         current = next_level
 
     return levels
 
 
-def get_layer(cache, file_path):
-    data = cache.get(file_path)
-    if data:
-        return data.get("layer", "Core")
-    return "Unknown"
+def bfs_callees(db, target_qualified_set, max_depth, static_only=False):
+    visited = set(target_qualified_set)
+    current = set(target_qualified_set)
+    levels = {}
+    filter_clause = "AND provenance IS NULL" if static_only else ""
+
+    for depth in range(1, max_depth + 1):
+        if not current:
+            break
+        placeholders = ','.join(['?'] * len(current))
+        sql = f"""
+            SELECT DISTINCT callee_qualified
+            FROM edges
+            WHERE source_file || '::' || caller IN ({placeholders})
+            AND callee_qualified IS NOT NULL
+            {filter_clause}
+        """
+        rows = db.execute(sql, list(current)).fetchall()
+        next_level = {r[0] for r in rows} - visited
+        if not next_level:
+            break
+        levels[depth] = sorted(next_level)
+        visited |= next_level
+        current = next_level
+
+    return levels
 
 
-def get_line_range(cache, qualified):
-    fpath, sym_name = qualified.split("::", 1)
-    data = cache.get(fpath)
-    if not data:
+def get_layer(db, file_path):
+    row = db.execute("SELECT layer FROM files WHERE path = ?", (file_path,)).fetchone()
+    return row[0] if row else "Unknown"
+
+
+def get_line_range(db, qualified):
+    if "::" not in qualified:
         return ""
-    for sym in data.get("symbols", []):
-        if sym["name"] == sym_name:
-            start = sym.get("lineno")
-            end = sym.get("end_lineno")
-            if start and end:
-                return f" [L{start}-L{end}]"
-            elif start:
-                return f" [L{start}]"
+    fpath, name = qualified.split("::", 1)
+    row = db.execute(
+        "SELECT lineno, end_lineno FROM symbols WHERE file_path = ? AND name = ?",
+        (fpath, name)
+    ).fetchone()
+    if row:
+        start, end = row
+        if start and end:
+            return f" [L{start}-L{end}]"
+        elif start:
+            return f" [L{start}]"
     return ""
 
 
-def format_output(cache, seeds, upstream_levels, downstream_levels, target_files):
-    lines = []
+def format_output(db, seeds, upstream_levels, downstream_levels, target_files):
+    lines = ["[Modified]"]
     all_layers = set()
-    all_files = set(target_files)
+    all_files = set()
 
-    lines.append("[Modified]")
     for q in sorted(seeds):
-        fpath = q.split("::")[0]
-        layer = get_layer(cache, fpath)
+        fpath = q.split("::")[0] if "::" in q else q
+        layer = get_layer(db, fpath)
         all_layers.add(layer)
         all_files.add(fpath)
-        lines.append(f"  {q}{get_line_range(cache, q)} ({layer})")
+        lines.append(f"  {q}{get_line_range(db, q)} ({layer})")
     lines.append("")
 
     if upstream_levels:
         for depth, qualified_list in sorted(upstream_levels.items()):
             lines.append(f"[Upstream Depth {depth}]")
             for q in qualified_list:
-                fpath = q.split("::")[0]
-                layer = get_layer(cache, fpath)
+                fpath = q.split("::")[0] if "::" in q else q
+                layer = get_layer(db, fpath)
                 all_layers.add(layer)
                 all_files.add(fpath)
-                lines.append(f"  {q}{get_line_range(cache, q)} ({layer})")
+                lines.append(f"  {q}{get_line_range(db, q)} ({layer})")
             lines.append("")
 
     if downstream_levels:
         for depth, qualified_list in sorted(downstream_levels.items()):
             lines.append(f"[Downstream Depth {depth}]")
             for q in qualified_list:
-                fpath = q.split("::")[0]
-                layer = get_layer(cache, fpath)
+                fpath = q.split("::")[0] if "::" in q else q
+                layer = get_layer(db, fpath)
                 all_layers.add(layer)
                 all_files.add(fpath)
-                lines.append(f"  {q}{get_line_range(cache, q)} ({layer})")
+                lines.append(f"  {q}{get_line_range(db, q)} ({layer})")
             lines.append("")
 
     total_funcs = len(seeds)
     for levels in (upstream_levels, downstream_levels):
-        total_funcs += sum(len(v) for v in levels.items())
+        total_funcs += sum(len(v) for v in levels.values())
 
     lines.append(f"Summary: {len(all_files)} files, {total_funcs} functions, {len(all_layers)} layers")
 
@@ -181,64 +190,43 @@ def main():
     parser.add_argument("--cwd", default=os.getcwd(), help="Project root directory")
     args = parser.parse_args()
 
-    cache = load_cache(args.cwd)
-
-    file_count = sum(1 for k in cache if k != "_meta")
+    db = open_db(args.cwd)
+    file_count = get_file_count(db)
     auto_up, auto_down = _auto_depth(file_count)
 
-    env_depth_up = auto_up
-    env_depth_down = auto_down
-    try:
-        env_depth_up = int(os.environ.get("IMPACT_DEPTH_UP", auto_up))
-    except ValueError:
-        pass
-    try:
-        env_depth_down = int(os.environ.get("IMPACT_DEPTH_DOWN", auto_down))
-    except ValueError:
-        pass
-
-    base_depth_up = args.depth if args.depth is not None else env_depth_up
-    base_depth_down = args.depth if args.depth is not None else env_depth_down
-    depth_up = args.depth_up if args.depth_up is not None else base_depth_up
-    depth_down = args.depth_down if args.depth_down is not None else base_depth_down
-
-    has_calls = any(
-        data.get("calls") for path, data in cache.items() if path != "_meta"
-    )
-    if not has_calls:
-        print("Warning: No call graph data found in logic_index.json", file=sys.stderr)
-        sys.exit(2)
+    depth_up = args.depth or args.depth_up or auto_up
+    depth_down = args.depth or args.depth_down or auto_down
 
     target_files = []
     for f in args.files:
-        if os.path.isabs(f):
-            try:
-                f = os.path.relpath(f, args.cwd)
-            except ValueError:
-                print(f"Warning: cannot relativize {f} against {args.cwd}", file=sys.stderr)
-                continue
-        target_files.append(f.replace(os.sep, "/"))
-    missing = [f for f in target_files if f not in cache]
-    if missing:
-        for m in missing:
-            print(f"Warning: {m} not found in logic_index.json", file=sys.stderr)
+        normalized = f.replace("\\", "/")
+        row = db.execute("SELECT path FROM files WHERE path = ?", (normalized,)).fetchone()
+        if row:
+            target_files.append(row[0])
+        else:
+            print(f"Warning: {normalized} not found in logic_index.db", file=sys.stderr)
+
+    if not target_files:
+        print("[Modified]\n\nSummary: 0 files, 0 functions, 0 layers")
+        db.close()
+        return
 
     seeds = set()
-    for f in target_files:
-        seeds |= collect_file_symbols(cache, f)
+    for tf in target_files:
+        seeds |= collect_file_symbols(db, tf)
 
     upstream_levels = {}
     downstream_levels = {}
 
-    if args.direction in ("reverse", "both") and depth_up > 0:
-        reverse_index = build_reverse_index(cache, static_only=args.static_only)
-        upstream_levels = bfs(cache, reverse_index, target_files, depth_up)
+    if args.direction in ("reverse", "both"):
+        upstream_levels = bfs_callers(db, seeds, depth_up, args.static_only)
 
-    if args.direction in ("forward", "both") and depth_down > 0:
-        forward_index = build_forward_index(cache, static_only=args.static_only)
-        downstream_levels = bfs(cache, forward_index, target_files, depth_down)
+    if args.direction in ("forward", "both"):
+        downstream_levels = bfs_callees(db, seeds, depth_down, args.static_only)
 
-    print(format_output(cache, seeds, upstream_levels, downstream_levels, target_files))
+    output = format_output(db, seeds, upstream_levels, downstream_levels, target_files)
+    print(output)
+    db.close()
 
 
 if __name__ == "__main__":

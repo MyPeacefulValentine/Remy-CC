@@ -13,90 +13,56 @@ import sys
 import os
 import json
 import re
+import sqlite3
 from datetime import datetime, timedelta
 
 CLAUDE_MD = "CLAUDE.md"
 SETTINGS_FILE = os.path.join(".claude", "settings.local.json")
 TIMELINE_FILE = os.path.join(".claude", "history", "timeline.md")
 TIMELINE_VIEW_FILE = os.path.join(".claude", "history", "timeline_view.md")
-LOGIC_TREE_FILE = os.path.join(".claude", "logic_tree.md")
 LOGIC_TREE_VIEW_FILE = os.path.join(".claude", "logic_tree_view.md")
 SELECTION_FILE = os.path.join(".claude", "logic_inject_selection.json")
-CACHE_FILE = os.path.join(".claude", "logic_index.json")
+DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 
 
-def _load_density_config():
-    """Load density tier thresholds from environment variables."""
-    full_max = 200
-    compact_max = 500
-    core_max = 2000
+def _load_nav_tier_config():
+    nav_full_max = 200
+    nav_cluster_max = 2000
     try:
-        full_max = int(os.environ.get("LOGIC_DENSITY_FULL_MAX", 200))
+        nav_full_max = int(os.environ.get("NAV_TIER_FULL_MAX", 200))
     except (ValueError, TypeError):
         pass
     try:
-        compact_max = int(os.environ.get("LOGIC_DENSITY_COMPACT_MAX", 500))
+        nav_cluster_max = int(os.environ.get("NAV_TIER_CLUSTER_MAX", 2000))
     except (ValueError, TypeError):
         pass
-    try:
-        core_max = int(os.environ.get("LOGIC_DENSITY_CORE_MAX", 2000))
-    except (ValueError, TypeError):
-        pass
-
-    if any(v < 0 for v in (full_max, compact_max, core_max)):
-        print("[Injector] Warning: negative density threshold detected, using defaults", file=sys.stderr)
-        return 200, 500, 2000
-    if not (full_max <= compact_max <= core_max):
-        print("[Injector] Warning: LOGIC_DENSITY thresholds not monotonic, using defaults", file=sys.stderr)
-        return 200, 500, 2000
-    return full_max, compact_max, core_max
+    if nav_full_max < 0 or nav_cluster_max < 0:
+        return 200, 2000
+    if nav_full_max > nav_cluster_max:
+        return 200, 2000
+    return nav_full_max, nav_cluster_max
 
 
 def _get_injection_density(file_count):
-    """Return density strategy based on project file count."""
-    full_max, compact_max, core_max = _load_density_config()
-    if file_count <= full_max:
+    nav_full_max, nav_cluster_max = _load_nav_tier_config()
+    if file_count <= nav_full_max:
         return "full"
-    if file_count <= compact_max:
-        return "compact"
-    if file_count <= core_max:
-        return "core_only"
-    return "top_n"
+    if file_count <= nav_cluster_max:
+        return "cluster"
+    return "cluster_summary"
 
 
-def _find_symbol_lineno(cache_data, file_path, md_line):
-    """Extract lineno from cache for a symbol referenced in a Markdown line."""
-    sym_name = _extract_symbol_name(md_line)
-    if not sym_name or not cache_data:
+def _open_logic_db(cwd):
+    db_rel = os.environ.get("LOGIC_INDEX_DB_PATH", DB_FILE_DEFAULT)
+    db_path = os.path.join(cwd, db_rel)
+    if not os.path.exists(db_path):
         return None
-    file_data = cache_data.get(file_path)
-    if not file_data:
+    try:
+        db = sqlite3.connect(db_path)
+        db.execute("PRAGMA journal_mode=WAL")
+        return db
+    except Exception:
         return None
-    for s in file_data.get("symbols", []):
-        if s["name"] == sym_name:
-            return s.get("lineno")
-    return None
-
-
-def _extract_symbol_name(md_line):
-    """Extract symbol name from a logic_tree.md body line like '- **[f]** `name(args)`: ...'."""
-    m = re.search(r"`([^`(\[]+)", md_line)
-    if m:
-        return m.group(1).strip()
-    return None
-
-
-def _compute_caller_counts(cache_data):
-    """Compute how many callers each qualified symbol has (in-degree)."""
-    counts = {}
-    for path, data in cache_data.items():
-        if path == "_meta":
-            continue
-        for call in data.get("calls", []):
-            qualified = call.get("callee_qualified")
-            if qualified:
-                counts[qualified] = counts.get(qualified, 0) + 1
-    return counts
 
 # Registry of content to be injected.
 # Format: { "tag_name": "relative_file_path" }
@@ -285,235 +251,220 @@ def generate_timeline_view(cwd):
 
 
 def generate_logic_tree_view(cwd):
-    """Generates logic_tree_view.md by filtering logic_tree.md based on selection.json."""
-    tree_path = os.path.join(cwd, LOGIC_TREE_FILE)
+    """Generates logic_tree_view.md directly from SQLite, with cluster-based navigation."""
     view_path = os.path.join(cwd, LOGIC_TREE_VIEW_FILE)
     selection_path = os.path.join(cwd, SELECTION_FILE)
 
-    if not os.path.exists(tree_path):
-        return
-
-    if not os.path.exists(selection_path):
-        with open(tree_path, "r", encoding="utf-8") as src:
-            content = src.read()
-        with open(view_path, "w", encoding="utf-8") as dst:
-            dst.write(content)
+    db = _open_logic_db(cwd)
+    if not db:
+        if os.path.exists(view_path):
+            os.remove(view_path)
         return
 
     try:
-        with open(selection_path, "r", encoding="utf-8") as f:
-            selection = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        with open(tree_path, "r", encoding="utf-8") as src:
-            content = src.read()
-        with open(view_path, "w", encoding="utf-8") as dst:
-            dst.write(content)
-        return
+        file_count = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+        if file_count == 0:
+            db.close()
+            return
 
-    selected_files = set(
-        p.replace("\\", "/") for p in selection.get("selected_files", [])
-    )
+        selected_files = None
+        if os.path.exists(selection_path):
+            try:
+                with open(selection_path, "r", encoding="utf-8") as f:
+                    selection = json.load(f)
+                selected_files = set(
+                    p.replace("\\", "/") for p in selection.get("selected_files", [])
+                )
+            except (json.JSONDecodeError, OSError):
+                pass
 
-    with open(tree_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    header_lines = []
-    layers = []
-    current_layer = None
-    current_file = None
-    in_header = True
-
-    for line in lines:
-        if line.startswith("## 🏗️"):
-            in_header = False
-            if current_file is not None and current_layer is not None:
-                current_layer["files"].append(current_file)
-                current_file = None
-            if current_layer is not None:
-                layers.append(current_layer)
-            current_layer = {"header": line, "files": []}
-            continue
-
-        if line.startswith("### 📄"):
-            in_header = False
-            if current_file is not None and current_layer is not None:
-                current_layer["files"].append(current_file)
-            if current_layer is None:
-                current_layer = {"header": "## 🏗️ Uncategorized\n", "files": []}
-            path_match = re.search(r"`([^`]+)`", line)
-            path = path_match.group(1).replace("\\", "/") if path_match else ""
-            current_file = {"header": line, "path": path, "body": []}
-            continue
-
-        if in_header:
-            header_lines.append(line)
-        elif current_file is not None:
-            current_file["body"].append(line)
-
-    if current_file is not None and current_layer is not None:
-        current_layer["files"].append(current_file)
-    if current_layer is not None:
-        layers.append(current_layer)
-
-    total_files = sum(len(layer["files"]) for layer in layers)
-
-    if not selected_files:
+        density = _get_injection_density(file_count)
         lang = os.environ.get("REMY_LANG", "en")
-        meta = _meta_line(lang, 0, total_files)
+
+        icon_map = {
+            "class": "C", "function": "f", "struct": "S", "enum": "E",
+            "typedef": "T", "type_alias": "T", "macro": "M",
+            "namespace": "N", "interface": "I",
+        }
+
+        output = []
+        output.append("# \U0001f9e0 逻辑索引 (Logic Index)\n")
+
+        meta_row = db.execute("SELECT value FROM meta WHERE key='last_updated'").fetchone()
+        updated = meta_row[0] if meta_row else "Unknown"
+        output.append(f"> Last Updated: {updated}\n")
+        output.append("> **Symbol Types**: `[C]` Class | `[f]` Function | `[S]` Struct | `[E]` Enum | `[T]` Typedef/TypeAlias | `[M]` Macro | `[N]` Namespace | `[I]` Interface")
+        output.append("> **Tags**: `[Doc]` From Docstring/Doxygen | `[Source]` Data Source | `[Sink]` Data Sink | `[Util]` Utility | `[Test]` Test\n")
+
+        if density == "full":
+            _render_full(db, output, selected_files, file_count, lang, icon_map)
+        elif density == "cluster":
+            _render_cluster(db, output, selected_files, file_count, lang, icon_map)
+        else:
+            _render_cluster_summary(db, output, lang)
+
+        os.makedirs(os.path.dirname(view_path), exist_ok=True)
         with open(view_path, "w", encoding="utf-8") as f:
-            f.write(meta)
-            f.writelines(header_lines)
+            f.write("\n".join(output))
+    finally:
+        db.close()
+
+
+def _render_full(db, output, selected_files, file_count, lang, icon_map):
+    query = "SELECT path, layer, imports FROM files ORDER BY layer, path"
+    files = db.execute(query).fetchall()
+
+    if selected_files is not None:
+        total = len(files)
+        files = [(p, l, i) for p, l, i in files if p in selected_files]
+        if len(files) < total:
+            output.insert(4, _meta_line(lang, len(files), total))
+
+    current_layer = None
+    for path, layer, imports_json in files:
+        if layer != current_layer:
+            current_layer = layer
+            output.append(f"## \U0001f3d7️ {layer}")
+
+        output.append(f"### \U0001f4c4 `{path}`")
+        if imports_json:
+            try:
+                imports = json.loads(imports_json)
+                if imports:
+                    output.append(f"> Imports: {', '.join(imports)}")
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        symbols = db.execute(
+            "SELECT name, type, args, summary FROM symbols WHERE file_path = ? ORDER BY lineno",
+            (path,)
+        ).fetchall()
+        for name, sym_type, args, summary in symbols:
+            icon = icon_map.get(sym_type, "?")
+            display_name = f"{name}{args}" if args else name
+            desc = summary or "No summary"
+            output.append(f"- **[{icon}]** `{display_name}`: {desc}")
+        output.append("")
+
+
+def _render_cluster(db, output, selected_files, file_count, lang, icon_map):
+    clusters = db.execute(
+        "SELECT id, name, label, entry_symbols, file_count FROM clusters ORDER BY name"
+    ).fetchall()
+
+    if not clusters:
+        _render_full(db, output, selected_files, file_count, lang, icon_map)
         return
 
-    filtered_layers = []
-    selected_count = 0
-    for layer in layers:
-        kept = [fb for fb in layer["files"] if fb["path"] in selected_files]
-        if kept:
-            filtered_layers.append({"header": layer["header"], "files": kept})
-            selected_count += len(kept)
+    if selected_files is not None:
+        total_files = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+        shown = len(selected_files)
+        if shown < total_files:
+            output.insert(4, _meta_line(lang, shown, total_files))
 
-    cache_path = os.path.join(cwd, CACHE_FILE)
-    file_count = 0
-    cache_data = None
-    if os.path.exists(cache_path):
+    output.append("## 项目功能拓扑\n")
+    for cluster_id, name, label, entry_json, fc in clusters:
         try:
-            with open(cache_path, "r", encoding="utf-8") as f:
-                cache_data = json.load(f)
-            file_count = sum(1 for k in cache_data if k != "_meta")
-        except (json.JSONDecodeError, OSError):
-            pass
+            entries = json.loads(entry_json)
+        except (json.JSONDecodeError, TypeError):
+            entries = []
 
-    density = _get_injection_density(file_count)
+        display_label = label or name
+        output.append(f"### {display_label} ({fc} files)")
 
-    lang = os.environ.get("REMY_LANG", "en")
-    output = []
-    if selected_count < total_files:
-        output.append(_meta_line(lang, selected_count, total_files))
-    output.extend(header_lines)
+        entry_lines = []
+        for qualified in entries[:5]:
+            if "::" in qualified:
+                fpath, sym_name = qualified.split("::", 1)
+                row = db.execute(
+                    "SELECT args FROM symbols WHERE file_path = ? AND name = ?",
+                    (fpath, sym_name)
+                ).fetchone()
+                sig = row[0] if row and row[0] else "()"
+                entry_lines.append(f"`{sym_name}{sig}`")
+            else:
+                entry_lines.append(f"`{qualified}`")
+        if entry_lines:
+            output.append(f"入口: {', '.join(entry_lines)}")
 
-    if density == "full":
-        for layer in filtered_layers:
-            output.append(layer["header"])
-            for fb in layer["files"]:
-                output.append(fb["header"])
-                output.extend(fb["body"])
+        member_files = db.execute(
+            "SELECT file_path FROM cluster_members WHERE cluster_id = ? ORDER BY file_path",
+            (cluster_id,)
+        ).fetchall()
+        if selected_files is not None:
+            member_files = [(fp,) for (fp,) in member_files if fp in selected_files]
 
-    elif density == "compact":
-        for layer in filtered_layers:
-            output.append(layer["header"])
-            for fb in layer["files"]:
-                output.append(fb["header"])
-                for line in fb["body"]:
-                    if line.startswith("- **["):
-                        colon_pos = line.find("`: ")
-                        if colon_pos != -1:
-                            sym_part = line[:colon_pos + 1]
-                            sym_data = _find_symbol_lineno(cache_data, fb["path"], line) if cache_data else None
-                            if sym_data:
-                                output.append(f"{sym_part} L{sym_data}\n")
-                            else:
-                                output.append(f"{sym_part}\n")
-                        else:
-                            output.append(line)
-                    elif line.startswith("> Imports:"):
-                        output.append(line)
+        for (fp,) in member_files:
+            symbols = db.execute(
+                "SELECT name, type, args, summary FROM symbols WHERE file_path = ? ORDER BY lineno",
+                (fp,)
+            ).fetchall()
+            if symbols:
+                output.append(f"#### `{fp}`")
+                for sym_name, sym_type, args, summary in symbols:
+                    icon = icon_map.get(sym_type, "?")
+                    display_name = f"{sym_name}{args}" if args else sym_name
+                    desc = summary or ""
+                    if desc:
+                        output.append(f"- **[{icon}]** `{display_name}`: {desc}")
+                    else:
+                        output.append(f"- **[{icon}]** `{display_name}`")
 
-    elif density == "core_only" and cache_data:
-        core_paths = set()
-        for path, data in cache_data.items():
-            if path == "_meta":
-                continue
-            if data.get("layer") == "Core":
-                core_paths.add(path)
-        caller_counts = _compute_caller_counts(cache_data)
-        for layer in filtered_layers:
-            core_files = [fb for fb in layer["files"] if fb["path"] in core_paths]
-            if not core_files:
-                continue
-            output.append(layer["header"])
-            for fb in core_files:
-                output.append(fb["header"])
-                for line in fb["body"]:
-                    if line.startswith("- **["):
-                        colon_pos = line.find("`: ")
-                        if colon_pos != -1:
-                            sym_part = line[:colon_pos + 1]
-                            sym_name = _extract_symbol_name(line)
-                            qualified = f"{fb['path']}::{sym_name}" if sym_name else None
-                            count = caller_counts.get(qualified, 0) if qualified else 0
-                            sym_data = _find_symbol_lineno(cache_data, fb["path"], line) if cache_data else None
-                            ln = f" L{sym_data}" if sym_data else ""
-                            output.append(f"{sym_part}{ln} [called by: {count}]\n")
-                        else:
-                            output.append(line)
+        output.append("")
 
-    elif density == "top_n" and cache_data:
-        caller_counts = _compute_caller_counts(cache_data)
-        top_symbols = sorted(caller_counts.items(), key=lambda x: x[1], reverse=True)[:30]
-        if top_symbols:
-            output.append("## 🏗️ Top Symbols by Connectivity\n")
-            for qualified, count in top_symbols:
-                fpath, sym_name = qualified.split("::", 1) if "::" in qualified else (qualified, "")
-                file_layer = cache_data.get(fpath, {}).get("layer", "")
-                sym = None
-                for s in cache_data.get(fpath, {}).get("symbols", []):
-                    if s["name"] == sym_name:
-                        sym = s
-                        break
-                ln = ""
-                summary = ""
-                if sym:
-                    start = sym.get("lineno")
-                    end = sym.get("end_lineno")
-                    if start and end:
-                        ln = f" [L{start}-L{end}]"
-                    elif start:
-                        ln = f" [L{start}]"
-                    summary = sym.get("summary", "")
-                desc = f": {summary}" if summary else ""
-                output.append(f"- `{qualified}`{ln} ({file_layer}) [called by: {count}]{desc}\n")
+    output.append("> 查询任意符号签名: query_symbol(\"函数名\") | 影响分析: query_impact([\"文件\"])")
 
-    else:
-        for layer in filtered_layers:
-            output.append(layer["header"])
-            for fb in layer["files"]:
-                output.append(fb["header"])
-                output.extend(fb["body"])
 
-    os.makedirs(os.path.dirname(view_path), exist_ok=True)
-    with open(view_path, "w", encoding="utf-8") as f:
-        f.writelines(output)
+def _render_cluster_summary(db, output, lang):
+    clusters = db.execute(
+        "SELECT name, label, entry_symbols, file_count FROM clusters ORDER BY file_count DESC"
+    ).fetchall()
+
+    if not clusters:
+        output.append("(No clusters detected)")
+        return
+
+    output.append("## 项目功能拓扑 (摘要)\n")
+    for name, label, entry_json, fc in clusters:
+        display = label or name
+        output.append(f"- **{display}** ({fc} files)")
+
+    output.append("")
+    output.append("> 查询任意符号签名: query_symbol(\"函数名\") | 影响分析: query_impact([\"文件\"])")
 
 
 def _meta_line(lang, shown, total):
     if lang == "zh-CN":
-        return "> 注：逻辑索引已过滤，当前显示 {}/{} 个文件。完整索引见 `.claude/logic_tree.md`。\n\n".format(shown, total)
-    return "> Note: Logic index filtered, showing {}/{} files. Full index in `.claude/logic_tree.md`.\n\n".format(shown, total)
+        return "> 注：逻辑索引已过滤，当前显示 {}/{} 个文件。使用 `remy-cc logic-scope` 调整范围。\n\n".format(shown, total)
+    return "> Note: Logic index filtered, showing {}/{} files. Use `remy-cc logic-scope` to adjust.\n\n".format(shown, total)
 
 
 def detect_new_logic_files(cwd):
-    """Returns file paths present in logic_index.json but absent from selection.json known_files."""
+    """Returns file paths present in logic_index.db but absent from selection.json known_files."""
     selection_path = os.path.join(cwd, SELECTION_FILE)
-    cache_path = os.path.join(cwd, CACHE_FILE)
 
-    if not os.path.exists(selection_path) or not os.path.exists(cache_path):
+    if not os.path.exists(selection_path):
+        return []
+
+    db = _open_logic_db(cwd)
+    if not db:
         return []
 
     try:
         with open(selection_path, "r", encoding="utf-8") as f:
             selection = json.load(f)
-        with open(cache_path, "r", encoding="utf-8") as f:
-            cache = json.load(f)
     except (json.JSONDecodeError, OSError):
+        db.close()
         return []
 
     known = set(selection.get("known_files", []))
     if not known:
+        db.close()
         return []
 
-    cache_files = set(k for k in cache if k != "_meta")
-    return sorted(cache_files - known)
+    db_files = {r[0] for r in db.execute("SELECT path FROM files")}
+    db.close()
+    return sorted(db_files - known)
 
 
 def remove_block(content, tag):

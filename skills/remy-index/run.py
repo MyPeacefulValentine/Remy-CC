@@ -30,11 +30,9 @@ from parsers.c_cpp_parser import CCppParser
 from parsers.ts_parser import TSParser
 from struct_scan import StructScanner
 
-VERSION = "3.0.0"
-CACHE_FILE = os.path.join(".claude", "logic_index.json")
+VERSION = "4.0.0"
 DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
 CONFIG_FILE = os.path.join(".claude", "logic_index_config")
-OUTPUT_MD = os.path.join(".claude", "logic_tree.md")
 
 DEFAULT_MODEL = "glm-5"
 DEFAULT_API_URL = "https://coding.dashscope.aliyuncs.com/v1/chat/completions"
@@ -95,7 +93,7 @@ class LogicIndexer:
         self.exclusions = []
         self.layers = []
         self._load_config()
-        self.cache = self._load_cache()
+        self.db = None
         self.dirty_nodes = []
 
         self.parsers = [PythonParser(), CCppParser(), TSParser()]
@@ -176,32 +174,6 @@ class LogicIndexer:
                 if fnmatch.fnmatch(basename, clean_pattern) or fnmatch.fnmatch(rel_path, clean_pattern):
                     return True
         return False
-
-    def _load_cache(self):
-        cache_path = os.path.join(self.root_dir, CACHE_FILE)
-        if os.path.exists(cache_path):
-            try:
-                with open(cache_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    cache_version = data.get("_meta", {}).get("version", "1.4.0")
-                    if cache_version != VERSION:
-                        print(f"检测到缓存版本升级 ({cache_version} -> {VERSION})。正在重置缓存...")
-                        return {}
-                    return data
-            except Exception:
-                pass
-        return {}
-
-    def _save_cache(self):
-        cache_path = os.path.join(self.root_dir, CACHE_FILE)
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-        self.cache["_meta"] = {
-            "last_updated": datetime.now().isoformat(),
-            "model": self.model,
-            "version": VERSION
-        }
-        with open(cache_path, 'w', encoding='utf-8') as f:
-            json.dump(self.cache, f, ensure_ascii=False, indent=2)
 
     def _call_llm(self, prompt):
         if not self.api_key:
@@ -373,25 +345,31 @@ class LogicIndexer:
 
         batch_args = []
         for fp, items in batches.items():
-            file_node = self.cache.get(fp)
             ctx_summary = ""
-            if file_node and file_node.get("imports"):
-                dep_list = []
-                current_chars = 0
-                for imp_path in file_node["imports"]:
-                    cached_imp = self.cache.get(imp_path)
-                    if cached_imp:
-                        for s in cached_imp.get("symbols", []):
-                            if s.get("summary"):
-                                line = f"- {s['name']}: {s['summary']}"
-                                if current_chars + len(line) + 1 > MAX_CTX_CHARS:
-                                    print(f"Warning: Dependency context truncated for {fp} (Limit: {MAX_CTX_CHARS} chars)")
-                                    break
-                                dep_list.append(line)
-                                current_chars += len(line) + 1
-                        if current_chars > MAX_CTX_CHARS:
-                            break
-                ctx_summary = "\n".join(dep_list)
+            if self.db:
+                imports_row = self.db.execute(
+                    "SELECT imports FROM files WHERE path = ?", (fp,)
+                ).fetchone()
+                if imports_row and imports_row[0]:
+                    try:
+                        import_list = json.loads(imports_row[0])
+                    except (json.JSONDecodeError, TypeError):
+                        import_list = []
+                    if import_list:
+                        dep_list = []
+                        current_chars = 0
+                        placeholders = ','.join(['?'] * len(import_list))
+                        dep_syms = self.db.execute(
+                            f"SELECT name, summary FROM symbols WHERE file_path IN ({placeholders}) AND summary IS NOT NULL",
+                            import_list
+                        ).fetchall()
+                        for s_name, s_summary in dep_syms:
+                            line = f"- {s_name}: {s_summary}"
+                            if current_chars + len(line) + 1 > MAX_CTX_CHARS:
+                                break
+                            dep_list.append(line)
+                            current_chars += len(line) + 1
+                        ctx_summary = "\n".join(dep_list)
             batch_args.append((fp, items, ctx_summary, parser_map[fp]))
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -416,86 +394,23 @@ class LogicIndexer:
                 executor.shutdown(wait=False, cancel_futures=True)
                 raise
 
-    def generate_markdown(self):
-        git_hash = "Unknown"
-        try:
-            git_hash = subprocess.check_output(
-                ["git", "rev-parse", "--short", "HEAD"],
-                cwd=self.root_dir,
-                stderr=subprocess.DEVNULL
-            ).decode('utf-8').strip()
-        except Exception:
-            pass
-
-        lines = ["# 🧠 逻辑索引 (Logic Index)"]
-        lines.append(f"> Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        lines.append(f"> Git Commit: {git_hash}\n")
-        lines.append("> **Symbol Types**: `[C]` Class | `[f]` Function | `[S]` Struct | `[E]` Enum | `[T]` Typedef/TypeAlias | `[M]` Macro | `[N]` Namespace | `[I]` Interface")
-        lines.append("> **Tags**: `[Doc]` From Docstring/Doxygen | `[Source]` Data Source | `[Sink]` Data Sink | `[Util]` Utility | `[Test]` Test\n")
-
-        layer_groups = {}
-        for path, data in self.cache.items():
-            if path == "_meta":
-                continue
-            if not data.get("symbols"):
-                continue
-            if self._is_path_excluded(path):
-                continue
-            layer = data.get("layer", "Core")
-            layer_groups.setdefault(layer, []).append((path, data))
-
-        layer_order = [ld["name"] for ld in self.layers] + ["Core"]
-        for layer_name in layer_order:
-            if layer_name not in layer_groups:
-                continue
-            files = sorted(layer_groups[layer_name], key=lambda x: x[0])
-            lines.append(f"## 🏗️ {layer_name}")
-            for path, data in files:
-                lines.append(f"### 📄 `{path}`")
-                imports = data.get("imports", [])
-                if imports:
-                    lines.append(f"> Imports: {', '.join(imports)}")
-                for sym in data["symbols"]:
-                    icon = self._symbol_icon(sym["type"])
-                    summary = sym.get("summary", "No summary")
-                    name_display = f"{sym['name']}{sym.get('args', '')}"
-                    lines.append(f"- **[{icon}]** `{name_display}`: {summary}")
-                lines.append("")
-
-        return "\n".join(lines)
-
-    @staticmethod
-    def _symbol_icon(sym_type):
-        icons = {
-            "class": "C",
-            "function": "f",
-            "struct": "S",
-            "enum": "E",
-            "typedef": "T",
-            "type_alias": "T",
-            "macro": "M",
-            "namespace": "N",
-            "interface": "I",
-        }
-        return icons.get(sym_type, "?")
-
     def run(self):
         print("Scanning codebase...")
 
         try:
             scanner = StructScanner(self.root_dir)
             scanner.scan_all()
-            self.cache = scanner.cache
+            self.db = scanner.db
+
+            dirty_rows = self.db.execute(
+                "SELECT file_path, name FROM symbols WHERE summary IS NULL"
+            ).fetchall()
 
             dirty_by_file = {}
-            for path, file_data in self.cache.items():
-                if path == "_meta":
-                    continue
-                for sym in file_data.get("symbols", []):
-                    if not sym.get("summary"):
-                        dirty_by_file.setdefault(path, []).append(sym)
+            for fpath, sym_name in dirty_rows:
+                dirty_by_file.setdefault(fpath, []).append(sym_name)
 
-            for path, syms in dirty_by_file.items():
+            for path, sym_names in dirty_by_file.items():
                 full_path = os.path.join(self.root_dir, path)
                 parser = self._get_parser_for_file(os.path.basename(path))
                 if not parser:
@@ -507,10 +422,11 @@ class LogicIndexer:
                     continue
                 parsed = parser.parse_symbols(source, full_path)
                 seg_map = {s.name: s.source_segment for s in parsed}
-                for sym in syms:
-                    segment = seg_map.get(sym["name"], "")
+                for sym_name in sym_names:
+                    segment = seg_map.get(sym_name, "")
                     if segment:
-                        self.dirty_nodes.append((path, sym, segment, parser))
+                        sym_dict = {"name": sym_name, "summary": None}
+                        self.dirty_nodes.append((path, sym_dict, segment, parser))
 
             if self.dirty_nodes:
                 if not self.api_key:
@@ -518,19 +434,21 @@ class LogicIndexer:
                 else:
                     self.process_llm_queue()
 
+                    updates = [(sym["summary"], path, sym["name"])
+                               for path, sym, _seg, _p in self.dirty_nodes
+                               if sym.get("summary")]
+                    if updates:
+                        self.db.executemany(
+                            "UPDATE symbols SET summary = ? WHERE file_path = ? AND name = ?",
+                            updates
+                        )
+                        self.db.commit()
+
         except Exception as e:
             if not isinstance(e, FatalError):
                 print(f"Error during run: {e}")
         finally:
-            self._save_cache()
-
-            md_content = self.generate_markdown()
-            md_path = os.path.join(self.root_dir, OUTPUT_MD)
-            os.makedirs(os.path.dirname(md_path), exist_ok=True)
-            with open(md_path, 'w', encoding='utf-8') as f:
-                f.write(md_content)
-
-            print(f"\nLogic index updated at {OUTPUT_MD}")
+            print("\nLogic index updated.")
 
             dirty_path = os.path.join(self.root_dir, DIRTY_FILE)
             try:
