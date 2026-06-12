@@ -11,11 +11,10 @@ import os
 
 
 def synthesize_event_emitter_edges(db):
-    fanout_cap = 8
     try:
         fanout_cap = int(os.environ.get("SYNTH_EVENT_FANOUT_CAP", 20))
     except (ValueError, TypeError):
-        pass
+        fanout_cap = 20
 
     _synthesize_signal_pattern(db, "django_signal_send", "django_signal_connect", "django-signal", fanout_cap)
     _synthesize_signal_pattern(db, "pyqt_signal_emit", "pyqt_signal_connect", "pyqt-signal", fanout_cap)

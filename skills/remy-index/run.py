@@ -459,7 +459,7 @@ class LogicIndexer:
 
             duration = time.time() - self.stats["start_time"]
             dirty_count = len(self.dirty_nodes)
-            file_count = sum(1 for k in self.cache if k != "_meta")
+            file_count = self.db.execute("SELECT COUNT(*) FROM files").fetchone()[0] if self.db else 0
             print("\n=== Logic Indexer Stats ===")
             print(f"Version             : {VERSION}")
             print(f"Files in Index      : {file_count}")
@@ -467,6 +467,9 @@ class LogicIndexer:
             print(f"API Calls           : {self.stats['api_calls']}")
             print(f"Total Duration      : {duration:.2f}s")
             print("===========================\n")
+
+            if self.db:
+                self.db.close()
 
 
 if __name__ == "__main__":

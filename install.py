@@ -50,6 +50,7 @@ DEPLOY_FILES_MAP = {
     "remy-src/index_mcp_queries.py": "remy-src/index_mcp_queries.py",
 }
 SETTINGS_TEMPLATE = "settings.example.json"
+MCP_TEMPLATE = "remy_mcp.json"
 
 BACKUP_SUFFIX = ".bak"
 API_KEY_PLACEHOLDER = "YOUR_API_KEY_HERE"
@@ -83,6 +84,15 @@ MIGRATIONS = {
     },
 }
 
+DEPRECATED_ENV_KEYS = {
+    "LOGIC_DENSITY_FULL_MAX",
+    "LOGIC_DENSITY_COMPACT_MAX",
+    "LOGIC_DENSITY_CORE_MAX",
+}
+
+DEPRECATED_PERMISSIONS = {
+}
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 # ── Bilingual UI Messages ─────────────────────────────────────
@@ -99,6 +109,9 @@ UI = {
         "settings_merged": "  [+] settings.json (merged)",
         "settings_tpl_missing": "  [!] {name} missing, skipping settings.json merge",
         "env_new_keys": "  [i] New keys added to env (configure actual values): {keys}",
+        "env_removed_keys": "  [-] Removed deprecated env keys: {keys}",
+        "perm_removed": "  [-] Removed deprecated permissions: {keys}",
+        "mcp_registered": "  [+] MCP server registered in ~/.claude.json: {name}",
         "manifest_written": "  [+] {name}",
         "removed_old_dir": "  [-] Removed obsolete: {name}/",
         "db_migrate_notice": "  [i] Logic Index storage upgraded: JSON → SQLite.\n      Existing projects will auto-migrate on next SessionStart.",
@@ -183,6 +196,9 @@ UI = {
         "settings_merged": "  [+] settings.json (合并)",
         "settings_tpl_missing": "  [!] {name} 缺失，跳过 settings.json 合并",
         "env_new_keys": "  [i] env 中新增以下 key（需手动配置实际值）：{keys}",
+        "env_removed_keys": "  [-] 已移除废弃参数：{keys}",
+        "perm_removed": "  [-] 已移除废弃权限：{keys}",
+        "mcp_registered": "  [+] MCP 服务器已注册到 ~/.claude.json：{name}",
         "manifest_written": "  [+] {name}",
         "removed_old_dir": "  [-] 已删除旧目录：{name}/",
         "db_migrate_notice": "  [i] Logic Index 存储格式已升级：JSON → SQLite。\n      已有项目将在下次 SessionStart 时自动迁移。",
@@ -424,6 +440,13 @@ def merge_settings(template: dict, target_path: Path, claude_home: Path, lang_ov
             ext_env[key] = value
             missing_keys.append(key)
 
+    # --- env: remove deprecated keys ---
+    removed_keys = []
+    for key in DEPRECATED_ENV_KEYS:
+        if key in ext_env:
+            del ext_env[key]
+            removed_keys.append(key)
+
     # --- REMY_LANG override from --lang ---
     if lang_override:
         ext_env["REMY_LANG"] = lang_override
@@ -432,23 +455,11 @@ def merge_settings(template: dict, target_path: Path, claude_home: Path, lang_ov
     if "outputStyle" not in existing and "outputStyle" in template:
         existing["outputStyle"] = template["outputStyle"]
 
-    # --- mcpServers: key-based merge (overwrite our entry, preserve others) ---
-    tpl_mcp = template.get("mcpServers", {})
-    if tpl_mcp:
-        ext_mcp = existing.setdefault("mcpServers", {})
-        for server_name, server_conf in tpl_mcp.items():
-            ext_mcp[server_name] = server_conf
+    # --- remove stale mcpServers from settings.json (moved to ~/.claude.json) ---
+    existing.pop("mcpServers", None)
 
     # --- expand hook paths ---
     expand_hook_paths(existing, claude_home)
-
-    # --- expand mcpServers args paths ---
-    abs_prefix = str(claude_home).replace("\\", "/")
-    for _name, conf in existing.get("mcpServers", {}).items():
-        args = conf.get("args", [])
-        for i, arg in enumerate(args):
-            if isinstance(arg, str) and "~/.claude/" in arg:
-                args[i] = arg.replace("~/.claude/", abs_prefix + "/")
 
     # --- write ---
     with open(target_path, "w", encoding="utf-8") as f:
@@ -459,6 +470,8 @@ def merge_settings(template: dict, target_path: Path, claude_home: Path, lang_ov
 
     if missing_keys:
         print(_t("env_new_keys", keys=', '.join(missing_keys)))
+    if removed_keys:
+        print(_t("env_removed_keys", keys=', '.join(removed_keys)))
 
     return settings_backup
 
@@ -523,10 +536,8 @@ def remove_suite_permissions(settings: dict, template: dict) -> None:
 
 
 def migrate_permissions(settings_path: Path) -> None:
-    """Replace renamed skill permissions in settings.json."""
+    """Replace renamed and remove deprecated skill permissions in settings.json."""
     perm_map = MIGRATIONS.get("permissions", {})
-    if not perm_map:
-        return
     try:
         with open(settings_path, "r", encoding="utf-8") as f:
             settings = json.load(f)
@@ -537,7 +548,11 @@ def migrate_permissions(settings_path: Path) -> None:
         return
     migrated = []
     seen = set()
+    removed = []
     for p in perms:
+        if p in DEPRECATED_PERMISSIONS:
+            removed.append(p)
+            continue
         replacement = perm_map.get(p, p)
         if replacement not in seen:
             migrated.append(replacement)
@@ -549,6 +564,8 @@ def migrate_permissions(settings_path: Path) -> None:
             f.write("\n")
         if sys.platform != "win32":
             os.chmod(settings_path, 0o600)
+    if removed:
+        print(_t("perm_removed", keys=', '.join(removed)))
 
 
 def cleanup_old_skill_dirs(claude_home: Path) -> None:
@@ -560,6 +577,41 @@ def cleanup_old_skill_dirs(claude_home: Path) -> None:
         if old_path.exists() and new_path.exists():
             shutil.rmtree(old_path)
             print(_t("removed_old_dir", name=old_rel))
+
+
+def register_mcp_server(claude_home: Path) -> None:
+    """Register remy-index MCP server in ~/.claude.json (user-level config)."""
+    mcp_tpl_path = SCRIPT_DIR / MCP_TEMPLATE
+    if not mcp_tpl_path.exists():
+        return
+    with open(mcp_tpl_path, "r", encoding="utf-8") as f:
+        mcp_entries = json.load(f)
+
+    abs_prefix = str(claude_home).replace("\\", "/")
+    for _name, conf in mcp_entries.items():
+        args = conf.get("args", [])
+        for i, arg in enumerate(args):
+            if isinstance(arg, str) and "~/.claude/" in arg:
+                args[i] = arg.replace("~/.claude/", abs_prefix + "/")
+
+    claude_json_path = claude_home.parent / ".claude.json"
+    existing = {}
+    if claude_json_path.exists():
+        try:
+            with open(claude_json_path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        except json.JSONDecodeError:
+            pass
+
+    ext_mcp = existing.setdefault("mcpServers", {})
+    for server_name, server_conf in mcp_entries.items():
+        ext_mcp[server_name] = server_conf
+
+    with open(claude_json_path, "w", encoding="utf-8") as f:
+        json.dump(existing, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+    print(_t("mcp_registered", name=", ".join(mcp_entries.keys())))
 
 
 def prompt_language() -> str:
@@ -896,6 +948,8 @@ def do_install() -> None:
             )
         else:
             print(_t("mcp_skipped"))
+
+    register_mcp_server(claude_home)
 
     print()
     gh_available = shutil.which("gh") is not None

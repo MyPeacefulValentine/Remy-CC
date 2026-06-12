@@ -60,26 +60,16 @@
   "permissions": {
     "allow": [
       "Bash",
-      "Agent",
       "Edit",
       "ExitPlanMode",
-      "Glob",
-      "Grep",
       "Monitor",
       "NotebookEdit",
       "PowerShell",
-      "Read",
+      "ShareOnboardingGuide",
       "Skill",
-      "TaskCreate",
-      "TaskGet",
-      "TaskList",
-      "TaskUpdate",
-      "TaskStop",
-      "CronCreate",
-      "CronDelete",
-      "CronList",
       "WebFetch",
       "WebSearch",
+      "Workflow",
       "Write",
       "Skill(remy-patch)",
       "Skill(remy-debug)",
@@ -95,7 +85,8 @@
       "Skill(remy-secure)",
       "Skill(remy-testgen)",
       "Skill(remy-ci)",
-      "Skill(remy-insight)"
+      "Skill(remy-insight)",
+      "mcp__remy-index__*"
     ]
   },
   "hooks": {
@@ -181,12 +172,6 @@
         ]
       }
     ]
-  },
-  "mcpServers": {
-    "remy-index": {
-      "command": "python",
-      "args": ["~/.claude/remy-src/index_mcp_server.py"]
-    }
   },
   "outputStyle": "system-architect",
   "spinnerTipsEnabled": true

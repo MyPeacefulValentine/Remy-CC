@@ -652,11 +652,13 @@ class StructScanner:
 def scan_all(root_dir):
     scanner = StructScanner(root_dir)
     scanner.scan_all()
+    scanner.db.close()
 
 
 def scan_files(root_dir, file_paths):
     scanner = StructScanner(root_dir)
     scanner.scan_files(file_paths)
+    scanner.db.close()
 
 
 if __name__ == "__main__":

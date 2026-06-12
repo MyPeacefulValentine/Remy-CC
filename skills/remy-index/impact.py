@@ -61,15 +61,19 @@ def bfs_callers(db, target_qualified_set, max_depth, static_only=False):
     for depth in range(1, max_depth + 1):
         if not current:
             break
-        placeholders = ','.join(['?'] * len(current))
-        sql = f"""
-            SELECT DISTINCT source_file || '::' || caller
-            FROM edges
-            WHERE callee_qualified IN ({placeholders})
-            {filter_clause}
-        """
-        rows = db.execute(sql, list(current)).fetchall()
-        next_level = {r[0] for r in rows} - visited
+        current_list = list(current)
+        all_rows = set()
+        for i in range(0, len(current_list), 400):
+            chunk = current_list[i:i+400]
+            placeholders = ','.join(['?'] * len(chunk))
+            sql = f"""
+                SELECT DISTINCT source_file || '::' || caller
+                FROM edges
+                WHERE callee_qualified IN ({placeholders})
+                {filter_clause}
+            """
+            all_rows.update(r[0] for r in db.execute(sql, chunk).fetchall())
+        next_level = all_rows - visited
         if not next_level:
             break
         levels[depth] = sorted(next_level)
@@ -88,16 +92,20 @@ def bfs_callees(db, target_qualified_set, max_depth, static_only=False):
     for depth in range(1, max_depth + 1):
         if not current:
             break
-        placeholders = ','.join(['?'] * len(current))
-        sql = f"""
-            SELECT DISTINCT callee_qualified
-            FROM edges
-            WHERE source_file || '::' || caller IN ({placeholders})
-            AND callee_qualified IS NOT NULL
-            {filter_clause}
-        """
-        rows = db.execute(sql, list(current)).fetchall()
-        next_level = {r[0] for r in rows} - visited
+        current_list = list(current)
+        all_rows = set()
+        for i in range(0, len(current_list), 400):
+            chunk = current_list[i:i+400]
+            placeholders = ','.join(['?'] * len(chunk))
+            sql = f"""
+                SELECT DISTINCT callee_qualified
+                FROM edges
+                WHERE source_file || '::' || caller IN ({placeholders})
+                AND callee_qualified IS NOT NULL
+                {filter_clause}
+            """
+            all_rows.update(r[0] for r in db.execute(sql, chunk).fetchall())
+        next_level = all_rows - visited
         if not next_level:
             break
         levels[depth] = sorted(next_level)

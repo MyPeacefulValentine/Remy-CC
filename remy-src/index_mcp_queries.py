@@ -58,18 +58,22 @@ def _bfs_callers_ambiguous(db, target_set, max_depth, static_only=False):
     for depth in range(1, max_depth + 1):
         if not current:
             break
-        placeholders = ",".join(["?"] * len(current))
-        sql = f"""
-            SELECT DISTINCT source_file || '::' || caller FROM edges
-            WHERE callee_qualified IN ({placeholders}) {prov_filter}
-            UNION
-            SELECT DISTINCT e.source_file || '::' || e.caller
-            FROM edges e JOIN edge_candidates ec ON ec.edge_id = e.id
-            WHERE ec.candidate_qualified IN ({placeholders}) {prov_filter.replace('e.', 'e.')}
-        """
-        params = list(current) + list(current)
-        rows = db.execute(sql, params).fetchall()
-        next_level = {r[0] for r in rows} - visited
+        current_list = list(current)
+        all_rows = set()
+        for i in range(0, len(current_list), 400):
+            chunk = current_list[i:i+400]
+            placeholders = ",".join(["?"] * len(chunk))
+            sql = f"""
+                SELECT DISTINCT source_file || '::' || caller FROM edges
+                WHERE callee_qualified IN ({placeholders}) {prov_filter}
+                UNION
+                SELECT DISTINCT e.source_file || '::' || e.caller
+                FROM edges e JOIN edge_candidates ec ON ec.edge_id = e.id
+                WHERE ec.candidate_qualified IN ({placeholders}) {prov_filter.replace('e.', 'e.')}
+            """
+            params = chunk + chunk
+            all_rows.update(r[0] for r in db.execute(sql, params).fetchall())
+        next_level = all_rows - visited
         if not next_level:
             break
         levels[depth] = sorted(next_level)
@@ -88,19 +92,23 @@ def _bfs_callees_ambiguous(db, target_set, max_depth, static_only=False):
     for depth in range(1, max_depth + 1):
         if not current:
             break
-        placeholders = ",".join(["?"] * len(current))
-        sql = f"""
-            SELECT DISTINCT callee_qualified FROM edges
-            WHERE source_file || '::' || caller IN ({placeholders})
-            AND callee_qualified IS NOT NULL {prov_filter}
-            UNION
-            SELECT DISTINCT ec.candidate_qualified
-            FROM edges e JOIN edge_candidates ec ON ec.edge_id = e.id
-            WHERE e.source_file || '::' || e.caller IN ({placeholders}) {prov_filter}
-        """
-        params = list(current) + list(current)
-        rows = db.execute(sql, params).fetchall()
-        next_level = {r[0] for r in rows} - visited
+        current_list = list(current)
+        all_rows = set()
+        for i in range(0, len(current_list), 400):
+            chunk = current_list[i:i+400]
+            placeholders = ",".join(["?"] * len(chunk))
+            sql = f"""
+                SELECT DISTINCT callee_qualified FROM edges
+                WHERE source_file || '::' || caller IN ({placeholders})
+                AND callee_qualified IS NOT NULL {prov_filter}
+                UNION
+                SELECT DISTINCT ec.candidate_qualified
+                FROM edges e JOIN edge_candidates ec ON ec.edge_id = e.id
+                WHERE e.source_file || '::' || e.caller IN ({placeholders}) {prov_filter}
+            """
+            params = chunk + chunk
+            all_rows.update(r[0] for r in db.execute(sql, params).fetchall())
+        next_level = all_rows - visited
         if not next_level:
             break
         levels[depth] = sorted(next_level)
