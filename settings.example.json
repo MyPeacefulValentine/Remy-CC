@@ -31,6 +31,7 @@
     "ENRICHMENT_CAP": "15",
     "ENRICHMENT_CAP_LARGE": "10",
     "ENRICHMENT_SIG_MAX_CHARS": "80",
+    "NAV_MCP_MINIMAL_ENABLED": "true",
     "NAV_TIER_FULL_MAX": "200",
     "NAV_TIER_CLUSTER_MAX": "2000",
     "LOGIC_INDEX_DB_PATH": ".claude/logic_index.db",

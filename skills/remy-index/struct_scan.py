@@ -588,7 +588,7 @@ class StructScanner:
 
         self.db.execute(
             "INSERT OR REPLACE INTO meta (key, value) VALUES ('last_updated', ?)",
-            (datetime.now().isoformat(),)
+            (datetime.now().isoformat(timespec='seconds'),)
         )
         self.db.execute(
             "INSERT OR REPLACE INTO meta (key, value) VALUES ('file_count', ?)",
@@ -644,7 +644,7 @@ class StructScanner:
         self._resolve_call_edges()
         self.db.execute(
             "INSERT OR REPLACE INTO meta (key, value) VALUES ('last_updated', ?)",
-            (datetime.now().isoformat(),)
+            (datetime.now().isoformat(timespec='seconds'),)
         )
         self.db.commit()
 

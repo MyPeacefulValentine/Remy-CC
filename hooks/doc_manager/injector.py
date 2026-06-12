@@ -64,6 +64,15 @@ def _open_logic_db(cwd):
     except Exception:
         return None
 
+
+def _detect_mcp_available():
+    import importlib.util
+    claude_home = os.path.join(os.path.expanduser("~"), ".claude")
+    server_script = os.path.join(claude_home, "remy-src", "index_mcp_server.py")
+    if not os.path.exists(server_script):
+        return False
+    return importlib.util.find_spec("mcp") is not None
+
 # Registry of content to be injected.
 # Format: { "tag_name": "relative_file_path" }
 # The script injects:
@@ -267,25 +276,11 @@ def generate_logic_tree_view(cwd):
             db.close()
             return
 
-        selected_files = None
-        if os.path.exists(selection_path):
-            try:
-                with open(selection_path, "r", encoding="utf-8") as f:
-                    selection = json.load(f)
-                selected_files = set(
-                    p.replace("\\", "/") for p in selection.get("selected_files", [])
-                )
-            except (json.JSONDecodeError, OSError):
-                pass
-
-        density = _get_injection_density(file_count)
         lang = os.environ.get("REMY_LANG", "en")
-
-        icon_map = {
-            "class": "C", "function": "f", "struct": "S", "enum": "E",
-            "typedef": "T", "type_alias": "T", "macro": "M",
-            "namespace": "N", "interface": "I",
-        }
+        mcp_minimal = (
+            os.environ.get("NAV_MCP_MINIMAL_ENABLED", "true").lower() == "true"
+            and _detect_mcp_available()
+        )
 
         output = []
         output.append("# \U0001f9e0 逻辑索引 (Logic Index)\n")
@@ -293,15 +288,38 @@ def generate_logic_tree_view(cwd):
         meta_row = db.execute("SELECT value FROM meta WHERE key='last_updated'").fetchone()
         updated = meta_row[0] if meta_row else "Unknown"
         output.append(f"> Last Updated: {updated}\n")
-        output.append("> **Symbol Types**: `[C]` Class | `[f]` Function | `[S]` Struct | `[E]` Enum | `[T]` Typedef/TypeAlias | `[M]` Macro | `[N]` Namespace | `[I]` Interface")
-        output.append("> **Tags**: `[Doc]` From Docstring/Doxygen | `[Source]` Data Source | `[Sink]` Data Sink | `[Util]` Utility | `[Test]` Test\n")
 
-        if density == "full":
-            _render_full(db, output, selected_files, file_count, lang, icon_map)
-        elif density == "cluster":
-            _render_cluster(db, output, selected_files, file_count, lang, icon_map)
+        if mcp_minimal:
+            _render_mcp_minimal(db, output, lang)
         else:
-            _render_cluster_summary(db, output, lang)
+            selected_files = None
+            if os.path.exists(selection_path):
+                try:
+                    with open(selection_path, "r", encoding="utf-8") as f:
+                        selection = json.load(f)
+                    selected_files = set(
+                        p.replace("\\", "/") for p in selection.get("selected_files", [])
+                    )
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+            density = _get_injection_density(file_count)
+
+            output.append("> **Symbol Types**: `[C]` Class | `[f]` Function | `[S]` Struct | `[E]` Enum | `[T]` Typedef/TypeAlias | `[M]` Macro | `[N]` Namespace | `[I]` Interface")
+            output.append("> **Tags**: `[Doc]` From Docstring/Doxygen | `[Source]` Data Source | `[Sink]` Data Sink | `[Util]` Utility | `[Test]` Test\n")
+
+            icon_map = {
+                "class": "C", "function": "f", "struct": "S", "enum": "E",
+                "typedef": "T", "type_alias": "T", "macro": "M",
+                "namespace": "N", "interface": "I",
+            }
+
+            if density == "full":
+                _render_full(db, output, selected_files, file_count, lang, icon_map)
+            elif density == "cluster":
+                _render_cluster(db, output, selected_files, file_count, lang, icon_map)
+            else:
+                _render_cluster_summary(db, output, lang)
 
         os.makedirs(os.path.dirname(view_path), exist_ok=True)
         with open(view_path, "w", encoding="utf-8") as f:
@@ -431,6 +449,65 @@ def _render_cluster_summary(db, output, lang):
 
     output.append("")
     output.append("> 查询任意符号签名: query_symbol(\"函数名\") | 影响分析: query_impact([\"文件\"])")
+
+
+def _render_mcp_minimal(db, output, lang):
+    file_count = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+    symbol_count = db.execute("SELECT COUNT(*) FROM symbols").fetchone()[0]
+    clusters = db.execute(
+        "SELECT name, label, entry_symbols, file_count FROM clusters ORDER BY file_count DESC"
+    ).fetchall()
+
+    tpl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_minimal_template.json")
+    try:
+        with open(tpl_path, "r", encoding="utf-8") as f:
+            tpl = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        output.append("> MCP available — use query_symbol / query_callers / query_impact")
+        return
+
+    lk = "zh-CN" if lang == "zh-CN" else "en"
+
+    output.append(f"> Files: {file_count} | Symbols: {symbol_count} | Clusters: {len(clusters)}\n")
+    output.append(tpl["section_title"] + "\n")
+    output.append(tpl["intro"][lk] + "\n")
+
+    cols = tpl["table_header"][lk]
+    output.append(f"| {cols[0]} | {cols[1]} | {cols[2]} |")
+    output.append("| :-- | :-- | :-- |")
+    for tool in tpl["tools"]:
+        output.append(f"| {tool['scenario'][lk]} | {tool['call']} | {tool['purpose'][lk]} |")
+
+    output.append("")
+    output.append(tpl["usage_title"][lk])
+    for hint in tpl["usage_hints"][lk]:
+        output.append(f"- {hint}")
+
+    output.append("")
+    if clusters:
+        output.append(tpl["cluster_title"][lk] + "\n")
+        cc = tpl["cluster_columns"][lk]
+        output.append(f"| {cc[0]} | {cc[1]} | {cc[2]} |")
+        output.append("| :-- | :-- | :-- |")
+
+        for name, label, entry_json, fc in clusters:
+            display = label or name
+            entries = []
+            try:
+                raw = json.loads(entry_json) if entry_json else []
+            except (json.JSONDecodeError, TypeError):
+                raw = []
+            for qualified in raw[:3]:
+                if "::" in qualified:
+                    fpath = qualified.split("::")[0]
+                    fname = os.path.basename(fpath)
+                    if fname not in entries:
+                        entries.append(fname)
+                else:
+                    entries.append(qualified)
+            output.append(f"| {display} | {fc} | {', '.join(entries)} |")
+
+        output.append("")
 
 
 def _meta_line(lang, shown, total):

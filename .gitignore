@@ -27,5 +27,6 @@ temp_log/
 .claude/logic_tree.md
 patch_logicindex/
 tests/
+.pytest_cache/
 
 skills/remy-index/test_*.py

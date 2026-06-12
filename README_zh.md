@@ -89,7 +89,9 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | `query_impact` | 完整影响分析（等价于 `impact.py` CLI） |
 | `query_patterns` | 查询事件/回调注册关系 |
 
-安装时自动注册到 `settings.json`，Claude Code 会话启动时自动拉起。以只读模式访问 SQLite 逻辑索引。通过 `remy-cc ui` 的"MCP 服务器"分组配置参数。
+安装时自动注册到 `~/.claude.json`，Claude Code 会话启动时自动拉起。以只读模式访问 SQLite 逻辑索引。通过 `remy-cc config` 的"MCP 服务器"分组配置参数。
+
+当 MCP 服务器可用时，上下文注入系统自动切换为 **MCP Minimal 模式**——仅注入集群概览和 MCP 工具使用指引（约 1 KB），取代完整符号树（约 40 KB）。Claude 通过 `query_symbol` / `query_callers` / `query_impact` 按需查询详情。通过 `NAV_MCP_MINIMAL_ENABLED`（项目级参数，"上下文注入"分组）控制此行为。
 
 ### Skills（手动调用）
 

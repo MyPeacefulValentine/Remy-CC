@@ -34,5 +34,33 @@
   "cli_hint": {
     "zh-CN": "💡 终端命令: remy-cc update | config | logic-scope | uninstall",
     "en": "💡 Terminal: remy-cc update | config | logic-scope | uninstall"
+  },
+  "injection_mode": {
+    "label_zh": "📊 注入模式",
+    "label_en": "📊 Injection",
+    "modes": {
+      "mcp_minimal": {
+        "name_zh": "MCP Minimal（仓库细节通过 MCP 按需查询）",
+        "name_en": "MCP Minimal (details via MCP on demand)",
+        "color": "96"
+      },
+      "full": {
+        "name_zh": "Full（全量摘要注入）",
+        "name_en": "Full (all symbols injected)",
+        "color": "92"
+      },
+      "cluster": {
+        "name_zh": "Cluster（集群 + 入口符号）",
+        "name_en": "Cluster (groups + entry symbols)",
+        "color": "93"
+      },
+      "cluster_summary": {
+        "name_zh": "Summary（仅集群摘要）",
+        "name_en": "Summary (cluster names only)",
+        "color": "33"
+      }
+    },
+    "switch_hint_zh": "切换: remy-cc config <project> → NAV_MCP_MINIMAL_ENABLED",
+    "switch_hint_en": "Switch: remy-cc config <project> → NAV_MCP_MINIMAL_ENABLED"
   }
 }

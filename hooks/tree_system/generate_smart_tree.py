@@ -179,21 +179,22 @@ class TreeGenerator:
         pass
 
     # Re-implementing generation with cleaner recursion
-    def build_tree(self):
+    def build_tree(self, max_depth=None):
         self.parse_config()
         self.tree_lines = ["<project_tree>"]
+        self._global_max_depth = max_depth
 
-        # Start from root
         root_rule = self.inclusions.get('', self.inclusions.get('.', None))
         if not root_rule:
-             # Fallback if no root rule
              root_rule = {"depth": DEFAULT_DEPTH, "if_file": DEFAULT_IF_FILE}
 
-        self._recursive_build(self.root_dir, "", root_rule['depth'], root_rule['if_file'])
+        self._recursive_build(self.root_dir, "", root_rule['depth'], root_rule['if_file'], 0)
         self.tree_lines.append("</project_tree>")
         return "\n".join(self.tree_lines)
 
-    def _recursive_build(self, current_path, prefix, current_depth_quota, if_file_enabled):
+    def _recursive_build(self, current_path, prefix, current_depth_quota, if_file_enabled, level):
+        if self._global_max_depth is not None and level >= self._global_max_depth:
+            return
         try:
             items = sorted(os.listdir(current_path))
         except PermissionError:
@@ -250,7 +251,7 @@ class TreeGenerator:
             # Recurse
             if is_dir:
                 if next_depth != 0:
-                     self._recursive_build(full_path, new_prefix, next_depth, next_if_file)
+                     self._recursive_build(full_path, new_prefix, next_depth, next_if_file, level + 1)
 
 def main():
     # Ensure UTF-8 output
@@ -259,11 +260,19 @@ def main():
     except AttributeError:
         pass
 
+    max_depth = None
+    args = sys.argv[1:]
+    for i, arg in enumerate(args):
+        if arg == "--max-depth" and i + 1 < len(args):
+            try:
+                max_depth = int(args[i + 1])
+            except ValueError:
+                pass
+
     root_dir = os.getcwd()
     generator = TreeGenerator(root_dir)
 
-    # Generate tree content
-    tree_content = generator.build_tree()
+    tree_content = generator.build_tree(max_depth=max_depth)
 
     # Save to file
     output_path = os.path.join(root_dir, OUTPUT_FILE)

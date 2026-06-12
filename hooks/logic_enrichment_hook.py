@@ -9,6 +9,7 @@ import sys
 import json
 import os
 import sqlite3
+from collections import OrderedDict
 
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
@@ -160,20 +161,20 @@ def _build_enrichment(target_path, db):
         if not args_str or sig_max <= 0:
             return ""
         if len(args_str) <= sig_max:
-            return f" | {args_str}"
+            return args_str
         arg_count = args_str.count(",") + 1
-        return f" | {args_str[:sig_max]}... ({arg_count} args)"
+        return f"{args_str[:sig_max]}... ({arg_count} args)"
 
-    def _format_entry(qualified, detail):
+    def _get_sym_detail(qualified, detail):
         if "::" not in qualified:
-            return qualified
+            return None, qualified, None
         fpath, fname = qualified.split("::", 1)
         sym_row = db.execute(
             "SELECT lineno, end_lineno, args, layer FROM symbols s JOIN files f ON s.file_path = f.path WHERE s.file_path = ? AND s.name = ?",
             (fpath, fname)
         ).fetchone()
         if not sym_row:
-            return qualified
+            return fpath, fname, None
         lineno, end_lineno, args, f_layer = sym_row
         range_str = ""
         if lineno and end_lineno:
@@ -181,26 +182,50 @@ def _build_enrichment(target_path, db):
         elif lineno:
             range_str = f" [L{lineno}]"
         if detail == "full":
-            return f"{qualified}{range_str} ({f_layer}){_format_sig(args)}"
+            sig = _format_sig(args) if args else ""
+            entry_str = f"{fname}{range_str}"
+            if sig:
+                entry_str += f" | {sig}"
         elif detail == "mid":
-            return f"{qualified}{range_str} ({f_layer})"
-        return qualified
+            entry_str = f"{fname}{range_str}"
+        else:
+            entry_str = fname
+        return fpath, entry_str, f_layer
+
+    def _group_by_file(rows, detail):
+        groups = OrderedDict()
+        for (qualified,) in rows:
+            fpath, entry_str, f_layer = _get_sym_detail(qualified, detail)
+            if fpath is None:
+                groups.setdefault("?", (None, []))[1].append(entry_str)
+            else:
+                if fpath not in groups:
+                    groups[fpath] = (f_layer, [])
+                groups[fpath][1].append(entry_str)
+        parts = []
+        for fpath, (f_layer, entries) in groups.items():
+            layer_tag = f" ({f_layer})" if f_layer else ""
+            if len(entries) == 1:
+                parts.append(f"{fpath}{layer_tag}::{entries[0]}")
+            else:
+                parts.append(f"{fpath}{layer_tag}::{{{', '.join(entries)}}}")
+        return parts
 
     callees = db.execute(
         "SELECT DISTINCT callee_qualified FROM edges WHERE source_file = ? AND callee_qualified IS NOT NULL LIMIT ?",
         (target_path, active_cap)
     ).fetchall()
     if callees:
-        formatted = [_format_entry(row[0], detail_level) for row in callees]
-        parts.append(f"  Calls into: {', '.join(formatted)}")
+        grouped = _group_by_file(callees, detail_level)
+        parts.append(f"  Calls into: {', '.join(grouped)}")
 
     callers = db.execute(
         "SELECT DISTINCT source_file || '::' || caller FROM edges WHERE callee_qualified LIKE ? LIMIT ?",
         (target_path + '::%', active_cap)
     ).fetchall()
     if callers:
-        formatted = [_format_entry(row[0], detail_level) for row in callers]
-        parts.append(f"  Called by: {', '.join(formatted)}")
+        grouped = _group_by_file(callers, detail_level)
+        parts.append(f"  Called by: {', '.join(grouped)}")
 
     if len(parts) <= 1 and not callees and not callers:
         imports = []

@@ -89,7 +89,9 @@ The `remy-index` MCP server exposes 6 query tools over the Model Context Protoco
 | `query_impact` | Full impact analysis for modified files (equivalent to `impact.py` CLI) |
 | `query_patterns` | Query event/callback registration patterns |
 
-The server is registered in `settings.json` during installation and launched automatically by Claude Code at session start. It reads from the SQLite logic index (`logic_index.db`) in read-only mode. Configure via the "MCP Server" group in `remy-cc ui`.
+The server is registered in `~/.claude.json` during installation and launched automatically by Claude Code at session start. It reads from the SQLite logic index (`logic_index.db`) in read-only mode. Configure via the "MCP Server" group in `remy-cc config`.
+
+When the MCP server is available, the context injection system automatically switches to **MCP Minimal mode** — injecting only a cluster overview and MCP tool usage hints (~1 KB) instead of the full symbol tree (~40 KB). Claude uses `query_symbol` / `query_callers` / `query_impact` on demand for detailed analysis. Control this behavior with `NAV_MCP_MINIMAL_ENABLED` (project-level, "Context Injection" group).
 
 ### Skills (User-Invoked)
 

@@ -1,0 +1,67 @@
+{
+  "section_title": "## 📡 Code Intelligence (MCP Available)",
+  "intro": {
+    "zh-CN": "以下 MCP tools 提供代码语义查询，无需读取完整源文件：",
+    "en": "MCP tools provide semantic code queries without reading full source files:"
+  },
+  "table_header": {
+    "zh-CN": ["场景", "Tool", "用途"],
+    "en": ["Scenario", "Tool", "Purpose"]
+  },
+  "tools": [
+    {
+      "scenario": {"zh-CN": "定位符号", "en": "Locate symbol"},
+      "call": "query_symbol(name)",
+      "purpose": {"zh-CN": "查找函数/类的文件位置、签名、层", "en": "Find file location, signature, layer"}
+    },
+    {
+      "scenario": {"zh-CN": "函数摘要", "en": "Function summary"},
+      "call": "query_summary(name)",
+      "purpose": {"zh-CN": "获取 docstring 摘要，无需 Read 源文件", "en": "Get docstring summary without Read"}
+    },
+    {
+      "scenario": {"zh-CN": "上游调用者", "en": "Upstream callers"},
+      "call": "query_callers(symbol)",
+      "purpose": {"zh-CN": "谁调用了这个函数", "en": "Who calls this function"}
+    },
+    {
+      "scenario": {"zh-CN": "下游被调用", "en": "Downstream callees"},
+      "call": "query_callees(symbol)",
+      "purpose": {"zh-CN": "这个函数调用了谁", "en": "What does this function call"}
+    },
+    {
+      "scenario": {"zh-CN": "影响分析", "en": "Impact analysis"},
+      "call": "query_impact(files)",
+      "purpose": {"zh-CN": "修改该文件会波及哪些模块", "en": "Which modules are affected by changes"}
+    },
+    {
+      "scenario": {"zh-CN": "事件模式", "en": "Event patterns"},
+      "call": "query_patterns()",
+      "purpose": {"zh-CN": "Django/PyQt 信号连接关系", "en": "Django/PyQt signal connections"}
+    }
+  ],
+  "usage_title": {
+    "zh-CN": "**使用时机**:",
+    "en": "**When to use**:"
+  },
+  "usage_hints": {
+    "zh-CN": [
+      "了解项目结构或模块职责时 → query_symbol + query_summary（替代 Read 全文件）",
+      "评估修改影响时 → query_impact（替代手动 Grep 搜索）",
+      "追踪调用链时 → query_callers / query_callees（替代逐文件阅读）"
+    ],
+    "en": [
+      "Understanding project/module structure → query_symbol + query_summary (instead of Read)",
+      "Assessing change impact → query_impact (instead of manual Grep)",
+      "Tracing call chains → query_callers / query_callees (instead of file-by-file reading)"
+    ]
+  },
+  "cluster_title": {
+    "zh-CN": "## 集群概览",
+    "en": "## Cluster Overview"
+  },
+  "cluster_columns": {
+    "zh-CN": ["集群", "文件数", "入口文件"],
+    "en": ["Cluster", "Files", "Entry Points"]
+  }
+}

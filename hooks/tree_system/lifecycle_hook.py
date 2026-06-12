@@ -43,7 +43,7 @@ def _pad(s, target):
     return s + ' ' * max(0, target - _display_width(s))
 
 
-def _generate_banner(version, lang):
+def _generate_banner(version, lang, injection_mode=None):
     hook_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(hook_dir, BANNER_DATA_FILE)
     try:
@@ -85,6 +85,29 @@ def _generate_banner(version, lang):
 
     lines.append("")
     lines.append("  " + "─" * box_width)
+
+    if injection_mode:
+        im = data.get("injection_mode", {})
+        lk = "zh" if lang == "zh-CN" else "en"
+        lbl = im.get(f"label_{lk}", "📊 Injection")
+        modes = im.get("modes", {})
+        mode_info = modes.get(injection_mode, {})
+        mode_str = mode_info.get(f"name_{lk}", injection_mode)
+        color_code = mode_info.get("color", "0")
+        hint = im.get(f"switch_hint_{lk}", "")
+        COLOR = f'\033[{color_code}m'
+        lines.append("")
+        top_dashes = max(0, box_width - _display_width(lbl) - 5)
+        lines.append("  ┌─ " + lbl + " " + "─" * top_dashes + "┐")
+        mode_display = f"▶  {mode_str}"
+        mode_content = f"▶  {COLOR}{mode_str}{RESET}"
+        pad_mode = max(0, box_width - _display_width(mode_display) - 4)
+        lines.append("  │  " + mode_content + " " * pad_mode + "│")
+        hint_content = f"↳ {hint}"
+        pad_hint = max(0, box_width - _display_width(hint_content) - 4)
+        lines.append("  │  " + hint_content + " " * pad_hint + "│")
+        lines.append("  └" + "─" * (box_width - 2) + "┘")
+        lines.append("")
 
     cli_hint = data.get("cli_hint", {}).get(lang, "")
     if cli_hint:
@@ -141,7 +164,10 @@ def run_struct_scan(cwd):
         print(f"[StructScan] Unexpected error: {e}", file=sys.stderr)
 
 
-def maybe_launch_scope_ui(cwd):
+def maybe_launch_scope_ui(cwd, mcp_minimal=False):
+    if mcp_minimal:
+        return
+
     if not os.path.exists(SCOPE_UI_SCRIPT):
         return
 
@@ -191,25 +217,27 @@ def maybe_launch_scope_ui(cwd):
         print(f"[ScopeUI] Error: {e}", file=sys.stderr)
 
 
-def update_tree(cwd):
+def update_tree(cwd, max_depth=None):
     """
     Executes the tree generation script.
     """
-    # Resolve script path relative to this hook file, not CWD
     hook_dir = os.path.dirname(os.path.abspath(__file__))
     script_path = os.path.join(hook_dir, GENERATOR_SCRIPT)
 
     if not os.path.exists(script_path):
-        # Fail silently if script is missing to avoid blocking the session
         return
+
+    cmd = [sys.executable, script_path]
+    if max_depth is not None:
+        cmd += ["--max-depth", str(max_depth)]
 
     try:
         subprocess.run(
-            [sys.executable, script_path],
+            cmd,
             cwd=cwd,
             check=True,
-            stdout=subprocess.DEVNULL, # Silence stdout (avoid injecting context)
-            stderr=subprocess.PIPE     # Capture stderr for logging if needed
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE
         )
     except subprocess.CalledProcessError as e:
         # If generation fails, we log to stderr but don't crash the hook
@@ -238,10 +266,19 @@ def main():
         if event_name == "SessionStart":
             resume_only = "--resume-only" in sys.argv
 
-            if not resume_only:
-                maybe_launch_scope_ui(cwd)
+            import importlib.util
+            claude_home = os.path.join(os.path.expanduser("~"), ".claude")
+            server_script = os.path.join(claude_home, "remy-src", "index_mcp_server.py")
+            mcp_available = os.path.exists(server_script) and importlib.util.find_spec("mcp") is not None
+            mcp_minimal = (
+                mcp_available
+                and os.environ.get("NAV_MCP_MINIMAL_ENABLED", "true").lower() == "true"
+            )
 
-            update_tree(cwd)
+            if not resume_only:
+                maybe_launch_scope_ui(cwd, mcp_minimal=mcp_minimal)
+
+            update_tree(cwd, max_depth=2 if mcp_minimal else None)
             run_struct_scan(cwd)
 
             if not resume_only:
@@ -251,7 +288,29 @@ def main():
                 version = _get_version()
 
                 if os.environ.get("REMY_BANNER_ENABLED", "true").lower() != "false":
-                    advice = _generate_banner(version, lang)
+                    if mcp_minimal:
+                        inj_mode = "mcp_minimal"
+                    else:
+                        db_path = os.path.join(cwd, ".claude", "logic_index.db")
+                        if os.path.exists(db_path):
+                            import sqlite3 as _sql
+                            try:
+                                _db = _sql.connect(db_path)
+                                fc = _db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+                                _db.close()
+                                nav_full = int(os.environ.get("NAV_TIER_FULL_MAX", "200"))
+                                nav_cluster = int(os.environ.get("NAV_TIER_CLUSTER_MAX", "2000"))
+                                if fc <= nav_full:
+                                    inj_mode = "full"
+                                elif fc <= nav_cluster:
+                                    inj_mode = "cluster"
+                                else:
+                                    inj_mode = "cluster_summary"
+                            except Exception:
+                                inj_mode = None
+                        else:
+                            inj_mode = None
+                    advice = _generate_banner(version, lang, injection_mode=inj_mode)
                     print(json.dumps({
                         "systemMessage": advice
                     }))
@@ -263,7 +322,14 @@ def main():
             sys.exit(0)
 
         if event_name == "PreCompact":
-            update_tree(cwd)
+            import importlib.util
+            _server = os.path.join(os.path.expanduser("~"), ".claude", "remy-src", "index_mcp_server.py")
+            mcp_min = (
+                os.path.exists(_server)
+                and importlib.util.find_spec("mcp") is not None
+                and os.environ.get("NAV_MCP_MINIMAL_ENABLED", "true").lower() == "true"
+            )
+            update_tree(cwd, max_depth=2 if mcp_min else None)
             run_struct_scan(cwd)
             print(json.dumps({}))
             sys.exit(0)
