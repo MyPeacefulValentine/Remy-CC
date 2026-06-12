@@ -128,7 +128,7 @@ Gather the following context for agent prompts:
 1. **Diff**: `git diff HEAD` output for the target files (or full source if no prior version).
 2. **Source**: Full source of each function in `change_set`.
 3. **Existing tests**: List of test function names discovered in Phase 2 (to avoid duplicating coverage).
-4. **Callers/callees** (optional): If `.claude/logic_index.db` exists, run `impact.py` and include the upstream/downstream summary.
+4. **Callers/callees** (optional): If `.claude/logic_index.db` exists, run `impact.py` and include the upstream/downstream summary. MCP alternative: `query_callers` / `query_callees` tools if `remy-index` server is active.
 
 ### 2.5.2 Agent Dispatch
 

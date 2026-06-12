@@ -12,7 +12,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>&nbsp;
   <img src="https://img.shields.io/badge/Claude_Code-≥2.1.139-blueviolet" alt="Claude Code ≥2.1.139">&nbsp;
-  <img src="https://img.shields.io/badge/Python-3.7+-green.svg" alt="Python 3.7+">
+  <img src="https://img.shields.io/badge/Python-3.10+-green.svg" alt="Python 3.10+">
 </p>
 
 <p align="center">
@@ -75,6 +75,21 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | 脏文件追踪 | Edit/Write 执行后 | 记录被修改的文件路径，供下次 Read 时增量更新逻辑索引 |
 | 生命周期管理 | 会话启动/结束、上下文压缩前 | 重新生成项目树快照和语言指令文件；触发全量结构扫描以刷新符号行号和调用图；可选启动范围选择器 UI 过滤逻辑索引注入内容 |
 | 文档注入 | 按需触发 | 将项目树、逻辑索引（经范围选择过滤）和时间线引用注入 `CLAUDE.md` |
+
+### MCP 服务器（v1.3+）
+
+`remy-index` MCP 服务器通过 Model Context Protocol 暴露 6 个查询 tool，使 Claude 可直接访问代码智能图，无需启动子进程：
+
+| Tool | 用途 |
+| :--- | :--- |
+| `query_symbol` | 按名称查找符号定义 — 位置、类型、签名、层 |
+| `query_summary` | 获取符号摘要和文档字符串 |
+| `query_callers` | BFS 上游调用者（支持 `include_ambiguous` 和 `static_only`） |
+| `query_callees` | BFS 下游被调用者 |
+| `query_impact` | 完整影响分析（等价于 `impact.py` CLI） |
+| `query_patterns` | 查询事件/回调注册关系 |
+
+安装时自动注册到 `settings.json`，Claude Code 会话启动时自动拉起。以只读模式访问 SQLite 逻辑索引。通过 `remy-cc ui` 的"MCP 服务器"分组配置参数。
 
 ### Skills（手动调用）
 
@@ -165,11 +180,12 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | 要求 | 用途 |
 | :--- | :--- |
 | Claude Code CLI ≥ 2.1.139 | 事件 Hooks 和 Skill 调用 |
-| Python 3.7+ | Hook 和安装脚本 |
+| Python 3.10+ | Hook 脚本、安装器、MCP 服务器 |
 | OpenAI 兼容的 LLM API | `/remy-index` 的语义摘要生成 |
 | Conda 或 Mamba（可选） | 存在时自动注入到 Shell 环境 |
 | `gh` CLI（可选） | `/remy-reposcout` 和 `/remy-ci` GitHub Actions 模式依赖 |
 | tree-sitter Python 包（可选） | C/C++/TypeScript 的高精度解析和调用图提取 |
+| `mcp` Python 包（可选） | remy-index MCP 服务器所需（`pip install mcp`） |
 
 语言可通过 `REMY_LANG` 环境变量配置（`en` 或 `zh-CN`）。
 
@@ -215,7 +231,7 @@ python install.py --lang zh-CN   # 简体中文
 | `remy-cc verify` | 检查安装完整性 |
 | `remy-cc version` | 显示版本号 |
 
-设置编辑器提供双语界面（English / 中文），管理 10 组环境变量（语义索引、影响分析、上下文注入、时间线、后验测试、安全审计、调试、测试生成、系统、Claude Code）。项目级设置默认继承全局配置，可逐参数覆盖。
+设置编辑器提供双语界面（English / 中文），管理 12 组环境变量（语义索引、影响分析、上下文注入、时间线、后验测试、安全审计、调试、测试生成、CI/CD、仓库洞察、MCP 服务器、系统、Claude Code）。项目级设置默认继承全局配置，可逐参数覆盖。
 
 ---
 

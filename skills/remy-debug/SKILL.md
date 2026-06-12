@@ -79,6 +79,7 @@ If no parseable paths exist:
 
 1. Check: `Bash("test -f .claude/logic_index.db && echo EXISTS || echo MISSING")`.
 2. **EXISTS**: Run `Bash("python \"~/.claude/skills/remy-index/impact.py\" <suspect_file_1> <suspect_file_2> ...")`.
+    *   **MCP alternative**: If `remy-index` MCP server is active, `query_impact` / `query_callers` tools provide equivalent data without subprocess overhead.
    - If exit code = 0: record output as **Dependency Map**.
    - If exit code = 2: skip (no call graph data).
 3. **MISSING**: Skip impact analysis.

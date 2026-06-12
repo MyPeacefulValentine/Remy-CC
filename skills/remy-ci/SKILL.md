@@ -179,6 +179,7 @@ For each Error Record with a file path:
 2. **EXISTS**: Collect all unique file paths from Error Records, then run:
    ```
    Bash("python \"~/.claude/skills/remy-index/impact.py\" {file_1} {file_2} ...")
+    *   **MCP alternative**: If `remy-index` MCP server is active, `query_impact` / `query_callers` tools provide equivalent data without subprocess overhead.
    ```
    Record output as **Impact Report**.
 3. **MISSING**: Skip impact analysis.

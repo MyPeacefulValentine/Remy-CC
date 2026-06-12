@@ -21,6 +21,7 @@ Before performing verification, map the dependency context of modified files:
 
 1.  **Check**: Run `Bash("test -f .claude/logic_index.db && echo EXISTS || echo MISSING")`.
 2.  **EXISTS**: Run `Bash("python \"~/.claude/skills/remy-index/impact.py\" <modified_file_1> <modified_file_2> ...")` using files mentioned in the Change Log.
+    *   **MCP alternative**: If `remy-index` MCP server is active, `query_impact` / `query_callers` tools provide equivalent data without subprocess overhead.
     -   If exit code = 0: record the output as the **Impact Report**. Read all files listed at Downstream Depth 1 (these are consumers that may need adaptation).
     -   If exit code = 2 (no call graph data): fall through to manual path.
 3.  **MISSING or exit 2**: Use `Grep` to find files that import or call symbols from the modified files. Read those files.

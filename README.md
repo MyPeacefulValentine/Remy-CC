@@ -12,7 +12,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>&nbsp;
   <img src="https://img.shields.io/badge/Claude_Code-≥2.1.139-blueviolet" alt="Claude Code ≥2.1.139">&nbsp;
-  <img src="https://img.shields.io/badge/Python-3.7+-green.svg" alt="Python 3.7+">
+  <img src="https://img.shields.io/badge/Python-3.10+-green.svg" alt="Python 3.10+">
 </p>
 
 <p align="center">
@@ -75,6 +75,21 @@ These layers are coupled by design. Hooks maintain the context that skills depen
 | Dirty File Tracker | After Edit/Write | Records modified file paths for incremental logic index updates on the next Read |
 | Lifecycle Manager | Session start/end, pre-compaction | Regenerates the project tree snapshot and language directive; triggers full structural scan to refresh symbol line numbers and call graph; optionally launches scope selector UI for logic index injection filtering |
 | Document Injector | On demand | Injects project tree, logic index (filtered by scope selection), and timeline references into `CLAUDE.md` |
+
+### MCP Server (v1.3+)
+
+The `remy-index` MCP server exposes 6 query tools over the Model Context Protocol, giving Claude direct access to the code intelligence graph without subprocess overhead:
+
+| Tool | Purpose |
+| :--- | :--- |
+| `query_symbol` | Find symbol definitions by name — location, type, signature, layer |
+| `query_summary` | Get symbol summary and docstring |
+| `query_callers` | BFS upstream callers (supports `include_ambiguous` and `static_only`) |
+| `query_callees` | BFS downstream callees |
+| `query_impact` | Full impact analysis for modified files (equivalent to `impact.py` CLI) |
+| `query_patterns` | Query event/callback registration patterns |
+
+The server is registered in `settings.json` during installation and launched automatically by Claude Code at session start. It reads from the SQLite logic index (`logic_index.db`) in read-only mode. Configure via the "MCP Server" group in `remy-cc ui`.
 
 ### Skills (User-Invoked)
 
@@ -165,11 +180,12 @@ For small, low-risk changes, steps 3–6 can be skipped.
 | Requirement | Purpose |
 | :--- | :--- |
 | Claude Code CLI ≥ 2.1.139 | Event hooks and skill invocation |
-| Python 3.7+ | Hook and installer scripts |
+| Python 3.10+ | Hook scripts, installer, MCP server |
 | OpenAI-compatible LLM API | Semantic summarization for `/remy-index` |
 | Conda or Mamba (optional) | Auto-injected into shell environment when present |
 | `gh` CLI (optional) | Required by `/remy-reposcout` and `/remy-ci` GitHub Actions mode |
 | tree-sitter Python packages (optional) | Higher-precision C/C++/TypeScript parsing and call graph extraction |
+| `mcp` Python package (optional) | Required for the remy-index MCP server (`pip install mcp`) |
 
 Language is configurable via the `REMY_LANG` environment variable (`en` or `zh-CN`).
 
@@ -196,9 +212,10 @@ python install.py --lang zh-CN   # Simplified Chinese
 
 The installer:
 - Copies hooks, skills, output styles, and config files to `~/.claude/`
-- Merges hook registrations and environment variables into `~/.claude/settings.json` (existing values are preserved)
-- Expands hook paths to absolute paths for the current machine
+- Merges hook registrations, MCP server entries, and environment variables into `~/.claude/settings.json` (existing values are preserved)
+- Expands hook and MCP server paths to absolute paths for the current machine
 - Prompts for LLM API configuration (URL, model, API key) used by `/remy-index`
+- Optionally installs `mcp` SDK for the remy-index MCP server
 - Creates the `remy-cc` CLI command and optionally adds it to system PATH
 
 ### CLI & Configuration
@@ -215,7 +232,7 @@ After installation, the `remy-cc` command is available system-wide:
 | `remy-cc verify` | Check installation integrity |
 | `remy-cc version` | Print installed version |
 
-The settings editor provides a bilingual interface (English / 中文) for managing environment variables across 10 groups (Logic Index, Impact Analysis, Context Injection, Timeline, Post-Verify, Security Audit, Debug, Test Generation, System, Claude Code). Project-level settings inherit from global by default; individual parameters can be overridden.
+The settings editor provides a bilingual interface (English / 中文) for managing environment variables across 12 groups (Logic Index, Impact Analysis, Context Injection, Timeline, Post-Verify, Security Audit, Debug, Test Generation, CI/CD, Insight, MCP Server, System, Claude Code). Project-level settings inherit from global by default; individual parameters can be overridden.
 
 ---
 

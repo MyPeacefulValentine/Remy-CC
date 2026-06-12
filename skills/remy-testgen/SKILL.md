@@ -94,6 +94,7 @@ Generate persistent unit tests and write them into the project's test directory.
 
 1. **Check**: Run `Bash("test -f .claude/logic_index.db && echo EXISTS || echo MISSING")`.
 2. **EXISTS**: Run `Bash("python \"~/.claude/skills/remy-index/impact.py\" <target_file_1> ...")`.
+    *   **MCP alternative**: If `remy-index` MCP server is active, `query_impact` / `query_callers` tools provide equivalent data without subprocess overhead.
    - Record caller/callee context for richer test generation.
    - If exit code = 2: skip (no call graph data).
 3. **MISSING**: Skip impact analysis.

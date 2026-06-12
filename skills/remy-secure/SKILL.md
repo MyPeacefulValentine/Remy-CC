@@ -106,6 +106,7 @@ Gather context for agent prompts:
 2. **Pre-scan results**: `prescan_findings` list (so agents skip already-flagged patterns).
 3. **Impact data** (optional): If `.claude/logic_index.db` exists in the project:
    - Run: `python "~/.claude/skills/remy-index/impact.py" <changed_files...>`
+    *   **MCP alternative**: If `remy-index` MCP server is active, `query_impact` / `query_callers` tools provide equivalent data without subprocess overhead.
    - If exit code = 0: include the upstream/downstream summary in agent context.
    - If exit code ≠ 0: skip (graceful degradation).
 

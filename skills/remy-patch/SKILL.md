@@ -77,6 +77,7 @@ Although strict schema validation is disabled, you MUST internally structure you
 1.  **Map Dependencies**:
     *   **Check**: Run `Bash("test -f .claude/logic_index.db && echo EXISTS || echo MISSING")`.
     *   **EXISTS**: Run `Bash("python \"~/.claude/skills/remy-index/impact.py\" <target_file_1> <target_file_2> ...")` with the files targeted for modification. Use the output as the definitive dependency list. If exit code = 2 (no call graph data), fall through to the manual path below.
+    *   **MCP alternative**: If `remy-index` MCP server is active, `query_impact` / `query_callers` tools provide equivalent data without subprocess overhead.
     *   **MISSING or exit 2**: Use `grep` or `glob` to locate all files that import or call the `target_files`.
     *   **Read**: For every file at Upstream Depth 1 and Downstream Depth 1 in the impact output (or all grep-discovered files in the manual path):
         *   If the output includes line ranges (e.g., `[L120-L155]`) **and** the file exceeds `PRECISION_READ_THRESHOLD` lines (default: 500), use `Read(file_path, offset=start_line, limit=end_line - start_line + 1)` for each listed function. Group adjacent functions into a single Read when their ranges overlap or are within 10 lines.

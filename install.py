@@ -149,6 +149,7 @@ UI = {
         "verify_target": "  Target directory: {path}",
         "verify_ts": "  tree-sitter: {status}",
         "verify_j2": "  Jinja2: {status}",
+        "verify_mcp": "  MCP SDK: {status}",
         "verify_ts_yes": "installed",
         "verify_ts_no": "not installed (optional)",
         "verify_issues": "Found {count} issues:",
@@ -232,6 +233,7 @@ UI = {
         "verify_target": "  目标目录: {path}",
         "verify_ts": "  tree-sitter: {status}",
         "verify_j2": "  Jinja2: {status}",
+        "verify_mcp": "  MCP SDK: {status}",
         "verify_ts_yes": "已安装",
         "verify_ts_no": "未安装（可选）",
         "verify_issues": "发现 {count} 个问题：",
@@ -1047,12 +1049,20 @@ def do_verify() -> None:
     except ImportError:
         pass
 
+    mcp_available = False
+    try:
+        import mcp  # noqa: F401
+        mcp_available = True
+    except ImportError:
+        pass
+
     pyver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     print(_t("verify_header", ver=SUITE_VERSION))
     print(_t("verify_python", ver=pyver))
     print(_t("verify_target", path=claude_home))
     print(_t("verify_ts", status=_t("verify_ts_yes") if ts_available else _t("verify_ts_no")))
     print(_t("verify_j2", status=_t("verify_ts_yes") if j2_available else _t("verify_ts_no")))
+    print(_t("verify_mcp", status=_t("verify_ts_yes") if mcp_available else _t("verify_ts_no")))
     gh_available = shutil.which("gh") is not None
     print(_t("verify_gh", status=_t("verify_ts_yes") if gh_available else _t("verify_ts_no")))
 

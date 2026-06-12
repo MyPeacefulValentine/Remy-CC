@@ -30,6 +30,7 @@ Before saturating context, check whether structured call graph data is available
 *   **1a — Impact Radius Scan**: Identify the target files from the task description, then run:
     ```
     Bash("python \"~/.claude/skills/remy-index/impact.py\" <target_file_1> <target_file_2> ...")
+    *   **MCP alternative**: If `remy-index` MCP server is active, `query_impact` / `query_callers` tools provide equivalent data without subprocess overhead.
     ```
     *   If exit code = 2 (no call graph data): fall through to **Step 1-Fallback**.
     *   Otherwise: record the output as the **Impact Report**.
