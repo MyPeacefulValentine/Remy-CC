@@ -40,6 +40,12 @@
     "CLUSTER_ENTRY_COUNT": "3",
     "SYNTH_INTERFACE_FANOUT_CAP": "10",
     "SYNTH_EVENT_FANOUT_CAP": "20",
+    "MCP_SERVER_ENABLED": "true",
+    "MCP_BFS_MAX_DEPTH": "5",
+    "MCP_IMPACT_MAX_DEPTH_UP": "3",
+    "MCP_IMPACT_MAX_DEPTH_DOWN": "3",
+    "MCP_RESULT_LIMIT": "50",
+    "MCP_STATIC_ONLY_DEFAULT": "false",
     "DEBUG_MAX_HYPOTHESES": "3",
     "STRUCT_SCAN_TIMEOUT": "60",
     "TEST_GEN_EFFORT": "medium",
@@ -175,6 +181,12 @@
         ]
       }
     ]
+  },
+  "mcpServers": {
+    "remy-index": {
+      "command": "python",
+      "args": ["~/.claude/remy-src/index_mcp_server.py"]
+    }
   },
   "outputStyle": "system-architect",
   "spinnerTipsEnabled": true

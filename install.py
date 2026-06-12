@@ -46,6 +46,8 @@ DEPLOY_FILES_MAP = {
     "remy-src/logic_scope_ui.html": "remy-src/logic_scope_ui.html",
     "remy-assets/logo.svg": "remy-assets/logo.svg",
     "remy-src/patch_descriptions.py": "remy-src/patch_descriptions.py",
+    "remy-src/index_mcp_server.py": "remy-src/index_mcp_server.py",
+    "remy-src/index_mcp_queries.py": "remy-src/index_mcp_queries.py",
 }
 SETTINGS_TEMPLATE = "settings.example.json"
 
@@ -106,6 +108,10 @@ UI = {
         "j2_installed": "  [i] Jinja2 already installed, skipping",
         "j2_prompt": "Install Jinja2 (remy-inspect template rendering)? [Y/n] ",
         "j2_installing": "  Installing Jinja2 ...",
+        "mcp_installed": "  [i] MCP SDK (mcp) already installed",
+        "mcp_prompt": "  Install MCP SDK for remy-index MCP server? (requires Python 3.10+) [Y/n] ",
+        "mcp_installing": "  Installing MCP SDK ...",
+        "mcp_skipped": "  [i] MCP SDK skipped. MCP server will not start until 'pip install mcp' is run.",
         "gh_installed": "  [i] GitHub CLI (gh) already installed, skipping",
         "gh_not_found": "  [i] gh not found. Install from https://cli.github.com for /remy-ci GitHub Actions mode.\n      /remy-ci will still work with paste (--paste) or file input modes.",
         "verify_gh": "  GitHub CLI (gh): {status}",
@@ -185,6 +191,10 @@ UI = {
         "j2_installed": "  [i] Jinja2 已安装，跳过",
         "j2_prompt": "是否安装 Jinja2（post-verify 模板渲染增强）？[Y/n] ",
         "j2_installing": "  正在安装 Jinja2 ...",
+        "mcp_installed": "  [i] MCP SDK (mcp) 已安装",
+        "mcp_prompt": "  是否安装 MCP SDK 以启用 remy-index MCP 服务器？（需要 Python 3.10+）[Y/n] ",
+        "mcp_installing": "  正在安装 MCP SDK ...",
+        "mcp_skipped": "  [i] 已跳过 MCP SDK 安装。MCP 服务器将在执行 'pip install mcp' 后可用。",
         "gh_installed": "  [i] GitHub CLI (gh) 已安装，跳过",
         "gh_not_found": "  [i] 未找到 gh。请从 https://cli.github.com 安装以使用 /remy-ci 的 GitHub Actions 模式。\n      /remy-ci 仍可通过粘贴 (--paste) 或文件输入模式使用。",
         "verify_gh": "  GitHub CLI (gh): {status}",
@@ -420,8 +430,23 @@ def merge_settings(template: dict, target_path: Path, claude_home: Path, lang_ov
     if "outputStyle" not in existing and "outputStyle" in template:
         existing["outputStyle"] = template["outputStyle"]
 
+    # --- mcpServers: key-based merge (overwrite our entry, preserve others) ---
+    tpl_mcp = template.get("mcpServers", {})
+    if tpl_mcp:
+        ext_mcp = existing.setdefault("mcpServers", {})
+        for server_name, server_conf in tpl_mcp.items():
+            ext_mcp[server_name] = server_conf
+
     # --- expand hook paths ---
     expand_hook_paths(existing, claude_home)
+
+    # --- expand mcpServers args paths ---
+    abs_prefix = str(claude_home).replace("\\", "/")
+    for _name, conf in existing.get("mcpServers", {}).items():
+        args = conf.get("args", [])
+        for i, arg in enumerate(args):
+            if isinstance(arg, str) and "~/.claude/" in arg:
+                args[i] = arg.replace("~/.claude/", abs_prefix + "/")
 
     # --- write ---
     with open(target_path, "w", encoding="utf-8") as f:
@@ -845,6 +870,30 @@ def do_install() -> None:
                 [sys.executable, "-m", "pip", "install", "--user", "Jinja2"],
                 check=False,
             )
+
+    print()
+    mcp_installed = False
+    try:
+        import mcp  # noqa: F401
+        mcp_installed = True
+    except ImportError:
+        pass
+
+    if mcp_installed:
+        print(_t("mcp_installed"))
+    else:
+        try:
+            answer = input(_t("mcp_prompt")).strip().lower()
+        except EOFError:
+            answer = ""
+        if answer != "n":
+            print(_t("mcp_installing"))
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--user", "mcp"],
+                check=False,
+            )
+        else:
+            print(_t("mcp_skipped"))
 
     print()
     gh_available = shutil.which("gh") is not None
