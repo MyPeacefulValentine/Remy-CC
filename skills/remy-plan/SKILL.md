@@ -49,6 +49,13 @@ Before saturating context, check whether structured call graph data is available
     3.  **No Hallucinations**: You are FORBIDDEN from assuming implementation details without evidence.
     4.  **Reuse Scan**: For any planned new function or utility, `Grep` the project for existing implementations with similar names or purposes. If a reusable function exists, the plan MUST reference it (Modify/extend) rather than proposing a new one.
 
+*   **1e — Runtime Probes (Optional)**:
+    When static analysis (`Read`/`Grep`) is insufficient to verify a technical assumption (e.g., library API behavior, type compatibility, encoding semantics), you MAY execute a non-invasive runtime probe.
+    *   **Constraints**: Follow `system-architect.md` Section IV (Runtime Verification Protocol) — **Read-Only**, **Ephemeral** (system temp directory only), **Sandboxed** (no side-effects on import, no network calls, no package installation).
+    *   **Format**: Prefer inline execution (`Bash("python -c '...'")`). Keep probes concise and single-purpose.
+    *   **Result Usage**: Cite probe output as evidence in Table 1 (to lock a decision) or Table 3 (to confirm a contract). Probe results do NOT enter the Evidence Packet.
+    *   **Prohibition**: Do NOT use probes to test the project's own code with side-effects. Do NOT install packages or write files to the workspace.
+
 After completing Step 1, proceed to **Step 2: Recursive Ambiguity Elimination**.
 
 **Step 1-Fallback: Manual Context Saturation (no logic_index.db)**
@@ -91,6 +98,7 @@ You MUST execute the following loop until NO ambiguities remain:
     *   **Mandate**: You **MUST** invoke `Grep`/`Glob` targeting the specific keywords of the choice (e.g., if user selected "Redis", grep for "redis", "cache", "sentinel").
     *   **Read**: You **MUST** read any newly discovered configuration/utility files.
     *   **Cross-Constraint Validation**: Compare the newly locked decision against ALL previously locked decisions. If a logical contradiction exists (e.g., "use Redis" vs. prior "no new runtime dependencies"), mark the conflicting prior decision as `invalidated` and re-present it in the next loop iteration.
+    *   **Runtime Probe (Optional)**: If the chosen option involves a verifiable technical claim (e.g., "library X supports feature Y"), a runtime probe (Step 1e) may be used here to confirm feasibility before proceeding.
     *   **Blocker**: Do NOT proceed to Step 5 until these new tool outputs are visible in the context AND no contradictions remain unresolved.
 5.  **Repeat**: Go back to sub-step 1.
 
@@ -116,14 +124,16 @@ This step targets **unknown unknowns** — assumptions Claude considers obvious 
 
 2.  **Contradiction Detection**: Before presenting to the user, cross-check every assumption against every locked decision in Table 1. If a contradiction is found, flag it as a new ambiguity (do not present it as an assumption — route it directly to re-entry in sub-step 5).
 
-3.  **Conditional Scenario Probes**: For each assumption with confidence ≤ Level 4, construct a concrete scenario that illustrates the behavioral consequence of that assumption. The scenario is embedded in the `AskUserQuestion` option description (inline format).
+3.  **Runtime Probe Verification (Optional)**: For each assumption with confidence ≤ Level 4 that involves a verifiable technical fact (e.g., library behavior, API compatibility, encoding rules), attempt a runtime probe (same constraints as Step 1e). If the probe confirms the assumption, elevate it to Level 5 and remove it from the manifest — it no longer requires user confirmation. If the probe refutes it, convert it to a new ambiguity and route to Step 2 re-entry.
 
-4.  **Present to User**: Use `AskUserQuestion` to present assumptions in batches of ≤ 4 items per call, sorted by confidence (lowest first). Each item offers:
+4.  **Conditional Scenario Probes**: For each assumption with confidence ≤ Level 4 that remains after step 3 (i.e., not verifiable by runtime probe), construct a concrete scenario that illustrates the behavioral consequence of that assumption. The scenario is embedded in the `AskUserQuestion` option description (inline format).
+
+5.  **Present to User**: Use `AskUserQuestion` to present assumptions in batches of ≤ 4 items per call, sorted by confidence (lowest first). Each item offers:
     *   Option A: "确认该假设 (Confirm)" — assumption is correct.
     *   Option B: The scenario-driven alternative (for Level ≤ 4) or "否决 (Reject)" (for Level 5).
     *   User rejections or contradictions become new ambiguities.
 
-5.  **Re-entry Decision**:
+6.  **Re-entry Decision**:
     *   If ALL assumptions are confirmed and no contradictions were detected: increment `_manifest_pass`, proceed to **Step 2.9**.
     *   If any assumption was rejected or a contradiction was detected: increment `_manifest_pass`, return to **Step 2** loop to resolve the new ambiguities. After this re-entry, the loop will eventually exit again; since `_manifest_pass >= 1`, Step 2.8 is skipped and flow proceeds directly to Step 2.9.
 

@@ -48,12 +48,16 @@
     "zh-CN": [
       "了解项目结构或模块职责时 → query_symbol + query_summary（替代 Read 全文件）",
       "评估修改影响时 → query_impact（替代手动 Grep 搜索）",
-      "追踪调用链时 → query_callers / query_callees（替代逐文件阅读）"
+      "追踪调用链时 → query_callers / query_callees（替代逐文件阅读）",
+      "⚠ 当目标仅是理解函数签名或用途时，应优先调用 query_summary，而非 Read 整个源文件",
+      "⚠ 当目标是确认调用关系时，应优先调用 query_callers/query_callees，而非逐文件 Grep"
     ],
     "en": [
       "Understanding project/module structure → query_symbol + query_summary (instead of Read)",
       "Assessing change impact → query_impact (instead of manual Grep)",
-      "Tracing call chains → query_callers / query_callees (instead of file-by-file reading)"
+      "Tracing call chains → query_callers / query_callees (instead of file-by-file reading)",
+      "⚠ When your goal is to understand a function's signature or purpose, prefer query_summary over reading the full source file",
+      "⚠ When your goal is to confirm call relationships, prefer query_callers/query_callees over file-by-file grep"
     ]
   },
   "cluster_title": {

@@ -27,7 +27,23 @@ from index_mcp_queries import (
     query_patterns_impl,
 )
 
-mcp = FastMCP("remy-index")
+mcp = FastMCP(
+    "remy-index",
+    instructions=(
+        "Use this server to query code structure and call relationships in the indexed project.\n"
+        "\n"
+        "Prefer these tools over Read/Grep when your goal is to understand code:\n"
+        "- To understand a function's purpose or signature: query_summary (instead of reading the source file)\n"
+        "- To find who calls a function or what it calls: query_callers / query_callees (instead of grep)\n"
+        "- To assess which modules a file change would affect: query_impact (instead of manual search)\n"
+        "- To locate where a symbol is defined: query_symbol (instead of glob/grep)\n"
+        "\n"
+        "Do NOT use these tools when:\n"
+        "- You need to read file content before making an edit (use Read instead)\n"
+        "- You are reading configuration files, templates, or non-code assets\n"
+        "- The target file is not part of the project's code index"
+    ),
+)
 
 
 @mcp.tool()
