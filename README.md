@@ -48,13 +48,14 @@ Remy does not pursue full automation or multi-agent orchestration. Non-read-only
 
 ### Architecture
 
-The system is built on three coordinated layers:
+The system is built on four coordinated layers:
 
 - **System prompts** (`CLAUDE.md`, `style.md`, output styles) define engineering principles, communication constraints, and prohibited behaviors. They form the static behavioral baseline, loaded at session start.
 - **Runtime hooks** fire automatically on Claude Code events — before every tool call, on every user message, and at session lifecycle boundaries. They re-inject behavioral rules to counteract instruction decay, normalize paths and shell environments, enrich file reads with caller/callee context from the logic index, and keep the project tree snapshot current. Hooks are the continuous enforcement layer: they run without user intervention.
+- **MCP server** (`remy-src/index_mcp_server.py`) is a stdio-based Model Context Protocol server launched automatically at session start. It exposes 6 code intelligence query tools (`query_symbol`, `query_callers`, `query_callees`, `query_impact`, `query_summary`, `query_patterns`), giving Claude direct access to the semantic code graph without subprocess overhead. When available, the injection system switches to MCP Minimal mode (~1 KB) instead of injecting the full symbol tree (~40 KB).
 - **Skills** are slash commands (`/remy-plan`, `/remy-patch`, `/remy-audit`, etc.) that you invoke manually to execute structured, multi-step development tasks. Each skill defines its own workflow with explicit inputs, outputs, and stop conditions.
 
-These layers are coupled by design. Hooks maintain the context that skills depend on — file tree, semantic code index, and session history are all updated automatically through lifecycle events. In the other direction, skills produce artifacts (task packets, changelogs, audit reports) that hooks validate at tool-call time. For example, `/remy-plan` writes a task packet that constrains which files `/remy-patch` is allowed to edit, and `pre_tool_guard` enforces that boundary on every `Edit` call.
+These layers are coupled by design. Hooks maintain the context that skills depend on — file tree, semantic code index, and session history are all updated automatically through lifecycle events. The MCP server and hooks share the SQLite database (`logic_index.db`) with WAL-mode concurrency. Skills produce artifacts (task packets, changelogs, audit reports) that hooks validate at tool-call time. For example, `/remy-plan` writes a task packet that constrains which files `/remy-patch` is allowed to edit, and `pre_tool_guard` enforces that boundary on every `Edit` call.
 
 ### Prompts (Static Rules)
 
@@ -214,7 +215,8 @@ python install.py --lang zh-CN   # Simplified Chinese
 
 The installer:
 - Copies hooks, skills, output styles, and config files to `~/.claude/`
-- Merges hook registrations, MCP server entries, and environment variables into `~/.claude/settings.json` (existing values are preserved)
+- Merges hook registrations and environment variables into `~/.claude/settings.json` (existing values are preserved)
+- Registers the remy-index MCP server in `~/.claude.json`
 - Expands hook and MCP server paths to absolute paths for the current machine
 - Prompts for LLM API configuration (URL, model, API key) used by `/remy-index`
 - Optionally installs `mcp` SDK for the remy-index MCP server
@@ -234,7 +236,7 @@ After installation, the `remy-cc` command is available system-wide:
 | `remy-cc verify` | Check installation integrity |
 | `remy-cc version` | Print installed version |
 
-The settings editor provides a bilingual interface (English / 中文) for managing environment variables across 12 groups (Logic Index, Impact Analysis, Context Injection, Timeline, Post-Verify, Security Audit, Debug, Test Generation, CI/CD, Insight, MCP Server, System, Claude Code). Project-level settings inherit from global by default; individual parameters can be overridden.
+The settings editor provides a bilingual interface (English / 中文) for managing environment variables across 13 groups (Logic Index, Impact Analysis, Context Injection, Timeline, Post-Verify, Security Audit, Debug, Test Generation, CI/CD, Insight, MCP Server, System, Claude Code). Project-level settings inherit from global by default; individual parameters can be overridden.
 
 ---
 

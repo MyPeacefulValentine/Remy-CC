@@ -48,13 +48,14 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 ### 整体架构
 
-整个系统由三个协作层构成：
+整个系统由四个协作层构成：
 
 - **系统提示词**（`CLAUDE.md`、`style.md`、输出风格定义）规定了工程原则、沟通约束和禁止行为，构成会话启动时加载的静态行为基线。
 - **运行时钩子**（hooks）在 Claude Code 事件上自动触发——每次工具调用前、每条用户消息发送时、以及会话生命周期的关键节点。它们负责重新注入行为规则以对抗指令衰减、规范路径和 Shell 环境、在文件读取时追加调用者/被调用者上下文，以及保持项目文件树快照的时效性。钩子是持续执行的约束层，无需用户介入。
+- **MCP 服务器**（`remy-src/index_mcp_server.py`）是基于 stdio 的 Model Context Protocol 服务器，会话启动时自动拉起。暴露 6 个代码智能查询 tool（`query_symbol`、`query_callers`、`query_callees`、`query_impact`、`query_summary`、`query_patterns`），使 Claude 可直接访问语义代码图，无需启动子进程。可用时，注入系统自动切换为 MCP Minimal 模式（约 1 KB），取代完整符号树（约 40 KB）。
 - **技能**（skills）是需要手动调用的斜杠命令（`/remy-plan`、`/remy-patch`、`/remy-audit` 等），用于执行结构化的多步骤开发任务。每个技能都定义了明确的输入、输出和停止条件。
 
-这三层之间存在设计上的耦合。钩子负责维护技能所依赖的上下文——文件树、语义代码索引、会话历史都通过生命周期事件自动更新。反过来，技能产出的工件（任务包、变更日志、审计报告）也会被钩子在工具调用时校验。例如，`/remy-plan` 写入的任务包会约束 `/remy-patch` 允许编辑的文件范围，而 `pre_tool_guard` 钩子在每次 `Edit` 调用时执行这一边界检查。
+这四层之间存在设计上的耦合。钩子负责维护技能所依赖的上下文——文件树、语义代码索引、会话历史都通过生命周期事件自动更新。MCP 服务器与钩子共享 SQLite 数据库（`logic_index.db`，WAL 模式并发读）。反过来，技能产出的工件（任务包、变更日志、审计报告）也会被钩子在工具调用时校验。例如，`/remy-plan` 写入的任务包会约束 `/remy-patch` 允许编辑的文件范围，而 `pre_tool_guard` 钩子在每次 `Edit` 调用时执行这一边界检查。
 
 ### Prompts（静态规则）
 
@@ -215,7 +216,8 @@ python install.py --lang zh-CN   # 简体中文
 安装脚本执行以下操作：
 - 将 Hooks、Skills、输出风格和配置文件复制到 `~/.claude/`
 - 将 Hook 注册和环境变量合并到 `~/.claude/settings.json`（不覆盖已有值）
-- 将 Hook 路径展开为当前机器的绝对路径
+- 将 remy-index MCP 服务器注册到 `~/.claude.json`
+- 将 Hook 和 MCP 服务器路径展开为当前机器的绝对路径
 - 交互式配置 `/remy-index` 使用的 LLM API（URL、模型、API Key）
 - 创建 `remy-cc` CLI 命令，可选将其加入系统 PATH
 
@@ -233,7 +235,7 @@ python install.py --lang zh-CN   # 简体中文
 | `remy-cc verify` | 检查安装完整性 |
 | `remy-cc version` | 显示版本号 |
 
-设置编辑器提供双语界面（English / 中文），管理 12 组环境变量（语义索引、影响分析、上下文注入、时间线、后验测试、安全审计、调试、测试生成、CI/CD、仓库洞察、MCP 服务器、系统、Claude Code）。项目级设置默认继承全局配置，可逐参数覆盖。
+设置编辑器提供双语界面（English / 中文），管理 13 组环境变量（语义索引、影响分析、上下文注入、时间线、后验测试、安全审计、调试、测试生成、CI/CD、仓库洞察、MCP 服务器、系统、Claude Code）。项目级设置默认继承全局配置，可逐参数覆盖。
 
 ---
 
