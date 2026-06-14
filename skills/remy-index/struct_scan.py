@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import sqlite3
 import fnmatch
@@ -639,6 +640,16 @@ class StructScanner:
             "INSERT OR REPLACE INTO meta (key, value) VALUES ('file_count', ?)",
             (str(len(scanned_paths)),)
         )
+        try:
+            head = subprocess.check_output(
+                ['git', 'rev-parse', 'HEAD'], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            self.db.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('source_commit', ?)",
+                (head,)
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            pass
         self.db.commit()
 
     def scan_files(self, file_paths):
