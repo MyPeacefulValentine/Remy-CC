@@ -35,19 +35,22 @@ from index_mcp_queries import (
 )
 
 _DB_REL_DEFAULT = os.path.join(".claude", "logic_index.db")
-_freshness_cache = None
+_freshness_warning = ""
 
 
-def _check_freshness():
-    global _freshness_cache
-    if _freshness_cache is not None:
-        return _freshness_cache
+def _init_freshness():
+    """Probe index staleness at startup (before the event loop).
+
+    subprocess.run with pipe capture deadlocks inside asyncio's
+    ProactorEventLoop on Windows, so all subprocess calls MUST happen
+    here — never inside a tool handler.
+    """
+    global _freshness_warning
 
     db_rel = os.environ.get("LOGIC_INDEX_DB_PATH", _DB_REL_DEFAULT)
     db_path = os.path.join(os.getcwd(), db_rel)
     if not os.path.exists(db_path):
-        _freshness_cache = ""
-        return ""
+        return
 
     db = sqlite3.connect(db_path, timeout=5)
     db.execute("PRAGMA journal_mode=WAL")
@@ -72,19 +75,16 @@ def _check_freshness():
                 )
                 dirty = [l for l in status.stdout.splitlines() if l.strip() and not l.startswith("??")]
                 if not dirty:
-                    _freshness_cache = ""
-                    return ""
+                    return
                 rate = len(dirty) / max(total, 1)
                 if rate > 0.5:
-                    _freshness_cache = f"[Warning: index may be stale — {len(dirty)} files modified since last scan. Consider running /remy-index.]"
+                    _freshness_warning = f"[Warning: index may be stale — {len(dirty)} files modified since last scan. Consider running /remy-index.]"
                 elif rate > 0.2:
-                    _freshness_cache = f"[Warning: index may be stale — {len(dirty)} files modified since last scan. Consider running /remy-index.]"
-                else:
-                    _freshness_cache = ""
-                return _freshness_cache
+                    _freshness_warning = f"[Warning: index may be stale — {len(dirty)} files modified since last scan. Consider running /remy-index.]"
+                return
             elif stored_row:
-                _freshness_cache = f"[Warning: index built at commit {stored_row[0][:8]}, current HEAD is {head[:8]}. Run /remy-index to rebuild.]"
-                return _freshness_cache
+                _freshness_warning = f"[Warning: index built at commit {stored_row[0][:8]}, current HEAD is {head[:8]}. Run /remy-index to rebuild.]"
+                return
             else:
                 raise ValueError("no stored commit")
         except (FileNotFoundError, ValueError, subprocess.TimeoutExpired):
@@ -92,8 +92,7 @@ def _check_freshness():
 
         all_files = db.execute("SELECT path, struct_hash FROM files").fetchall()
         if not all_files:
-            _freshness_cache = ""
-            return ""
+            return
 
         sample_size = min(10, max(1, math.ceil(len(all_files) * 0.1)))
         sample = random.sample(all_files, sample_size)
@@ -112,12 +111,9 @@ def _check_freshness():
 
         rate = mismatches / sample_size
         if rate > 0.5:
-            _freshness_cache = f"[Warning: index may be stale — {mismatches}/{sample_size} sampled files differ. Run /remy-index to rebuild.]"
+            _freshness_warning = f"[Warning: index may be stale — {mismatches}/{sample_size} sampled files differ. Run /remy-index to rebuild.]"
         elif rate > 0.2:
-            _freshness_cache = f"[Warning: index may be stale — {mismatches}/{sample_size} sampled files differ. Consider running /remy-index.]"
-        else:
-            _freshness_cache = ""
-        return _freshness_cache
+            _freshness_warning = f"[Warning: index may be stale — {mismatches}/{sample_size} sampled files differ. Consider running /remy-index.]"
     finally:
         db.close()
 
@@ -125,10 +121,10 @@ def _check_freshness():
 def _with_freshness(result):
     if result.startswith("Error:"):
         return result
-    warning = _check_freshness()
-    if warning:
-        return f"{warning}\n\n{result}"
+    if _freshness_warning:
+        return f"{_freshness_warning}\n\n{result}"
     return result
+
 
 mcp = FastMCP(
     "remy-index",
@@ -200,4 +196,5 @@ def query_flow(symbols: list[str], max_depth: int = 15, max_visited: int = 2000,
 
 
 if __name__ == "__main__":
+    _init_freshness()
     mcp.run(transport="stdio")
