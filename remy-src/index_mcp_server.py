@@ -26,6 +26,7 @@ from index_mcp_queries import (
     query_impact_impl,
     query_patterns_impl,
     query_search_impl,
+    query_flow_impl,
 )
 
 mcp = FastMCP(
@@ -87,6 +88,12 @@ def query_patterns(pattern_type: str = "", signal_name: str = "", file: str = ""
 def query_search(text: str, limit: int = 10, file_hint: str = "") -> str:
     """Fuzzy search symbols by name. Three-tier fallback: FTS5 prefix → LIKE substring → edit-distance. Use when you don't know the exact symbol name."""
     return query_search_impl(text, limit, file_hint or "")
+
+
+@mcp.tool()
+def query_flow(symbols: list[str], max_depth: int = 15, max_visited: int = 2000, static_only: bool = False) -> str:
+    """Find call paths among named symbols via bidirectional BFS. Supports qualified syntax: bare name, file/path:name, or Class.method."""
+    return query_flow_impl(symbols, max_depth, max_visited, static_only)
 
 
 if __name__ == "__main__":

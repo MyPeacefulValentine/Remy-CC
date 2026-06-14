@@ -4,6 +4,7 @@ import difflib
 import os
 import sys
 import sqlite3
+from collections import defaultdict
 
 _IMPACT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "remy-index")
 sys.path.insert(0, _IMPACT_DIR)
@@ -38,7 +39,8 @@ MCP_IMPACT_MAX_DEPTH_UP = _env_int("MCP_IMPACT_MAX_DEPTH_UP", 3)
 MCP_IMPACT_MAX_DEPTH_DOWN = _env_int("MCP_IMPACT_MAX_DEPTH_DOWN", 3)
 MCP_RESULT_LIMIT = _env_int("MCP_RESULT_LIMIT", 50)
 MCP_STATIC_ONLY_DEFAULT = _env_bool("MCP_STATIC_ONLY_DEFAULT", False)
-SEARCH_LIKE_TIMEOUT_MS = _env_int("SEARCH_LIKE_TIMEOUT_MS", 100)
+FLOW_MAX_DEPTH = _env_int("FLOW_MAX_DEPTH", 15)
+FLOW_MAX_VISITED = _env_int("FLOW_MAX_VISITED", 2000)
 
 
 def _open_db():
@@ -507,5 +509,310 @@ def query_search_impl(text, limit=10, file_hint=""):
             loc = f"L{lineno}" if lineno else ""
             lines.append(f"  [{stype}] {fpath}::{name}  {fpath}:{loc} ({layer})")
         return "\n".join(lines)
+    finally:
+        db.close()
+
+
+def _load_graph(db, static_only=False):
+    prov_filter = "AND provenance IS NULL" if static_only else ""
+    rows = db.execute(
+        f"SELECT source_file, caller, callee_qualified, provenance, via "
+        f"FROM edges WHERE callee_qualified IS NOT NULL {prov_filter}"
+    ).fetchall()
+
+    sym_rows = db.execute(
+        "SELECT id, file_path || '::' || name, file_path, name, lineno, type "
+        "FROM symbols"
+    ).fetchall()
+
+    name_to_id = {}
+    id_to_info = {}
+    for sid, qualified, fpath, sname, lineno, stype in sym_rows:
+        name_to_id[qualified] = sid
+        id_to_info[sid] = (qualified, fpath, sname, lineno, stype)
+
+    adj_fwd = defaultdict(list)
+    adj_bwd = defaultdict(list)
+    skipped = 0
+    for source_file, caller, callee_qualified, provenance, via in rows:
+        src_q = f"{source_file}::{caller}"
+        src_id = name_to_id.get(src_q)
+        tgt_id = name_to_id.get(callee_qualified)
+        if src_id is None or tgt_id is None:
+            skipped += 1
+            continue
+        adj_fwd[src_id].append((tgt_id, provenance, via))
+        adj_bwd[tgt_id].append((src_id, provenance, via))
+
+    return adj_fwd, adj_bwd, name_to_id, id_to_info, skipped
+
+
+def _bidir_bfs(src_id, tgt_id, adj_fwd, adj_bwd, max_depth, max_visited):
+    if src_id == tgt_id:
+        return [(src_id, None, None)]
+
+    fwd_parent = {src_id: (None, None, None)}
+    bwd_parent = {tgt_id: (None, None, None)}
+    front_f = [src_id]
+    front_b = [tgt_id]
+
+    for _depth in range(max_depth):
+        if len(fwd_parent) + len(bwd_parent) > max_visited:
+            return None
+        if not front_f and not front_b:
+            return None
+
+        next_f = []
+        for nid in front_f:
+            for (t, prov, via) in adj_fwd.get(nid, []):
+                if t not in fwd_parent:
+                    fwd_parent[t] = (nid, prov, via)
+                    next_f.append(t)
+                if t in bwd_parent:
+                    return _reconstruct_path(t, fwd_parent, bwd_parent, adj_fwd)
+        front_f = next_f
+
+        next_b = []
+        for nid in front_b:
+            for (s, prov, via) in adj_bwd.get(nid, []):
+                if s not in bwd_parent:
+                    bwd_parent[s] = (nid, prov, via)
+                    next_b.append(s)
+                if s in fwd_parent:
+                    return _reconstruct_path(s, fwd_parent, bwd_parent, adj_fwd)
+        front_b = next_b
+
+    return None
+
+
+def _reconstruct_path(meet, fwd_parent, bwd_parent, adj_fwd):
+    fwd_half = []
+    cur = meet
+    while cur is not None:
+        parent, prov, via = fwd_parent[cur]
+        fwd_half.append((cur, prov, via))
+        cur = parent
+    fwd_half.reverse()
+
+    bwd_half = []
+    cur_bwd = bwd_parent[meet][0]
+    while cur_bwd is not None:
+        parent, _prov, _via = bwd_parent[cur_bwd]
+        bwd_half.append(cur_bwd)
+        cur_bwd = parent
+
+    result = list(fwd_half)
+    prev_id = meet
+    for nid in bwd_half:
+        edge_prov = None
+        edge_via = None
+        for (t, ep, ev) in adj_fwd.get(prev_id, []):
+            if t == nid:
+                edge_prov = ep
+                edge_via = ev
+                break
+        result.append((nid, edge_prov, edge_via))
+        prev_id = nid
+
+    return result
+
+
+def _resolve_flow_symbol(sym, db, name_to_id, adj_fwd, adj_bwd, resolved_ids, all_tokens):
+    if "/" in sym and ":" in sym:
+        idx = sym.rfind(":")
+        file_part = sym[:idx]
+        name_part = sym[idx + 1:]
+        rows = db.execute(
+            "SELECT file_path || '::' || name FROM symbols "
+            "WHERE file_path LIKE ? AND (name = ? OR short_name = ?)",
+            (f"%{file_part}%", name_part, name_part),
+        ).fetchall()
+        if rows:
+            return name_to_id.get(rows[0][0]), rows[0][0], False
+        return None, sym, False
+
+    if "." in sym or "::" in sym:
+        sep = "::" if "::" in sym else "."
+        parts = sym.rsplit(sep, 1)
+        class_hint = parts[0]
+        method_name = parts[1]
+        rows = db.execute(
+            "SELECT file_path || '::' || name FROM symbols "
+            "WHERE (name = ? OR short_name = ?)",
+            (method_name, method_name),
+        ).fetchall()
+        candidates = [(q,) for (q,) in rows if class_hint.lower() in q.lower()]
+        if candidates:
+            return name_to_id.get(candidates[0][0]), candidates[0][0], False
+        if rows:
+            return name_to_id.get(rows[0][0]), rows[0][0], len(rows) > 1
+        return None, sym, False
+
+    rows = db.execute(
+        "SELECT file_path || '::' || name FROM symbols "
+        "WHERE name = ? OR short_name = ?",
+        (sym, sym),
+    ).fetchall()
+
+    if not rows:
+        return None, sym, False
+    if len(rows) == 1:
+        return name_to_id.get(rows[0][0]), rows[0][0], False
+
+    candidates = [(q, name_to_id.get(q)) for (q,) in rows if name_to_id.get(q) is not None]
+    if not candidates:
+        return name_to_id.get(rows[0][0]), rows[0][0], True
+    if len(candidates) == 1:
+        return candidates[0][1], candidates[0][0], False
+
+    if resolved_ids:
+        for q, sid in candidates:
+            reachable = set()
+            frontier = [sid]
+            for _ in range(2):
+                nxt = []
+                for n in frontier:
+                    for (t, _, _) in adj_fwd.get(n, []):
+                        if t not in reachable:
+                            reachable.add(t)
+                            nxt.append(t)
+                    for (t, _, _) in adj_bwd.get(n, []):
+                        if t not in reachable:
+                            reachable.add(t)
+                            nxt.append(t)
+                frontier = nxt
+            if reachable & resolved_ids:
+                return sid, q, False
+
+    other_tokens = {t.lower() for t in all_tokens if t.lower() != sym.lower()}
+    if other_tokens:
+        for q, sid in candidates:
+            q_lower = q.lower()
+            if any(tok in q_lower for tok in other_tokens):
+                return sid, q, False
+
+    degree_list = []
+    for q, sid in candidates:
+        deg = len(adj_fwd.get(sid, [])) + len(adj_bwd.get(sid, []))
+        degree_list.append((deg, len(q), sid, q))
+    degree_list.sort(key=lambda x: (-x[0], x[1]))
+    chosen = degree_list[0]
+    return chosen[2], chosen[3], len(degree_list) > 1
+
+
+def _format_flow(resolved, segments, id_to_info, static_only, max_depth):
+    total_connected = sum(1 for s in segments if s is not None)
+    if total_connected == 0:
+        return "No connected paths found among the queried symbols."
+
+    partial = total_connected < len(segments)
+    if partial:
+        header = f"## Flow (partial — {total_connected + 1}/{len(resolved)} symbols connected)\n"
+    else:
+        header = "## Flow (call path among queried symbols)\n"
+    lines = [header]
+    step = 1
+
+    for i, (sym_id, sym_qualified, ambiguous) in enumerate(resolved):
+        if sym_id is None:
+            lines.append(f"\n[Unresolved: '{sym_qualified}' not found in index]\n")
+            continue
+
+        if i > 0 and segments[i - 1] is None:
+            prev_name = resolved[i - 1][1].split("::")[-1] if "::" in resolved[i - 1][1] else resolved[i - 1][1]
+            cur_name = sym_qualified.split("::")[-1] if "::" in sym_qualified else sym_qualified
+            lines.append(f"\n[Break: pair ({prev_name}, {cur_name}) not connected within depth={max_depth}]")
+            if static_only:
+                lines.append("[Note: static_only=True excludes synthesized paths]")
+            lines.append("")
+
+        if i == 0 or segments[i - 1] is None:
+            info = id_to_info.get(sym_id)
+            if info:
+                _, fpath, sname, lineno, _ = info
+                loc = f":{lineno}" if lineno else ""
+                amb_note = " [ambiguous: resolved by edge_count]" if ambiguous else ""
+                lines.append(f"{step}. {sname} ({fpath}{loc}){amb_note}")
+                step += 1
+
+        if i < len(segments) and segments[i] is not None:
+            path = segments[i]
+            for j in range(1, len(path)):
+                nid, prov, via = path[j]
+                if prov == "heuristic":
+                    edge_label = f"synthesized [via: {via}]" if via else "synthesized"
+                elif prov == "ambiguous":
+                    edge_label = "call [ambiguous resolution]"
+                else:
+                    edge_label = "call"
+                lines.append(f"   ↓ {edge_label}")
+                info = id_to_info.get(nid)
+                if info:
+                    _, fpath, sname, lineno, _ = info
+                    loc = f":{lineno}" if lineno else ""
+                    amb_note = ""
+                    if j == len(path) - 1 and i + 1 < len(resolved) and resolved[i + 1][2]:
+                        amb_note = " [ambiguous: resolved by edge_count]"
+                    lines.append(f"{step}. {sname} ({fpath}{loc}){amb_note}")
+                    step += 1
+
+    return "\n".join(lines)
+
+
+def query_flow_impl(symbols, max_depth=None, max_visited=None, static_only=False):
+    if not symbols or len(symbols) < 2:
+        return "Error: query_flow requires at least 2 symbols."
+
+    if max_depth is None:
+        max_depth = FLOW_MAX_DEPTH
+    if max_visited is None:
+        max_visited = FLOW_MAX_VISITED
+    if static_only is None:
+        static_only = MCP_STATIC_ONLY_DEFAULT
+
+    db = _open_db()
+    if not db:
+        return _DB_NOT_FOUND
+    try:
+        adj_fwd, adj_bwd, name_to_id, id_to_info, _skipped = _load_graph(db, static_only)
+        if not adj_fwd and not adj_bwd:
+            return "No edges in index. Run struct_scan to build the call graph."
+
+        all_tokens = []
+        for sym in symbols:
+            if "/" in sym and ":" in sym:
+                all_tokens.append(sym.rsplit(":", 1)[-1])
+            elif "." in sym:
+                all_tokens.extend(sym.split("."))
+            elif "::" in sym:
+                all_tokens.extend(sym.split("::"))
+            else:
+                all_tokens.append(sym)
+
+        resolved = []
+        resolved_ids = set()
+        for sym in symbols:
+            sid, qualified, ambiguous = _resolve_flow_symbol(
+                sym, db, name_to_id, adj_fwd, adj_bwd, resolved_ids, all_tokens
+            )
+            resolved.append((sid, qualified, ambiguous))
+            if sid is not None:
+                resolved_ids.add(sid)
+
+        unresolved = [r[1] for r in resolved if r[0] is None]
+        if len(unresolved) == len(resolved):
+            return f"No symbols resolved: {', '.join(unresolved)}"
+
+        segments = []
+        for i in range(len(resolved) - 1):
+            src_id = resolved[i][0]
+            tgt_id = resolved[i + 1][0]
+            if src_id is None or tgt_id is None:
+                segments.append(None)
+                continue
+            path = _bidir_bfs(src_id, tgt_id, adj_fwd, adj_bwd, max_depth, max_visited)
+            segments.append(path)
+
+        return _format_flow(resolved, segments, id_to_info, static_only, max_depth)
     finally:
         db.close()
