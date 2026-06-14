@@ -666,10 +666,12 @@ def _resolve_flow_symbol(sym, db, name_to_id, adj_fwd, adj_bwd, resolved_ids, al
         return candidates[0][1], candidates[0][0], False
 
     if resolved_ids:
+        connected = []
         for q, sid in candidates:
             reachable = set()
             frontier = [sid]
-            for _ in range(2):
+            min_depth = None
+            for d in range(1, 3):
                 nxt = []
                 for n in frontier:
                     for (t, _, _) in adj_fwd.get(n, []):
@@ -681,8 +683,15 @@ def _resolve_flow_symbol(sym, db, name_to_id, adj_fwd, adj_bwd, resolved_ids, al
                             reachable.add(t)
                             nxt.append(t)
                 frontier = nxt
-            if reachable & resolved_ids:
-                return sid, q, False
+                if min_depth is None and reachable & resolved_ids:
+                    min_depth = d
+            if min_depth is not None:
+                deg = len(adj_fwd.get(sid, [])) + len(adj_bwd.get(sid, []))
+                connected.append((min_depth, -deg, len(q), sid, q))
+        if connected:
+            connected.sort()
+            chosen = connected[0]
+            return chosen[3], chosen[4], False
 
     other_tokens = {t.lower() for t in all_tokens if t.lower() != sym.lower()}
     if other_tokens:
