@@ -2,6 +2,6 @@
   "remy-index": {
     "type": "stdio",
     "command": "python",
-    "args": ["~/.claude/remy-src/index_mcp_server.py"]
+    "args": ["-u", "~/.claude/remy-src/index_mcp_server.py"]
   }
 }
