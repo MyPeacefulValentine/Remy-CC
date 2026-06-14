@@ -2,7 +2,7 @@
 Callback/observer edge synthesis — post-extraction pass.
 
 Closes dynamic-dispatch holes where a dispatcher invokes callbacks registered
-elsewhere. All synthesized edges carry provenance='heuristic'.
+elsewhere. All synthesized edges carry provenance='inferred'.
 """
 
 from .event_emitter import synthesize_event_emitter_edges

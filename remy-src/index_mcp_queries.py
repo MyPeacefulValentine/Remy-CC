@@ -58,7 +58,7 @@ def _bfs_callers_ambiguous(db, target_set, max_depth, static_only=False):
     visited = set(target_set)
     current = set(target_set)
     levels = {}
-    prov_filter = "AND e.provenance IS NULL" if static_only else ""
+    prov_filter = "AND e.provenance IN ('definite','probable')" if static_only else ""
 
     for depth in range(1, max_depth + 1):
         if not current:
@@ -92,7 +92,7 @@ def _bfs_callees_ambiguous(db, target_set, max_depth, static_only=False):
     visited = set(target_set)
     current = set(target_set)
     levels = {}
-    prov_filter = "AND e.provenance IS NULL" if static_only else ""
+    prov_filter = "AND e.provenance IN ('definite','probable')" if static_only else ""
 
     for depth in range(1, max_depth + 1):
         if not current:
@@ -514,7 +514,7 @@ def query_search_impl(text, limit=10, file_hint=""):
 
 
 def _load_graph(db, static_only=False):
-    prov_filter = "AND provenance IS NULL" if static_only else ""
+    prov_filter = "AND provenance IN ('definite','probable')" if static_only else ""
     rows = db.execute(
         f"SELECT source_file, caller, callee_qualified, provenance, via "
         f"FROM edges WHERE callee_qualified IS NOT NULL {prov_filter}"
@@ -748,10 +748,12 @@ def _format_flow(resolved, segments, id_to_info, static_only, max_depth):
             path = segments[i]
             for j in range(1, len(path)):
                 nid, prov, via = path[j]
-                if prov == "heuristic":
+                if prov == "inferred":
                     edge_label = f"synthesized [via: {via}]" if via else "synthesized"
-                elif prov == "ambiguous":
-                    edge_label = "call [ambiguous resolution]"
+                elif prov == "speculative":
+                    edge_label = "call [speculative resolution]"
+                elif prov == "probable":
+                    edge_label = "call [name-match]"
                 else:
                     edge_label = "call"
                 lines.append(f"   ↓ {edge_label}")

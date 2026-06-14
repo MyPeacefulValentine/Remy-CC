@@ -56,7 +56,7 @@ def bfs_callers(db, target_qualified_set, max_depth, static_only=False):
     visited = set(target_qualified_set)
     current = set(target_qualified_set)
     levels = {}
-    filter_clause = "AND provenance IS NULL" if static_only else ""
+    filter_clause = "AND provenance IN ('definite','probable')" if static_only else ""
 
     for depth in range(1, max_depth + 1):
         if not current:
@@ -87,7 +87,7 @@ def bfs_callees(db, target_qualified_set, max_depth, static_only=False):
     visited = set(target_qualified_set)
     current = set(target_qualified_set)
     levels = {}
-    filter_clause = "AND provenance IS NULL" if static_only else ""
+    filter_clause = "AND provenance IN ('definite','probable')" if static_only else ""
 
     for depth in range(1, max_depth + 1):
         if not current:

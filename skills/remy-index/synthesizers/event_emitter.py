@@ -67,7 +67,7 @@ def _synthesize_signal_pattern(db, emit_type, connect_type, via_label, fanout_ca
             db.execute(
                 "INSERT INTO edges (source_file, caller, callee, callee_file, callee_qualified, line, provenance, synthesized_from, via) VALUES (?,?,?,?,?,?,?,?,?)",
                 (e_path, e_func, h_func, h_path, f"{h_path}::{h_func}",
-                 e_line or 0, "heuristic", e_path, via_label)
+                 e_line or 0, "inferred", e_path, via_label)
             )
 
     db.commit()

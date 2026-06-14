@@ -22,7 +22,7 @@ from parsers.python_parser import PythonParser
 from parsers.c_cpp_parser import CCppParser
 from parsers.ts_parser import TSParser
 
-VERSION = "5.0.0"
+VERSION = "6.0.0"
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 JSON_CACHE_FILE = os.path.join(".claude", "logic_index.json")
 CONFIG_FILE = os.path.join(".claude", "logic_index_config")
@@ -501,10 +501,15 @@ class StructScanner:
             best = candidates[0][0]
             best_file = best.split("::")[0] if "::" in best else None
 
-            provenance = "ambiguous" if len(candidates) > 1 and candidates[0][1] == candidates[1][1] else None
+            if len(candidates) > 1 and candidates[0][1] == candidates[1][1]:
+                provenance = "speculative"
+            elif candidates[0][1] >= score_import:
+                provenance = "definite"
+            else:
+                provenance = "probable"
 
             self.db.execute(
-                "UPDATE edges SET callee_qualified = ?, callee_file = ?, provenance = COALESCE(provenance, ?) WHERE id = ?",
+                "UPDATE edges SET callee_qualified = ?, callee_file = ?, provenance = ? WHERE id = ?",
                 (best, best_file, provenance, edge_id)
             )
 
@@ -526,7 +531,7 @@ class StructScanner:
             return
         placeholders = ','.join(['?'] * len(source_paths))
         self.db.execute(
-            f"DELETE FROM edges WHERE provenance = 'heuristic' AND synthesized_from IN ({placeholders})",
+            f"DELETE FROM edges WHERE provenance = 'inferred' AND synthesized_from IN ({placeholders})",
             list(source_paths)
         )
 

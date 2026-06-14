@@ -74,7 +74,7 @@ def synthesize_interface_override_edges(db):
                         "INSERT INTO edges (source_file, caller, callee, callee_file, callee_qualified, line, provenance, synthesized_from, via) VALUES (?,?,?,?,?,?,?,?,?)",
                         (base_path, base_method_name, f"{impl_class}.{method_short}",
                          impl_path, impl_qualified, base_lineno or 0,
-                         "heuristic", base_path, "interface-impl")
+                         "inferred", base_path, "interface-impl")
                     )
                     added += 1
 
