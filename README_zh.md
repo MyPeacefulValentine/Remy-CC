@@ -52,7 +52,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 - **系统提示词**（`CLAUDE.md`、`style.md`、输出风格定义）规定了工程原则、沟通约束和禁止行为，构成会话启动时加载的静态行为基线。
 - **运行时钩子**（hooks）在 Claude Code 事件上自动触发——每次工具调用前、每条用户消息发送时、以及会话生命周期的关键节点。它们负责重新注入行为规则以对抗指令衰减、规范路径和 Shell 环境、在文件读取时追加调用者/被调用者上下文，以及保持项目文件树快照的时效性。钩子是持续执行的约束层，无需用户介入。
-- **MCP 服务器**（`remy-src/index_mcp_server.py`）是基于 stdio 的 Model Context Protocol 服务器，会话启动时自动拉起。暴露 6 个代码智能查询 tool（`query_symbol`、`query_callers`、`query_callees`、`query_impact`、`query_summary`、`query_patterns`），使 Claude 可直接访问语义代码图，无需启动子进程。可用时，注入系统自动切换为 MCP Minimal 模式（约 1 KB），取代完整符号树（约 40 KB）。
+- **MCP 服务器**（`remy-src/index_mcp_server.py`）是基于 stdio 的 Model Context Protocol 服务器，会话启动时自动拉起。暴露 9 个代码智能查询 tool（`query_symbol`、`query_summary`、`query_callers`、`query_callees`、`query_impact`、`query_patterns`、`query_search`、`query_flow`），使 Claude 可直接访问语义代码图，无需启动子进程。可用时，注入系统自动切换为 MCP Minimal 模式（约 1 KB），取代完整符号树（约 40 KB）。
 - **技能**（skills）是需要手动调用的斜杠命令（`/remy-plan`、`/remy-patch`、`/remy-audit` 等），用于执行结构化的多步骤开发任务。每个技能都定义了明确的输入、输出和停止条件。
 
 这四层之间存在设计上的耦合。钩子负责维护技能所依赖的上下文——文件树、语义代码索引、会话历史都通过生命周期事件自动更新。MCP 服务器与钩子共享 SQLite 数据库（`logic_index.db`，WAL 模式并发读）。反过来，技能产出的工件（任务包、变更日志、审计报告）也会被钩子在工具调用时校验。例如，`/remy-plan` 写入的任务包会约束 `/remy-patch` 允许编辑的文件范围，而 `pre_tool_guard` 钩子在每次 `Edit` 调用时执行这一边界检查。
@@ -77,9 +77,9 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | 生命周期管理 | 会话启动/结束、上下文压缩前 | 重新生成项目树快照和语言指令文件；触发全量结构扫描以刷新符号行号和调用图；可选启动范围选择器 UI 过滤逻辑索引注入内容 |
 | 文档注入 | 按需触发 | 将项目树、逻辑索引（经范围选择过滤）和时间线引用注入 `CLAUDE.md` |
 
-### MCP 服务器（v1.3+）
+### MCP 服务器（v1.4+）
 
-`remy-index` MCP 服务器通过 Model Context Protocol 暴露 6 个查询 tool，使 Claude 可直接访问代码智能图，无需启动子进程：
+`remy-index` MCP 服务器通过 Model Context Protocol 暴露 9 个查询 tool，使 Claude 可直接访问代码智能图，无需启动子进程：
 
 | Tool | 用途 |
 | :--- | :--- |
@@ -89,6 +89,10 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | `query_callees` | BFS 下游被调用者 |
 | `query_impact` | 完整影响分析（等价于 `impact.py` CLI） |
 | `query_patterns` | 查询事件/回调注册关系 |
+| `query_search` | 模糊符号搜索 — FTS5 前缀 → LIKE 子串 → 编辑距离回退 |
+| `query_flow` | 通过双向 BFS 查找命名符号间的调用路径 |
+
+服务器包含**索引新鲜度检测**：每个会话的首次 tool 调用时，比较存储的 `source_commit` 与当前 git HEAD（非 git 项目回退到 struct_hash 抽样）。若 >20% 的文件不一致，在 tool 响应中附加警告。
 
 安装时自动注册到 `~/.claude.json`，Claude Code 会话启动时自动拉起。以只读模式访问 SQLite 逻辑索引。通过 `remy-cc config` 的"MCP 服务器"分组配置参数。
 

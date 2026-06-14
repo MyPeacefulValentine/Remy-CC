@@ -140,6 +140,8 @@ mcp = FastMCP(
         "- To find who calls a function or what it calls: query_callers / query_callees (instead of grep)\n"
         "- To assess which modules a file change would affect: query_impact (instead of manual search)\n"
         "- To locate where a symbol is defined: query_symbol (instead of glob/grep)\n"
+        "- To search for a symbol when you don't know the exact name: query_search (fuzzy prefix/substring/typo)\n"
+        "- To trace call paths between two or more symbols: query_flow (bidirectional BFS)\n"
         "\n"
         "Do NOT use these tools when:\n"
         "- You need to read file content before making an edit (use Read instead)\n"
