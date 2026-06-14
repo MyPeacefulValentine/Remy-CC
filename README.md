@@ -77,7 +77,7 @@ These layers are coupled by design. Hooks maintain the context that skills depen
 | Lifecycle Manager | Session start/end, pre-compaction | Regenerates the project tree snapshot and language directive; triggers full structural scan to refresh symbol line numbers and call graph; optionally launches scope selector UI for logic index injection filtering |
 | Document Injector | On demand | Injects project tree, logic index (filtered by scope selection), and timeline references into `CLAUDE.md` |
 
-### MCP Server (v1.4+)
+### MCP Server (v1.4+) [📖](remy-src/MCP_README.md)
 
 The `remy-index` MCP server exposes 9 query tools over the Model Context Protocol, giving Claude direct access to the code intelligence graph without subprocess overhead:
 
