@@ -642,7 +642,8 @@ class StructScanner:
         )
         try:
             head = subprocess.check_output(
-                ['git', 'rev-parse', 'HEAD'], text=True, stderr=subprocess.DEVNULL
+                ['git', 'rev-parse', 'HEAD'], text=True,
+                stderr=subprocess.DEVNULL, cwd=self.root_dir
             ).strip()
             self.db.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('source_commit', ?)",
