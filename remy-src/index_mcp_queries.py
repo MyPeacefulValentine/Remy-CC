@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Query implementations for the remy-index MCP server."""
+import difflib
 import os
 import sys
 import sqlite3
@@ -14,6 +15,7 @@ from impact import (
     get_layer,
     get_line_range,
 )
+from struct_scan import tokenize_symbol
 
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 _DB_NOT_FOUND = "Error: logic_index.db not found. Run /remy-index to initialize the project index."
@@ -36,6 +38,7 @@ MCP_IMPACT_MAX_DEPTH_UP = _env_int("MCP_IMPACT_MAX_DEPTH_UP", 3)
 MCP_IMPACT_MAX_DEPTH_DOWN = _env_int("MCP_IMPACT_MAX_DEPTH_DOWN", 3)
 MCP_RESULT_LIMIT = _env_int("MCP_RESULT_LIMIT", 50)
 MCP_STATIC_ONLY_DEFAULT = _env_bool("MCP_STATIC_ONLY_DEFAULT", False)
+SEARCH_LIKE_TIMEOUT_MS = _env_int("SEARCH_LIKE_TIMEOUT_MS", 100)
 
 
 def _open_db():
@@ -386,3 +389,123 @@ def _format_impact_result(db, target_files, seeds, upstream, downstream):
     lines.append(f"summary: {len(all_files)} files affected, {total_up} upstream + {total_down} downstream symbols")
 
     return "\n".join(lines)
+
+
+def _fts_available(db):
+    row = db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='symbols_fts'"
+    ).fetchone()
+    return row is not None
+
+
+def _search_fts(db, text, limit, file_hint):
+    tokens = tokenize_symbol(text)
+    terms = tokens.split()
+    if not terms:
+        return []
+    sanitized = [t.replace('"', '') for t in terms]
+    sanitized = [t for t in sanitized if t]
+    if not sanitized:
+        return []
+    fts_query = " ".join(f'"{t}"*' for t in sanitized)
+    sql = (
+        "SELECT s.name, s.file_path, s.lineno, s.type, s.short_name, "
+        "bm25(symbols_fts, 10.0, 5.0, 1.0, 2.0) AS rank "
+        "FROM symbols_fts "
+        "JOIN symbols s ON s.id = symbols_fts.rowid "
+        "WHERE symbols_fts MATCH ? "
+    )
+    params = [fts_query]
+    if file_hint:
+        sql += "AND s.file_path LIKE ? "
+        params.append(f"%{file_hint}%")
+    sql += "ORDER BY rank LIMIT ?"
+    params.append(limit * 5)
+    try:
+        rows = db.execute(sql, params).fetchall()
+    except Exception:
+        return []
+    results = []
+    seen = set()
+    for name, fpath, lineno, stype, short, rank in rows:
+        key = (fpath, name)
+        if key in seen:
+            continue
+        seen.add(key)
+        bonus = 0
+        if name.lower() == text.lower() or (short and short.lower() == text.lower()):
+            bonus = -100
+        results.append((name, fpath, lineno, stype, rank + bonus))
+    results.sort(key=lambda r: r[4])
+    return results[:limit]
+
+
+def _search_like(db, text, limit, file_hint):
+    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    sql = (
+        "SELECT name, file_path, lineno, type FROM symbols "
+        "WHERE (name LIKE ? ESCAPE '\\' OR name_tokens LIKE ? ESCAPE '\\') "
+    )
+    pattern = f"%{escaped}%"
+    params = [pattern, pattern]
+    if file_hint:
+        sql += "AND file_path LIKE ? "
+        params.append(f"%{file_hint}%")
+    sql += "LIMIT ?"
+    params.append(limit)
+    rows = db.execute(sql, params).fetchall()
+    return [(name, fpath, lineno, stype, 0.0) for name, fpath, lineno, stype in rows]
+
+
+def _search_fuzzy(db, text, limit, file_hint):
+    sql = "SELECT DISTINCT name FROM symbols"
+    params = []
+    if file_hint:
+        sql += " WHERE file_path LIKE ?"
+        params.append(f"%{file_hint}%")
+    all_names = [r[0] for r in db.execute(sql, params).fetchall()]
+    cutoff = 0.6
+    matches = difflib.get_close_matches(text, all_names, n=limit, cutoff=cutoff)
+    if not matches:
+        return []
+    placeholders = ",".join(["?"] * len(matches))
+    sql = f"SELECT name, file_path, lineno, type FROM symbols WHERE name IN ({placeholders})"
+    if file_hint:
+        sql += " AND file_path LIKE ?"
+        matches_params = list(matches) + [f"%{file_hint}%"]
+    else:
+        matches_params = list(matches)
+    rows = db.execute(sql, matches_params).fetchall()
+    return [(name, fpath, lineno, stype, 0.0) for name, fpath, lineno, stype in rows]
+
+
+def query_search_impl(text, limit=10, file_hint=""):
+    db = _open_db()
+    if not db:
+        return _DB_NOT_FOUND
+    try:
+        if not _fts_available(db):
+            return "FTS index not available. Run struct_scan to rebuild the index."
+
+        results = _search_fts(db, text, limit, file_hint)
+        search_level = "FTS5"
+
+        if not results:
+            results = _search_like(db, text, limit, file_hint)
+            search_level = "LIKE"
+
+        if not results:
+            results = _search_fuzzy(db, text, limit, file_hint)
+            search_level = "fuzzy"
+
+        if not results:
+            return f"No symbols found matching '{text}'"
+
+        lines = [f"search results for '{text}' ({len(results)} results, matched via {search_level})\n"]
+        for name, fpath, lineno, stype, score in results:
+            layer = get_layer(db, fpath)
+            loc = f"L{lineno}" if lineno else ""
+            lines.append(f"  [{stype}] {fpath}::{name}  {fpath}:{loc} ({layer})")
+        return "\n".join(lines)
+    finally:
+        db.close()

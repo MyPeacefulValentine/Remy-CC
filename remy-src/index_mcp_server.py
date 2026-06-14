@@ -25,6 +25,7 @@ from index_mcp_queries import (
     query_callees_impl,
     query_impact_impl,
     query_patterns_impl,
+    query_search_impl,
 )
 
 mcp = FastMCP(
@@ -80,6 +81,12 @@ def query_impact(files: list[str], depth_up: int = 3, depth_down: int = 3, inclu
 def query_patterns(pattern_type: str = "", signal_name: str = "", file: str = "") -> str:
     """Query event/callback registration patterns (Django signals, PyQt signals, observer pattern)."""
     return query_patterns_impl(pattern_type or None, signal_name or None, file or None)
+
+
+@mcp.tool()
+def query_search(text: str, limit: int = 10, file_hint: str = "") -> str:
+    """Fuzzy search symbols by name. Three-tier fallback: FTS5 prefix → LIKE substring → edit-distance. Use when you don't know the exact symbol name."""
+    return query_search_impl(text, limit, file_hint or "")
 
 
 if __name__ == "__main__":

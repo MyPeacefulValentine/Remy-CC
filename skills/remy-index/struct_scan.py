@@ -22,7 +22,7 @@ from parsers.python_parser import PythonParser
 from parsers.c_cpp_parser import CCppParser
 from parsers.ts_parser import TSParser
 
-VERSION = "4.0.0"
+VERSION = "5.0.0"
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 JSON_CACHE_FILE = os.path.join(".claude", "logic_index.json")
 CONFIG_FILE = os.path.join(".claude", "logic_index_config")
@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS symbols (
     hash TEXT,
     summary TEXT,
     bases TEXT,
+    name_tokens TEXT NOT NULL DEFAULT '',
     UNIQUE(file_path, name)
 );
 CREATE TABLE IF NOT EXISTS edges (
@@ -101,7 +102,42 @@ CREATE INDEX IF NOT EXISTS idx_edges_provenance ON edges(provenance);
 CREATE INDEX IF NOT EXISTS idx_edges_source_file ON edges(source_file);
 CREATE INDEX IF NOT EXISTS idx_patterns_type_signal ON patterns(pattern_type, signal_name);
 CREATE INDEX IF NOT EXISTS idx_patterns_file ON patterns(file_path);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
+    name,
+    name_tokens,
+    file_path,
+    summary,
+    content='symbols',
+    content_rowid='id',
+    tokenize='unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS symbols_fts_ai AFTER INSERT ON symbols BEGIN
+    INSERT INTO symbols_fts(rowid, name, name_tokens, file_path, summary)
+    VALUES (NEW.id, NEW.name, NEW.name_tokens, NEW.file_path, NEW.summary);
+END;
+
+CREATE TRIGGER IF NOT EXISTS symbols_fts_ad AFTER DELETE ON symbols BEGIN
+    INSERT INTO symbols_fts(symbols_fts, rowid, name, name_tokens, file_path, summary)
+    VALUES ('delete', OLD.id, OLD.name, OLD.name_tokens, OLD.file_path, OLD.summary);
+END;
+
+CREATE TRIGGER IF NOT EXISTS symbols_fts_au AFTER UPDATE ON symbols BEGIN
+    INSERT INTO symbols_fts(symbols_fts, rowid, name, name_tokens, file_path, summary)
+    VALUES ('delete', OLD.id, OLD.name, OLD.name_tokens, OLD.file_path, OLD.summary);
+    INSERT INTO symbols_fts(rowid, name, name_tokens, file_path, summary)
+    VALUES (NEW.id, NEW.name, NEW.name_tokens, NEW.file_path, NEW.summary);
+END;
 """
+
+
+def tokenize_symbol(name):
+    """Split snake_case, camelCase, and namespace separators into space-separated tokens."""
+    s = name.replace("_", " ").replace("::", " ")
+    s = re.sub(r"([a-z])([A-Z])", r"\1 \2", s)
+    s = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", s)
+    return re.sub(r"\s+", " ", s).strip()
 
 
 def _env_int(name, default):
@@ -159,6 +195,7 @@ class StructScanner:
             db.execute("PRAGMA busy_timeout=5000")
             db.execute("PRAGMA foreign_keys=ON")
             db.executescript(SCHEMA_SQL)
+            version = None
             needs_migration = os.path.exists(os.path.join(self.root_dir, JSON_CACHE_FILE))
 
         if not version:
@@ -192,11 +229,13 @@ class StructScanner:
                 for sym in file_data.get("symbols", []):
                     bases_json = json.dumps(sym["bases"]) if sym.get("bases") else None
                     short = sym["name"].split(".")[-1] if "." in sym["name"] else sym["name"]
+                    tokens = tokenize_symbol(sym["name"])
                     db.execute(
-                        "INSERT OR IGNORE INTO symbols (file_path, name, short_name, type, args, lineno, end_lineno, hash, summary, bases) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        "INSERT OR IGNORE INTO symbols (file_path, name, short_name, type, args, lineno, end_lineno, hash, summary, bases, name_tokens) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                         (path, sym["name"], short, sym.get("type", "function"),
                          sym.get("args"), sym.get("lineno"), sym.get("end_lineno"),
-                         sym.get("hash"), sym.get("summary"), bases_json)
+                         sym.get("hash"), sym.get("summary"), bases_json,
+                         tokens)
                     )
                 for call in file_data.get("calls", []):
                     db.execute(
@@ -376,11 +415,12 @@ class StructScanner:
                     summary = "Small utility function."
 
             bases_json = json.dumps(sym_info.bases) if sym_info.bases else None
+            tokens = tokenize_symbol(sym_info.name)
             self.db.execute(
-                "INSERT INTO symbols (file_path, name, short_name, type, args, lineno, end_lineno, hash, summary, bases) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO symbols (file_path, name, short_name, type, args, lineno, end_lineno, hash, summary, bases, name_tokens) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (rel_path, sym_info.name, short_name, sym_info.type,
                  sym_info.args, sym_info.lineno, sym_info.end_lineno,
-                 symbol_hash, summary, bases_json)
+                 symbol_hash, summary, bases_json, tokens)
             )
 
         seen_edges = {}
