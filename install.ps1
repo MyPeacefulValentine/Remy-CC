@@ -36,11 +36,11 @@ function Find-Python {
     foreach ($cmd in $candidates) {
         $found = Get-Command $cmd -ErrorAction SilentlyContinue
         if ($found) {
-            $ver = & $cmd -c "import sys; print(sys.version_info >= (3,7))" 2>$null
+            $ver = & $cmd -c "import sys; print(sys.version_info >= (3,10))" 2>$null
             if ($ver -eq 'True') { return $cmd }
         }
     }
-    throw 'Python 3.7+ is required but not found. Install Python and retry.'
+    throw 'Python 3.10+ is required but not found. Install Python and retry.'
 }
 
 function Assert-Git {

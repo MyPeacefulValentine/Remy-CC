@@ -32,11 +32,19 @@ if not SUITE_VERSION:
     print("Fatal: VERSION file is empty", file=sys.stderr)
     sys.exit(1)
 MANIFEST_FILE = ".installer_manifest.json"
+MANIFEST_SCHEMA_VERSION = 2
 
 DEPLOY_DIRS = ["hooks", "skills", "output-styles"]
+LEGACY_HOOK_PATHS = [
+    "hooks/doc_manager",
+    "hooks/env_system",
+    "hooks/tree_system",
+    "hooks/logic_dirty_tracker.py",
+    "hooks/logic_enrichment_hook.py",
+    "hooks/pre_tool_guard.py",
+]
 DEPLOY_FILES_MAP = {
     "CLAUDE.md": "CLAUDE.md",
-    "language.md": "language.md",
     "style.md": "style.md",
     "tools_ref.md": "tools_ref.md",
     "remy-src/cli.py": "remy-src/cli.py",
@@ -302,29 +310,30 @@ def compute_sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def copy_tree(src: Path, dst: Path) -> list:
-    """Recursively copy directory, return list of {path, sha256} records."""
+def copy_tree(src: Path, dst: Path, claude_home: Path) -> list:
+    """Merge directory contents from src into dst, preserving pre-existing entries.
+    Returns records with paths relative to claude_home (POSIX form)."""
     records = []
     if dst.is_symlink():
         dst.unlink()
-    elif dst.exists():
-        shutil.rmtree(dst)
-    shutil.copytree(src, dst)
-    for root, _dirs, files in os.walk(dst):
+    dst.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dst, dirs_exist_ok=True)
+    for root, _dirs, files in os.walk(src):
+        rel_root = Path(root).relative_to(src)
         for fname in files:
-            fpath = Path(root) / fname
+            target = dst / rel_root / fname
             records.append({
-                "path": str(fpath),
-                "sha256": compute_sha256(fpath),
+                "path": target.relative_to(claude_home).as_posix(),
+                "sha256": compute_sha256(target),
             })
     return records
 
 
-def copy_file(src: Path, dst: Path) -> dict:
-    """Copy single file, return {path, sha256} record."""
+def copy_file(src: Path, dst: Path, claude_home: Path) -> dict:
+    """Copy single file, return {path, sha256} record with path relative to claude_home."""
     shutil.copy2(src, dst)
     return {
-        "path": str(dst),
+        "path": dst.relative_to(claude_home).as_posix(),
         "sha256": compute_sha256(dst),
     }
 
@@ -336,6 +345,98 @@ def backup_file(path: Path) -> Optional[Path]:
     backup_path = path.with_suffix(path.suffix + BACKUP_SUFFIX)
     shutil.copy2(path, backup_path)
     return backup_path
+
+
+def _resolve_record_path(rec: dict, claude_home: Path) -> Path:
+    """Resolve a manifest record's path to an absolute Path.
+    Supports both schema_version >= 2 (POSIX relative) and legacy absolute paths."""
+    p = Path(rec["path"])
+    if p.is_absolute():
+        return p
+    return claude_home / p
+
+
+def _remove_empty_dirs(start_dir: Path, stop_at: Path) -> None:
+    """Remove empty directories from start_dir upward; stop at stop_at boundary or first non-empty parent."""
+    try:
+        stop_resolved = stop_at.resolve()
+    except OSError:
+        return
+    current = start_dir
+    while True:
+        try:
+            current_resolved = current.resolve()
+        except OSError:
+            return
+        if current_resolved == stop_resolved:
+            return
+        try:
+            current_resolved.relative_to(stop_resolved)
+        except ValueError:
+            return
+        if not current.is_dir():
+            return
+        try:
+            current.rmdir()
+        except OSError:
+            return
+        current = current.parent
+
+
+def cleanup_from_manifest(old_manifest: dict, claude_home: Path) -> None:
+    """Delete files listed in the previous manifest. Files with mismatched sha256 are first
+    backed up to .bak, then deleted. Empty parent directories are pruned up to claude_home."""
+    files = old_manifest.get("files", [])
+    if not files:
+        return
+    affected_parents = set()
+    for entry in files:
+        fpath = _resolve_record_path(entry, claude_home)
+        if not fpath.exists():
+            continue
+        expected_hash = entry.get("sha256")
+        if expected_hash:
+            try:
+                current_hash = compute_sha256(fpath)
+            except OSError:
+                current_hash = None
+            if current_hash and current_hash != expected_hash:
+                backup_file(fpath)
+        try:
+            fpath.unlink()
+        except OSError:
+            continue
+        affected_parents.add(fpath.parent)
+    for parent in affected_parents:
+        _remove_empty_dirs(parent, claude_home)
+
+
+def cleanup_fallback(claude_home: Path) -> None:
+    """Cleanup strategy when no previous manifest exists. Targets:
+    ~/.claude/skills/remy-* glob and LEGACY_HOOK_PATHS. output-styles is left untouched."""
+    skills_dir = claude_home / "skills"
+    if skills_dir.is_dir():
+        for child in skills_dir.iterdir():
+            if not child.name.startswith("remy-"):
+                continue
+            try:
+                if child.is_symlink() or child.is_file():
+                    child.unlink()
+                else:
+                    shutil.rmtree(child, ignore_errors=True)
+            except OSError:
+                continue
+    for rel in LEGACY_HOOK_PATHS:
+        target = claude_home / rel
+        if not target.exists():
+            continue
+        try:
+            if target.is_symlink() or target.is_file():
+                target.unlink()
+            else:
+                shutil.rmtree(target, ignore_errors=True)
+        except OSError:
+            continue
 
 
 def expand_hook_paths(settings: dict, claude_home: Path) -> None:
@@ -480,6 +581,7 @@ def write_manifest(claude_home: Path, records: list, settings_backup: Optional[P
                     injected_hooks: dict = None, injected_permissions: list = None) -> None:
     manifest = {
         "version": SUITE_VERSION,
+        "schema_version": MANIFEST_SCHEMA_VERSION,
         "installed_at": datetime.now(timezone.utc).isoformat(),
         "settings_backup": str(settings_backup) if settings_backup else None,
         "files": records,
@@ -822,6 +924,30 @@ def do_install() -> None:
 
     records = []
 
+    old_manifest_path = claude_home / MANIFEST_FILE
+    if old_manifest_path.exists():
+        try:
+            with open(old_manifest_path, "r", encoding="utf-8") as f:
+                old_manifest = json.load(f)
+            cleanup_from_manifest(old_manifest, claude_home)
+        except (json.JSONDecodeError, OSError):
+            cleanup_fallback(claude_home)
+    else:
+        cleanup_fallback(claude_home)
+
+    lang_directives = {"zh-CN": "Always respond in Chinese-simplified", "en": "Always respond in English"}
+    lang_md_path = claude_home / "language.md"
+    if lang_md_path.exists():
+        bp = backup_file(lang_md_path)
+        if bp:
+            print(_t("backed_up", name="language.md", bak=bp.name))
+    lang_md_path.write_text(lang_directives.get(_ui_lang, lang_directives["en"]) + "\n", encoding="utf-8")
+    records.append({
+        "path": "language.md",
+        "sha256": compute_sha256(lang_md_path),
+    })
+    print(_t("copied_file", name="language.md"))
+
     for src_rel, dst_name in DEPLOY_FILES_MAP.items():
         src = SCRIPT_DIR / src_rel
         dst = claude_home / dst_name
@@ -833,7 +959,7 @@ def do_install() -> None:
             bp = backup_file(dst)
             if bp:
                 print(_t("backed_up", name=dst_name, bak=bp.name))
-        rec = copy_file(src, dst)
+        rec = copy_file(src, dst, claude_home)
         records.append(rec)
         print(_t("copied_file", name=dst_name))
 
@@ -843,7 +969,7 @@ def do_install() -> None:
         if not src.exists():
             print(_t("src_missing_dir", name=dirname))
             continue
-        dir_records = copy_tree(src, dst)
+        dir_records = copy_tree(src, dst, claude_home)
         records.extend(dir_records)
         print(_t("copied_dir", name=dirname, count=len(dir_records)))
 
@@ -965,10 +1091,6 @@ def do_install() -> None:
     print(_t("install_done", count=len(records)))
     print(_t("install_verify_hint"))
 
-    lang_directives = {"zh-CN": "Always respond in Chinese-simplified", "en": "Always respond in English"}
-    lang_md_path = claude_home / "language.md"
-    lang_md_path.write_text(lang_directives.get(_ui_lang, lang_directives["en"]) + "\n", encoding="utf-8")
-
 
 def do_uninstall() -> None:
     claude_home = get_claude_home()
@@ -985,27 +1107,24 @@ def do_uninstall() -> None:
     removed = 0
     skipped = 0
 
+    affected_parents = set()
     for entry in files:
-        fpath = Path(entry["path"])
+        fpath = _resolve_record_path(entry, claude_home)
         if not fpath.exists():
             continue
-        current_hash = compute_sha256(fpath)
-        if current_hash != entry["sha256"]:
-            print(_t("skip_modified", name=fpath.name))
-            skipped += 1
-            continue
+        expected_hash = entry.get("sha256")
+        if expected_hash is not None:
+            current_hash = compute_sha256(fpath)
+            if current_hash != expected_hash:
+                print(_t("skip_modified", name=fpath.name))
+                skipped += 1
+                continue
         fpath.unlink()
         removed += 1
+        affected_parents.add(fpath.parent)
 
-    for dirname in DEPLOY_DIRS + ["remy-src", "remy-assets"]:
-        dirpath = claude_home / dirname
-        if dirpath.is_symlink():
-            dirpath.unlink()
-        elif dirpath.exists():
-            try:
-                shutil.rmtree(dirpath)
-            except OSError:
-                pass
+    for parent in affected_parents:
+        _remove_empty_dirs(parent, claude_home)
 
     settings_path = claude_home / "settings.json"
     tpl_path = SCRIPT_DIR / SETTINGS_TEMPLATE
@@ -1048,7 +1167,7 @@ def do_verify() -> None:
     errors = []
     settings = None
 
-    if sys.version_info < (3, 7):
+    if sys.version_info < (3, 10):
         errors.append(_t("verify_python_old", ver=sys.version))
 
     settings_path = claude_home / "settings.json"
@@ -1084,7 +1203,7 @@ def do_verify() -> None:
             manifest = json.load(f)
         missing = 0
         for entry in manifest.get("files", []):
-            if not Path(entry["path"]).exists():
+            if not _resolve_record_path(entry, claude_home).exists():
                 missing += 1
         if missing:
             errors.append(_t("verify_files_missing", count=missing))

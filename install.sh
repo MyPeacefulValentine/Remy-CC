@@ -26,15 +26,15 @@ find_python() {
     elif command -v python >/dev/null 2>&1; then
         echo "python"
     else
-        die "Python 3 is required but not found. Install Python 3.7+ and retry."
+        die "Python 3 is required but not found. Install Python 3.10+ and retry."
     fi
 }
 
 check_deps() {
     command -v git >/dev/null 2>&1 || die "git is required but not found. Install git and retry."
     PYTHON="$(find_python)"
-    "$PYTHON" -c "import sys; sys.exit(0 if sys.version_info >= (3,7) else 1)" 2>/dev/null \
-        || die "Python 3.7+ is required. Current: $("$PYTHON" --version 2>&1)"
+    "$PYTHON" -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" 2>/dev/null \
+        || die "Python 3.10+ is required. Current: $("$PYTHON" --version 2>&1)"
 }
 
 run_installer() {
