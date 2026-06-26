@@ -128,7 +128,10 @@ def cmd_verify(_args):
         try:
             with open(manifest_path, "r", encoding="utf-8") as f:
                 manifest = json.load(f)
-            missing = sum(1 for e in manifest.get("files", []) if not Path(e["path"]).exists())
+            missing = sum(
+                1 for e in manifest.get("files", [])
+                if not _resolve_record_path(e, claude_home).exists()
+            )
             if missing:
                 errors.append("{} files missing from manifest".format(missing))
         except (json.JSONDecodeError, OSError) as e:
@@ -266,6 +269,15 @@ def compute_sha256(path):
     return h.hexdigest()
 
 
+def _resolve_record_path(rec, claude_home):
+    """Resolve a manifest record's path to an absolute Path.
+    schema_version >= 2 stores POSIX-relative paths; legacy schemas may store absolute paths."""
+    p = Path(rec["path"])
+    if p.is_absolute():
+        return p
+    return claude_home / p
+
+
 def hooks_equal(h1, h2):
     return h1.get("command", "").strip() == h2.get("command", "").strip()
 
@@ -294,7 +306,7 @@ def cmd_uninstall(args):
     removed = 0
     skipped = 0
     for entry in files:
-        fpath = Path(entry["path"])
+        fpath = _resolve_record_path(entry, claude_home)
         if not fpath.exists():
             continue
         try:
