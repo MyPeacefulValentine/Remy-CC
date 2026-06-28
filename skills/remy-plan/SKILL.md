@@ -144,7 +144,34 @@ Before generating the final tables, verify that your plan assumptions still matc
     *   Function signatures have not changed since Step 1 reads (no concurrent external modification).
     *   Constraints locked in Table 1 do not contradict the current code state.
 3.  If a contradiction is found: return to **Step 2** and re-resolve the affected ambiguity.
-4.  If no contradictions: proceed to **Step 3: Finalize**.
+4.  If no contradictions: proceed to **Step 2.9.1**.
+
+**Step 2.9.1: Schema Deletion Tree-Wide Scan (Mandatory)**
+
+Targets disposal-class changes: when a packet entry removes a schema column, deletes a function signature, or eliminates a named constant, single-file evidence rarely captures all parallel usages across the workspace.
+
+1.  **Trigger**: Every planned Table 4 entry with `action == "Delete"`, OR any `Modify` entry whose summary contains the keywords `DROP COLUMN` / `删除` / `移除` / `remove` referencing an external-facing symbol.
+2.  **Action**: For each removed symbol, execute the workspace-wide scan:
+    ```
+    Bash("grep -rn '<removed_symbol>' . --include='*.py' --include='*.json' --include='*.md'")
+    ```
+3.  **Categorization** of each hit:
+    *   **Code hit** (`.py` / `.json` excluding docstring/comment blocks): MUST appear as a `Modify` entry in Table 4, OR be explicitly excluded in Table 1 with a rationale.
+    *   **Documentation hit** (`.md`): Warning-level; record in Table 3 under `一致性 (Consistency)` as "doc string referenced" but does not block.
+4.  **Rejection**: If any code hit is neither in Table 4 nor explicitly excluded → return to **Step 2** and expand the change set.
+5.  After all hits are covered: proceed to **Step 2.9.2**.
+
+**Step 2.9.2: Orphan Creation Detection (Mandatory)**
+
+Targets newly-created executable code: a new function or module without a current-tree caller is dead code, even when its own tests pass.
+
+1.  **Trigger**: Every Table 4 entry with `action == "Create"` whose target is executable code (function, class, module — not pure data / config / template files).
+2.  **Requirement**: Each Create entry MUST declare at least one `caller_ref`:
+    *   `caller_ref.caller_file` MUST be a file already present in the current tree (NOT another Create entry from this same packet).
+    *   `caller_ref.evidence_ref` MUST point to an evidence entry whose excerpt shows the current code at the planned invocation site.
+3.  **Action**: Verify each Create entry's `caller_ref` against the evidence list. If `caller_ref` is missing OR points only to another newly-created file (self-loop), the entry is an **orphan**.
+4.  **Rejection**: Any orphan Create entry → return to **Step 2** and add the corresponding caller's `Modify` entry to scope.
+5.  After all Create entries have non-orphan callers: proceed to **Step 3: Finalize**.
 
 **Step 3: Finalize (Load Templates)**
 Only when the loop terminates (ZERO ambiguities remain):
@@ -214,8 +241,22 @@ After generating the 5 analysis tables (Section 3), you MUST produce and write a
     "proposed_changes": [
       {
         "id": "C-001",
+        "action": "Modify",
         "description": "<from Table 4 '简述' column>",
         "evidence_refs": ["E-001"]
+      },
+      {
+        "id": "C-002",
+        "action": "Create",
+        "description": "<from Table 4 '简述' column>",
+        "evidence_refs": ["E-002"],
+        "caller_refs": [
+          {
+            "caller_file": "<repo-relative path to an existing-tree file that will invoke this new symbol>",
+            "caller_function": "<function name in caller_file>",
+            "evidence_ref": "E-003"
+          }
+        ]
       }
     ]
   }
@@ -229,6 +270,8 @@ After generating the 5 analysis tables (Section 3), you MUST produce and write a
 -   `excerpt`: MANDATORY verbatim text. Summaries are prohibited.
 -   `status`: use `"confirmed"` only for files read in this session; use `"suspected"` for inferred but unread files.
 -   `proposed_changes[].evidence_refs`: MUST reference at least one evidence ID with `status: "confirmed"`.
+-   `proposed_changes[].action`: Required; must match Table 4's `操作` column (Create / Modify / Delete).
+-   `proposed_changes[].caller_refs`: Required when `action == "Create"` and the target is executable code (function, class, module — not pure data / config / template files). Each entry MUST reference an existing-tree caller via `caller_file` + `caller_function` + `evidence_ref`. See Step 2.9.2.
 -   If NOT a git repo: use `"type": "filesystem"` and omit `"commit"`.
 -   In the stop prompt (Section 6), include: `📦 Packet: task_{TIMESTAMP}.json | 执行: /remy-patch task_{TIMESTAMP}.json`
 

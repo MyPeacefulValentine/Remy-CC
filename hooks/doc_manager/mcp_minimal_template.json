@@ -48,6 +48,16 @@
       "scenario": {"zh-CN": "调用路径", "en": "Call path"},
       "call": "query_flow(symbols)",
       "purpose": {"zh-CN": "查找多个符号间的调用路径（双向 BFS）", "en": "Find call paths among symbols (bidirectional BFS)"}
+    },
+    {
+      "scenario": {"zh-CN": "集群摘要", "en": "Cluster summary"},
+      "call": "query_cluster_summary(name?)",
+      "purpose": {"zh-CN": "子系统级语义概览：入口、契约、依赖", "en": "Subsystem-level overview: entry, contract, dependencies"}
+    },
+    {
+      "scenario": {"zh-CN": "按意图导航", "en": "Navigate by intent"},
+      "call": "query_navigate(intent, top_k=5)",
+      "purpose": {"zh-CN": "用自然语言意图定位相关 cluster/file/symbol", "en": "Locate relevant cluster/file/symbol by natural-language intent"}
     }
   ],
   "usage_title": {
@@ -75,7 +85,7 @@
     "en": "## Cluster Overview"
   },
   "cluster_columns": {
-    "zh-CN": ["集群", "文件数", "入口文件"],
-    "en": ["Cluster", "Files", "Entry Points"]
+    "zh-CN": ["集群", "文件数", "描述"],
+    "en": ["Cluster", "Files", "Description"]
   }
 }

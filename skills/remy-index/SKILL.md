@@ -44,6 +44,27 @@ You MUST execute the following steps strictly in order.
     ```
 3.  Wait for completion.
 
+### Step 2.5: Hierarchical Bootstrap Confirmation (Conditional)
+
+After Step 2, inspect the stdout produced by `run.py` and decide whether to ask the user about generating file/cluster summaries:
+
+1.  **Search the captured stdout for the line `BOOTSTRAP_PENDING_CONFIRMATION`.** This line is emitted only when `SUMMARY_BOOTSTRAP_MODE=ask` (explicit or downgraded from `auto` due to missing API key / file count exceeding `BOOTSTRAP_AUTO_SIZE_GUARD`).
+2.  **If the line is absent**: Skip Step 2.5 entirely. `auto` mode already generated file/cluster summaries; `never` mode intentionally skipped.
+3.  **If the line is present**: Parse the `pending_files=X pending_clusters=Y` fields, then use `AskUserQuestion` in the language configured by `REMY_LANG`:
+    - Question (zh-CN): "检测到 {X} 个文件 + {Y} 个集群尚未生成层级摘要。立即生成？（消耗 LLM tokens）"
+    - Question (en): "{X} file(s) and {Y} cluster(s) lack hierarchical summaries. Generate now? (consumes LLM tokens)"
+    - Options:
+        - "Yes — generate now (推荐)" — proceed to step 4.
+        - "Skip this session" — proceed to step 5.
+        - "Disable hierarchical summaries permanently" — proceed to step 6.
+4.  **If user chose "Yes"**: Execute the bootstrap-only entry, overriding the mode to `auto`:
+    ```bash
+    python "~/.claude/skills/remy-index/run.py" --bootstrap-only --mode auto
+    ```
+    Wait for completion. The output again contains a `BOOTSTRAP_RESULT` line confirming file_done / cluster_done counts.
+5.  **If user chose "Skip"**: Output a single notice: "Skipped. Run `/remy-index` again or `remy-cc summary-rebuild` later to retry."
+6.  **If user chose "Disable permanently"**: Output the command for the user to apply manually (do NOT modify settings without explicit consent): "Set `SUMMARY_BOOTSTRAP_MODE=never` in `.claude/settings.local.json` (env section) or run `remy-cc config` to disable."
+
 ### Step 3: Injection Strategy
 1.  Determine the injection policy from `settings.json` (env `LOGIC_INDEX_AUTO_INJECT`).
     - Default is `ALWAYS` if not set.

@@ -69,8 +69,27 @@
           "action": { "type": "string", "enum": ["Create", "Modify", "Delete"], "description": "操作类型" },
           "summary": { "type": "string", "description": "修改目的与内容简述" },
           "minimalist_check": { "type": "string", "description": "最小化验证" },
-          "ripple_effect": { "type": "string", "description": "涟漪效应" }
-        }
+          "ripple_effect": { "type": "string", "description": "涟漪效应" },
+          "caller_refs": {
+            "type": "array",
+            "description": "调用入口列表；action='Create' 且目标为可执行代码（函数/类/模块）时必填，参见 SKILL.md Step 2.9.2",
+            "items": {
+              "type": "object",
+              "required": ["caller_file", "caller_function", "evidence_ref"],
+              "properties": {
+                "caller_file": { "type": "string", "description": "已存在于工作树的调用方文件路径（不可指向同 packet 中其他 Create 项的新建文件）" },
+                "caller_function": { "type": "string", "description": "调用方函数名" },
+                "evidence_ref": { "type": "string", "description": "指向 evidence_packet.evidence 中显示调用插入点的条目 id" }
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "action": { "const": "Create" } } },
+            "then": { "required": ["caller_refs"] }
+          }
+        ]
       }
     },
     "verification_plan": {

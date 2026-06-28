@@ -29,6 +29,7 @@ from parsers.python_parser import PythonParser
 from parsers.c_cpp_parser import CCppParser
 from parsers.ts_parser import TSParser
 from struct_scan import StructScanner
+from constants import DEFAULT_MAX_WORKERS
 
 VERSION = "4.0.0"
 DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
@@ -36,7 +37,6 @@ CONFIG_FILE = os.path.join(".claude", "logic_index_config")
 
 DEFAULT_MODEL = "glm-5"
 DEFAULT_API_URL = "https://coding.dashscope.aliyuncs.com/v1/chat/completions"
-DEFAULT_MAX_WORKERS = 5
 DEFAULT_RETRY_LIMIT = 3
 DEFAULT_TIMEOUT = 300
 DEFAULT_MAX_TOKENS = 8192
@@ -264,6 +264,371 @@ class LogicIndexer:
         except Exception:
             return "Task: Summarize source code: {source_code}"
 
+    def _get_dep_context_summaries(self, file_path):
+        """Fetch dep symbols' latest status='ok' short summary from summary_versions (v7 schema)."""
+        if not self.db:
+            return []
+        imports_row = self.db.execute(
+            "SELECT imports FROM files WHERE path = ?", (file_path,)
+        ).fetchone()
+        if not imports_row or not imports_row[0]:
+            return []
+        try:
+            import_list = json.loads(imports_row[0])
+        except (json.JSONDecodeError, TypeError):
+            return []
+        if not import_list:
+            return []
+        placeholders = ','.join(['?'] * len(import_list))
+        rows = self.db.execute(
+            f"""SELECT s.name,
+                      json_extract(
+                          (SELECT sv.summary FROM summary_versions sv
+                           WHERE sv.node_kind='symbol'
+                                 AND sv.node_ref = s.file_path || '::' || s.name
+                                 AND sv.status='ok'
+                           ORDER BY sv.version DESC LIMIT 1),
+                          '$.short') AS short_summary
+               FROM symbols s
+               WHERE s.file_path IN ({placeholders})""",
+            import_list
+        ).fetchall()
+        return [(name, summary) for name, summary in rows if summary]
+
+    def _select_dirty_symbols(self):
+        """Select symbols lacking a status='ok' summary_versions row (v7 schema)."""
+        if not self.db:
+            return []
+        return self.db.execute(
+            """SELECT s.file_path, s.name FROM symbols s
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM summary_versions sv
+                   WHERE sv.node_kind='symbol'
+                         AND sv.node_ref = s.file_path || '::' || s.name
+                         AND sv.status='ok'
+               )"""
+        ).fetchall()
+
+    def _persist_symbol_summaries(self, updates):
+        """Insert summary_versions rows (next version, status='ok') for symbols (v7 schema).
+
+        Delegates to summarizer.write_summary_version so the parent counter
+        bump runs uniformly. Accepts iterable of (summary_text, file_path,
+        symbol_name).
+        """
+        if not self.db or not updates:
+            return
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from summarizer import write_summary_version
+        except ImportError as exc:
+            print(f"Warning: summarizer unavailable ({exc}); falling back to direct INSERT.")
+            now_iso = datetime.now().isoformat(timespec='seconds')
+            rows = []
+            for summary_text, file_path, sym_name in updates:
+                node_ref = f"{file_path}::{sym_name}"
+                version_row = self.db.execute(
+                    "SELECT MAX(version) FROM summary_versions "
+                    "WHERE node_kind='symbol' AND node_ref = ?",
+                    (node_ref,)
+                ).fetchone()
+                next_version = (version_row[0] or 0) + 1
+                summary_json = json.dumps(
+                    {"short": summary_text, "full": None}, ensure_ascii=False
+                )
+                rows.append(("symbol", node_ref, next_version, summary_json, "ok", now_iso))
+            self.db.executemany(
+                "INSERT INTO summary_versions "
+                "(node_kind, node_ref, version, summary, status, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                rows
+            )
+            self.db.commit()
+            return
+
+        for summary_text, file_path, sym_name in updates:
+            node_ref = f"{file_path}::{sym_name}"
+            payload = {"short": summary_text, "full": None}
+            write_summary_version(self.db, "symbol", node_ref, payload, "ok")
+
+    def _run_hierarchical_bootstrap(self, mode_override=None):
+        """Run file/cluster summary bootstrap.
+
+        Reads SUMMARY_BOOTSTRAP_MODE env (auto/ask/never). Prints markers that
+        the /remy-index SKILL.md consumes: BOOTSTRAP_RESULT for status, and
+        BOOTSTRAP_PENDING_CONFIRMATION when ask-mode requires user input.
+        Returns the result dict from bootstrap_summaries, or None when skipped.
+        """
+        if not self.db or self.circuit_open:
+            return None
+        if not self.api_key:
+            print("Warning: OPENAI_API_KEY not configured; skipping file/cluster bootstrap.")
+            return None
+        try:
+            from bootstrap import bootstrap_summaries
+        except ImportError as exc:
+            print(f"Warning: bootstrap module unavailable ({exc}); skipping file/cluster bootstrap.")
+            return None
+
+        print("\n[run] entering hierarchical bootstrap...", flush=True)
+        try:
+            result = bootstrap_summaries(self.db, self._call_llm, mode=mode_override)
+        except Exception as exc:
+            print(f"Error during hierarchical bootstrap: {exc}")
+            return None
+
+        mode = result.get("mode", "unknown")
+        file_done = result.get("file_done", 0)
+        cluster_done = result.get("cluster_done", 0)
+        skipped = result.get("skipped", False)
+        print("\n=== Hierarchical Summary Bootstrap ===")
+        print(f"BOOTSTRAP_RESULT mode={mode} file_done={file_done} "
+              f"cluster_done={cluster_done} skipped={skipped}")
+        if result.get("needs_user_confirmation"):
+            print(f"BOOTSTRAP_PENDING_CONFIRMATION "
+                  f"pending_files={result.get('pending_files', 0)} "
+                  f"pending_clusters={result.get('pending_clusters', 0)}")
+        print("=" * 38)
+        return result
+
+    @staticmethod
+    def _env_int(name, default):
+        try:
+            return int(os.environ.get(name, default))
+        except (ValueError, TypeError):
+            return default
+
+    def _force_recompute_check(self, parent_kind, parent_ref):
+        """Return True when THRESHOLD_PRIMARY / THRESHOLD_BACKUP / INTERVAL_DAYS fires."""
+        if not self.db:
+            return False
+        row = self.db.execute(
+            "SELECT child_change_count, leaf_descendant_count, last_force_recompute_at "
+            "FROM node_change_counters WHERE node_kind = ? AND node_ref = ?",
+            (parent_kind, parent_ref),
+        ).fetchone()
+        if not row:
+            return False
+        child_cnt, leaf_cnt, last_force = row
+        threshold_primary = self._env_int("FORCE_RECOMPUTE_THRESHOLD_PRIMARY", 50)
+        threshold_backup = self._env_int("FORCE_RECOMPUTE_THRESHOLD_BACKUP", -1)
+        interval_days = self._env_int("FORCE_RECOMPUTE_INTERVAL_DAYS", 30)
+        if threshold_primary > 0 and child_cnt >= threshold_primary:
+            return True
+        if threshold_backup >= 0 and leaf_cnt >= threshold_backup:
+            return True
+        if last_force and interval_days > 0:
+            try:
+                from datetime import timedelta
+                elapsed = datetime.now() - datetime.fromisoformat(last_force)
+                if elapsed >= timedelta(days=interval_days):
+                    return True
+            except (ValueError, TypeError):
+                pass
+        return False
+
+    def _zero_counter(self, parent_kind, parent_ref, mark_force=False):
+        """Reset child_change_count and leaf_descendant_count for a node."""
+        if not self.db:
+            return
+        if mark_force:
+            self.db.execute(
+                "UPDATE node_change_counters SET child_change_count = 0, "
+                "leaf_descendant_count = 0, last_force_recompute_at = ? "
+                "WHERE node_kind = ? AND node_ref = ?",
+                (datetime.now().isoformat(timespec='seconds'), parent_kind, parent_ref),
+            )
+        else:
+            self.db.execute(
+                "UPDATE node_change_counters SET child_change_count = 0, "
+                "leaf_descendant_count = 0 "
+                "WHERE node_kind = ? AND node_ref = ?",
+                (parent_kind, parent_ref),
+            )
+        self.db.commit()
+
+    def _collect_propagation_candidates(self, parent_kind):
+        """Return parents with ok summary AND child_change_count > 0."""
+        if not self.db:
+            return []
+        return self.db.execute(
+            """SELECT cnt.node_ref, cnt.child_change_count
+               FROM node_change_counters cnt
+               WHERE cnt.node_kind = ?
+                     AND cnt.child_change_count > 0
+                     AND EXISTS (
+                         SELECT 1 FROM summary_versions sv
+                         WHERE sv.node_kind = cnt.node_kind
+                               AND sv.node_ref = cnt.node_ref
+                               AND sv.status = 'ok'
+                     )""",
+            (parent_kind,),
+        ).fetchall()
+
+    def _get_latest_ok_summary(self, node_kind, node_ref):
+        """Return parsed JSON of the latest status='ok' summary_versions row, or None."""
+        if not self.db:
+            return None
+        row = self.db.execute(
+            "SELECT summary FROM summary_versions "
+            "WHERE node_kind = ? AND node_ref = ? AND status = 'ok' "
+            "ORDER BY version DESC LIMIT 1",
+            (node_kind, node_ref),
+        ).fetchone()
+        if not row or not row[0]:
+            return None
+        try:
+            return json.loads(row[0])
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+    def _build_child_changes_payload(self, parent_kind, parent_ref):
+        """Assemble {child_ref, old_summary, new_summary} list for judge_propagation.
+
+        Children are determined structurally:
+            parent_kind='file'    -> children = symbols in that file
+            parent_kind='cluster' -> children = files in that cluster
+        old_summary uses the second-most-recent ok version when present.
+        """
+        if not self.db:
+            return []
+        if parent_kind == "file":
+            rows = self.db.execute(
+                "SELECT name FROM symbols WHERE file_path = ?", (parent_ref,)
+            ).fetchall()
+            child_kind = "symbol"
+            child_refs = [f"{parent_ref}::{r[0]}" for r in rows]
+        elif parent_kind == "cluster":
+            rows = self.db.execute(
+                """SELECT cm.file_path FROM cluster_members cm
+                   JOIN clusters c ON cm.cluster_id = c.id
+                   WHERE c.name = ?""",
+                (parent_ref,),
+            ).fetchall()
+            child_kind = "file"
+            child_refs = [r[0] for r in rows]
+        else:
+            return []
+
+        changes = []
+        for child_ref in child_refs:
+            versions = self.db.execute(
+                "SELECT summary FROM summary_versions "
+                "WHERE node_kind = ? AND node_ref = ? AND status = 'ok' "
+                "ORDER BY version DESC LIMIT 2",
+                (child_kind, child_ref),
+            ).fetchall()
+            if not versions:
+                continue
+            try:
+                new_summary = json.loads(versions[0][0]) if versions[0][0] else None
+            except (json.JSONDecodeError, TypeError):
+                new_summary = None
+            old_summary = None
+            if len(versions) > 1 and versions[1][0]:
+                try:
+                    old_summary = json.loads(versions[1][0])
+                except (json.JSONDecodeError, TypeError):
+                    old_summary = None
+            if new_summary == old_summary:
+                continue
+            changes.append({
+                "child_ref": child_ref,
+                "old_summary": old_summary,
+                "new_summary": new_summary,
+            })
+        return changes
+
+    def _rewrite_parent_summary(self, parent_kind, parent_ref):
+        """Regenerate parent summary via summarizer and persist as a new version."""
+        if not self.db:
+            return None
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import summarizer
+        except ImportError as exc:
+            print(f"Warning: summarizer unavailable ({exc}); cannot rewrite {parent_kind} {parent_ref}.")
+            return None
+        if parent_kind == "file":
+            row = self.db.execute(
+                "SELECT kind_hint FROM files WHERE path = ?", (parent_ref,)
+            ).fetchone()
+            hint = row[0] if row else None
+            payload, status = summarizer.summarize_file(self.db, parent_ref, hint, self._call_llm)
+        elif parent_kind == "cluster":
+            payload, status = summarizer.summarize_cluster(self.db, parent_ref, self._call_llm)
+        else:
+            return None
+        if payload is None and status == "pending":
+            return None
+        return summarizer.write_summary_version(
+            self.db, parent_kind, parent_ref, payload, status
+        )
+
+    def _run_propagation_pass(self):
+        """Run propagation judgment for file then cluster level.
+
+        For each candidate (parent with ok summary AND child_change_count > 0):
+        - If force-recompute fires: rewrite parent + zero counter + stamp last_force.
+        - Else: call judge_propagation; propagate=true → rewrite + zero counter,
+          propagate=false → keep counter (accumulates toward THRESHOLD_PRIMARY).
+        """
+        if not self.db or self.circuit_open or not self.api_key:
+            return None
+        print("\n[run] entering propagation pass...", flush=True)
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from llm_judge import judge_propagation
+        except ImportError as exc:
+            print(f"Warning: llm_judge unavailable ({exc}); skipping propagation pass.")
+            return None
+
+        stats = {
+            "file_force": 0, "file_propagate": 0, "file_skip": 0,
+            "cluster_force": 0, "cluster_propagate": 0, "cluster_skip": 0,
+        }
+        for parent_kind in ("file", "cluster"):
+            candidates = self._collect_propagation_candidates(parent_kind)
+            for parent_ref, _child_cnt in candidates:
+                if self.circuit_open:
+                    break
+                if self._force_recompute_check(parent_kind, parent_ref):
+                    self._rewrite_parent_summary(parent_kind, parent_ref)
+                    self._zero_counter(parent_kind, parent_ref, mark_force=True)
+                    stats[f"{parent_kind}_force"] += 1
+                    continue
+                parent_prev = self._get_latest_ok_summary(parent_kind, parent_ref)
+                child_changes = self._build_child_changes_payload(parent_kind, parent_ref)
+                if not child_changes:
+                    stats[f"{parent_kind}_skip"] += 1
+                    continue
+                try:
+                    verdict = judge_propagation(
+                        self.db, parent_kind, parent_ref, parent_prev,
+                        child_changes, self._call_llm,
+                    )
+                except Exception as exc:
+                    print(f"Error judging {parent_kind} {parent_ref}: {exc}")
+                    stats[f"{parent_kind}_skip"] += 1
+                    continue
+                if verdict.get("propagate"):
+                    self._rewrite_parent_summary(parent_kind, parent_ref)
+                    self._zero_counter(parent_kind, parent_ref)
+                    stats[f"{parent_kind}_propagate"] += 1
+                else:
+                    stats[f"{parent_kind}_skip"] += 1
+
+        print("\n=== Propagation Pass ===")
+        print(
+            "PROPAGATION_RESULT "
+            f"file_propagate={stats['file_propagate']} file_skip={stats['file_skip']} "
+            f"file_force={stats['file_force']} "
+            f"cluster_propagate={stats['cluster_propagate']} cluster_skip={stats['cluster_skip']} "
+            f"cluster_force={stats['cluster_force']}"
+        )
+        print("=" * 25)
+        return stats
+
     def _worker_task(self, file_path, items, context_summaries, parser):
         """Processes multiple symbols for a single file."""
         if self.circuit_open:
@@ -346,30 +711,17 @@ class LogicIndexer:
         batch_args = []
         for fp, items in batches.items():
             ctx_summary = ""
-            if self.db:
-                imports_row = self.db.execute(
-                    "SELECT imports FROM files WHERE path = ?", (fp,)
-                ).fetchone()
-                if imports_row and imports_row[0]:
-                    try:
-                        import_list = json.loads(imports_row[0])
-                    except (json.JSONDecodeError, TypeError):
-                        import_list = []
-                    if import_list:
-                        dep_list = []
-                        current_chars = 0
-                        placeholders = ','.join(['?'] * len(import_list))
-                        dep_syms = self.db.execute(
-                            f"SELECT name, summary FROM symbols WHERE file_path IN ({placeholders}) AND summary IS NOT NULL",
-                            import_list
-                        ).fetchall()
-                        for s_name, s_summary in dep_syms:
-                            line = f"- {s_name}: {s_summary}"
-                            if current_chars + len(line) + 1 > MAX_CTX_CHARS:
-                                break
-                            dep_list.append(line)
-                            current_chars += len(line) + 1
-                        ctx_summary = "\n".join(dep_list)
+            dep_syms = self._get_dep_context_summaries(fp)
+            if dep_syms:
+                dep_list = []
+                current_chars = 0
+                for s_name, s_summary in dep_syms:
+                    line = f"- {s_name}: {s_summary}"
+                    if current_chars + len(line) + 1 > MAX_CTX_CHARS:
+                        break
+                    dep_list.append(line)
+                    current_chars += len(line) + 1
+                ctx_summary = "\n".join(dep_list)
             batch_args.append((fp, items, ctx_summary, parser_map[fp]))
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -401,14 +753,14 @@ class LogicIndexer:
             scanner = StructScanner(self.root_dir)
             scanner.scan_all()
             self.db = scanner.db
+            print("Structural scan complete.", flush=True)
 
-            dirty_rows = self.db.execute(
-                "SELECT file_path, name FROM symbols WHERE summary IS NULL"
-            ).fetchall()
+            dirty_rows = self._select_dirty_symbols()
 
             dirty_by_file = {}
             for fpath, sym_name in dirty_rows:
                 dirty_by_file.setdefault(fpath, []).append(sym_name)
+            print(f"Symbol layer: {len(dirty_rows)} symbol(s) across {len(dirty_by_file)} file(s) need LLM summary.", flush=True)
 
             for path, sym_names in dirty_by_file.items():
                 full_path = os.path.join(self.root_dir, path)
@@ -432,17 +784,20 @@ class LogicIndexer:
                 if not self.api_key:
                     print("Warning: OPENAI_API_KEY not found. Skipping LLM generation.")
                 else:
+                    print(f"Symbol layer: dispatching {len(self.dirty_nodes)} segment(s) to LLM (max_workers={self.max_workers})...", flush=True)
                     self.process_llm_queue()
 
                     updates = [(sym["summary"], path, sym["name"])
                                for path, sym, _seg, _p in self.dirty_nodes
                                if sym.get("summary")]
                     if updates:
-                        self.db.executemany(
-                            "UPDATE symbols SET summary = ? WHERE file_path = ? AND name = ?",
-                            updates
-                        )
-                        self.db.commit()
+                        self._persist_symbol_summaries(updates)
+                    print(f"\nSymbol layer: persisted {len(updates)} summaries.", flush=True)
+            else:
+                print("Symbol layer: no dirty symbols, skipping LLM phase.", flush=True)
+
+            self._run_hierarchical_bootstrap()
+            self._run_propagation_pass()
 
         except Exception as e:
             if not isinstance(e, FatalError):
@@ -461,7 +816,6 @@ class LogicIndexer:
             dirty_count = len(self.dirty_nodes)
             file_count = self.db.execute("SELECT COUNT(*) FROM files").fetchone()[0] if self.db else 0
             print("\n=== Logic Indexer Stats ===")
-            print(f"Version             : {VERSION}")
             print(f"Files in Index      : {file_count}")
             print(f"Symbols for LLM     : {dirty_count}")
             print(f"API Calls           : {self.stats['api_calls']}")
@@ -473,6 +827,25 @@ class LogicIndexer:
 
 
 if __name__ == "__main__":
+    import argparse
+
     sys.stdout.reconfigure(encoding='utf-8')
+    ap = argparse.ArgumentParser(description="Logic Indexer: structural scan + LLM summaries.")
+    ap.add_argument("--bootstrap-only", action="store_true",
+                    help="Skip symbol-layer LLM; trigger only file/cluster bootstrap.")
+    ap.add_argument("--mode", choices=["auto", "ask", "never"], default=None,
+                    help="Override SUMMARY_BOOTSTRAP_MODE for this invocation.")
+    cli_args = ap.parse_args()
+
     indexer = LogicIndexer(os.getcwd())
-    indexer.run()
+    if cli_args.bootstrap_only:
+        scanner = StructScanner(indexer.root_dir)
+        scanner.scan_all()
+        indexer.db = scanner.db
+        try:
+            indexer._run_hierarchical_bootstrap(mode_override=cli_args.mode)
+        finally:
+            if indexer.db:
+                indexer.db.close()
+    else:
+        indexer.run()

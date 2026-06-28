@@ -228,7 +228,8 @@ class TSParser(LanguageParser):
     def get_prompt_template_path(self):
         return os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "prompt_ts.md",
+            "prompts",
+            "summarize_symbol_ts.md",
         )
 
     def resolve_imports(self, source, file_path, root_dir):

@@ -79,7 +79,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 ### MCP 服务器（v1.4+） [📖](remy-src/MCP_README_zh.md)
 
-`remy-index` MCP 服务器通过 Model Context Protocol 暴露 9 个查询 tool，使 Claude 可直接访问代码智能图，无需启动子进程：
+`remy-index` MCP 服务器通过 Model Context Protocol 暴露 10 个查询 tool，使 Claude 可直接访问代码智能图，无需启动子进程：
 
 | Tool | 用途 |
 | :--- | :--- |
@@ -91,12 +91,36 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | `query_patterns` | 查询事件/回调注册关系 |
 | `query_search` | 模糊符号搜索 — FTS5 前缀 → LIKE 子串 → 编辑距离回退 |
 | `query_flow` | 通过双向 BFS 查找命名符号间的调用路径 |
+| `query_cluster_summary` | 单/全集群的语义摘要（short / full）与元数据 |
+| `query_navigate` | 按自然语言意图跨 cluster → file → symbol 排序，含相关性评分 |
 
 服务器包含**索引新鲜度检测**：每个会话的首次 tool 调用时，比较存储的 `source_commit` 与当前 git HEAD（非 git 项目回退到 struct_hash 抽样）。若 >20% 的文件不一致，在 tool 响应中附加警告。
 
 安装时自动注册到 `~/.claude.json`，Claude Code 会话启动时自动拉起。以只读模式访问 SQLite 逻辑索引。通过 `remy-cc config` 的"MCP 服务器"分组配置参数。
 
 当 MCP 服务器可用时，上下文注入系统自动切换为 **MCP Minimal 模式**——仅注入集群概览和 MCP 工具使用指引（约 1 KB），取代完整符号树（约 40 KB）。Claude 通过 `query_symbol` / `query_callers` / `query_impact` 按需查询详情。通过 `NAV_MCP_MINIMAL_ENABLED`（项目级参数，"上下文注入"分组）控制此行为。
+
+### 层级化摘要系统（v1.5+）
+
+语义索引在 symbol（叶子）基础上引入 **file**（单职责文件契约）与 **cluster**（子系统级）两个上层，构成 symbol → file → cluster 三层结构。所有摘要统一存于 `summary_versions` 表（版本化 + 6 值 status 状态机：`ok / pending / stale / oversized_warn / oversized_hard / corrupt`）。读路径统一通过 `get_latest_summary(db, node_kind, node_ref)` 取最新 `status='ok'` 版本。
+
+- **Migration ladder**：schema 从 v6 升级到 v7 通过 `_migrate_v6_to_v7`（单事务 8 步）执行。缺失中间 handler 时报错并保留旧 db，不擦库重建。项目本地 `.claude/logic_index.db` 在安装 v1.5.0 后首次 SessionStart 时自动升级。
+- **Bootstrap 三模式**：`SUMMARY_BOOTSTRAP_MODE` 环境变量取 `auto / ask / never`，控制 file/cluster 层摘要的首次生成。`auto` 在缺少 API key 或 `file_count > BOOTSTRAP_AUTO_SIZE_GUARD` 时降级为 `ask`；`ask` 模式由 `/remy-index` 的 Step 2.5 通过 `AskUserQuestion` 询问用户。失败的节点保留 `status='pending'`，下次 scan 自动续传（NULL-as-pending 模式，复用 v1.4 symbol 层管线）。
+- **基于 LLM 判定的懒级联**：叶子摘要被重写时，`_bump_parent_counter_if_applicable` 自增父节点的 `child_change_count`。Propagation pass 调用 `judge_propagation` 让 LLM 判定该变更对上层是否有语义影响（8 维敏感 vs 6 类忽略）。`propagate=true` 重写父摘要并清零计数器；`propagate=false` 终止级联。保守偏置：枚举校验失败时默认 `propagate=true, confidence=low`。
+- **强制重算**：`child_change_count >= FORCE_RECOMPUTE_THRESHOLD_PRIMARY`（默认 50）或距上次重算超过 `FORCE_RECOMPUTE_INTERVAL_DAYS`（默认 30 天）时无条件重写，防御 LLM 判定漂移。
+- **三层 FTS**：`summary_fts`（FTS5）索引 `summary_versions`，覆盖三个 node_kind，替代 v1.4 的 `symbols_fts`。`query_search` 按 `node_kind='symbol'` 过滤保持向后兼容；`query_navigate` 跨 cluster → file → symbol 排序，含 LLM 驱动的意图匹配与结果缓存（`summary_versions` 写入时自动失效）。
+- **判定缓存**：`judge_cache(payload_hash, result, created_at)` 缓存 LLM 判定结果。父摘要更新使 payload_hash 自然变化，缓存被动失效；周期清理通过 `remy-cc summary-vacuum --older-than 90d`。
+- **LLM 通道共用**：判定与摘要复用 v1.4 symbol 层管线的 `OPENAI_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` 配置。默认单节点 timeout=60 s；并发由共享参数 `OPENAI_MAX_WORKERS`（默认 5）统一控制，symbol 层与 file/cluster bootstrap 共用。
+
+**新增 CLI 命令**（通过 `Bash(remy-cc summary-*:*)` 权限注册）：
+
+| 命令 | 用途 |
+| :--- | :--- |
+| `remy-cc summary-rebuild [--node-kind] [--node-ref] [--mode]` | 触发全量或单节点摘要重算；SKILL.md ask 模式重入使用 `--mode auto` |
+| `remy-cc summary-audit <node_ref>` | 打印单节点版本历史与判定理由 |
+| `remy-cc summary-vacuum [--older-than 90d]` | 清理过期 `judge_cache` 条目 |
+
+**13 个新 env**（通过 `remy-cc config` 的"层级摘要"分组配置）：`SUMMARY_CHAR_LIMIT_SYMBOL/FILE_COHESIVE/FILE_UTILITY/CLUSTER`、`SUMMARY_ZH_LENGTH_FACTOR`、`FILE_KIND_MIN_SYMBOLS`、`FILE_KIND_LOW_COHESION_THRESHOLD`、`FORCE_RECOMPUTE_THRESHOLD_PRIMARY/BACKUP`、`FORCE_RECOMPUTE_INTERVAL_DAYS`、`SUMMARY_BOOTSTRAP_MODE`、`BOOTSTRAP_AUTO_SIZE_GUARD`、`SUMMARY_LLM_TIMEOUT`。bootstrap 与强制重写阶段的并发沿用已有的 `OPENAI_MAX_WORKERS`。
 
 ### Skills（手动调用）
 

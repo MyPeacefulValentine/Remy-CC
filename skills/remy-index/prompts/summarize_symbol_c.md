@@ -36,3 +36,33 @@ Output Format (JSON):
   {{"name": "SymbolName", "summary": "Summary text..."}},
   ...
 ]
+
+Examples:
+
+Input:
+- Target Symbols: ["queue_push"]
+- Source Code: int queue_push(queue_t *q, void *item) { if (!q || q->size == q->cap) return -ENOMEM; q->data[q->tail++] = item; return 0; }
+
+Output:
+[{{"name": "queue_push", "summary": "Enqueue into bounded ring; -ENOMEM if full."}}]
+
+Input:
+- Target Symbols: ["packet_header"]
+- Source Code: struct packet_header {{ uint32_t magic; uint16_t version; uint16_t len; }};
+
+Output:
+[{{"name": "packet_header", "summary": "[Struct] Wire-format header: magic+version+len."}}]
+
+Input:
+- Target Symbols: ["LIST_FOR_EACH"]
+- Source Code: #define LIST_FOR_EACH(p, head) for (p = (head)->next; p != (head); p = p->next)
+
+Output:
+[{{"name": "LIST_FOR_EACH", "summary": "[Macro] Forward-iterate over circular list."}}]
+
+Input:
+- Target Symbols: ["BufferedReader"]
+- Source Code: class BufferedReader : public Reader {{ public: explicit BufferedReader(Reader& src, size_t cap); ssize_t read(char* dst, size_t n) override; private: std::unique_ptr<char[]> buf_; }};
+
+Output:
+[{{"name": "BufferedReader", "summary": "[Class] RAII-buffered wrapper over Reader."}}]

@@ -354,7 +354,14 @@ def _render_full(db, output, selected_files, file_count, lang, icon_map):
                 pass
 
         symbols = db.execute(
-            "SELECT name, type, args, summary FROM symbols WHERE file_path = ? ORDER BY lineno",
+            """SELECT s.name, s.type, s.args,
+                      json_extract(
+                          (SELECT sv.summary FROM summary_versions sv
+                           WHERE sv.node_kind='symbol'
+                                 AND sv.node_ref = s.file_path || '::' || s.name
+                           ORDER BY sv.version DESC LIMIT 1),
+                          '$.short') AS short_summary
+               FROM symbols s WHERE s.file_path = ? ORDER BY s.lineno""",
             (path,)
         ).fetchall()
         for name, sym_type, args, summary in symbols:
@@ -367,7 +374,13 @@ def _render_full(db, output, selected_files, file_count, lang, icon_map):
 
 def _render_cluster(db, output, selected_files, file_count, lang, icon_map):
     clusters = db.execute(
-        "SELECT id, name, label, entry_symbols, file_count FROM clusters ORDER BY name"
+        """SELECT c.id, c.name, c.label, c.entry_symbols, c.file_count,
+                  json_extract(
+                      (SELECT sv.summary FROM summary_versions sv
+                       WHERE sv.node_kind='cluster' AND sv.node_ref = c.name
+                       ORDER BY sv.version DESC LIMIT 1),
+                      '$.short') AS short_summary
+           FROM clusters c ORDER BY c.name"""
     ).fetchall()
 
     if not clusters:
@@ -381,14 +394,16 @@ def _render_cluster(db, output, selected_files, file_count, lang, icon_map):
             output.insert(4, _meta_line(lang, shown, total_files))
 
     output.append("## 项目功能拓扑\n")
-    for cluster_id, name, label, entry_json, fc in clusters:
+    for cluster_id, name, label, entry_json, fc, short_summary in clusters:
         try:
             entries = json.loads(entry_json)
         except (json.JSONDecodeError, TypeError):
             entries = []
 
-        display_label = label or name
+        display_label = label or short_summary or name
         output.append(f"### {display_label} ({fc} files)")
+        if short_summary and short_summary != display_label:
+            output.append(f"> {short_summary}")
 
         entry_lines = []
         for qualified in entries[:5]:
@@ -414,7 +429,14 @@ def _render_cluster(db, output, selected_files, file_count, lang, icon_map):
 
         for (fp,) in member_files:
             symbols = db.execute(
-                "SELECT name, type, args, summary FROM symbols WHERE file_path = ? ORDER BY lineno",
+                """SELECT s.name, s.type, s.args,
+                          json_extract(
+                              (SELECT sv.summary FROM summary_versions sv
+                               WHERE sv.node_kind='symbol'
+                                     AND sv.node_ref = s.file_path || '::' || s.name
+                               ORDER BY sv.version DESC LIMIT 1),
+                              '$.short') AS short_summary
+                   FROM symbols s WHERE s.file_path = ? ORDER BY s.lineno""",
                 (fp,)
             ).fetchall()
             if symbols:
@@ -435,7 +457,13 @@ def _render_cluster(db, output, selected_files, file_count, lang, icon_map):
 
 def _render_cluster_summary(db, output, lang):
     clusters = db.execute(
-        "SELECT name, label, entry_symbols, file_count FROM clusters ORDER BY file_count DESC"
+        """SELECT c.name, c.label, c.file_count,
+                  json_extract(
+                      (SELECT sv.summary FROM summary_versions sv
+                       WHERE sv.node_kind='cluster' AND sv.node_ref = c.name
+                       ORDER BY sv.version DESC LIMIT 1),
+                      '$.short') AS short_summary
+           FROM clusters c ORDER BY c.file_count DESC"""
     ).fetchall()
 
     if not clusters:
@@ -443,9 +471,12 @@ def _render_cluster_summary(db, output, lang):
         return
 
     output.append("## 项目功能拓扑 (摘要)\n")
-    for name, label, entry_json, fc in clusters:
-        display = label or name
-        output.append(f"- **{display}** ({fc} files)")
+    for name, label, fc, short_summary in clusters:
+        locator = f"{label} ({name})" if label else name
+        line = f"- **{locator}** ({fc} files)"
+        if short_summary:
+            line += f" — {short_summary}"
+        output.append(line)
 
     output.append("")
     output.append("> 查询任意符号签名: query_symbol(\"函数名\") | 影响分析: query_impact([\"文件\"])")
@@ -455,7 +486,13 @@ def _render_mcp_minimal(db, output, lang):
     file_count = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
     symbol_count = db.execute("SELECT COUNT(*) FROM symbols").fetchone()[0]
     clusters = db.execute(
-        "SELECT name, label, entry_symbols, file_count FROM clusters ORDER BY file_count DESC"
+        """SELECT c.name, c.label, c.file_count,
+                  json_extract(
+                      (SELECT sv.summary FROM summary_versions sv
+                       WHERE sv.node_kind='cluster' AND sv.node_ref = c.name
+                       ORDER BY sv.version DESC LIMIT 1),
+                      '$.short') AS short_summary
+           FROM clusters c ORDER BY c.file_count DESC"""
     ).fetchall()
 
     tpl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_minimal_template.json")
@@ -490,22 +527,10 @@ def _render_mcp_minimal(db, output, lang):
         output.append(f"| {cc[0]} | {cc[1]} | {cc[2]} |")
         output.append("| :-- | :-- | :-- |")
 
-        for name, label, entry_json, fc in clusters:
-            display = label or name
-            entries = []
-            try:
-                raw = json.loads(entry_json) if entry_json else []
-            except (json.JSONDecodeError, TypeError):
-                raw = []
-            for qualified in raw[:3]:
-                if "::" in qualified:
-                    fpath = qualified.split("::")[0]
-                    fname = os.path.basename(fpath)
-                    if fname not in entries:
-                        entries.append(fname)
-                else:
-                    entries.append(qualified)
-            output.append(f"| {display} | {fc} | {', '.join(entries)} |")
+        for name, label, fc, short_summary in clusters:
+            locator = f"{label} ({name})" if label else name
+            description = short_summary or ("(no summary)" if lk == "en" else "(暂无描述)")
+            output.append(f"| {locator} | {fc} | {description} |")
 
         output.append("")
 

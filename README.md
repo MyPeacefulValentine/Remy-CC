@@ -79,7 +79,7 @@ These layers are coupled by design. Hooks maintain the context that skills depen
 
 ### MCP Server (v1.4+) [📖](remy-src/MCP_README.md)
 
-The `remy-index` MCP server exposes 9 query tools over the Model Context Protocol, giving Claude direct access to the code intelligence graph without subprocess overhead:
+The `remy-index` MCP server exposes 10 query tools over the Model Context Protocol, giving Claude direct access to the code intelligence graph without subprocess overhead:
 
 | Tool | Purpose |
 | :--- | :--- |
@@ -91,12 +91,36 @@ The `remy-index` MCP server exposes 9 query tools over the Model Context Protoco
 | `query_patterns` | Query event/callback registration patterns |
 | `query_search` | Fuzzy symbol search — FTS5 prefix → LIKE substring → edit-distance fallback |
 | `query_flow` | Find call paths among named symbols via bidirectional BFS |
+| `query_cluster_summary` | Per-cluster semantic summary (short / full) and metadata |
+| `query_navigate` | Intent-driven navigation across cluster → file → symbol with relevance scoring |
 
 The server includes **index staleness detection**: on the first tool call each session, it compares the stored `source_commit` against the current git HEAD (or falls back to struct_hash sampling for non-git projects). If >20% of files differ, a warning is prepended to tool responses.
 
 The server is registered in `~/.claude.json` during installation and launched automatically by Claude Code at session start. It reads from the SQLite logic index (`logic_index.db`) in read-only mode. Configure via the "MCP Server" group in `remy-cc config`.
 
 When the MCP server is available, the context injection system automatically switches to **MCP Minimal mode** — injecting only a cluster overview and MCP tool usage hints (~1 KB) instead of the full symbol tree (~40 KB). Claude uses `query_symbol` / `query_callers` / `query_impact` on demand for detailed analysis. Control this behavior with `NAV_MCP_MINIMAL_ENABLED` (project-level, "Context Injection" group).
+
+### Hierarchical Summary System (v1.5+)
+
+The semantic index stores summaries at three layers — **symbol** (leaf), **file** (single-responsibility contract), and **cluster** (subsystem-level) — versioned in a single `summary_versions` table with a 6-value status state machine (`ok / pending / stale / oversized_warn / oversized_hard / corrupt`). Reads route through `get_latest_summary(db, node_kind, node_ref)` to fetch the latest `status='ok'` row.
+
+- **Migration ladder**: schema upgrades from v6 to v7 run through `_migrate_v6_to_v7` (8-step single transaction). Missing intermediate handlers raise an error and preserve the existing db — no destructive rebuild. Project-local `.claude/logic_index.db` files auto-upgrade on the first SessionStart after installing v1.5.0.
+- **Bootstrap with three modes**: `SUMMARY_BOOTSTRAP_MODE` env (`auto` / `ask` / `never`) controls how file/cluster summaries are first generated. `auto` degrades to `ask` when the API key is missing or `file_count > BOOTSTRAP_AUTO_SIZE_GUARD`. In `ask` mode, `/remy-index` Step 2.5 prompts the user via `AskUserQuestion`. Failed nodes retain `status='pending'` and resume on the next scan (NULL-as-pending pattern, reused from the v1.4 symbol-layer pipeline).
+- **Lazy propagation with LLM judgment**: when a leaf summary is rewritten, `_bump_parent_counter_if_applicable` increments the parent's `child_change_count`. The propagation pass calls `judge_propagation` to ask the LLM whether the change is semantically meaningful at the upper layer (8 sensitive dimensions vs 6 absorbable dimensions). `propagate=true` rewrites the parent summary and zeros the counter; `propagate=false` terminates the cascade. Conservative bias: validation failure defaults to `propagate=true, confidence=low`.
+- **Forced recomputation**: `child_change_count >= FORCE_RECOMPUTE_THRESHOLD_PRIMARY` (default 50) or `elapsed_days >= FORCE_RECOMPUTE_INTERVAL_DAYS` (default 30) triggers unconditional rewrite regardless of the LLM verdict, guarding against judgment drift.
+- **Three-layer FTS**: `summary_fts` (FTS5) indexes `summary_versions` across all three node kinds, replacing the v1.4 `symbols_fts`. `query_search` filters by `node_kind='symbol'` for backward compatibility; `query_navigate` ranks results across cluster → file → symbol with LLM-driven intent matching and result caching (cache invalidates whenever `summary_versions` grows).
+- **Judgment cache**: `judge_cache(payload_hash, result, created_at)` memoizes LLM judgment results. Parent summary updates change the payload hash and invalidate cached entries naturally; periodic cleanup via `remy-cc summary-vacuum --older-than 90d`.
+- **Shared LLM channel**: judgment and summarization reuse the same `OPENAI_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` configuration as the v1.4 symbol-layer pipeline. Default per-node timeout is 60 s; parallelism is governed by the shared `OPENAI_MAX_WORKERS` knob (default 5) for both the symbol layer and the file/cluster bootstrap.
+
+**New CLI commands** (registered via `Bash(remy-cc summary-*:*)` permissions):
+
+| Command | Purpose |
+| :--- | :--- |
+| `remy-cc summary-rebuild [--node-kind] [--node-ref] [--mode]` | Trigger full or per-node summary regeneration; SKILL.md ask-mode re-entry uses `--mode auto` |
+| `remy-cc summary-audit <node_ref>` | Print version history and judgment rationale for a single node |
+| `remy-cc summary-vacuum [--older-than 90d]` | Clean stale `judge_cache` entries |
+
+**13 new env vars** (configurable via `remy-cc config` "Summary Hierarchy" group): `SUMMARY_CHAR_LIMIT_SYMBOL/FILE_COHESIVE/FILE_UTILITY/CLUSTER`, `SUMMARY_ZH_LENGTH_FACTOR`, `FILE_KIND_MIN_SYMBOLS`, `FILE_KIND_LOW_COHESION_THRESHOLD`, `FORCE_RECOMPUTE_THRESHOLD_PRIMARY/BACKUP`, `FORCE_RECOMPUTE_INTERVAL_DAYS`, `SUMMARY_BOOTSTRAP_MODE`, `BOOTSTRAP_AUTO_SIZE_GUARD`, `SUMMARY_LLM_TIMEOUT`. The bootstrap/forced-rewrite concurrency is governed by the existing `OPENAI_MAX_WORKERS`.
 
 ### Skills (User-Invoked)
 

@@ -30,6 +30,7 @@ You must output your analysis in the following **five** Markdown tables in this 
 | 维度 | 检查项 | 状态 | 决策/规约 |
 | :--- | :--- | :--- | :--- |
 | **数据流** | 上游依赖 / 下游兼容 | Pass/Warn | (Must define specific data contract) |
+| **数据流** | 新增可变状态实体（schema 列 / 配置项 / sentinel 文件）是否同时列出 init / read / write 三路径 | Pass/Warn | Write 路径缺失时必须在 Table 1 显式声明该实体为 init-once read-only |
 | **一致性** | 函数签名 / 库调用 | Pass/Fail | (Check recursively against definitions) |
 | **数据结构** | 硬编码 / 参数化 | Pass/Locked | (Must prioritize args/config over hardcoding) |
 | **系统风险** | 副作用 / 环境兼容 | Pass/Warn | (Check global mechanisms & OS differences) |
@@ -45,6 +46,14 @@ You must output your analysis in the following **five** Markdown tables in this 
 | 文件路径 | 定位 | 操作 | 简述 | 最小化验证 | 涟漪效应 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `path/to/file` | `func_name` | Modify | 增加重试逻辑 | ✅ 仅修改目标函数 | 无 |
+
+**Caller Refs Annotation** (`操作=Create` 行必填，参见 SKILL.md Step 2.9.2)
+
+| Create 项 ID | caller_file (existing tree) | caller_function | evidence_ref |
+| :--- | :--- | :--- | :--- |
+| *Example: C-002* | *path/to/existing_file.py* | *EntryClass.run* | *E-003* |
+
+如本 packet 不含任何 `Create` 行，本注解表为空。**禁止 orphan creation**：`caller_file` 必须是当前工作树已存在的文件，不能是同 packet 中其他 `Create` 项创建的新文件。
 
 ### ✅ Table 5: Verification Plan (验证计划)
 

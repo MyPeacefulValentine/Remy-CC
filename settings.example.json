@@ -58,6 +58,19 @@
     "INSIGHT_DEFAULT_DEPTH": "standard",
     "INSIGHT_MAX_CUSTOM_ANGLES": "2",
     "INSIGHT_MAX_AGENTS": "40",
+    "SUMMARY_CHAR_LIMIT_SYMBOL": "100",
+    "SUMMARY_CHAR_LIMIT_FILE_COHESIVE": "250",
+    "SUMMARY_CHAR_LIMIT_FILE_UTILITY": "800",
+    "SUMMARY_CHAR_LIMIT_CLUSTER": "500",
+    "SUMMARY_ZH_LENGTH_FACTOR": "0.5",
+    "FILE_KIND_MIN_SYMBOLS": "5",
+    "FILE_KIND_LOW_COHESION_THRESHOLD": "0.25",
+    "FORCE_RECOMPUTE_THRESHOLD_PRIMARY": "50",
+    "FORCE_RECOMPUTE_THRESHOLD_BACKUP": "-1",
+    "FORCE_RECOMPUTE_INTERVAL_DAYS": "30",
+    "SUMMARY_BOOTSTRAP_MODE": "auto",
+    "BOOTSTRAP_AUTO_SIZE_GUARD": "500",
+    "SUMMARY_LLM_TIMEOUT": "60",
     "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
   },
   "permissions": {
@@ -89,6 +102,9 @@
       "Skill(remy-testgen)",
       "Skill(remy-ci)",
       "Skill(remy-insight)",
+      "Bash(remy-cc summary-rebuild:*)",
+      "Bash(remy-cc summary-vacuum:*)",
+      "Bash(remy-cc summary-audit:*)",
       "mcp__remy-index__*"
     ]
   },

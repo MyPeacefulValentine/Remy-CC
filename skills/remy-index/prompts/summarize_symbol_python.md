@@ -28,3 +28,26 @@ Output Format (JSON):
   {{"name": "SymbolName", "summary": "Summary text..."}},
   ...
 ]
+
+Examples:
+
+Input:
+- Target Symbols: ["verify_token"]
+- Source Code: def verify_token(token): payload = _decode(token); _check_expiry(payload); return payload
+
+Output:
+[{{"name": "verify_token", "summary": "Reject expired or tampered JWTs."}}]
+
+Input:
+- Target Symbols: ["test_login_returns_200"]
+- Source Code: def test_login_returns_200(client): resp = client.post("/login", ...); assert resp.status_code == 200
+
+Output:
+[{{"name": "test_login_returns_200", "summary": "[Test] Asserts 200 on valid credentials."}}]
+
+Input:
+- Target Symbols: ["read_yaml"]
+- Source Code: def read_yaml(path): return yaml.safe_load(open(path))
+
+Output:
+[{{"name": "read_yaml", "summary": "[Source] Load YAML config from disk."}}]

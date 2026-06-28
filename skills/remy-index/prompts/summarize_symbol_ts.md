@@ -35,3 +35,26 @@ Output Format (JSON):
   {{"name": "SymbolName", "summary": "Summary text..."}},
   ...
 ]
+
+Examples:
+
+Input:
+- Target Symbols: ["fetchUserProfile"]
+- Source Code: export async function fetchUserProfile(id: string): Promise<User> {{ const res = await fetch(`/api/user/${{id}}`); return res.json(); }}
+
+Output:
+[{{"name": "fetchUserProfile", "summary": "[Source] Async-fetch user by id via REST."}}]
+
+Input:
+- Target Symbols: ["AuthContext"]
+- Source Code: export interface AuthContext {{ user: User | null; signIn(email: string, pw: string): Promise<void>; signOut(): void; }}
+
+Output:
+[{{"name": "AuthContext", "summary": "[Interface] React-context contract for auth state."}}]
+
+Input:
+- Target Symbols: ["LoadingSpinner"]
+- Source Code: export const LoadingSpinner: FC<{{label?: string}}> = ({{label}}) => <div className="spinner">{{label}}</div>;
+
+Output:
+[{{"name": "LoadingSpinner", "summary": "Render spinner with optional label prop."}}]

@@ -32,10 +32,46 @@ from index_mcp_queries import (
     query_patterns_impl,
     query_search_impl,
     query_flow_impl,
+    query_cluster_summary_impl,
+    query_navigate_impl,
 )
 
 _DB_REL_DEFAULT = os.path.join(".claude", "logic_index.db")
 _freshness_warning = ""
+
+
+def _resolve_git_head(root_dir, db=None):
+    """Locate git HEAD that covers the indexed sources.
+
+    Returns a ``(head, cwd)`` tuple where ``cwd`` is the directory in
+    which the ``git rev-parse`` call succeeded; returns ``(None, None)``
+    if no git context can be resolved. ``cwd`` is reusable for follow-up
+    git invocations such as ``git status --porcelain``.
+
+    Keep this implementation in sync with
+    ``Remy-CC/skills/remy-index/struct_scan.py::_resolve_git_head``.
+    """
+    candidates = [root_dir]
+    if db is not None:
+        try:
+            row = db.execute("SELECT path FROM files LIMIT 1").fetchone()
+        except sqlite3.Error:
+            row = None
+        if row:
+            inferred = os.path.dirname(os.path.join(root_dir, row[0]))
+            candidates.append(inferred)
+    for candidate in candidates:
+        if not candidate or not os.path.isdir(candidate):
+            continue
+        try:
+            head = subprocess.check_output(
+                ['git', 'rev-parse', 'HEAD'], text=True,
+                stderr=subprocess.DEVNULL, cwd=candidate
+            ).strip()
+            return head, candidate
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            continue
+    return None, None
 
 
 def _init_freshness():
@@ -60,18 +96,14 @@ def _init_freshness():
         total = int(file_count_row[0]) if file_count_row else 1
 
         try:
-            proc = subprocess.run(
-                ['git', 'rev-parse', 'HEAD'],
-                capture_output=True, text=True, timeout=5
-            )
-            if proc.returncode != 0:
+            head, git_cwd = _resolve_git_head(os.getcwd(), db)
+            if not head:
                 raise ValueError("git failed")
-            head = proc.stdout.strip()
 
             if stored_row and stored_row[0] == head:
                 status = subprocess.run(
                     ['git', 'status', '--porcelain'],
-                    capture_output=True, text=True, timeout=5
+                    capture_output=True, text=True, timeout=5, cwd=git_cwd
                 )
                 dirty = [l for l in status.stdout.splitlines() if l.strip() and not l.startswith("??")]
                 if not dirty:
@@ -138,6 +170,8 @@ mcp = FastMCP(
         "- To locate where a symbol is defined: query_symbol (instead of glob/grep)\n"
         "- To search for a symbol when you don't know the exact name: query_search (fuzzy prefix/substring/typo)\n"
         "- To trace call paths between two or more symbols: query_flow (bidirectional BFS)\n"
+        "- To get a subsystem-level overview: query_cluster_summary (cluster contracts, entry symbols)\n"
+        "- To locate work by intent (\"where do I modify auth logic\"): query_navigate (LLM-ranked clusters/files)\n"
         "\n"
         "Do NOT use these tools when:\n"
         "- You need to read file content before making an edit (use Read instead)\n"
@@ -193,6 +227,18 @@ def query_search(text: str, limit: int = 10, file_hint: str = "") -> str:
 def query_flow(symbols: list[str], max_depth: int = 15, max_visited: int = 2000, static_only: bool = False) -> str:
     """Find call paths among named symbols via bidirectional BFS. Supports qualified syntax: bare name, file/path:name, or Class.method."""
     return _with_freshness(query_flow_impl(symbols, max_depth, max_visited, static_only))
+
+
+@mcp.tool()
+def query_cluster_summary(name: str = "") -> str:
+    """Return subsystem-level summaries for one or all clusters: name, label, short/full descriptions, entry symbols, and file count."""
+    return _with_freshness(query_cluster_summary_impl(name or None))
+
+
+@mcp.tool()
+def query_navigate(intent: str, top_k: int = 5) -> str:
+    """Locate work by natural-language intent. Returns top_k ranked entries with {cluster, file?, symbol?, relevance_score, rationale}. Uses cached LLM ranking when available."""
+    return _with_freshness(query_navigate_impl(intent, top_k))
 
 
 if __name__ == "__main__":

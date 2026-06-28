@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import sqlite3
@@ -22,8 +23,9 @@ from parsers.base import SymbolInfo
 from parsers.python_parser import PythonParser
 from parsers.c_cpp_parser import CCppParser
 from parsers.ts_parser import TSParser
+from constants import DB_BUSY_TIMEOUT_MS
 
-VERSION = "6.0.0"
+VERSION = "7.0.0"
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 JSON_CACHE_FILE = os.path.join(".claude", "logic_index.json")
 CONFIG_FILE = os.path.join(".claude", "logic_index_config")
@@ -34,7 +36,9 @@ CREATE TABLE IF NOT EXISTS files (
     struct_hash TEXT NOT NULL,
     language TEXT,
     layer TEXT DEFAULT 'Core',
-    imports TEXT
+    imports TEXT,
+    kind_hint TEXT,
+    actual_kind TEXT
 );
 CREATE TABLE IF NOT EXISTS symbols (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +50,6 @@ CREATE TABLE IF NOT EXISTS symbols (
     lineno INTEGER,
     end_lineno INTEGER,
     hash TEXT,
-    summary TEXT,
     bases TEXT,
     name_tokens TEXT NOT NULL DEFAULT '',
     UNIQUE(file_path, name)
@@ -90,6 +93,38 @@ CREATE TABLE IF NOT EXISTS cluster_members (
     file_path TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
     PRIMARY KEY (cluster_id, file_path)
 );
+CREATE TABLE IF NOT EXISTS summary_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_kind TEXT NOT NULL,
+    node_ref TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    summary TEXT,
+    status TEXT NOT NULL DEFAULT 'ok',
+    decision_rationale TEXT,
+    decision_dimension TEXT,
+    decision_confidence TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(node_kind, node_ref, version)
+);
+CREATE TABLE IF NOT EXISTS node_change_counters (
+    node_kind TEXT NOT NULL,
+    node_ref TEXT NOT NULL,
+    child_change_count INTEGER NOT NULL DEFAULT 0,
+    leaf_descendant_count INTEGER NOT NULL DEFAULT 0,
+    last_force_recompute_at TEXT,
+    PRIMARY KEY (node_kind, node_ref)
+);
+CREATE TABLE IF NOT EXISTS judge_cache (
+    payload_hash TEXT PRIMARY KEY,
+    result TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS migration_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_version TEXT NOT NULL,
+    to_version TEXT NOT NULL,
+    applied_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -103,34 +138,278 @@ CREATE INDEX IF NOT EXISTS idx_edges_provenance ON edges(provenance);
 CREATE INDEX IF NOT EXISTS idx_edges_source_file ON edges(source_file);
 CREATE INDEX IF NOT EXISTS idx_patterns_type_signal ON patterns(pattern_type, signal_name);
 CREATE INDEX IF NOT EXISTS idx_patterns_file ON patterns(file_path);
+CREATE INDEX IF NOT EXISTS idx_sv_lookup ON summary_versions(node_kind, node_ref, version DESC);
+CREATE INDEX IF NOT EXISTS idx_sv_status ON summary_versions(status, node_kind);
+CREATE INDEX IF NOT EXISTS idx_jc_created ON judge_cache(created_at);
 
-CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
-    name,
-    name_tokens,
-    file_path,
-    summary,
-    content='symbols',
-    content_rowid='id',
+CREATE VIRTUAL TABLE IF NOT EXISTS summary_fts USING fts5(
+    node_kind UNINDEXED,
+    node_ref UNINDEXED,
+    short,
+    full,
     tokenize='unicode61'
 );
 
-CREATE TRIGGER IF NOT EXISTS symbols_fts_ai AFTER INSERT ON symbols BEGIN
-    INSERT INTO symbols_fts(rowid, name, name_tokens, file_path, summary)
-    VALUES (NEW.id, NEW.name, NEW.name_tokens, NEW.file_path, NEW.summary);
+CREATE TRIGGER IF NOT EXISTS summary_fts_ai AFTER INSERT ON summary_versions
+WHEN NEW.status NOT IN ('pending', 'corrupt') BEGIN
+    INSERT INTO summary_fts(rowid, node_kind, node_ref, short, full)
+    VALUES (NEW.id, NEW.node_kind, NEW.node_ref,
+            COALESCE(json_extract(NEW.summary, '$.short'), ''),
+            COALESCE(json_extract(NEW.summary, '$.full'), ''));
 END;
 
-CREATE TRIGGER IF NOT EXISTS symbols_fts_ad AFTER DELETE ON symbols BEGIN
-    INSERT INTO symbols_fts(symbols_fts, rowid, name, name_tokens, file_path, summary)
-    VALUES ('delete', OLD.id, OLD.name, OLD.name_tokens, OLD.file_path, OLD.summary);
+CREATE TRIGGER IF NOT EXISTS summary_fts_ad AFTER DELETE ON summary_versions BEGIN
+    DELETE FROM summary_fts WHERE rowid = OLD.id;
 END;
 
-CREATE TRIGGER IF NOT EXISTS symbols_fts_au AFTER UPDATE ON symbols BEGIN
-    INSERT INTO symbols_fts(symbols_fts, rowid, name, name_tokens, file_path, summary)
-    VALUES ('delete', OLD.id, OLD.name, OLD.name_tokens, OLD.file_path, OLD.summary);
-    INSERT INTO symbols_fts(rowid, name, name_tokens, file_path, summary)
-    VALUES (NEW.id, NEW.name, NEW.name_tokens, NEW.file_path, NEW.summary);
+CREATE TRIGGER IF NOT EXISTS summary_fts_au AFTER UPDATE ON summary_versions BEGIN
+    DELETE FROM summary_fts WHERE rowid = OLD.id;
+    INSERT INTO summary_fts(rowid, node_kind, node_ref, short, full)
+    SELECT NEW.id, NEW.node_kind, NEW.node_ref,
+           COALESCE(json_extract(NEW.summary, '$.short'), ''),
+           COALESCE(json_extract(NEW.summary, '$.full'), '')
+    WHERE NEW.status NOT IN ('pending', 'corrupt');
 END;
 """
+
+SUMMARY_STATUS_ENUM = frozenset({'ok', 'pending', 'stale', 'oversized_warn', 'oversized_hard', 'corrupt'})
+
+_STATUS_TRANSITIONS = {
+    ('pending', 'llm_success'): 'ok',
+    ('pending', 'llm_failure'): 'pending',
+    ('pending', 'parse_failure'): 'corrupt',
+    ('ok', 'mark_stale'): 'stale',
+    ('ok', 'parse_failure'): 'corrupt',
+    ('stale', 'rewrite_success'): 'ok',
+    ('stale', 'llm_failure'): 'pending',
+    ('oversized_warn', 'mark_stale'): 'stale',
+    ('oversized_hard', 'mark_stale'): 'stale',
+}
+
+
+def _transition_status(old_status, event):
+    if old_status not in SUMMARY_STATUS_ENUM:
+        return 'corrupt'
+    key = (old_status, event)
+    return _STATUS_TRANSITIONS.get(key, old_status)
+
+
+def _compute_kind_hint(sym_count, intra_edges):
+    min_symbols = _env_int("FILE_KIND_MIN_SYMBOLS", 5)
+    low_cohesion_threshold = _env_float("FILE_KIND_LOW_COHESION_THRESHOLD", 0.25)
+    if sym_count < min_symbols:
+        return "trivial"
+    density = intra_edges / sym_count if sym_count else 0
+    if density < low_cohesion_threshold:
+        return "low_cohesion"
+    return "cohesive"
+
+
+def _migrate_v6_to_v7(db):
+    """Apply v6 -> v7 schema migration as a single atomic transaction.
+
+    SCHEMA_SQL (applied by _init_db prior to this handler) is the source of
+    truth for v7 table, index, and trigger definitions. This handler is also
+    safe to invoke directly (e.g. from tests) because it defensively re-creates
+    v7-only objects with IF NOT EXISTS guards before performing data migration
+    and schema mutation.
+
+    All SQL statements are issued through single db.execute() calls.
+    executescript() is prohibited because CPython's sqlite3 module performs
+    an implicit COMMIT before each executescript() invocation, which would
+    silently destroy the BEGIN IMMEDIATE transaction and break atomic rollback.
+
+    Idempotent re-entry: every CREATE uses IF NOT EXISTS, the data migration
+    uses INSERT OR IGNORE, the ALTER operations check PRAGMA table_info first,
+    and the migration_log INSERT is guarded by a SELECT EXISTS lookup.
+    """
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS summary_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                node_kind TEXT NOT NULL,
+                node_ref TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                summary TEXT,
+                status TEXT NOT NULL DEFAULT 'ok',
+                decision_rationale TEXT,
+                decision_dimension TEXT,
+                decision_confidence TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(node_kind, node_ref, version)
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS node_change_counters (
+                node_kind TEXT NOT NULL,
+                node_ref TEXT NOT NULL,
+                child_change_count INTEGER NOT NULL DEFAULT 0,
+                leaf_descendant_count INTEGER NOT NULL DEFAULT 0,
+                last_force_recompute_at TEXT,
+                PRIMARY KEY (node_kind, node_ref)
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS judge_cache (
+                payload_hash TEXT PRIMARY KEY,
+                result TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS migration_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_version TEXT NOT NULL,
+                to_version TEXT NOT NULL,
+                applied_at TEXT NOT NULL
+            )
+        """)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_sv_lookup ON summary_versions(node_kind, node_ref, version DESC)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_sv_status ON summary_versions(status, node_kind)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_jc_created ON judge_cache(created_at)")
+        db.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS summary_fts USING fts5(
+                node_kind UNINDEXED,
+                node_ref UNINDEXED,
+                short,
+                full,
+                tokenize='unicode61'
+            )
+        """)
+        db.execute("""
+            CREATE TRIGGER IF NOT EXISTS summary_fts_ai AFTER INSERT ON summary_versions
+            WHEN NEW.status NOT IN ('pending', 'corrupt') BEGIN
+                INSERT INTO summary_fts(rowid, node_kind, node_ref, short, full)
+                VALUES (NEW.id, NEW.node_kind, NEW.node_ref,
+                        COALESCE(json_extract(NEW.summary, '$.short'), ''),
+                        COALESCE(json_extract(NEW.summary, '$.full'), ''));
+            END
+        """)
+        db.execute("""
+            CREATE TRIGGER IF NOT EXISTS summary_fts_ad AFTER DELETE ON summary_versions BEGIN
+                DELETE FROM summary_fts WHERE rowid = OLD.id;
+            END
+        """)
+        db.execute("""
+            CREATE TRIGGER IF NOT EXISTS summary_fts_au AFTER UPDATE ON summary_versions BEGIN
+                DELETE FROM summary_fts WHERE rowid = OLD.id;
+                INSERT INTO summary_fts(rowid, node_kind, node_ref, short, full)
+                SELECT NEW.id, NEW.node_kind, NEW.node_ref,
+                       COALESCE(json_extract(NEW.summary, '$.short'), ''),
+                       COALESCE(json_extract(NEW.summary, '$.full'), '')
+                WHERE NEW.status NOT IN ('pending', 'corrupt');
+            END
+        """)
+
+        now_iso = datetime.now().isoformat(timespec='seconds')
+        legacy_cols = {c[1] for c in db.execute("PRAGMA table_info(symbols)").fetchall()}
+        if 'summary' in legacy_cols:
+            rows = db.execute(
+                "SELECT file_path, name, summary FROM symbols WHERE summary IS NOT NULL"
+            ).fetchall()
+            for fp, name, summary_text in rows:
+                node_ref = f"{fp}::{name}"
+                payload = json.dumps({"short": summary_text, "full": None}, ensure_ascii=False)
+                db.execute(
+                    "INSERT OR IGNORE INTO summary_versions (node_kind, node_ref, version, summary, status, created_at) VALUES (?,?,?,?,?,?)",
+                    ('symbol', node_ref, 1, payload, 'ok', now_iso)
+                )
+
+        db.execute("DROP TRIGGER IF EXISTS symbols_fts_ai")
+        db.execute("DROP TRIGGER IF EXISTS symbols_fts_ad")
+        db.execute("DROP TRIGGER IF EXISTS symbols_fts_au")
+        db.execute("DROP TABLE IF EXISTS symbols_fts")
+
+        file_cols = {c[1] for c in db.execute("PRAGMA table_info(files)").fetchall()}
+        if 'kind_hint' not in file_cols:
+            db.execute("ALTER TABLE files ADD COLUMN kind_hint TEXT")
+        if 'actual_kind' not in file_cols:
+            db.execute("ALTER TABLE files ADD COLUMN actual_kind TEXT")
+
+        sym_cols = {c[1] for c in db.execute("PRAGMA table_info(symbols)").fetchall()}
+        if 'summary' in sym_cols:
+            db.execute("ALTER TABLE symbols DROP COLUMN summary")
+
+        already = db.execute(
+            "SELECT 1 FROM migration_log WHERE from_version=? AND to_version=?",
+            ('6.0.0', '7.0.0')
+        ).fetchone()
+        if not already:
+            db.execute(
+                "INSERT INTO migration_log (from_version, to_version, applied_at) VALUES (?,?,?)",
+                ('6.0.0', '7.0.0', now_iso)
+            )
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
+MIGRATION_HANDLERS = {
+    ('6.0.0', '7.0.0'): _migrate_v6_to_v7,
+}
+
+
+def _resolve_git_head(root_dir, db=None):
+    """Locate the git HEAD that covers the indexed sources.
+
+    Returns a ``(head, cwd)`` tuple where ``cwd`` is the directory in
+    which the ``git rev-parse`` call succeeded; returns ``(None, None)``
+    if no git context can be resolved. ``cwd`` is reusable for follow-up
+    git invocations such as ``git status --porcelain``.
+
+    Strategy: (1) run ``git rev-parse HEAD`` with cwd=root_dir — succeeds
+    for the standard layout where .git sits at the indexed project root.
+    (2) Fall back to inspecting the first row of the ``files`` table to
+    infer a subdirectory git repo (e.g. workspaces that host multiple
+    sibling repos with no .git at the workspace root).
+    """
+    candidates = [root_dir]
+    if db is not None:
+        try:
+            row = db.execute("SELECT path FROM files LIMIT 1").fetchone()
+        except sqlite3.Error:
+            row = None
+        if row:
+            inferred = os.path.dirname(os.path.join(root_dir, row[0]))
+            candidates.append(inferred)
+    for candidate in candidates:
+        if not candidate or not os.path.isdir(candidate):
+            continue
+        try:
+            head = subprocess.check_output(
+                ['git', 'rev-parse', 'HEAD'], text=True,
+                stderr=subprocess.DEVNULL, cwd=candidate
+            ).strip()
+            return head, candidate
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            continue
+    return None, None
+
+
+def _resolve_migration_path(old_version, new_version):
+    if old_version == new_version:
+        return []
+    direct = MIGRATION_HANDLERS.get((old_version, new_version))
+    if direct:
+        return [(old_version, new_version, direct)]
+    chain = []
+    current = old_version
+    visited = {current}
+    while current != new_version:
+        next_step = None
+        for (frm, to), handler in MIGRATION_HANDLERS.items():
+            if frm == current and to not in visited:
+                next_step = (frm, to, handler)
+                break
+        if not next_step:
+            return None
+        chain.append(next_step)
+        current = next_step[1]
+        visited.add(current)
+    return chain
 
 
 def tokenize_symbol(name):
@@ -182,24 +461,36 @@ class StructScanner:
         db = sqlite3.connect(self.db_path)
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("PRAGMA synchronous=NORMAL")
-        db.execute("PRAGMA busy_timeout=5000")
+        db.execute(f"PRAGMA busy_timeout={DB_BUSY_TIMEOUT_MS}")
         db.execute("PRAGMA foreign_keys=ON")
         db.executescript(SCHEMA_SQL)
 
-        version = db.execute("SELECT value FROM meta WHERE key='version'").fetchone()
-        if version and version[0] != VERSION:
-            db.close()
-            os.remove(self.db_path)
-            db = sqlite3.connect(self.db_path)
-            db.execute("PRAGMA journal_mode=WAL")
-            db.execute("PRAGMA synchronous=NORMAL")
-            db.execute("PRAGMA busy_timeout=5000")
-            db.execute("PRAGMA foreign_keys=ON")
-            db.executescript(SCHEMA_SQL)
-            version = None
-            needs_migration = os.path.exists(os.path.join(self.root_dir, JSON_CACHE_FILE))
+        version_row = db.execute("SELECT value FROM meta WHERE key='version'").fetchone()
+        if version_row and version_row[0] != VERSION:
+            chain = _resolve_migration_path(version_row[0], VERSION)
+            if chain is None:
+                db.close()
+                raise RuntimeError(
+                    f"Migration path v{version_row[0]} -> v{VERSION} missing handler. "
+                    f"The logic_index.db at {self.db_path} is preserved unchanged. "
+                    f"Available handlers: {sorted(MIGRATION_HANDLERS.keys())}"
+                )
+            backup_path = self.db_path + '.bak'
+            try:
+                shutil.copy2(self.db_path, backup_path)
+            except OSError as backup_err:
+                db.close()
+                raise RuntimeError(
+                    f"Failed to back up logic_index.db before migration: {backup_err}. "
+                    f"Migration aborted to avoid data loss."
+                ) from backup_err
+            for frm, to, handler in chain:
+                handler(db)
+            db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?)", (VERSION,))
+            db.commit()
+            version_row = (VERSION,)
 
-        if not version:
+        if not version_row:
             db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?)", (VERSION,))
             db.commit()
 
@@ -217,6 +508,7 @@ class StructScanner:
             return
 
         try:
+            now_iso = datetime.now().isoformat(timespec='seconds')
             for path, file_data in data.items():
                 if path == "_meta":
                     continue
@@ -232,12 +524,19 @@ class StructScanner:
                     short = sym["name"].split(".")[-1] if "." in sym["name"] else sym["name"]
                     tokens = tokenize_symbol(sym["name"])
                     db.execute(
-                        "INSERT OR IGNORE INTO symbols (file_path, name, short_name, type, args, lineno, end_lineno, hash, summary, bases, name_tokens) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        "INSERT OR IGNORE INTO symbols (file_path, name, short_name, type, args, lineno, end_lineno, hash, bases, name_tokens) VALUES (?,?,?,?,?,?,?,?,?,?)",
                         (path, sym["name"], short, sym.get("type", "function"),
                          sym.get("args"), sym.get("lineno"), sym.get("end_lineno"),
-                         sym.get("hash"), sym.get("summary"), bases_json,
-                         tokens)
+                         sym.get("hash"), bases_json, tokens)
                     )
+                    summary_text = sym.get("summary")
+                    if summary_text:
+                        node_ref = f"{path}::{sym['name']}"
+                        payload = json.dumps({"short": summary_text, "full": None}, ensure_ascii=False)
+                        db.execute(
+                            "INSERT OR IGNORE INTO summary_versions (node_kind, node_ref, version, summary, status, created_at) VALUES (?,?,?,?,?,?)",
+                            ('symbol', node_ref, 1, payload, 'ok', now_iso)
+                        )
                 for call in file_data.get("calls", []):
                     db.execute(
                         "INSERT INTO edges (source_file, caller, callee, callee_file, callee_qualified, line, provenance, synthesized_from, via) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -387,42 +686,59 @@ class StructScanner:
             (rel_path, struct_hash, parser.__class__.__name__, layer, json.dumps(list(imports.keys())))
         )
 
-        old_summaries = {}
+        old_hashes = {}
         for row in self.db.execute(
-            "SELECT name, hash, summary FROM symbols WHERE file_path = ?", (rel_path,)
+            "SELECT name, hash FROM symbols WHERE file_path = ?", (rel_path,)
         ):
-            old_summaries[row[0]] = (row[1], row[2])
+            old_hashes[row[0]] = row[1]
+
+        existing_versions = {}
+        for row in self.db.execute(
+            "SELECT node_ref, MAX(version) FROM summary_versions WHERE node_kind = 'symbol' AND node_ref LIKE ? GROUP BY node_ref",
+            (f"{rel_path}::%",)
+        ):
+            existing_versions[row[0]] = row[1]
 
         self.db.execute("DELETE FROM symbols WHERE file_path = ?", (rel_path,))
         self.db.execute("DELETE FROM edges WHERE source_file = ?", (rel_path,))
         self.db.execute("DELETE FROM patterns WHERE file_path = ?", (rel_path,))
 
+        now_iso = datetime.now().isoformat(timespec='seconds')
         for sym_info in symbols:
             stripped = self._strip_comments(sym_info.source_segment, parser)
             symbol_hash = self._calculate_symbol_hash(stripped)
             short_name = sym_info.name.split(".")[-1] if "." in sym_info.name else sym_info.name
-
-            summary = None
-            old = old_summaries.get(sym_info.name)
-            if old and old[0] == symbol_hash:
-                summary = old[1]
-
-            if not summary:
-                if sym_info.docstring:
-                    lines = [line.strip() for line in sym_info.docstring.splitlines() if line.strip()]
-                    if lines:
-                        summary = "[Doc] " + " ".join(lines[:3])
-                elif self.filter_small and len(sym_info.source_segment.splitlines()) < 3:
-                    summary = "Small utility function."
-
             bases_json = json.dumps(sym_info.bases) if sym_info.bases else None
             tokens = tokenize_symbol(sym_info.name)
+
             self.db.execute(
-                "INSERT INTO symbols (file_path, name, short_name, type, args, lineno, end_lineno, hash, summary, bases, name_tokens) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO symbols (file_path, name, short_name, type, args, lineno, end_lineno, hash, bases, name_tokens) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (rel_path, sym_info.name, short_name, sym_info.type,
                  sym_info.args, sym_info.lineno, sym_info.end_lineno,
-                 symbol_hash, summary, bases_json, tokens)
+                 symbol_hash, bases_json, tokens)
             )
+
+            node_ref = f"{rel_path}::{sym_info.name}"
+            hash_unchanged = old_hashes.get(sym_info.name) == symbol_hash
+            has_existing_version = node_ref in existing_versions
+            if hash_unchanged and has_existing_version:
+                continue
+
+            initial_summary = None
+            if sym_info.docstring:
+                lines = [line.strip() for line in sym_info.docstring.splitlines() if line.strip()]
+                if lines:
+                    initial_summary = "[Doc] " + " ".join(lines[:3])
+            elif self.filter_small and len(sym_info.source_segment.splitlines()) < 3:
+                initial_summary = "Small utility function."
+
+            if initial_summary:
+                new_version = existing_versions.get(node_ref, 0) + 1
+                payload = json.dumps({"short": initial_summary, "full": None}, ensure_ascii=False)
+                self.db.execute(
+                    "INSERT INTO summary_versions (node_kind, node_ref, version, summary, status, created_at) VALUES (?,?,?,?,?,?)",
+                    ('symbol', node_ref, new_version, payload, 'ok', now_iso)
+                )
 
         seen_edges = {}
         for e in call_edges:
@@ -536,6 +852,21 @@ class StructScanner:
             list(source_paths)
         )
 
+    def _compute_file_kinds(self):
+        rows = self.db.execute(
+            """SELECT f.path,
+                      (SELECT COUNT(*) FROM symbols s WHERE s.file_path = f.path) AS sym_count,
+                      (SELECT COUNT(*) FROM edges e WHERE e.source_file = f.path AND e.callee_file = f.path) AS intra_edges
+               FROM files f"""
+        ).fetchall()
+        for path, sym_count, intra_edges in rows:
+            hint = _compute_kind_hint(sym_count or 0, intra_edges or 0)
+            self.db.execute(
+                "UPDATE files SET kind_hint = ? WHERE path = ?",
+                (hint, path)
+            )
+        self.db.commit()
+
     def _detect_clusters(self):
         density_threshold = _env_float("CLUSTER_DENSITY_THRESHOLD", 0.5)
         max_size = _env_int("CLUSTER_MAX_SIZE", 15)
@@ -596,6 +927,21 @@ class StructScanner:
                     "INSERT INTO cluster_members (cluster_id, file_path) VALUES (?,?)",
                     [(cluster_id, fp) for fp in cluster_files]
                 )
+                self.db.execute(
+                    "INSERT OR IGNORE INTO node_change_counters (node_kind, node_ref, child_change_count, leaf_descendant_count) VALUES (?,?,?,?)",
+                    ('cluster', cluster_name, 0, 0)
+                )
+
+        existing_cluster_refs = {r[0] for r in self.db.execute("SELECT name FROM clusters")}
+        stale = self.db.execute(
+            "SELECT node_ref FROM node_change_counters WHERE node_kind = 'cluster'"
+        ).fetchall()
+        for (ref,) in stale:
+            if ref not in existing_cluster_refs:
+                self.db.execute(
+                    "DELETE FROM node_change_counters WHERE node_kind = 'cluster' AND node_ref = ?",
+                    (ref,)
+                )
 
         self.db.commit()
 
@@ -630,6 +976,7 @@ class StructScanner:
 
         self._resolve_call_edges()
         self._run_synthesizers()
+        self._compute_file_kinds()
         self._detect_clusters()
 
         self.db.execute(
@@ -640,17 +987,12 @@ class StructScanner:
             "INSERT OR REPLACE INTO meta (key, value) VALUES ('file_count', ?)",
             (str(len(scanned_paths)),)
         )
-        try:
-            head = subprocess.check_output(
-                ['git', 'rev-parse', 'HEAD'], text=True,
-                stderr=subprocess.DEVNULL, cwd=self.root_dir
-            ).strip()
+        head, _ = _resolve_git_head(self.root_dir, self.db)
+        if head:
             self.db.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('source_commit', ?)",
                 (head,)
             )
-        except (FileNotFoundError, subprocess.CalledProcessError):
-            pass
         self.db.commit()
 
     def scan_files(self, file_paths):
@@ -699,6 +1041,7 @@ class StructScanner:
                 )
 
         self._resolve_call_edges()
+        self._compute_file_kinds()
         self.db.execute(
             "INSERT OR REPLACE INTO meta (key, value) VALUES ('last_updated', ?)",
             (datetime.now().isoformat(timespec='seconds'),)

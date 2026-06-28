@@ -157,6 +157,167 @@ def cmd_version(_args):
     print("Remy v{}".format(get_version()))
 
 
+def _load_summary_modules():
+    skill_dir = get_claude_home() / "skills" / "remy-index"
+    if not skill_dir.is_dir():
+        repo_skill_dir = Path(__file__).resolve().parent.parent / "skills" / "remy-index"
+        if repo_skill_dir.is_dir():
+            skill_dir = repo_skill_dir
+        else:
+            print("Error: skills/remy-index not found in ~/.claude or repo.", file=sys.stderr)
+            sys.exit(1)
+    sys.path.insert(0, str(skill_dir))
+    import importlib
+    modules = {}
+    for name in ("bootstrap", "summarizer", "llm_judge"):
+        try:
+            modules[name] = importlib.import_module(name)
+        except ImportError as exc:
+            print("Error importing {}: {}".format(name, exc), file=sys.stderr)
+            sys.exit(1)
+    return modules, skill_dir
+
+
+def _open_logic_db(cwd):
+    import sqlite3
+    db_rel = os.environ.get("LOGIC_INDEX_DB_PATH", os.path.join(".claude", "logic_index.db"))
+    db_path = Path(cwd) / db_rel
+    if not db_path.exists():
+        print("Error: logic_index.db not found at {}. Run /remy-index first.".format(db_path), file=sys.stderr)
+        sys.exit(1)
+    db = sqlite3.connect(str(db_path), timeout=10)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA busy_timeout=5000")
+    return db
+
+
+def _default_llm_call():
+    skill_dir = get_claude_home() / "skills" / "remy-index"
+    if not skill_dir.is_dir():
+        skill_dir = Path(__file__).resolve().parent.parent / "skills" / "remy-index"
+    sys.path.insert(0, str(skill_dir))
+    import importlib
+    run_mod = importlib.import_module("run")
+
+    def _call(prompt):
+        indexer = run_mod.LogicIndexer(os.getcwd())
+        return indexer._call_llm(prompt)
+
+    return _call
+
+
+def cmd_summary_rebuild(args):
+    cwd = Path(args.path).resolve() if args.path else Path.cwd()
+    if not cwd.is_dir():
+        print("Error: directory not found: " + str(cwd), file=sys.stderr)
+        sys.exit(1)
+    os.chdir(str(cwd))
+    modules, _ = _load_summary_modules()
+    bootstrap = modules["bootstrap"]
+    summarizer = modules["summarizer"]
+    llm_call = _default_llm_call()
+    db = _open_logic_db(cwd)
+    try:
+        if args.node_kind and args.node_ref:
+            if args.node_kind == "file":
+                hint_row = db.execute("SELECT kind_hint FROM files WHERE path = ?", (args.node_ref,)).fetchone()
+                hint = hint_row[0] if hint_row else None
+                payload, status = summarizer.summarize_file(db, args.node_ref, hint, llm_call)
+            elif args.node_kind == "cluster":
+                payload, status = summarizer.summarize_cluster(db, args.node_ref, llm_call)
+            else:
+                print("Error: --node-kind must be 'file' or 'cluster'.", file=sys.stderr)
+                sys.exit(2)
+            if payload is None and status == "pending":
+                print("LLM unavailable; status='pending'. No new version written.")
+                return
+            version = summarizer.write_summary_version(db, args.node_kind, args.node_ref, payload, status)
+            print("Rewrote {}::{} -> version {} (status={}).".format(args.node_kind, args.node_ref, version, status))
+            return
+
+        mode = args.mode if args.mode else None
+        result = bootstrap.bootstrap_summaries(db, llm_call, mode=mode)
+        print("Bootstrap summary: mode={mode} file_done={file_done} cluster_done={cluster_done} skipped={skipped}".format(**result))
+        if result.get("needs_user_confirmation"):
+            print("  Pending files: {} / Pending clusters: {}".format(
+                result.get("pending_files", 0), result.get("pending_clusters", 0)))
+    finally:
+        db.close()
+
+
+def cmd_summary_vacuum(args):
+    cwd = Path(args.path).resolve() if args.path else Path.cwd()
+    if not cwd.is_dir():
+        print("Error: directory not found: " + str(cwd), file=sys.stderr)
+        sys.exit(1)
+    db = _open_logic_db(cwd)
+    try:
+        from datetime import datetime, timedelta
+        days = args.older_than
+        if days <= 0:
+            print("Error: --older-than must be > 0.", file=sys.stderr)
+            sys.exit(2)
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat(timespec="seconds")
+        before = db.execute("SELECT COUNT(*) FROM judge_cache").fetchone()[0]
+        db.execute("DELETE FROM judge_cache WHERE created_at < ?", (cutoff,))
+        db.commit()
+        after = db.execute("SELECT COUNT(*) FROM judge_cache").fetchone()[0]
+        print("judge_cache: removed {} entries older than {} days (kept {}).".format(before - after, days, after))
+
+        if args.prune_summary_history:
+            removed = db.execute(
+                """DELETE FROM summary_versions
+                   WHERE id NOT IN (
+                       SELECT MAX(id) FROM summary_versions
+                       GROUP BY node_kind, node_ref
+                   )
+                   AND created_at < ?""",
+                (cutoff,),
+            )
+            db.commit()
+            print("summary_versions: pruned old non-latest versions older than {} days.".format(days))
+    finally:
+        db.close()
+
+
+def cmd_summary_audit(args):
+    cwd = Path(args.path).resolve() if args.path else Path.cwd()
+    if not cwd.is_dir():
+        print("Error: directory not found: " + str(cwd), file=sys.stderr)
+        sys.exit(1)
+    db = _open_logic_db(cwd)
+    try:
+        rows = db.execute(
+            "SELECT version, summary, status, decision_rationale, decision_dimension, "
+            "decision_confidence, created_at "
+            "FROM summary_versions WHERE node_kind = ? AND node_ref = ? "
+            "ORDER BY version ASC",
+            (args.node_kind, args.node_ref),
+        ).fetchall()
+        if not rows:
+            print("No summary history for {}::{}.".format(args.node_kind, args.node_ref))
+            return
+        print("Summary history for {}::{} ({} versions)".format(args.node_kind, args.node_ref, len(rows)))
+        for version, summary, status, rationale, dimension, confidence, created_at in rows:
+            print("  v{} [{}] {}".format(version, status, created_at))
+            if summary:
+                try:
+                    payload = json.loads(summary)
+                    short = payload.get("short", "")
+                    if short:
+                        print("    short: {}".format(short))
+                    if payload.get("full"):
+                        print("    full: {}".format(payload["full"][:200] + ("..." if len(payload["full"]) > 200 else "")))
+                except (json.JSONDecodeError, TypeError):
+                    print("    summary: (unparseable)")
+            if rationale:
+                print("    rationale: {}".format(rationale))
+            if dimension:
+                print("    dimension: {} (confidence={})".format(dimension, confidence or "?"))
+    finally:
+        db.close()
+
+
 REPO_URL = "https://github.com/MyPeacefulValentine/Remy-CC.git"
 BRANCH = "main"
 VERSION_RAW_URL = "https://raw.githubusercontent.com/MyPeacefulValentine/Remy-CC/{}/VERSION".format(BRANCH)
@@ -429,6 +590,23 @@ def main():
     p_config.add_argument("--global", dest="global_flag", action="store_true", help="Explicitly open global config")
     p_scope = sub.add_parser("logic-scope", help="Configure logic index injection scope")
     p_scope.add_argument("--path", default=None, help="Project root directory (default: current directory)")
+
+    p_rebuild = sub.add_parser("summary-rebuild", help="Rebuild file/cluster summaries (full bootstrap or targeted node)")
+    p_rebuild.add_argument("--path", default=None, help="Project root directory (default: current directory)")
+    p_rebuild.add_argument("--node-kind", choices=["file", "cluster"], default=None, help="Restrict to a single node kind")
+    p_rebuild.add_argument("--node-ref", default=None, help="Restrict to a single node_ref (file path or cluster name)")
+    p_rebuild.add_argument("--mode", choices=["auto", "ask", "never"], default=None, help="Override SUMMARY_BOOTSTRAP_MODE")
+
+    p_vacuum = sub.add_parser("summary-vacuum", help="Delete judge_cache entries older than --older-than days")
+    p_vacuum.add_argument("--path", default=None, help="Project root directory (default: current directory)")
+    p_vacuum.add_argument("--older-than", type=int, default=90, help="Delete entries older than N days (default 90)")
+    p_vacuum.add_argument("--prune-summary-history", action="store_true", help="Also prune non-latest summary_versions older than --older-than")
+
+    p_audit = sub.add_parser("summary-audit", help="Show summary_versions history for a node_ref")
+    p_audit.add_argument("node_kind", choices=["symbol", "file", "cluster"], help="Node kind to audit")
+    p_audit.add_argument("node_ref", help="Node ref (file::name, file path, or cluster name)")
+    p_audit.add_argument("--path", default=None, help="Project root directory (default: current directory)")
+
     sub.add_parser("update", help="Fetch and install latest version from remote")
     p_uninstall = sub.add_parser("uninstall", help="Remove all Remy-CC files and settings")
     p_uninstall.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
@@ -436,7 +614,17 @@ def main():
     sub.add_parser("version", help="Show installed version")
     args = parser.parse_args()
 
-    commands = {"config": cmd_config, "logic-scope": cmd_logic_scope, "update": cmd_update, "uninstall": cmd_uninstall, "verify": cmd_verify, "version": cmd_version}
+    commands = {
+        "config": cmd_config,
+        "logic-scope": cmd_logic_scope,
+        "summary-rebuild": cmd_summary_rebuild,
+        "summary-vacuum": cmd_summary_vacuum,
+        "summary-audit": cmd_summary_audit,
+        "update": cmd_update,
+        "uninstall": cmd_uninstall,
+        "verify": cmd_verify,
+        "version": cmd_version,
+    }
     handler = commands.get(args.command)
     if handler:
         handler(args)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Query implementations for the remy-index MCP server."""
 import difflib
+import json
 import os
 import sys
 import sqlite3
@@ -52,6 +53,31 @@ def _open_db():
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA busy_timeout=3000")
     return db
+
+
+def get_latest_summary(db, node_kind, node_ref):
+    row = db.execute(
+        "SELECT summary, status FROM summary_versions "
+        "WHERE node_kind = ? AND node_ref = ? "
+        "ORDER BY version DESC LIMIT 1",
+        (node_kind, node_ref),
+    ).fetchone()
+    if row is None:
+        return None
+    summary_json, status = row
+    if summary_json is None:
+        return {"short": None, "full": None, "status": status}
+    try:
+        payload = json.loads(summary_json)
+    except (json.JSONDecodeError, TypeError):
+        return {"short": None, "full": None, "status": "corrupt"}
+    if not isinstance(payload, dict):
+        return {"short": None, "full": None, "status": "corrupt"}
+    return {
+        "short": payload.get("short"),
+        "full": payload.get("full"),
+        "status": status,
+    }
 
 
 def _bfs_callers_ambiguous(db, target_set, max_depth, static_only=False):
@@ -127,19 +153,19 @@ def _resolve_symbol(db, name, file=None):
     if "::" in name:
         parts = name.split("::", 1)
         rows = db.execute(
-            "SELECT file_path, name, type, args, lineno, end_lineno, summary "
+            "SELECT file_path, name, type, args, lineno, end_lineno "
             "FROM symbols WHERE file_path = ? AND name = ?",
             (parts[0], parts[1]),
         ).fetchall()
     elif file:
         rows = db.execute(
-            "SELECT file_path, name, type, args, lineno, end_lineno, summary "
+            "SELECT file_path, name, type, args, lineno, end_lineno "
             "FROM symbols WHERE file_path = ? AND (name = ? OR short_name = ?)",
             (file, name, name),
         ).fetchall()
     else:
         rows = db.execute(
-            "SELECT file_path, name, type, args, lineno, end_lineno, summary "
+            "SELECT file_path, name, type, args, lineno, end_lineno "
             "FROM symbols WHERE name = ? OR short_name = ?",
             (name, name),
         ).fetchall()
@@ -155,13 +181,14 @@ def query_symbol_impl(name, file=None):
         if not rows:
             return f"No symbols found matching '{name}'"
         lines = [f"symbols matching '{name}' ({len(rows)} results)\n"]
-        for fpath, sname, stype, args, lineno, end_lineno, summary in rows:
+        for fpath, sname, stype, args, lineno, end_lineno in rows:
             layer = get_layer(db, fpath)
             loc = f"L{lineno}" + (f"-L{end_lineno}" if end_lineno else "")
             sig = f"({args})" if args else ""
             lines.append(f"  [{stype}] {fpath}::{sname}{sig}  {fpath}:{loc} ({layer})")
-            if summary:
-                lines.append(f"        {summary}")
+            summary = get_latest_summary(db, "symbol", f"{fpath}::{sname}")
+            if summary and summary.get("short"):
+                lines.append(f"        {summary['short']}")
         return "\n".join(lines)
     finally:
         db.close()
@@ -176,10 +203,16 @@ def query_summary_impl(name, file=None):
         if not rows:
             return f"No symbols found matching '{name}'"
         lines = [f"summary for '{name}'\n"]
-        for fpath, sname, stype, args, lineno, _end, summary in rows:
+        for fpath, sname, stype, args, lineno, _end in rows:
             sig = f"({args})" if args else ""
             lines.append(f"  [{stype}] {fpath}::{sname}{sig}  L{lineno}")
-            lines.append(f"  summary: {summary or '(no summary available)'}")
+            summary = get_latest_summary(db, "symbol", f"{fpath}::{sname}")
+            if summary and summary.get("short"):
+                lines.append(f"  summary: {summary['short']}")
+                if summary.get("full"):
+                    lines.append(f"  detail: {summary['full']}")
+            else:
+                lines.append("  summary: (no summary available)")
             lines.append("")
         return "\n".join(lines)
     finally:
@@ -395,7 +428,7 @@ def _format_impact_result(db, target_files, seeds, upstream, downstream):
 
 def _fts_available(db):
     row = db.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='symbols_fts'"
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='summary_fts'"
     ).fetchone()
     return row is not None
 
@@ -412,10 +445,10 @@ def _search_fts(db, text, limit, file_hint):
     fts_query = " ".join(f'"{t}"*' for t in sanitized)
     sql = (
         "SELECT s.name, s.file_path, s.lineno, s.type, s.short_name, "
-        "bm25(symbols_fts, 10.0, 5.0, 1.0, 2.0) AS rank "
-        "FROM symbols_fts "
-        "JOIN symbols s ON s.id = symbols_fts.rowid "
-        "WHERE symbols_fts MATCH ? "
+        "bm25(summary_fts, 5.0, 1.0) AS rank "
+        "FROM summary_fts "
+        "JOIN symbols s ON (s.file_path || '::' || s.name) = summary_fts.node_ref "
+        "WHERE summary_fts MATCH ? AND summary_fts.node_kind = 'symbol' "
     )
     params = [fts_query]
     if file_hint:
@@ -827,3 +860,263 @@ def query_flow_impl(symbols, max_depth=None, max_visited=None, static_only=False
         return _format_flow(resolved, segments, id_to_info, static_only, max_depth)
     finally:
         db.close()
+
+
+def query_cluster_summary_impl(name=None):
+    db = _open_db()
+    if not db:
+        return _DB_NOT_FOUND
+    try:
+        if name:
+            rows = db.execute(
+                "SELECT name, label, entry_symbols, file_count FROM clusters WHERE name = ?",
+                (name,),
+            ).fetchall()
+        else:
+            rows = db.execute(
+                "SELECT name, label, entry_symbols, file_count FROM clusters ORDER BY file_count DESC"
+            ).fetchall()
+        if not rows:
+            return f"No clusters found" + (f" matching '{name}'" if name else "")
+        lines = []
+        for cluster_name, label, entry_json, file_count in rows:
+            summary = get_latest_summary(db, "cluster", cluster_name)
+            header = f"## {cluster_name} ({file_count} files)"
+            if label and label != cluster_name:
+                header += f"  [alias: {label}]"
+            lines.append(header)
+            if summary and summary.get("short"):
+                lines.append(f"  short: {summary['short']}")
+            if summary and summary.get("full"):
+                lines.append(f"  full: {summary['full']}")
+            try:
+                entry_symbols = json.loads(entry_json) if entry_json else []
+            except (json.JSONDecodeError, TypeError):
+                entry_symbols = []
+            if entry_symbols:
+                lines.append(f"  entry_symbols: {', '.join(entry_symbols[:5])}")
+            if summary and summary.get("status") and summary["status"] != "ok":
+                lines.append(f"  status: {summary['status']}")
+            lines.append("")
+        return "\n".join(lines).rstrip()
+    finally:
+        db.close()
+
+
+def _normalize_intent(intent):
+    return " ".join(intent.lower().split())
+
+
+def _navigate_cache_key(db, intent):
+    row = db.execute("SELECT MAX(id) FROM summary_versions").fetchone()
+    max_id = row[0] if row and row[0] is not None else 0
+    return f"navigate::{_normalize_intent(intent)}::sv{max_id}"
+
+
+def _collect_navigate_corpus(db):
+    cluster_rows = db.execute(
+        "SELECT name, label FROM clusters ORDER BY file_count DESC"
+    ).fetchall()
+    clusters = []
+    for cname, label in cluster_rows:
+        summary = get_latest_summary(db, "cluster", cname)
+        clusters.append({
+            "name": cname,
+            "label": label,
+            "short": summary.get("short") if summary else None,
+        })
+    file_rows = db.execute("SELECT path FROM files").fetchall()
+    files = []
+    for (fpath,) in file_rows:
+        summary = get_latest_summary(db, "file", fpath)
+        files.append({
+            "path": fpath,
+            "short": summary.get("short") if summary else None,
+        })
+    return clusters, files
+
+
+def query_navigate_impl(intent, top_k=5, llm_call=None):
+    db = _open_db()
+    if not db:
+        return _DB_NOT_FOUND
+    try:
+        if not intent or not intent.strip():
+            return "Error: intent must not be empty."
+        top_k = max(1, min(top_k, 20))
+
+        cache_key = _navigate_cache_key(db, intent)
+        row = db.execute(
+            "SELECT result FROM judge_cache WHERE payload_hash = ?", (cache_key,)
+        ).fetchone()
+        if row:
+            try:
+                cached = json.loads(row[0])
+                if isinstance(cached, list):
+                    return _format_navigate(cached, intent, source="cache")
+            except json.JSONDecodeError:
+                pass
+
+        clusters, files = _collect_navigate_corpus(db)
+        if not clusters and not files:
+            return "No clusters or files indexed; run /remy-index first."
+
+        if llm_call is None:
+            llm_call = _try_default_llm_call()
+
+        if llm_call is None:
+            ranked = _heuristic_navigate(db, intent, clusters, files, top_k)
+            return _format_navigate(ranked, intent, source="heuristic")
+
+        prompt = _build_navigate_prompt(intent, clusters, files, top_k)
+        raw = llm_call(prompt)
+        ranked = _parse_navigate_response(raw, top_k)
+        if not ranked:
+            ranked = _heuristic_navigate(db, intent, clusters, files, top_k)
+            return _format_navigate(ranked, intent, source="heuristic-fallback")
+
+        from datetime import datetime as _dt
+        db.execute(
+            "INSERT OR REPLACE INTO judge_cache (payload_hash, result, created_at) VALUES (?,?,?)",
+            (cache_key, json.dumps(ranked, ensure_ascii=False),
+             _dt.now().isoformat(timespec="seconds")),
+        )
+        db.commit()
+        return _format_navigate(ranked, intent, source="llm")
+    finally:
+        db.close()
+
+
+def _try_default_llm_call():
+    if not os.environ.get("OPENAI_API_KEY"):
+        return None
+    try:
+        sys.path.insert(0, _IMPACT_DIR)
+        from run import LogicIndexer
+    except ImportError:
+        return None
+
+    def _call(prompt):
+        indexer = LogicIndexer(os.getcwd())
+        return indexer._call_llm(prompt)
+
+    return _call
+
+
+def _build_navigate_prompt(intent, clusters, files, top_k):
+    cluster_corpus = [
+        {"name": c["name"], "short": c["short"] or c["label"] or ""}
+        for c in clusters
+    ]
+    file_corpus = [
+        {"path": f["path"], "short": f["short"] or ""}
+        for f in files if f["short"]
+    ]
+    payload = {
+        "intent": intent,
+        "top_k": top_k,
+        "clusters": cluster_corpus,
+        "files": file_corpus,
+    }
+    return (
+        "Task: Rank clusters/files by relevance to the given intent. "
+        "Return a JSON array of <= top_k entries, each "
+        "{\"cluster\": str, \"file\": str|null, \"symbol\": str|null, "
+        "\"relevance_score\": float in [0,1], \"rationale\": str}.\n"
+        "Higher scores indicate stronger match. Output JSON only, no prose.\n\n"
+        + json.dumps(payload, ensure_ascii=False, indent=2)
+    )
+
+
+def _parse_navigate_response(raw, top_k):
+    if not isinstance(raw, str) or raw.startswith("Error:"):
+        return []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    cleaned = []
+    for entry in data[:top_k]:
+        if not isinstance(entry, dict):
+            continue
+        cluster = entry.get("cluster")
+        if not isinstance(cluster, str):
+            continue
+        try:
+            score = float(entry.get("relevance_score", 0))
+        except (TypeError, ValueError):
+            score = 0.0
+        cleaned.append({
+            "cluster": cluster,
+            "file": entry.get("file") if isinstance(entry.get("file"), str) else None,
+            "symbol": entry.get("symbol") if isinstance(entry.get("symbol"), str) else None,
+            "relevance_score": max(0.0, min(1.0, score)),
+            "rationale": entry.get("rationale", "") if isinstance(entry.get("rationale"), str) else "",
+        })
+    cleaned.sort(key=lambda e: e["relevance_score"], reverse=True)
+    return cleaned
+
+
+def _heuristic_navigate(db, intent, clusters, files, top_k):
+    intent_tokens = set(_normalize_intent(intent).split())
+    if not intent_tokens:
+        return []
+    file_to_cluster = {}
+    for row in db.execute(
+        "SELECT cm.file_path, c.name FROM cluster_members cm "
+        "JOIN clusters c ON c.id = cm.cluster_id"
+    ).fetchall():
+        file_to_cluster[row[0]] = row[1]
+
+    scored = []
+    for c in clusters:
+        text = " ".join(filter(None, [c["name"], c["label"], c["short"]])).lower()
+        text_tokens = set(text.split())
+        overlap = len(intent_tokens & text_tokens)
+        if overlap == 0:
+            continue
+        scored.append({
+            "cluster": c["name"],
+            "file": None,
+            "symbol": None,
+            "relevance_score": overlap / max(1, len(intent_tokens)),
+            "rationale": f"token overlap={overlap}",
+        })
+    for f in files:
+        text = " ".join(filter(None, [f["path"], f["short"]])).lower()
+        text_tokens = set(text.split())
+        overlap = len(intent_tokens & text_tokens)
+        if overlap == 0:
+            continue
+        scored.append({
+            "cluster": file_to_cluster.get(f["path"], "(unclustered)"),
+            "file": f["path"],
+            "symbol": None,
+            "relevance_score": overlap / max(1, len(intent_tokens)),
+            "rationale": f"token overlap={overlap}",
+        })
+    scored.sort(key=lambda e: e["relevance_score"], reverse=True)
+    return scored[:top_k]
+
+
+def _format_navigate(ranked, intent, source):
+    if not ranked:
+        return f"No matches for intent '{intent}' (source={source})."
+    lines = [f"## Navigate results for '{intent}' (top {len(ranked)}, source={source})\n"]
+    for i, entry in enumerate(ranked, 1):
+        cluster = entry.get("cluster", "?")
+        file_ = entry.get("file")
+        symbol = entry.get("symbol")
+        score = entry.get("relevance_score", 0.0)
+        rationale = entry.get("rationale", "")
+        path = cluster
+        if file_:
+            path += f" / {file_}"
+        if symbol:
+            path += f" :: {symbol}"
+        lines.append(f"{i}. [{score:.2f}] {path}")
+        if rationale:
+            lines.append(f"   - {rationale}")
+    return "\n".join(lines)
