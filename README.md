@@ -28,7 +28,7 @@ In large projects — especially when using less capable models — Claude Code 
 Remy addresses these limitations by adding a layer of **automated enforcement** and **structured workflows** on top of Claude Code. It also extracts project **file structure, semantic indexes, and call relationships**, persistently **records development history**, and injects them into Claude Code's context to enable continuous context awareness and dependency tracking. **Specifically, Remy provides:**
 
 - **Behavioral rule review** — Behavioral rules are re-injected on every user message, surviving across long conversations instead of silently decaying.
-- **Dependency-aware code changes** — A semantic logic index with function-level call graph data (Python AST, C/C++/TypeScript tree-sitter) lets the system trace upstream callers and downstream dependencies before code is modified. The index extracts class inheritance (`bases` field) and synthesizes dynamic dispatch edges (interface/ABC overrides, event emitter patterns, C++ virtual functions). An adaptive output budget scales injected context density based on project size (4 tiers: full → compact → core_only → top_n).
+- **Dependency-aware code changes** — A semantic logic index with function-level call graph data (Python AST, C/C++/TypeScript tree-sitter) lets the system trace upstream callers and downstream dependencies before code is modified. The index extracts class inheritance and synthesizes dynamic dispatch edges. Summaries are organized in three layers — symbol, file, and cluster — with child changes propagated to parents only when an LLM judges the change semantically meaningful at the upper layer. An adaptive output budget scales injected context density based on project size (4 tiers: full → compact → core_only → top_n).
 - **Automated context maintenance** — The project file tree, semantic code index, and session history update themselves through lifecycle hooks. `CLAUDE.md` references are kept in sync by the document injector.
 - **Composable verification pipeline** — Architecture review → code modification → test verification → changelog → context rewind → three-way auditing, chained through JSON task packets in `.claude/temp_task/`. Each step is independent; use what fits the task complexity.
 - **Cross-session memory** — The milestone system writes structured history reports to a timeline index. New sessions load a filtered view, providing continuity without flooding the context window.
@@ -52,7 +52,7 @@ The system is built on four coordinated layers:
 
 - **System prompts** (`CLAUDE.md`, `style.md`, output styles) define engineering principles, communication constraints, and prohibited behaviors. They form the static behavioral baseline, loaded at session start.
 - **Runtime hooks** fire automatically on Claude Code events — before every tool call, on every user message, and at session lifecycle boundaries. They re-inject behavioral rules to counteract instruction decay, normalize paths and shell environments, enrich file reads with caller/callee context from the logic index, and keep the project tree snapshot current. Hooks are the continuous enforcement layer: they run without user intervention.
-- **MCP server** (`remy-src/index_mcp_server.py`) is a stdio-based Model Context Protocol server launched automatically at session start. It exposes 9 code intelligence query tools (`query_symbol`, `query_summary`, `query_callers`, `query_callees`, `query_impact`, `query_patterns`, `query_search`, `query_flow`), giving Claude direct access to the semantic code graph without subprocess overhead. When available, the injection system switches to MCP Minimal mode (~1 KB) instead of injecting the full symbol tree (~40 KB).
+- **MCP server** (`remy-src/index_mcp_server.py`) is a stdio-based Model Context Protocol server launched automatically at session start. It exposes 10 code intelligence query tools (`query_symbol`, `query_summary`, `query_callers`, `query_callees`, `query_impact`, `query_patterns`, `query_search`, `query_flow`, `query_cluster_summary`, `query_navigate`), giving Claude direct access to the semantic code graph without subprocess overhead. When available, the injection system switches to MCP Minimal mode (~1 KB) instead of injecting the full symbol tree (~40 KB).
 - **Skills** are slash commands (`/remy-plan`, `/remy-patch`, `/remy-audit`, etc.) that you invoke manually to execute structured, multi-step development tasks. Each skill defines its own workflow with explicit inputs, outputs, and stop conditions.
 
 These layers are coupled by design. Hooks maintain the context that skills depend on — file tree, semantic code index, and session history are all updated automatically through lifecycle events. The MCP server and hooks share the SQLite database (`logic_index.db`) with WAL-mode concurrency. Skills produce artifacts (task packets, changelogs, audit reports) that hooks validate at tool-call time. For example, `/remy-plan` writes a task packet that constrains which files `/remy-patch` is allowed to edit, and `pre_tool_guard` enforces that boundary on every `Edit` call.
@@ -61,10 +61,10 @@ These layers are coupled by design. Hooks maintain the context that skills depen
 
 | File | Content |
 | :--- | :--- |
-| `CLAUDE.md` | Protocol entry point. References other prompt files, declares anti-hallucination rules (recursive context integrity), lists core skills manifest, injects dynamic context (project tree, logic index, timeline) |
-| `style.md` | Behavioral baseline. Defines role positioning, 5-level epistemic calibration, communication protocol (modification blocking, silent execution, agent degradation), unified tool invocation strategy |
+| `CLAUDE.md` | Protocol entry point. References other prompt files, declares anti-hallucination rules, lists core skills manifest, injects dynamic context (project tree, logic index, timeline) |
+| `style.md` | Behavioral baseline. Defines role positioning, 5-level epistemic calibration, communication protocol, unified tool invocation strategy |
 | `tools_ref.md` | Technical execution reference. File operation procedures, Git workflow, doc sync rules, GitHub CLI constraints |
-| `output-styles/system-architect.md` | Output style definition. Sets system architect role, engineering philosophy (SOLID/KISS/DRY/YAGNI), prohibited vocabulary, structured output templates (LogicChain, DecisionMatrix) |
+| `output-styles/system-architect.md` | Output style definition. Sets system architect role, engineering philosophy (SOLID/KISS/DRY/YAGNI), prohibited vocabulary, structured output templates |
 
 ### Hooks (Automated)
 
@@ -77,7 +77,7 @@ These layers are coupled by design. Hooks maintain the context that skills depen
 | Lifecycle Manager | Session start/end, pre-compaction | Regenerates the project tree snapshot and language directive; triggers full structural scan to refresh symbol line numbers and call graph; optionally launches scope selector UI for logic index injection filtering |
 | Document Injector | On demand | Injects project tree, logic index (filtered by scope selection), and timeline references into `CLAUDE.md` |
 
-### MCP Server (v1.4+) [📖](remy-src/MCP_README.md)
+### MCP Server [📖](remy-src/MCP_README.md)
 
 The `remy-index` MCP server exposes 10 query tools over the Model Context Protocol, giving Claude direct access to the code intelligence graph without subprocess overhead:
 
@@ -100,28 +100,6 @@ The server is registered in `~/.claude.json` during installation and launched au
 
 When the MCP server is available, the context injection system automatically switches to **MCP Minimal mode** — injecting only a cluster overview and MCP tool usage hints (~1 KB) instead of the full symbol tree (~40 KB). Claude uses `query_symbol` / `query_callers` / `query_impact` on demand for detailed analysis. Control this behavior with `NAV_MCP_MINIMAL_ENABLED` (project-level, "Context Injection" group).
 
-### Hierarchical Summary System (v1.5+)
-
-The semantic index stores summaries at three layers — **symbol** (leaf), **file** (single-responsibility contract), and **cluster** (subsystem-level) — versioned in a single `summary_versions` table with a 6-value status state machine (`ok / pending / stale / oversized_warn / oversized_hard / corrupt`). Reads route through `get_latest_summary(db, node_kind, node_ref)` to fetch the latest `status='ok'` row.
-
-- **Migration ladder**: schema upgrades from v6 to v7 run through `_migrate_v6_to_v7` (8-step single transaction). Missing intermediate handlers raise an error and preserve the existing db — no destructive rebuild. Project-local `.claude/logic_index.db` files auto-upgrade on the first SessionStart after installing v1.5.0.
-- **Bootstrap with three modes**: `SUMMARY_BOOTSTRAP_MODE` env (`auto` / `ask` / `never`) controls how file/cluster summaries are first generated. `auto` degrades to `ask` when the API key is missing or `file_count > BOOTSTRAP_AUTO_SIZE_GUARD`. In `ask` mode, `/remy-index` Step 2.5 prompts the user via `AskUserQuestion`. Failed nodes retain `status='pending'` and resume on the next scan (NULL-as-pending pattern, reused from the v1.4 symbol-layer pipeline).
-- **Lazy propagation with LLM judgment**: when a leaf summary is rewritten, `_bump_parent_counter_if_applicable` increments the parent's `child_change_count`. The propagation pass calls `judge_propagation` to ask the LLM whether the change is semantically meaningful at the upper layer (8 sensitive dimensions vs 6 absorbable dimensions). `propagate=true` rewrites the parent summary and zeros the counter; `propagate=false` terminates the cascade. Conservative bias: validation failure defaults to `propagate=true, confidence=low`.
-- **Forced recomputation**: `child_change_count >= FORCE_RECOMPUTE_THRESHOLD_PRIMARY` (default 50) or `elapsed_days >= FORCE_RECOMPUTE_INTERVAL_DAYS` (default 30) triggers unconditional rewrite regardless of the LLM verdict, guarding against judgment drift.
-- **Three-layer FTS**: `summary_fts` (FTS5) indexes `summary_versions` across all three node kinds, replacing the v1.4 `symbols_fts`. `query_search` filters by `node_kind='symbol'` for backward compatibility; `query_navigate` ranks results across cluster → file → symbol with LLM-driven intent matching and result caching (cache invalidates whenever `summary_versions` grows).
-- **Judgment cache**: `judge_cache(payload_hash, result, created_at)` memoizes LLM judgment results. Parent summary updates change the payload hash and invalidate cached entries naturally; periodic cleanup via `remy-cc summary-vacuum --older-than 90d`.
-- **Shared LLM channel**: judgment and summarization reuse the same `OPENAI_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` configuration as the v1.4 symbol-layer pipeline. Default per-node timeout is 60 s; parallelism is governed by the shared `OPENAI_MAX_WORKERS` knob (default 5) for both the symbol layer and the file/cluster bootstrap.
-
-**New CLI commands** (registered via `Bash(remy-cc summary-*:*)` permissions):
-
-| Command | Purpose |
-| :--- | :--- |
-| `remy-cc summary-rebuild [--node-kind] [--node-ref] [--mode]` | Trigger full or per-node summary regeneration; SKILL.md ask-mode re-entry uses `--mode auto` |
-| `remy-cc summary-audit <node_ref>` | Print version history and judgment rationale for a single node |
-| `remy-cc summary-vacuum [--older-than 90d]` | Clean stale `judge_cache` entries |
-
-**13 new env vars** (configurable via `remy-cc config` "Summary Hierarchy" group): `SUMMARY_CHAR_LIMIT_SYMBOL/FILE_COHESIVE/FILE_UTILITY/CLUSTER`, `SUMMARY_ZH_LENGTH_FACTOR`, `FILE_KIND_MIN_SYMBOLS`, `FILE_KIND_LOW_COHESION_THRESHOLD`, `FORCE_RECOMPUTE_THRESHOLD_PRIMARY/BACKUP`, `FORCE_RECOMPUTE_INTERVAL_DAYS`, `SUMMARY_BOOTSTRAP_MODE`, `BOOTSTRAP_AUTO_SIZE_GUARD`, `SUMMARY_LLM_TIMEOUT`. The bootstrap/forced-rewrite concurrency is governed by the existing `OPENAI_MAX_WORKERS`.
-
 ### Skills (User-Invoked)
 
 Skills with `disable-model-invocation: true` must be invoked manually. Each defines its own inputs, outputs, and stop conditions.
@@ -139,7 +117,7 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 | `/remy-index` | Parse source code to generate semantic summaries and call graph data | [📖](skills/remy-index/README.md) |
 | `/remy-lookup` | Display the current logic index | [📖](skills/remy-lookup/README.md) |
 | `/remy-tree` | Regenerate the project directory snapshot | [📖](skills/remy-tree/README.md) |
-| `/remy-debug` | Diagnosis-only debugging with hypothesis loop, circuit breaker, and evidence packet output | [📖](skills/remy-debug/README.md) |
+| `/remy-debug` | Diagnosis-only debugging | [📖](skills/remy-debug/README.md) |
 | `/remy-reposcout` | Inspect a GitHub repository in a sandboxed temporary directory | [📖](skills/remy-reposcout/README.md) |
 | `/remy-insight` | Deep multi-agent repository analysis — global, focus, and compare modes with configurable depth | [📖](skills/remy-insight/README.md) |
 | `/remy-ci` | Analyze CI/CD failure logs — compile, link, test, sanitizer, QEMU, style, static analysis, build config | [📖](skills/remy-ci/README.md) |

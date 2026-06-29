@@ -28,7 +28,7 @@
 Remy 针对这些局限，在 Claude Code 之上添加了一层**自动化执行机制**和**结构化工作流**。此外，它还能够提取项目的**文件结构、语义索引和调用关系**，持久化地**记录开发历史**，并将它们注入到 Claude Code 的上下文中，以实现持续的上下文感知和依赖追踪。**具体而言，Remy 提供以下能力：**
 
 - **行为规则回顾** — 行为规则在每条用户消息时重新注入，在长对话中持续生效，而非逐渐衰减直至失效。
-- **依赖感知的代码修改** — 语义逻辑索引记录了函数级调用图数据（Python AST、C/C++/TypeScript tree-sitter），并提取类继承关系（`bases` 字段）、合成动态分派边（接口/ABC 多态重写、事件发射器模式、C++ 虚函数）。系统在修改代码前能够追踪上游调用者和下游依赖。自适应输出预算根据项目规模自动调整注入上下文的密度（4 级：full → compact → core_only → top_n）。
+- **依赖感知的代码修改** — 语义逻辑索引记录了函数级调用图数据（Python AST、C/C++/TypeScript tree-sitter），并提取类继承关系、合成动态分派边。系统在修改代码前能够追踪上游调用者和下游依赖。摘要按 symbol/file/cluster 三层组织，子节点变更通过 LLM 判定是否级联到父层。自适应输出预算根据项目规模自动调整注入上下文的密度（4 级：full → compact → core_only → top_n）。
 - **自动化上下文维护** — 项目文件树、语义代码索引和会话历史通过生命周期钩子自动更新。文档注入器同步维护 `CLAUDE.md` 中的引用。
 - **可组合的验证流水线** — 架构预审 → 代码修改 → 测试验证 → 变更日志 → 上下文回退 → 三方一致性审计，通过 `.claude/temp_task/` 中的 JSON 任务包串联。每个步骤相互独立，按任务复杂度选用。
 - **跨会话记忆** — 里程碑系统将结构化历史报告写入时间线索引。新会话加载过滤视图，在不占满上下文窗口的前提下提供连续性。
@@ -52,7 +52,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 - **系统提示词**（`CLAUDE.md`、`style.md`、输出风格定义）规定了工程原则、沟通约束和禁止行为，构成会话启动时加载的静态行为基线。
 - **运行时钩子**（hooks）在 Claude Code 事件上自动触发——每次工具调用前、每条用户消息发送时、以及会话生命周期的关键节点。它们负责重新注入行为规则以对抗指令衰减、规范路径和 Shell 环境、在文件读取时追加调用者/被调用者上下文，以及保持项目文件树快照的时效性。钩子是持续执行的约束层，无需用户介入。
-- **MCP 服务器**（`remy-src/index_mcp_server.py`）是基于 stdio 的 Model Context Protocol 服务器，会话启动时自动拉起。暴露 9 个代码智能查询 tool（`query_symbol`、`query_summary`、`query_callers`、`query_callees`、`query_impact`、`query_patterns`、`query_search`、`query_flow`），使 Claude 可直接访问语义代码图，无需启动子进程。可用时，注入系统自动切换为 MCP Minimal 模式（约 1 KB），取代完整符号树（约 40 KB）。
+- **MCP 服务器**（`remy-src/index_mcp_server.py`）是基于 stdio 的 Model Context Protocol 服务器，会话启动时自动拉起。暴露 10 个代码智能查询 tool（`query_symbol`、`query_summary`、`query_callers`、`query_callees`、`query_impact`、`query_patterns`、`query_search`、`query_flow`、`query_cluster_summary`、`query_navigate`），使 Claude 可直接访问语义代码图，无需启动子进程。可用时，注入系统自动切换为 MCP Minimal 模式（约 1 KB），取代完整符号树（约 40 KB）。
 - **技能**（skills）是需要手动调用的斜杠命令（`/remy-plan`、`/remy-patch`、`/remy-audit` 等），用于执行结构化的多步骤开发任务。每个技能都定义了明确的输入、输出和停止条件。
 
 这四层之间存在设计上的耦合。钩子负责维护技能所依赖的上下文——文件树、语义代码索引、会话历史都通过生命周期事件自动更新。MCP 服务器与钩子共享 SQLite 数据库（`logic_index.db`，WAL 模式并发读）。反过来，技能产出的工件（任务包、变更日志、审计报告）也会被钩子在工具调用时校验。例如，`/remy-plan` 写入的任务包会约束 `/remy-patch` 允许编辑的文件范围，而 `pre_tool_guard` 钩子在每次 `Edit` 调用时执行这一边界检查。
@@ -61,10 +61,10 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 | 文件 | 内容 |
 | :--- | :--- |
-| `CLAUDE.md` | 协议入口。引用其它提示词文件，声明反幻觉规则（递归上下文完整性），列出核心 Skills 清单，注入动态上下文（项目树、逻辑索引、时间线） |
-| `style.md` | 行为基线。定义角色定位、5 级置信度分层、沟通协议（修改阻塞、静默执行、Agent 降级），统一工具调用策略 |
+| `CLAUDE.md` | 协议入口。引用其它提示词文件，声明反幻觉规则，列出核心 Skills 清单，注入动态上下文（项目树、逻辑索引、时间线） |
+| `style.md` | 行为基线。定义角色定位、5 级置信度分层、沟通协议，统一工具调用策略 |
 | `tools_ref.md` | 技术执行参考。文件操作流程、Git 工作流、文档同步规则、GitHub CLI 约束 |
-| `output-styles/system-architect.md` | 输出风格定义。设定系统架构师角色、工程哲学（SOLID/KISS/DRY/YAGNI）、禁用词汇表、结构化输出模板（LogicChain、DecisionMatrix） |
+| `output-styles/system-architect.md` | 输出风格定义。设定系统架构师角色、工程哲学（SOLID/KISS/DRY/YAGNI）、禁用词汇表、结构化输出模板 |
 
 ### Hooks（自动执行）
 
@@ -77,7 +77,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | 生命周期管理 | 会话启动/结束、上下文压缩前 | 重新生成项目树快照和语言指令文件；触发全量结构扫描以刷新符号行号和调用图；可选启动范围选择器 UI 过滤逻辑索引注入内容 |
 | 文档注入 | 按需触发 | 将项目树、逻辑索引（经范围选择过滤）和时间线引用注入 `CLAUDE.md` |
 
-### MCP 服务器（v1.4+） [📖](remy-src/MCP_README_zh.md)
+### MCP 服务器 [📖](remy-src/MCP_README_zh.md)
 
 `remy-index` MCP 服务器通过 Model Context Protocol 暴露 10 个查询 tool，使 Claude 可直接访问代码智能图，无需启动子进程：
 
@@ -100,28 +100,6 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 当 MCP 服务器可用时，上下文注入系统自动切换为 **MCP Minimal 模式**——仅注入集群概览和 MCP 工具使用指引（约 1 KB），取代完整符号树（约 40 KB）。Claude 通过 `query_symbol` / `query_callers` / `query_impact` 按需查询详情。通过 `NAV_MCP_MINIMAL_ENABLED`（项目级参数，"上下文注入"分组）控制此行为。
 
-### 层级化摘要系统（v1.5+）
-
-语义索引在 symbol（叶子）基础上引入 **file**（单职责文件契约）与 **cluster**（子系统级）两个上层，构成 symbol → file → cluster 三层结构。所有摘要统一存于 `summary_versions` 表（版本化 + 6 值 status 状态机：`ok / pending / stale / oversized_warn / oversized_hard / corrupt`）。读路径统一通过 `get_latest_summary(db, node_kind, node_ref)` 取最新 `status='ok'` 版本。
-
-- **Migration ladder**：schema 从 v6 升级到 v7 通过 `_migrate_v6_to_v7`（单事务 8 步）执行。缺失中间 handler 时报错并保留旧 db，不擦库重建。项目本地 `.claude/logic_index.db` 在安装 v1.5.0 后首次 SessionStart 时自动升级。
-- **Bootstrap 三模式**：`SUMMARY_BOOTSTRAP_MODE` 环境变量取 `auto / ask / never`，控制 file/cluster 层摘要的首次生成。`auto` 在缺少 API key 或 `file_count > BOOTSTRAP_AUTO_SIZE_GUARD` 时降级为 `ask`；`ask` 模式由 `/remy-index` 的 Step 2.5 通过 `AskUserQuestion` 询问用户。失败的节点保留 `status='pending'`，下次 scan 自动续传（NULL-as-pending 模式，复用 v1.4 symbol 层管线）。
-- **基于 LLM 判定的懒级联**：叶子摘要被重写时，`_bump_parent_counter_if_applicable` 自增父节点的 `child_change_count`。Propagation pass 调用 `judge_propagation` 让 LLM 判定该变更对上层是否有语义影响（8 维敏感 vs 6 类忽略）。`propagate=true` 重写父摘要并清零计数器；`propagate=false` 终止级联。保守偏置：枚举校验失败时默认 `propagate=true, confidence=low`。
-- **强制重算**：`child_change_count >= FORCE_RECOMPUTE_THRESHOLD_PRIMARY`（默认 50）或距上次重算超过 `FORCE_RECOMPUTE_INTERVAL_DAYS`（默认 30 天）时无条件重写，防御 LLM 判定漂移。
-- **三层 FTS**：`summary_fts`（FTS5）索引 `summary_versions`，覆盖三个 node_kind，替代 v1.4 的 `symbols_fts`。`query_search` 按 `node_kind='symbol'` 过滤保持向后兼容；`query_navigate` 跨 cluster → file → symbol 排序，含 LLM 驱动的意图匹配与结果缓存（`summary_versions` 写入时自动失效）。
-- **判定缓存**：`judge_cache(payload_hash, result, created_at)` 缓存 LLM 判定结果。父摘要更新使 payload_hash 自然变化，缓存被动失效；周期清理通过 `remy-cc summary-vacuum --older-than 90d`。
-- **LLM 通道共用**：判定与摘要复用 v1.4 symbol 层管线的 `OPENAI_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` 配置。默认单节点 timeout=60 s；并发由共享参数 `OPENAI_MAX_WORKERS`（默认 5）统一控制，symbol 层与 file/cluster bootstrap 共用。
-
-**新增 CLI 命令**（通过 `Bash(remy-cc summary-*:*)` 权限注册）：
-
-| 命令 | 用途 |
-| :--- | :--- |
-| `remy-cc summary-rebuild [--node-kind] [--node-ref] [--mode]` | 触发全量或单节点摘要重算；SKILL.md ask 模式重入使用 `--mode auto` |
-| `remy-cc summary-audit <node_ref>` | 打印单节点版本历史与判定理由 |
-| `remy-cc summary-vacuum [--older-than 90d]` | 清理过期 `judge_cache` 条目 |
-
-**13 个新 env**（通过 `remy-cc config` 的"层级摘要"分组配置）：`SUMMARY_CHAR_LIMIT_SYMBOL/FILE_COHESIVE/FILE_UTILITY/CLUSTER`、`SUMMARY_ZH_LENGTH_FACTOR`、`FILE_KIND_MIN_SYMBOLS`、`FILE_KIND_LOW_COHESION_THRESHOLD`、`FORCE_RECOMPUTE_THRESHOLD_PRIMARY/BACKUP`、`FORCE_RECOMPUTE_INTERVAL_DAYS`、`SUMMARY_BOOTSTRAP_MODE`、`BOOTSTRAP_AUTO_SIZE_GUARD`、`SUMMARY_LLM_TIMEOUT`。bootstrap 与强制重写阶段的并发沿用已有的 `OPENAI_MAX_WORKERS`。
-
 ### Skills（手动调用）
 
 标记为 `disable-model-invocation: true` 的 Skills 必须手动调用。每个 Skill 定义了输入、输出和停止条件。
@@ -139,7 +117,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | `/remy-index` | 解析源代码，生成语义摘要和调用图数据 | [📖](skills/remy-index/README_zh.md) |
 | `/remy-lookup` | 显示当前逻辑索引 | [📖](skills/remy-lookup/README_zh.md) |
 | `/remy-tree` | 重新生成项目目录快照 | [📖](skills/remy-tree/README_zh.md) |
-| `/remy-debug` | 仅诊断的调试技能——假设循环、熔断器和证据包输出 | [📖](skills/remy-debug/README_zh.md) |
+| `/remy-debug` | 仅诊断的调试技能 | [📖](skills/remy-debug/README_zh.md) |
 | `/remy-reposcout` | 在沙盒临时目录中检查 GitHub 仓库 | [📖](skills/remy-reposcout/README_zh.md) |
 | `/remy-insight` | 多智能体仓库深度分析——支持全局、聚焦和对照模式，可配置分析深度 | [📖](skills/remy-insight/README_zh.md) |
 | `/remy-ci` | CI/CD 失败日志分析——编译、链接、测试、sanitizer、QEMU、风格、静态分析、构建配置 | [📖](skills/remy-ci/README_zh.md) |
