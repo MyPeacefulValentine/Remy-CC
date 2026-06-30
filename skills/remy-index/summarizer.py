@@ -76,6 +76,11 @@ def _try_parse_payload(raw):
         return None
 
 
+def _has_valid_short(payload):
+    short = payload.get("short") if isinstance(payload, dict) else None
+    return isinstance(short, str) and bool(short.strip())
+
+
 def generate_with_limit(level, llm_call, render_prompt, retry_strict_prompt):
     soft_limit = get_char_limit(level)
     raw_first = llm_call(render_prompt(soft_limit))
@@ -84,6 +89,13 @@ def generate_with_limit(level, llm_call, render_prompt, retry_strict_prompt):
         if raw_first is None or (isinstance(raw_first, str) and raw_first.startswith("Error:")):
             return None, "pending"
         return None, "corrupt"
+
+    if not _has_valid_short(payload_first):
+        raw_retry = llm_call(retry_strict_prompt(soft_limit))
+        payload_retry = _try_parse_payload(raw_retry)
+        if payload_retry is None or not _has_valid_short(payload_retry):
+            return None, "corrupt"
+        payload_first = payload_retry
 
     verdict = _length_verdict(_measure_payload(payload_first), soft_limit)
     if verdict == "ok":
@@ -95,6 +107,8 @@ def generate_with_limit(level, llm_call, render_prompt, retry_strict_prompt):
     payload_second = _try_parse_payload(raw_second)
     if payload_second is None:
         return payload_first, "oversized_hard"
+    if not _has_valid_short(payload_second):
+        return None, "corrupt"
     verdict_second = _length_verdict(_measure_payload(payload_second), soft_limit)
     if verdict_second == "ok":
         return payload_second, "ok"
