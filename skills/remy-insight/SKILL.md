@@ -150,7 +150,16 @@ Borrowing from remy-plan's loop-until-saturated mechanism.
 
 ### 2.1 Focus Mode: Topic Resolution
 
-For `focus` mode, resolve `<topic>` to a file set:
+For `focus` mode, resolve `<topic>` to a file set.
+
+**Hierarchical-Summary Path (primary)**: If `remy-index` MCP server is available and the file/cluster summary layer is bootstrapped:
+
+1. Invoke `query_navigate(intent=<topic>, top_k=10)`.
+2. Extract the `file?` paths from the ranked entries; if a ranked entry references only a `cluster`, expand it by reading the cluster's files via the SQL detail layer (step 1-2 of the SQL Keyword Path below) restricted to that cluster.
+3. Collect the resulting files and their direct dependencies (imports/callers at depth 1 via the `edges` table).
+4. If `query_navigate` returns an empty result, an error, or MCP is unavailable, **silently fall back** to the SQL Keyword Path below — do NOT halt or warn the user.
+
+**SQL Keyword Path (fallback)**:
 
 1. Open `.claude/logic_index.db` via SQLite.
 2. Search `<topic>` keywords against:
@@ -158,6 +167,9 @@ For `focus` mode, resolve `<topic>` to a file set:
    - File paths (substring match)
    - Symbol names (substring match)
 3. Collect matching files and their direct dependencies (imports/callers at depth 1).
+
+**Post-processing (common to both paths)**:
+
 4. If matches = 0: Use `AskUserQuestion` to ask user to specify files or directories.
 5. If matches > 30 files: Use `AskUserQuestion` to ask user to narrow scope.
 6. Present matched file list to user for confirmation.
@@ -189,11 +201,22 @@ LOOP:
 
 ### 3.1 Context Preparation
 
-For each active section, prepare the agent's input context:
+For each active section, prepare the agent's input context.
 
-1. **global mode**: Query logic_index.db for full project structure (layer assignments from `files`, symbol signatures from `symbols`, call graph from `edges`). Format as structured text.
-2. **focus mode**: Query filtered subset from logic_index.db (matched files + direct dependencies via `edges` table).
-3. **compare mode**: Full DB query as in global mode + document content from Phase 1.4.
+**Hierarchical-Summary Overview (primary)**: If MCP is available, prefix each agent's logic_index context with a cluster-level overview obtained via `query_cluster_summary`. **SQL Detail Layer (always)**: The detailed `files` / `symbols` / `edges` query continues to populate the symbol-level context as before.
+
+1. **global mode**:
+   - Overview: Invoke `query_cluster_summary()` (no args) → record all cluster `short` and `full` summaries as the top-level overview text.
+   - Detail: Query logic_index.db for full project structure (layer assignments from `files`, symbol signatures from `symbols`, call graph from `edges`). Format as structured text.
+2. **focus mode**:
+   - Overview: For each cluster containing a topic-matched file (from Phase 2.1), invoke `query_cluster_summary(name=<cluster>)` → record the `short` and `full` summaries.
+   - Detail: Query filtered subset from logic_index.db (matched files + direct dependencies via `edges` table).
+3. **compare mode**:
+   - Overview: Invoke `query_cluster_summary()` (no args) → record all cluster summaries.
+   - Detail: Full DB query as in global mode + document content from Phase 1.4.
+   - **Prompt Partition Header (MUST)**: In the constructed agent prompt for `compare` mode, the cluster overview text MUST be enclosed under a `[Code-side Cluster Summary]` section header, and the document content MUST be enclosed under a `[Document Excerpt]` section header. Both headers MUST appear exactly once. This prevents the LLM from confusing the doc anchor with the code-side cluster description.
+
+**Fallback**: If MCP is unavailable, or `query_cluster_summary` returns "No clusters found" / an error, silently skip the Overview step for the affected mode. The SQL Detail Layer continues unchanged. For `compare` mode, when the Overview is skipped, the `[Code-side Cluster Summary]` header MUST be omitted (the partition rule applies only when the overview content exists); the `[Document Excerpt]` header MUST still be present.
 
 Read the relevant source files for the scope. For files > 500 lines, read only the symbol ranges from logic_index.
 
