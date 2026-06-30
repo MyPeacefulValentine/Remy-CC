@@ -60,6 +60,11 @@
       "purpose": {"zh-CN": "子系统级语义概览：入口、契约、依赖", "en": "Subsystem-level overview: entry, contract, dependencies"}
     },
     {
+      "scenario": {"zh-CN": "集群文件列表", "en": "Cluster files"},
+      "call": "query_cluster_files(cluster)",
+      "purpose": {"zh-CN": "列出指定 cluster 的成员文件，可选附短摘要", "en": "List a cluster's member files, optionally with short summaries"}
+    },
+    {
       "scenario": {"zh-CN": "按意图导航", "en": "Navigate by intent"},
       "call": "query_navigate(intent, top_k=5)",
       "purpose": {"zh-CN": "用自然语言意图定位相关 cluster/file/symbol", "en": "Locate relevant cluster/file/symbol by natural-language intent"}
@@ -76,7 +81,8 @@
       "追踪调用链时 → query_callers / query_callees（替代逐文件阅读）",
       "⚠ 当目标仅是理解函数签名或用途时，应优先调用 query_symbol_summary，而非 Read 整个源文件",
       "⚠ 当目标是了解整个文件的角色时，应优先调用 query_file_summary，而非 Read 整个源文件",
-      "⚠ 当目标是确认调用关系时，应优先调用 query_callers/query_callees，而非逐文件 Grep"
+      "⚠ 当目标是确认调用关系时，应优先调用 query_callers/query_callees，而非逐文件 Grep",
+      "⚠ 当目标是了解 cluster 内文件分布时，应优先调用 query_cluster_files，而非手动 grep cluster 目录"
     ],
     "en": [
       "Understanding project/module structure → query_symbol + query_symbol_summary + query_file_summary (instead of Read)",
@@ -84,7 +90,8 @@
       "Tracing call chains → query_callers / query_callees (instead of file-by-file reading)",
       "⚠ When your goal is to understand a function's signature or purpose, prefer query_symbol_summary over reading the full source file",
       "⚠ When your goal is to understand a file's overall role, prefer query_file_summary over reading the full source file",
-      "⚠ When your goal is to confirm call relationships, prefer query_callers/query_callees over file-by-file grep"
+      "⚠ When your goal is to confirm call relationships, prefer query_callers/query_callees over file-by-file grep",
+      "⚠ When your goal is to understand file distribution within a cluster, prefer query_cluster_files over manual grep"
     ]
   },
   "cluster_title": {

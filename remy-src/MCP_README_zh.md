@@ -279,6 +279,39 @@ search results for 'pars_fil' (2 results, matched via fuzzy)
 3. unrelated_func (src/other.py:5)
 ```
 
+---
+
+### query_cluster_files
+
+列出指定 cluster 的成员文件，可选附短摘要。
+
+| 参数 | 类型 | 默认值 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `cluster` | `str` | （必需） | cluster 名称（精确匹配；可从 `query_cluster_summary` 获取） |
+| `with_summary` | `bool` | `False` | 为 `True` 时在每个文件下追加 `short:` 行 |
+
+**输出示例 (`with_summary=False`)：**
+```
+## Remy-CC/skills (23 files)
+  - skills/remy-index/impact.py  (layer=Core)
+  - skills/remy-index/run.py  (layer=Core)
+  - skills/remy-index/struct_scan.py  (layer=Core)
+```
+
+**输出示例 (`with_summary=True`)：**
+```
+## Remy-CC/skills (23 files)
+  - skills/remy-index/impact.py  (layer=Core)
+      short: 基于调用图的 BFS 影响分析。
+  - skills/remy-index/run.py  (layer=Core)
+      short: (no summary available)
+```
+
+**错误情况：**
+- 空 `cluster` 参数：`Error: cluster name is required`
+- 未知 cluster：`No cluster '<name>' found. Use query_cluster_summary() to list all clusters.`
+- cluster 存在但无成员：`Cluster '<name>' has no member files.`
+
 ## 配置
 
 所有参数通过 `settings.local.json`（或全局 `settings.json`）的 `env` 块设置。可通过 `remy-cc config` UI 的"MCP 服务器"分组编辑。

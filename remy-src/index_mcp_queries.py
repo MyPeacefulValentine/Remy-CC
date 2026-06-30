@@ -931,6 +931,49 @@ def query_file_summary_impl(file):
         db.close()
 
 
+def query_cluster_files_impl(cluster, with_summary=False):
+    if not cluster:
+        return "Error: cluster name is required"
+    db = _open_db()
+    if not db:
+        return _DB_NOT_FOUND
+    try:
+        row = db.execute(
+            "SELECT id, label, file_count FROM clusters WHERE name = ?",
+            (cluster,),
+        ).fetchone()
+        if not row:
+            return (
+                f"No cluster '{cluster}' found. "
+                "Use query_cluster_summary() to list all clusters."
+            )
+        cluster_id, label, file_count = row
+        member_rows = db.execute(
+            "SELECT cm.file_path, f.layer FROM cluster_members cm "
+            "JOIN files f ON cm.file_path = f.path "
+            "WHERE cm.cluster_id = ? ORDER BY cm.file_path",
+            (cluster_id,),
+        ).fetchall()
+        if not member_rows:
+            return f"Cluster '{cluster}' has no member files."
+        header = f"## {cluster} ({file_count} files)"
+        if label and label != cluster:
+            header += f"  [alias: {label}]"
+        lines = [header]
+        for fpath, layer in member_rows:
+            layer_display = layer if layer else "Core"
+            lines.append(f"  - {fpath}  (layer={layer_display})")
+            if with_summary:
+                summary = get_latest_summary(db, "file", fpath)
+                if summary and summary.get("short"):
+                    lines.append(f"      short: {summary['short']}")
+                else:
+                    lines.append("      short: (no summary available)")
+        return "\n".join(lines)
+    finally:
+        db.close()
+
+
 def _normalize_intent(intent):
     return " ".join(intent.lower().split())
 

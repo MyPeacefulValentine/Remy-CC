@@ -34,6 +34,7 @@ from index_mcp_queries import (
     query_search_impl,
     query_flow_impl,
     query_cluster_summary_impl,
+    query_cluster_files_impl,
     query_navigate_impl,
 )
 
@@ -173,6 +174,7 @@ mcp = FastMCP(
         "- To search for a symbol when you don't know the exact name: query_search (fuzzy prefix/substring/typo)\n"
         "- To trace call paths between two or more symbols: query_flow (bidirectional BFS)\n"
         "- To get a subsystem-level overview: query_cluster_summary (cluster contracts, entry symbols)\n"
+        "- To list a cluster's member files: query_cluster_files (optionally with short summaries)\n"
         "- To locate work by intent (\"where do I modify auth logic\"): query_navigate (LLM-ranked clusters/files)\n"
         "\n"
         "Do NOT use these tools when:\n"
@@ -241,6 +243,12 @@ def query_flow(symbols: list[str], max_depth: int = 15, max_visited: int = 2000,
 def query_cluster_summary(name: str = "") -> str:
     """Return subsystem-level summaries for one or all clusters: name, label, short/full descriptions, entry symbols, and file count."""
     return _with_freshness(query_cluster_summary_impl(name or None))
+
+
+@mcp.tool()
+def query_cluster_files(cluster: str, with_summary: bool = False) -> str:
+    """List member files of a cluster (path + layer). Set with_summary=True to append short file summaries inline."""
+    return _with_freshness(query_cluster_files_impl(cluster, with_summary))
 
 
 @mcp.tool()

@@ -288,6 +288,39 @@ When symbols are not connected:
 3. unrelated_func (src/other.py:5)
 ```
 
+---
+
+### query_cluster_files
+
+List member files of a cluster, optionally with short summaries.
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `cluster` | `str` | (required) | Cluster name (exact match; obtainable from `query_cluster_summary`) |
+| `with_summary` | `bool` | `False` | If `True`, append a `short:` line under each file |
+
+**Output example (`with_summary=False`):**
+```
+## Remy-CC/skills (23 files)
+  - skills/remy-index/impact.py  (layer=Core)
+  - skills/remy-index/run.py  (layer=Core)
+  - skills/remy-index/struct_scan.py  (layer=Core)
+```
+
+**Output example (`with_summary=True`):**
+```
+## Remy-CC/skills (23 files)
+  - skills/remy-index/impact.py  (layer=Core)
+      short: BFS-based impact analysis on the call graph.
+  - skills/remy-index/run.py  (layer=Core)
+      short: (no summary available)
+```
+
+**Error cases:**
+- Empty `cluster`: `Error: cluster name is required`
+- Unknown cluster: `No cluster '<name>' found. Use query_cluster_summary() to list all clusters.`
+- Cluster exists but has no member files: `Cluster '<name>' has no member files.`
+
 ## Configuration
 
 All parameters are set via environment variables in the `env` block of `settings.local.json` (or globally in `settings.json`). Editable via `remy-cc config` UI under the "MCP Server" group.
