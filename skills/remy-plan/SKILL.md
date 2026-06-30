@@ -90,6 +90,15 @@ You MUST execute the following loop until NO ambiguities remain:
     *   **YES**: Continue to next sub-step.
 3.  **Ask**: Use `AskUserQuestion` to resolve *current layer* ambiguities.
     *   **Multi-Question Batching**: Present all currently visible ambiguities that have NO dependency between them. If question B's options depend on question A's answer, present A first; present B in the next iteration after A is resolved.
+    *   **Pagination Loop (Mandatory)**: `AskUserQuestion` accepts at most 4 questions per call (`questions: maxItems=4`). If the count of independent ambiguities in this iteration exceeds 4, you MUST iterate:
+        ```
+        queue = independent_ambiguities   # FIFO, order from the Scan output
+        while len(queue) > 0:
+            batch = queue[:4]
+            queue = queue[4:]
+            AskUserQuestion(batch)
+        ```
+        Exiting sub-step 3 while `queue` is non-empty is a protocol violation.
     *   **Language**: Follow the `REMY_LANG` environment variable (`zh-CN` → Chinese, `en` → English).
     *   **Format**: Short header, reasonable options.
     *   **Recommendation (MUST)**: Every question MUST have exactly 1 recommended option. Append `（推荐）` to the recommended label and include a 1-sentence reason in its description. Omitting the recommendation is a protocol violation.
@@ -124,11 +133,26 @@ This step targets **unknown unknowns** — assumptions Claude considers obvious 
 
 2.  **Contradiction Detection**: Before presenting to the user, cross-check every assumption against every locked decision in Table 1. If a contradiction is found, flag it as a new ambiguity (do not present it as an assumption — route it directly to re-entry in sub-step 5).
 
-3.  **Runtime Probe Verification (Optional)**: For each assumption with confidence ≤ Level 4 that involves a verifiable technical fact (e.g., library behavior, API compatibility, encoding rules), attempt a runtime probe (same constraints as Step 1e). If the probe confirms the assumption, elevate it to Level 5 and remove it from the manifest — it no longer requires user confirmation. If the probe refutes it, convert it to a new ambiguity and route to Step 2 re-entry.
+3.  **Runtime Probe Verification (Mandatory for Probe-Feasible Assumptions)**: For each assumption with confidence ≤ Level 4, first classify it as **probe-feasible** or **probe-infeasible**:
+    *   **Probe-feasible**: The assumption asserts a technical fact testable by a self-contained script with no project-specific runtime state, no production credentials, and no destructive side-effects. Examples: "library X version Y exposes function Z", "encoding A maps to bytes B as documented".
+    *   **Probe-infeasible**: Intent / domain / business-rule assumptions. Examples: "user wants fallback over hard fail", "production peak is N RPS".
+
+    For probe-feasible assumptions, a runtime probe is **mandatory** (same constraints as Step 1e). If the probe confirms the assumption, elevate it to Level 5 and remove it from the manifest. If the probe refutes it, convert it to a new ambiguity and route to Step 2 re-entry. Probe-infeasible assumptions are retained for user confirmation in sub-step 5.
 
 4.  **Conditional Scenario Probes**: For each assumption with confidence ≤ Level 4 that remains after step 3 (i.e., not verifiable by runtime probe), construct a concrete scenario that illustrates the behavioral consequence of that assumption. The scenario is embedded in the `AskUserQuestion` option description (inline format).
 
-5.  **Present to User**: Use `AskUserQuestion` to present assumptions in batches of ≤ 4 items per call, sorted by confidence (lowest first). Each item offers:
+5.  **Present to User (Pagination Loop — Mandatory)**: Use `AskUserQuestion` to present assumptions sorted by confidence (lowest first). `AskUserQuestion` accepts at most 4 questions per call (`questions: maxItems=4`); you MUST iterate until the queue is empty:
+    ```
+    queue = remaining_assumptions   # sorted by confidence ascending
+    while len(queue) > 0:
+        batch = queue[:4]
+        queue = queue[4:]
+        answers = AskUserQuestion(batch)
+        merge answers into state
+    ```
+    Exiting sub-step 5 while `queue` is non-empty is a protocol violation.
+
+    Each item offers:
     *   Option A: "确认该假设 (Confirm)" — assumption is correct.
     *   Option B: The scenario-driven alternative (for Level ≤ 4) or "否决 (Reject)" (for Level 5).
     *   User rejections or contradictions become new ambiguities.
