@@ -33,7 +33,7 @@ Before generating the final tables, the AI re-reads target function signatures t
 
 ### 3. Strict Audit (5 Tables)
 
-Once ambiguities are resolved, the AI loads the report template from `audit_template.md` and generates five tables:
+Once ambiguities are resolved, the AI loads the language-matching template (`audit_template_zh.md` for `REMY_LANG=zh-CN`, `audit_template_en.md` for `REMY_LANG=en`) and generates five tables:
 
 | Table | Purpose |
 | :--- | :--- |
@@ -92,6 +92,6 @@ Skipping `/remy-plan` means `/remy-patch` runs without boundary constraints and 
 | File | Purpose |
 | :--- | :--- |
 | `SKILL.md` | Full protocol definition (loaded by Claude Code) |
-| `audit_template.md` | Markdown table templates (loaded dynamically during audit) |
+| `audit_template_zh.md` / `audit_template_en.md` | Markdown table templates, language-selected via `REMY_LANG` (loaded dynamically during audit) |
 | `output_schema.json` | JSON schema for verification depth |
 | `../remy-index/impact.py` | BFS impact radius script (invoked in Step 1a) |

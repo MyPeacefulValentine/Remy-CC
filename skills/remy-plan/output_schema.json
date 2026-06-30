@@ -62,13 +62,13 @@
       "description": "Table 4: 物理变更预演表",
       "items": {
         "type": "object",
-        "required": ["file_path", "location", "action", "summary", "minimalist_check", "ripple_effect"],
+        "required": ["file_path", "location", "action", "summary", "scope_position", "ripple_effect"],
         "properties": {
           "file_path": { "type": "string", "description": "文件路径" },
           "location": { "type": "string", "description": "具体函数/行号" },
           "action": { "type": "string", "enum": ["Create", "Modify", "Delete"], "description": "操作类型" },
           "summary": { "type": "string", "description": "修改目的与内容简述" },
-          "minimalist_check": { "type": "string", "description": "最小化验证" },
+          "scope_position": { "type": "string", "description": "修改层级：以 `[标签]` 开头（zh-CN：补丁/局部修复/接口变更/跨域重构；en：Boundary-Wrap/Source-Modify/Contract-Change/Scope-Refactor），后接 1 句话说明为何此修改位于此层级。参见 SKILL.md Step 2 的 Scope Tag Reference 表" },
           "ripple_effect": { "type": "string", "description": "涟漪效应" },
           "caller_refs": {
             "type": "array",
