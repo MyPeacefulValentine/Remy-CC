@@ -194,7 +194,7 @@ def query_symbol_impl(name, file=None):
         db.close()
 
 
-def query_summary_impl(name, file=None):
+def query_symbol_summary_impl(name, file=None):
     db = _open_db()
     if not db:
         return _DB_NOT_FOUND
@@ -899,6 +899,34 @@ def query_cluster_summary_impl(name=None):
                 lines.append(f"  status: {summary['status']}")
             lines.append("")
         return "\n".join(lines).rstrip()
+    finally:
+        db.close()
+
+
+def query_file_summary_impl(file):
+    if not file:
+        return "Error: file path is required"
+    file = file.replace("\\", "/")
+    db = _open_db()
+    if not db:
+        return _DB_NOT_FOUND
+    try:
+        row = db.execute("SELECT path FROM files WHERE path = ?", (file,)).fetchone()
+        if not row:
+            return f"No file '{file}' in index. Run /remy-index to scan."
+        symbol_count = len(collect_file_symbols(db, file))
+        layer = get_layer(db, file)
+        summary = get_latest_summary(db, "file", file)
+        lines = [f"## {file} ({symbol_count} symbols, layer={layer})"]
+        if summary and summary.get("short"):
+            lines.append(f"  short: {summary['short']}")
+            if summary.get("full"):
+                lines.append(f"  full: {summary['full']}")
+        else:
+            lines.append("  summary: (no summary available)")
+        if summary and summary.get("status") and summary["status"] != "ok":
+            lines.append(f"  status: {summary['status']}")
+        return "\n".join(lines)
     finally:
         db.close()
 

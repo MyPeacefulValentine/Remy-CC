@@ -92,9 +92,9 @@ symbols matching 'parse_file' (2 results)
 
 ---
 
-### query_summary
+### query_symbol_summary
 
-获取符号摘要和文档注释，无需读取源文件。
+获取符号级摘要和文档注释，无需读取源文件。
 
 | 参数 | 类型 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
@@ -108,6 +108,25 @@ summary for 'bfs_callers'
   [function] skills/remy-index/impact.py::bfs_callers(db, target_set, max_depth, static_only=False)  L55
   summary: 从目标符号向上游 BFS 遍历。返回 dict[depth] -> list[qualified_name]。
 ```
+
+---
+
+### query_file_summary
+
+获取文件级语义摘要（角色、关键符号、所属层），无需读取整个源文件。
+
+| 参数 | 类型 | 默认值 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `file` | `str` | （必需） | 仓库相对路径（自动将 `\` 归一化为 `/`） |
+
+**输出示例：**
+```
+## skills/remy-index/impact.py (8 symbols, layer=Core)
+  short: 基于调用图的 BFS 影响分析。
+  full: 提供 bfs_callers / bfs_callees / format_output 工具函数，供 /remy-plan 与 /remy-patch 调用。
+```
+
+错误情况：路径未索引时返回 `No file '<path>' in index. Run /remy-index to scan.`
 
 ---
 

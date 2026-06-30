@@ -25,7 +25,8 @@ if os.environ.get("MCP_SERVER_ENABLED", "true").lower() == "false":
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from index_mcp_queries import (
     query_symbol_impl,
-    query_summary_impl,
+    query_symbol_summary_impl,
+    query_file_summary_impl,
     query_callers_impl,
     query_callees_impl,
     query_impact_impl,
@@ -164,7 +165,8 @@ mcp = FastMCP(
         "Use this server to query code structure and call relationships in the indexed project.\n"
         "\n"
         "Prefer these tools over Read/Grep when your goal is to understand code:\n"
-        "- To understand a function's purpose or signature: query_summary (instead of reading the source file)\n"
+        "- To understand a function's purpose or signature: query_symbol_summary (instead of reading the source file)\n"
+        "- To understand a file's overall role and key symbols: query_file_summary (instead of reading the whole file)\n"
         "- To find who calls a function or what it calls: query_callers / query_callees (instead of grep)\n"
         "- To assess which modules a file change would affect: query_impact (instead of manual search)\n"
         "- To locate where a symbol is defined: query_symbol (instead of glob/grep)\n"
@@ -188,9 +190,15 @@ def query_symbol(name: str, file: str = "") -> str:
 
 
 @mcp.tool()
-def query_summary(name: str, file: str = "") -> str:
-    """Get symbol summary and docstring. Use for quick understanding of a function's purpose."""
-    return _with_freshness(query_summary_impl(name, file or None))
+def query_symbol_summary(name: str, file: str = "") -> str:
+    """Get symbol-level summary and docstring. Use for quick understanding of a function/class purpose."""
+    return _with_freshness(query_symbol_summary_impl(name, file or None))
+
+
+@mcp.tool()
+def query_file_summary(file: str) -> str:
+    """Get file-level semantic summary: role, key symbols, layer, and status. Use for understanding a file's overall purpose before reading source."""
+    return _with_freshness(query_file_summary_impl(file))
 
 
 @mcp.tool()

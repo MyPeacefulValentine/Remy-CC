@@ -52,7 +52,7 @@ The system is built on four coordinated layers:
 
 - **System prompts** (`CLAUDE.md`, `style.md`, output styles) define engineering principles, communication constraints, and prohibited behaviors. They form the static behavioral baseline, loaded at session start.
 - **Runtime hooks** fire automatically on Claude Code events — before every tool call, on every user message, and at session lifecycle boundaries. They re-inject behavioral rules to counteract instruction decay, normalize paths and shell environments, enrich file reads with caller/callee context from the logic index, and keep the project tree snapshot current. Hooks are the continuous enforcement layer: they run without user intervention.
-- **MCP server** (`remy-src/index_mcp_server.py`) is a stdio-based Model Context Protocol server launched automatically at session start. It exposes 10 code intelligence query tools (`query_symbol`, `query_summary`, `query_callers`, `query_callees`, `query_impact`, `query_patterns`, `query_search`, `query_flow`, `query_cluster_summary`, `query_navigate`), giving Claude direct access to the semantic code graph without subprocess overhead. When available, the injection system switches to MCP Minimal mode (~1 KB) instead of injecting the full symbol tree (~40 KB).
+- **MCP server** (`remy-src/index_mcp_server.py`) is a stdio-based Model Context Protocol server launched automatically at session start. It exposes 11 code intelligence query tools (`query_symbol`, `query_symbol_summary`, `query_file_summary`, `query_callers`, `query_callees`, `query_impact`, `query_patterns`, `query_search`, `query_flow`, `query_cluster_summary`, `query_navigate`), giving Claude direct access to the semantic code graph without subprocess overhead. When available, the injection system switches to MCP Minimal mode (~1 KB) instead of injecting the full symbol tree (~40 KB).
 - **Skills** are slash commands (`/remy-plan`, `/remy-patch`, `/remy-audit`, etc.) that you invoke manually to execute structured, multi-step development tasks. Each skill defines its own workflow with explicit inputs, outputs, and stop conditions.
 
 These layers are coupled by design. Hooks maintain the context that skills depend on — file tree, semantic code index, and session history are all updated automatically through lifecycle events. The MCP server and hooks share the SQLite database (`logic_index.db`) with WAL-mode concurrency. Skills produce artifacts (task packets, changelogs, audit reports) that hooks validate at tool-call time. For example, `/remy-plan` writes a task packet that constrains which files `/remy-patch` is allowed to edit, and `pre_tool_guard` enforces that boundary on every `Edit` call.
@@ -79,12 +79,13 @@ These layers are coupled by design. Hooks maintain the context that skills depen
 
 ### MCP Server [📖](remy-src/MCP_README.md)
 
-The `remy-index` MCP server exposes 10 query tools over the Model Context Protocol, giving Claude direct access to the code intelligence graph without subprocess overhead:
+The `remy-index` MCP server exposes 11 query tools over the Model Context Protocol, giving Claude direct access to the code intelligence graph without subprocess overhead:
 
 | Tool | Purpose |
 | :--- | :--- |
 | `query_symbol` | Find symbol definitions by name — location, type, signature, layer |
-| `query_summary` | Get symbol summary and docstring |
+| `query_symbol_summary` | Get symbol-level summary and docstring |
+| `query_file_summary` | Get file-level semantic summary (role, key symbols, layer) |
 | `query_callers` | BFS upstream callers (supports `include_ambiguous` and `static_only`) |
 | `query_callees` | BFS downstream callees |
 | `query_impact` | Full impact analysis for modified files (equivalent to `impact.py` CLI) |

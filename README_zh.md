@@ -52,7 +52,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 - **系统提示词**（`CLAUDE.md`、`style.md`、输出风格定义）规定了工程原则、沟通约束和禁止行为，构成会话启动时加载的静态行为基线。
 - **运行时钩子**（hooks）在 Claude Code 事件上自动触发——每次工具调用前、每条用户消息发送时、以及会话生命周期的关键节点。它们负责重新注入行为规则以对抗指令衰减、规范路径和 Shell 环境、在文件读取时追加调用者/被调用者上下文，以及保持项目文件树快照的时效性。钩子是持续执行的约束层，无需用户介入。
-- **MCP 服务器**（`remy-src/index_mcp_server.py`）是基于 stdio 的 Model Context Protocol 服务器，会话启动时自动拉起。暴露 10 个代码智能查询 tool（`query_symbol`、`query_summary`、`query_callers`、`query_callees`、`query_impact`、`query_patterns`、`query_search`、`query_flow`、`query_cluster_summary`、`query_navigate`），使 Claude 可直接访问语义代码图，无需启动子进程。可用时，注入系统自动切换为 MCP Minimal 模式（约 1 KB），取代完整符号树（约 40 KB）。
+- **MCP 服务器**（`remy-src/index_mcp_server.py`）是基于 stdio 的 Model Context Protocol 服务器，会话启动时自动拉起。暴露 11 个代码智能查询 tool（`query_symbol`、`query_symbol_summary`、`query_file_summary`、`query_callers`、`query_callees`、`query_impact`、`query_patterns`、`query_search`、`query_flow`、`query_cluster_summary`、`query_navigate`），使 Claude 可直接访问语义代码图，无需启动子进程。可用时，注入系统自动切换为 MCP Minimal 模式（约 1 KB），取代完整符号树（约 40 KB）。
 - **技能**（skills）是需要手动调用的斜杠命令（`/remy-plan`、`/remy-patch`、`/remy-audit` 等），用于执行结构化的多步骤开发任务。每个技能都定义了明确的输入、输出和停止条件。
 
 这四层之间存在设计上的耦合。钩子负责维护技能所依赖的上下文——文件树、语义代码索引、会话历史都通过生命周期事件自动更新。MCP 服务器与钩子共享 SQLite 数据库（`logic_index.db`，WAL 模式并发读）。反过来，技能产出的工件（任务包、变更日志、审计报告）也会被钩子在工具调用时校验。例如，`/remy-plan` 写入的任务包会约束 `/remy-patch` 允许编辑的文件范围，而 `pre_tool_guard` 钩子在每次 `Edit` 调用时执行这一边界检查。
@@ -79,12 +79,13 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 ### MCP 服务器 [📖](remy-src/MCP_README_zh.md)
 
-`remy-index` MCP 服务器通过 Model Context Protocol 暴露 10 个查询 tool，使 Claude 可直接访问代码智能图，无需启动子进程：
+`remy-index` MCP 服务器通过 Model Context Protocol 暴露 11 个查询 tool，使 Claude 可直接访问代码智能图，无需启动子进程：
 
 | Tool | 用途 |
 | :--- | :--- |
 | `query_symbol` | 按名称查找符号定义 — 位置、类型、签名、层 |
-| `query_summary` | 获取符号摘要和文档字符串 |
+| `query_symbol_summary` | 获取符号级摘要和文档字符串 |
+| `query_file_summary` | 获取文件级语义摘要（角色、关键符号、所属层） |
 | `query_callers` | BFS 上游调用者（支持 `include_ambiguous` 和 `static_only`） |
 | `query_callees` | BFS 下游被调用者 |
 | `query_impact` | 完整影响分析（等价于 `impact.py` CLI） |

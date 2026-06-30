@@ -15,9 +15,14 @@
       "purpose": {"zh-CN": "查找函数/类的文件位置、签名、层", "en": "Find file location, signature, layer"}
     },
     {
-      "scenario": {"zh-CN": "函数摘要", "en": "Function summary"},
-      "call": "query_summary(name)",
-      "purpose": {"zh-CN": "获取 docstring 摘要，无需 Read 源文件", "en": "Get docstring summary without Read"}
+      "scenario": {"zh-CN": "符号摘要", "en": "Symbol summary"},
+      "call": "query_symbol_summary(name)",
+      "purpose": {"zh-CN": "获取函数/类的 docstring 摘要，无需 Read 源文件", "en": "Get function/class docstring summary without Read"}
+    },
+    {
+      "scenario": {"zh-CN": "文件摘要", "en": "File summary"},
+      "call": "query_file_summary(file)",
+      "purpose": {"zh-CN": "获取文件级语义摘要：角色、关键符号、层级", "en": "Get file-level semantic summary: role, key symbols, layer"}
     },
     {
       "scenario": {"zh-CN": "上游调用者", "en": "Upstream callers"},
@@ -66,17 +71,19 @@
   },
   "usage_hints": {
     "zh-CN": [
-      "了解项目结构或模块职责时 → query_symbol + query_summary（替代 Read 全文件）",
+      "了解项目结构或模块职责时 → query_symbol + query_symbol_summary + query_file_summary（替代 Read 全文件）",
       "评估修改影响时 → query_impact（替代手动 Grep 搜索）",
       "追踪调用链时 → query_callers / query_callees（替代逐文件阅读）",
-      "⚠ 当目标仅是理解函数签名或用途时，应优先调用 query_summary，而非 Read 整个源文件",
+      "⚠ 当目标仅是理解函数签名或用途时，应优先调用 query_symbol_summary，而非 Read 整个源文件",
+      "⚠ 当目标是了解整个文件的角色时，应优先调用 query_file_summary，而非 Read 整个源文件",
       "⚠ 当目标是确认调用关系时，应优先调用 query_callers/query_callees，而非逐文件 Grep"
     ],
     "en": [
-      "Understanding project/module structure → query_symbol + query_summary (instead of Read)",
+      "Understanding project/module structure → query_symbol + query_symbol_summary + query_file_summary (instead of Read)",
       "Assessing change impact → query_impact (instead of manual Grep)",
       "Tracing call chains → query_callers / query_callees (instead of file-by-file reading)",
-      "⚠ When your goal is to understand a function's signature or purpose, prefer query_summary over reading the full source file",
+      "⚠ When your goal is to understand a function's signature or purpose, prefer query_symbol_summary over reading the full source file",
+      "⚠ When your goal is to understand a file's overall role, prefer query_file_summary over reading the full source file",
       "⚠ When your goal is to confirm call relationships, prefer query_callers/query_callees over file-by-file grep"
     ]
   },

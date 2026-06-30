@@ -92,9 +92,9 @@ symbols matching 'parse_file' (2 results)
 
 ---
 
-### query_summary
+### query_symbol_summary
 
-Get symbol summary and docstring without reading the source file.
+Get symbol-level summary and docstring without reading the source file.
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
@@ -108,6 +108,25 @@ summary for 'bfs_callers'
   [function] skills/remy-index/impact.py::bfs_callers(db, target_set, max_depth, static_only=False)  L55
   summary: BFS traversal upstream from target symbols. Returns dict[depth] -> list[qualified_name].
 ```
+
+---
+
+### query_file_summary
+
+Get file-level semantic summary (role, key symbols, layer) without reading the full source.
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `file` | `str` | (required) | Repo-relative file path (`\` is auto-normalized to `/`) |
+
+**Output example:**
+```
+## skills/remy-index/impact.py (8 symbols, layer=Core)
+  short: BFS-based impact analysis over the call graph.
+  full: Provides bfs_callers / bfs_callees / format_output utilities used by /remy-plan and /remy-patch.
+```
+
+Errors: returns `No file '<path>' in index. Run /remy-index to scan.` when the path is not indexed.
 
 ---
 
