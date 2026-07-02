@@ -449,9 +449,9 @@ After all analysis agents return, the Workflow deduplicates findings by `target.
 
 ---
 
-## Phase 6: Report Generation
+## Phase 4: Report Generation
 
-### 6.1 Process Workflow Return Value
+### 4.1 Process Workflow Return Value
 
 The Workflow returns a structured JavaScript object. The main session processes it as follows:
 
@@ -463,7 +463,7 @@ The Workflow returns a structured JavaScript object. The main session processes 
    - `analysisAgentCount` — number of analysis agents used
    - `adversarialAgentCount` — number of adversarial agents used
 
-### 6.2 Findings JSON Dump
+### 4.2 Findings JSON Dump
 
 1. Ensure directory: `mkdir -p ".claude/temp_insight"` (or PowerShell equivalent)
 2. Assemble and write `.claude/temp_insight/raw_findings_full.json`:
@@ -487,7 +487,7 @@ The Workflow returns a structured JavaScript object. The main session processes 
 
 Count `findings_by_severity` and `adversarial_results` by iterating the findings array in the main session. The `timestamp` field is generated in the main session (Workflow scripts cannot call `Date.now()`).
 
-### 6.3 Programmatic Report Rendering
+### 4.3 Programmatic Report Rendering
 
 Invoke `render.py` to generate the final Markdown report:
 
@@ -507,7 +507,7 @@ python "~/.claude/skills/remy-insight/render.py" \
 
 **Do NOT hand-assemble the report in the conversation.** Always use `render.py`.
 
-### 6.4 Report Output
+### 4.4 Report Output
 
 1. Print the report file path to the user.
 2. Print the executive summary section inline for immediate visibility.
@@ -531,8 +531,8 @@ python "~/.claude/skills/remy-insight/render.py" \
 
 The following features are planned for Batch 2 and are NOT implemented in this version:
 
-- **Phase 4**: Consensus detection (majority/divergence classification across agents)
-- **Phase 5**: Full document-code consistency audit with claim extraction pipeline
-- **Phase 7**: Interactive discussion loop (removed — post-report discussion happens in main conversation)
+- **Consensus Detection** (planned, Batch 2): Majority/divergence classification across agents
+- **Full Document-Code Consistency Audit** (planned, Batch 2): Claim extraction pipeline
+- **Interactive Discussion Loop** (removed — post-report discussion happens in main conversation)
 - **compare mode**: `.pdf` support and multi-file `.tex` with `\input{}` recursion
 - **consensus_report.json**: Cross-agent consensus/dissent schema

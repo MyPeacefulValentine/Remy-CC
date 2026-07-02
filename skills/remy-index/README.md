@@ -4,10 +4,10 @@ remy-index is a semantic indexing tool based on multi-language source code parsi
 
 ## Architecture Overview
 
-The system operates in two phases across four layers:
+The system operates in two stages across four layers:
 
 ```
-Phase 1: Structural Scanning (no LLM, Hook-driven)
+Stage 1: Structural Scanning (no LLM, Hook-driven)
 ┌──────────────────────────────────────────────────────────┐
 │  struct_scan.py (standalone scanner)                     │
 │  ├── Symbol extraction with start/end line numbers       │
@@ -18,10 +18,10 @@ Phase 1: Structural Scanning (no LLM, Hook-driven)
 │            PreToolUse via dirty file consumer            │
 └──────────────────────────────────────────────────────────┘
 
-Phase 2: LLM Summarization (API-dependent, manual invocation)
+Stage 2: LLM Summarization (API-dependent, manual invocation)
 ┌──────────────────────────────────────────────────────────┐
 │  run.py (LLM indexer)                                    │
-│  ├── Delegates Phase 1 to struct_scan.py                 │
+│  ├── Delegates Stage 1 to struct_scan.py                 │
 │  ├── Generates semantic summaries for dirty symbols      │
 │  └── Saves logic_index.db + logic_index.db              │
 └──────────────────────────────────────────────────────────┘
@@ -147,13 +147,13 @@ This provides relationship context without requiring Claude Code to proactively 
 - **Truncation Recovery**: Detects API response truncation and triggers automatic retry.
 - Built-in exponential backoff, circuit breaker (auto-stop on 429/401), and checkpoint protection.
 
-## Workflow (3 Steps)
+## Workflow (4 Phases)
 
-### Step 1: Check Configuration
+### Phase 1: Check Configuration
 
 The skill checks for `.claude/logic_index_config`. If missing, it creates one from the default template (including layer definitions and exclusion rules) and prompts the user to review before proceeding.
 
-### Step 2: Execute Scanning
+### Phase 2: Execute Scanning
 
 Runs the Python indexer:
 
@@ -167,7 +167,11 @@ On first run (no existing `.claude/logic_index.db`), a full codebase scan is per
 3. Generates LLM summaries for symbols without documentation
 4. Saves results to `.claude/logic_index.db` (cache) and `.claude/logic_index.db` (output)
 
-### Step 3: Injection Strategy
+### Phase 3: Hierarchical Bootstrap Confirmation (Conditional)
+
+If `run.py` stdout contains `BOOTSTRAP_PENDING_CONFIRMATION`, the skill asks whether to generate file/cluster summaries via `--bootstrap-only --mode auto`. Triggered only when `SUMMARY_BOOTSTRAP_MODE=ask` (explicit or downgraded from `auto`). Absent line → skipped.
+
+### Phase 4: Injection Strategy
 
 Based on the `LOGIC_INDEX_AUTO_INJECT` policy:
 

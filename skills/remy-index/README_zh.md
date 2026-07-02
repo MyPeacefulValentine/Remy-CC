@@ -10,10 +10,10 @@ remy-index 是一个基于多语言源码解析和 OpenAI 兼容 API 的语义�
 
 ## 架构概览
 
-系统分两个阶段、四层运作：
+系统分两个 Stage、四层运作：
 
 ```
-Phase 1: 结构扫描（无 LLM，Hook 驱动）
+Stage 1: 结构扫描（无 LLM，Hook 驱动）
 ┌──────────────────────────────────────────────────────────┐
 │  struct_scan.py（独立扫描器）                            │
 │  ├── 符号提取，含起止行号（end_lineno）                  │
@@ -24,10 +24,10 @@ Phase 1: 结构扫描（无 LLM，Hook 驱动）
 │        PreToolUse 脏文件消费（增量扫描）                 │
 └──────────────────────────────────────────────────────────┘
 
-Phase 2: LLM 摘要生成（依赖 API，手动调用）
+Stage 2: LLM 摘要生成（依赖 API，手动调用）
 ┌──────────────────────────────────────────────────────────┐
 │  run.py（LLM 索引器）                                    │
-│  ├── 将 Phase 1 委托给 struct_scan.py                    │
+│  ├── 将 Stage 1 委托给 struct_scan.py                    │
 │  ├── 为脏符号生成语义摘要                                │
 │  └── 保存 logic_index.db + logic_index.db               │
 └──────────────────────────────────────────────────────────┘
@@ -152,13 +152,13 @@ Phase 2: LLM 摘要生成（依赖 API，手动调用）
 - **截断恢复**：检测 API 响应截断并自动重试。
 - 内置指数退避、熔断器（429/401 自动停止）和检查点保护。
 
-## 工作流（3 步）
+## 工作流（4 阶段）
 
-### 步骤 1: 检查配置
+### Phase 1: 检查配置
 
 Skill 检查 `.claude/logic_index_config` 是否存在。不存在时从默认模板创建（包含层定义和排除规则），并提示用户在继续前审查。
 
-### 步骤 2: 执行扫描
+### Phase 2: 执行扫描
 
 运行 Python 索引器：
 
@@ -172,7 +172,11 @@ python "~/.claude/skills/remy-index/run.py"
 3. 为无文档的符号生成 LLM 摘要
 4. 将结果保存到 `.claude/logic_index.db`（缓存）和 `.claude/logic_index.db`（输出）
 
-### 步骤 3: 注入策略
+### Phase 3: 层级摘要引导确认（条件触发）
+
+若 `run.py` stdout 包含 `BOOTSTRAP_PENDING_CONFIRMATION`，Skill 通过 `--bootstrap-only --mode auto` 询问用户是否生成 file/cluster 摘要。仅当 `SUMMARY_BOOTSTRAP_MODE=ask` 时触发（显式设置或从 `auto` 降级）。该行缺失时跳过。
+
+### Phase 4: 注入策略
 
 根据 `LOGIC_INDEX_AUTO_INJECT` 策略：
 

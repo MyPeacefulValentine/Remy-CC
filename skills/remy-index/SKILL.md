@@ -24,7 +24,7 @@ pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
 
 You MUST execute the following steps strictly in order.
 
-### Step 1: Check Configuration
+### Phase 1: Check Configuration
 1.  Check if `.claude/logic_index_config` exists.
 2.  **If missing**:
     - Create it from `~/.claude/skills/remy-index/default_logic_config.template`.
@@ -35,7 +35,7 @@ You MUST execute the following steps strictly in order.
     - Use `AskUserQuestion` to prompt: "Existing configuration found. The scan will run based on these rules (consuming Tokens). Proceed?"
     - Wait for "Yes".
 
-### Step 2: Execute Scanning
+### Phase 2: Execute Scanning
 1.  Check if `.claude/logic_index.db` exists.
     - If **MISSING**: Output a first-run notice in the language configured by `REMY_LANG` (`zh-CN`: "检测到首次运行。即将执行全量代码库扫描，请耐心等待..." / `en`: "First run detected. Full codebase scan starting, please wait...")
 2.  Execute the Python indexer:
@@ -44,12 +44,12 @@ You MUST execute the following steps strictly in order.
     ```
 3.  Wait for completion.
 
-### Step 2.5: Hierarchical Bootstrap Confirmation (Conditional)
+### Phase 3: Hierarchical Bootstrap Confirmation (Trigger: run.py stdout contains BOOTSTRAP_PENDING_CONFIRMATION)
 
-After Step 2, inspect the stdout produced by `run.py` and decide whether to ask the user about generating file/cluster summaries:
+After Phase 2, inspect the stdout produced by `run.py` and decide whether to ask the user about generating file/cluster summaries:
 
 1.  **Search the captured stdout for the line `BOOTSTRAP_PENDING_CONFIRMATION`.** This line is emitted only when `SUMMARY_BOOTSTRAP_MODE=ask` (explicit or downgraded from `auto` due to missing API key / file count exceeding `BOOTSTRAP_AUTO_SIZE_GUARD`).
-2.  **If the line is absent**: Skip Step 2.5 entirely. `auto` mode already generated file/cluster summaries; `never` mode intentionally skipped.
+2.  **If the line is absent**: Skip Phase 3 entirely. `auto` mode already generated file/cluster summaries; `never` mode intentionally skipped.
 3.  **If the line is present**: Parse the `pending_files=X pending_clusters=Y` fields, then use `AskUserQuestion` in the language configured by `REMY_LANG`:
     - Question (zh-CN): "检测到 {X} 个文件 + {Y} 个集群尚未生成层级摘要。立即生成？（消耗 LLM tokens）"
     - Question (en): "{X} file(s) and {Y} cluster(s) lack hierarchical summaries. Generate now? (consumes LLM tokens)"
@@ -65,7 +65,7 @@ After Step 2, inspect the stdout produced by `run.py` and decide whether to ask 
 5.  **If user chose "Skip"**: Output a single notice: "Skipped. Run `/remy-index` again or `remy-cc summary-rebuild` later to retry."
 6.  **If user chose "Disable permanently"**: Output the command for the user to apply manually (do NOT modify settings without explicit consent): "Set `SUMMARY_BOOTSTRAP_MODE=never` in `.claude/settings.local.json` (env section) or run `remy-cc config` to disable."
 
-### Step 3: Injection Strategy
+### Phase 4: Injection Strategy
 1.  Determine the injection policy from `settings.json` (env `LOGIC_INDEX_AUTO_INJECT`).
     - Default is `ALWAYS` if not set.
 
