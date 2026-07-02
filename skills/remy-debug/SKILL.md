@@ -228,7 +228,7 @@ Return to 2.1 with updated evidence context.
 
 ---
 
-## 5. Stop Protocol (Mandatory)
+## Phase 5: Stop Protocol (Mandatory)
 
 After writing the report and packet:
 

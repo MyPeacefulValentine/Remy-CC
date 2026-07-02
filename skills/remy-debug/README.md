@@ -14,9 +14,9 @@ remy-debug traces root cause of bugs through a structured hypothesis loop with a
 
 Collects the observable error — from arguments, test output, or guided questions.
 
-### Phase 1: Context Saturation
+### Phase 1: Localization
 
-Reads the failing code path using logic index impact analysis (if available) or manual grep-based tracing.
+Parses stack traces or greps error keywords to identify suspect files. Runs impact analysis via logic index (when available), collects git history for regression scoping, then reads the suspect code.
 
 ### Phase 2: Hypothesis Loop
 
@@ -37,6 +37,10 @@ Outputs a structured report to `.claude/temp_debug/debug_{timestamp}.md` contain
 ### Phase 4: Evidence Packet
 
 Generates a `.claude/temp_task/task_*.json` packet for `/remy-patch` to execute the fix.
+
+### Phase 5: Stop Protocol
+
+After the report and packet are written, prints the diagnosis summary and the follow-up command (`/remy-patch debug_{TIMESTAMP}.json`, only when mode = "write"), then STOPS. Does NOT apply any code changes.
 
 ## Configuration
 
