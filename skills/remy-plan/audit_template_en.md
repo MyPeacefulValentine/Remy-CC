@@ -40,14 +40,14 @@ You must output your analysis in the following **five** Markdown tables in this 
 
 ### 🛠️ Table 4: Physical Change Simulation
 
-*   **Scope Position**: Open with one tag — `[Boundary-Wrap]` / `[Source-Modify]` / `[Contract-Change]` / `[Scope-Refactor]` — followed by a 1-sentence explanation of why the modification belongs at this level. See SKILL.md Step 2 → Scope Tag Reference.
+*   **Scope Position**: Open with one tag — `[Boundary-Wrap]` / `[Source-Modify]` / `[Contract-Change]` / `[Scope-Refactor]` — followed by a 1-sentence explanation of why the modification belongs at this level. See SKILL.md Phase 2 → Scope Tag Reference.
 *   **Ripple Effect**: Confirm imports and dependencies do not create circular references.
 
 | File Path | Location | Action | Summary | Scope Position | Ripple Effect |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `path/to/file` | `func_name` | Modify | Add retry logic | [Source-Modify] Add retry inside the function where the error state originates | None |
 
-**Caller Refs Annotation** (required when `Action=Create`; see SKILL.md Step 2.9.2)
+**Caller Refs Annotation** (required when `Action=Create`; see SKILL.md Phase 3.4)
 
 | Create ID | caller_file (existing tree) | caller_function | evidence_ref |
 | :--- | :--- | :--- | :--- |
@@ -68,4 +68,4 @@ If this packet contains no `Create` rows, this annotation table is empty. **No o
 
 ---
 
-> **⚠ CHECKPOINT**: All 5 tables are complete. Do **NOT** emit the stop prompt yet. You **MUST** proceed to **Section 5 (Evidence Packet Generation)** and execute all 5 steps (timestamp → git commit → ensure directory → write packet → update .active_packet) before outputting the final stop prompt.
+> **⚠ CHECKPOINT**: All 5 tables are complete. Do **NOT** emit the stop prompt yet. You **MUST** proceed to **Phase 5 (Evidence Packet Generation)** and execute all 5 steps (timestamp → git commit → ensure directory → write packet → update .active_packet) before outputting the final stop prompt.

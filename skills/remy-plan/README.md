@@ -4,7 +4,7 @@ remy-plan is a **zero-code** architecture audit protocol. It forces the AI to co
 
 ## Core Workflow
 
-### 1. Context Saturation
+### Phase 1: Context Saturation
 
 The AI first checks whether `.claude/logic_index.db` exists:
 
@@ -15,25 +15,27 @@ In both paths, the AI must read all relevant source code definitions. Guessing o
 
 A **reuse scan** is performed: for any planned new function or utility, the project is searched for existing implementations with similar names or purposes. If a reusable function exists, the plan references it rather than proposing new code.
 
-### 2. Interactive Ambiguity Resolution (Loop)
+### Phase 2: Ambiguity Elimination Loop
 
 The AI scans for ambiguities using a mandatory 5-category checklist (Interface Contract, Resource & Dependency, Behavioral Boundary, Execution Order, Change Boundary). If multiple technical paths exist, the AI **must** pause and use `AskUserQuestion` to ask the user — each question must include exactly one recommended option with a 1-sentence reason. Questions with inter-dependencies are presented sequentially rather than batched.
 
 Upon receiving an answer, the AI searches for related code and performs **cross-constraint validation** against all previously locked decisions before proceeding. If a contradiction is found, the conflicting prior decision is invalidated and re-presented. This loop repeats until all "TBD" items are converted to "Fixed" constraints.
 
-### 2.8. Assumption Manifest & Scenario Probes
+### Phase 3.1: Assumption Manifest & Scenario Probes
 
 After the loop exits, the AI generates a list of ALL implicit assumptions (implementation-level and behavioral-level) not already in Table 1. Each assumption includes a confidence level and category. Assumptions with confidence ≤ Level 4 trigger concrete scenario probes — the AI constructs a specific execution scenario to help the user judge whether the assumption is correct.
 
-Assumptions are presented in batches via `AskUserQuestion`. User rejections trigger a one-time re-entry into the Step 2 loop to resolve the new ambiguity. A second re-entry is prohibited.
+Assumptions are presented in batches via `AskUserQuestion`. User rejections trigger a one-time re-entry into the Phase 2 loop to resolve the new ambiguity. A second re-entry is prohibited.
 
-### 2.9. Plan-Code Alignment Check
+### Phase 3.2: Plan-Code Alignment Check
 
 Before generating the final tables, the AI re-reads target function signatures to confirm no concurrent external modifications invalidated the plan's assumptions. If a contradiction is detected, the ambiguity resolution loop is re-entered.
 
-### 3. Strict Audit (5 Tables)
+Two further pre-emit checks (Phase 3.3 Schema Deletion Tree-Wide Scan and Phase 3.4 Orphan Creation Detection) run afterwards to guard against dead code and untracked delete impact.
 
-Once ambiguities are resolved, the AI loads the language-matching template (`audit_template_zh.md` for `REMY_LANG=zh-CN`, `audit_template_en.md` for `REMY_LANG=en`) and generates five tables:
+### Phase 4: Audit Output (5 Tables)
+
+Once Phase 3 completes, the AI loads the language-matching template (`audit_template_zh.md` for `REMY_LANG=zh-CN`, `audit_template_en.md` for `REMY_LANG=en`) and generates five tables:
 
 | Table | Purpose |
 | :--- | :--- |
@@ -43,7 +45,7 @@ Once ambiguities are resolved, the AI loads the language-matching template (`aud
 | Physical Change Simulation | Lists every file, function, and operation type to be modified, with ripple effect estimates. |
 | Verification Plan | Defines how to verify the implementation end-to-end after execution, with rollback conditions. |
 
-### 4. Evidence Packet Generation
+### Phase 5: Evidence Packet Generation
 
 After the 5 tables, the AI writes an `AgentTaskPacketLite` JSON file to `.claude/temp_task/task_{TIMESTAMP}.json`. This packet contains:
 
@@ -53,7 +55,7 @@ After the 5 tables, the AI writes an `AgentTaskPacketLite` JSON file to `.claude
 
 The `.active_packet` pointer is updated to reference the new packet.
 
-### 5. Mandatory Stop
+### Phase 6: Mandatory Stop
 
 The AI stops and presents three options:
 
@@ -94,4 +96,4 @@ Skipping `/remy-plan` means `/remy-patch` runs without boundary constraints and 
 | `SKILL.md` | Full protocol definition (loaded by Claude Code) |
 | `audit_template_zh.md` / `audit_template_en.md` | Markdown table templates, language-selected via `REMY_LANG` (loaded dynamically during audit) |
 | `output_schema.json` | JSON schema for verification depth |
-| `../remy-index/impact.py` | BFS impact radius script (invoked in Step 1a) |
+| `../remy-index/impact.py` | BFS impact radius script (invoked in Phase 1.2 step (1)) |

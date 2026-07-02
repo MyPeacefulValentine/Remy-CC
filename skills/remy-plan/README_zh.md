@@ -27,19 +27,21 @@ AI 使用强制 5 类清单（接口契约、资源依赖、行为边界、执�
 
 收到回答后，AI 搜索相关代码并对所有已锁定决策执行**交叉约束验证**。若发现矛盾，将冲突的先前决策标记为无效并重新提问。此循环重复直到所有"待定"项转为"已锁定"约束。
 
-### Phase 2.8: 假设清单与场景探测
+### Phase 3.1: 假设清单与场景探测
 
 循环退出后，AI 生成一份包含所有隐含假设（实现级和行为级）的清单，不包含 Table 1 中已有的条目。每项假设包含置信度和类别。置信度 ≤ Level 4 的假设触发场景探测——AI 构造一个具体执行场景，帮助用户判断假设是否正确。
 
-假设通过 `AskUserQuestion` 分批呈现。用户否决时触发一次性回退到 Step 2 循环以解决新歧义。禁止第二次回退。
+假设通过 `AskUserQuestion` 分批呈现。用户否决时触发一次性回退到 Phase 2 循环以解决新歧义。禁止第二次回退。
 
-### Phase 2.9: 计划-代码对齐检查
+### Phase 3.2: 计划-代码对齐检查
 
 生成最终表格前，AI 重新读取目标函数签名，确认无并发外部修改使计划假设失效。若检测到矛盾，重新进入歧义消除循环。
 
-### Phase 3: 五表审计
+其后 Phase 3.3（Schema 删除全树扫描）与 Phase 3.4（孤儿创建检测）继续把关，防止死代码与漏改的删除影响。
 
-歧义消除后，AI 按 `REMY_LANG` 加载语言匹配的模板（`audit_template_zh.md` 或 `audit_template_en.md`），生成五张表：
+### Phase 4: 五表审计
+
+Phase 3 全部通过后，AI 按 `REMY_LANG` 加载语言匹配的模板（`audit_template_zh.md` 或 `audit_template_en.md`），生成五张表：
 
 | 表格 | 用途 |
 | :--- | :--- |
@@ -49,7 +51,7 @@ AI 使用强制 5 类清单（接口契约、资源依赖、行为边界、执�
 | 物理变更预演 | 列出每个待修改的文件、函数和操作类型，附带涟漪效应估算。 |
 | 验证计划 | 定义实现完成后的端到端验证方法及回退条件。 |
 
-### Phase 4: 任务包生成
+### Phase 5: 任务包生成
 
 五表生成后，AI 将 `AgentTaskPacketLite` JSON 文件写入 `.claude/temp_task/task_{TIMESTAMP}.json`。包含：
 
@@ -59,7 +61,7 @@ AI 使用强制 5 类清单（接口契约、资源依赖、行为边界、执�
 
 同时更新 `.active_packet` 指针指向新任务包。
 
-### Phase 5: 强制停止
+### Phase 6: 强制停止
 
 AI 停止并给出三个选项：
 
@@ -94,4 +96,4 @@ remy-plan 是三 Skill 流水线的第一阶段：
 | `SKILL.md` | 完整协议定义（由 Claude Code 加载） |
 | `audit_template_zh.md` / `audit_template_en.md` | Markdown 表格模板，按 `REMY_LANG` 选择加载（审计过程中动态加载） |
 | `output_schema.json` | 验证深度的 JSON Schema |
-| `../remy-index/impact.py` | BFS 影响半径脚本（Phase 1 调用） |
+| `../remy-index/impact.py` | BFS 影响半径脚本（Phase 1.2 步骤 (1) 调用） |
