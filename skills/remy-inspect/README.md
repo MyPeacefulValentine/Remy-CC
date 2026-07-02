@@ -34,7 +34,7 @@ Determines what changed via `git diff` or user-specified targets. Builds a chang
 
 Loads detection rules from `frameworks.json` to identify the project's test framework (pytest, jest, go test, etc.). Maps each changed symbol to existing test files via grep.
 
-### Phase 2.5: Defect Prediction (medium/high only)
+### Phase 3: Defect Prediction (medium/high only)
 
 Spawns parallel agents to independently analyze the changed code from different perspectives:
 
@@ -42,23 +42,23 @@ Spawns parallel agents to independently analyze the changed code from different 
 - **Angle B — Error Path**: Identifies untested exception handlers, fallback logic, and I/O failure paths.
 - **Angle C — State/Interaction** (high only): Identifies concurrency risks, implicit preconditions, and partial-failure scenarios.
 
-Each agent outputs up to 6 structured failure scenarios. Results are merged, deduplicated, and sorted by priority. The scenario list drives targeted test generation in Phase 3.
+Each agent outputs up to 6 structured failure scenarios. Results are merged, deduplicated, and sorted by priority. The scenario list drives targeted test generation in Phase 4.
 
-### Phase 3: Test Creation (Conditional)
+### Phase 4: Test Creation (Conditional)
 
-For symbols with no existing test coverage — or when Phase 2.5 produced scenarios — generates temporary tests. When scenarios are available, tests target specific failure conditions with concrete inputs derived from prediction results.
+For symbols with no existing test coverage — or when Phase 3 produced scenarios — generates temporary tests. When scenarios are available, tests target specific failure conditions with concrete inputs derived from prediction results.
 
 Test requirements: one assertion per behavior, public interface only, deterministic, no mocks unless external I/O.
 
-### Phase 4: Execution & Fix Loop
+### Phase 5: Execution & Fix Loop
 
 Runs tests and triages failures. The triage decision tree determines whether a failure is a test defect or an implementation defect before attempting fixes. Tracks prediction accuracy: how many predicted scenarios were confirmed by actual test failures.
 
-### Phase 5: Coverage Assessment
+### Phase 6: Coverage Assessment
 
 Measures branch coverage of changed functions (via coverage tool or static analysis). Threshold: ≥ 80%. Below-threshold symbols trigger additional test creation.
 
-### Phase 6: Quality Audit (Two Layers)
+### Phase 7: Quality Audit (Two Layers)
 
 **Layer 1 — Regex Anti-Patterns** (always): Scans test files for patterns in `anti_patterns.json` (tautological assertions, mock-only testing, etc.).
 
@@ -70,11 +70,11 @@ Measures branch coverage of changed functions (via coverage tool or static analy
 
 Results from both layers are merged and deduplicated. Critical findings block passage.
 
-### Phase 7: Cleanup
+### Phase 8: Cleanup
 
-Deletes all temporary test files created in Phase 3.
+Deletes all temporary test files created in Phase 4.
 
-### Phase 8: Report
+### Phase 9: Report
 
 Saves a structured report to `.claude/temp_inspect/report_{timestamp}.md` including prediction accuracy metrics, semantic audit findings, and the standard coverage/results summary.
 

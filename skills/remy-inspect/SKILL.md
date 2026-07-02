@@ -24,20 +24,20 @@ Supports three effort levels for multi-angle analysis:
 | File | Purpose |
 | :--- | :--- |
 | `skills/remy-inspect/frameworks.json` | Test framework detection rules (Phase 2). User-extensible. |
-| `skills/remy-inspect/anti_patterns.json` | Assertion anti-pattern detection rules (Phase 6.1). User-extensible. |
-| `skills/remy-inspect/schemas/prediction_scenario.json` | Output schema for defect prediction agents (Phase 2.5). |
-| `skills/remy-inspect/schemas/audit_finding.json` | Output schema for semantic audit agents (Phase 6.2). |
+| `skills/remy-inspect/anti_patterns.json` | Assertion anti-pattern detection rules (Phase 7.1). User-extensible. |
+| `skills/remy-inspect/schemas/prediction_scenario.json` | Output schema for defect prediction agents (Phase 3). |
+| `skills/remy-inspect/schemas/audit_finding.json` | Output schema for semantic audit agents (Phase 7.2). |
 | `skills/remy-inspect/prompts/predict_input_boundary.md` | Prediction Angle A prompt template. |
 | `skills/remy-inspect/prompts/predict_error_path.md` | Prediction Angle B prompt template. |
 | `skills/remy-inspect/prompts/predict_state_interaction.md` | Prediction Angle C prompt template (high only). |
 | `skills/remy-inspect/prompts/audit_coverage_gap.md` | Audit Angle A prompt template. |
 | `skills/remy-inspect/prompts/audit_assertion_strength.md` | Audit Angle B prompt template (high only). |
 | `skills/remy-inspect/prompts/audit_test_isolation.md` | Audit Angle C prompt template (high only). |
-| `skills/remy-inspect/templates/test_python.py.j2` | Jinja2 template for temporary Python tests (Phase 3). |
-| `skills/remy-inspect/templates/test_javascript.js.j2` | Jinja2 template for temporary JavaScript tests (Phase 3). |
-| `skills/remy-inspect/templates/test_go.go.j2` | Jinja2 template for temporary Go tests (Phase 3). |
+| `skills/remy-inspect/templates/test_python.py.j2` | Jinja2 template for temporary Python tests (Phase 4). |
+| `skills/remy-inspect/templates/test_javascript.js.j2` | Jinja2 template for temporary JavaScript tests (Phase 4). |
+| `skills/remy-inspect/templates/test_go.go.j2` | Jinja2 template for temporary Go tests (Phase 4). |
 | `skills/remy-inspect/templates/test_c.c.j2` | Jinja2 template for temporary C tests (multi-framework: kunit/cmocka/Unity/criterion/plain). |
-| `skills/remy-inspect/templates/report.md.j2` | Jinja2 template for the final report (Phase 8). |
+| `skills/remy-inspect/templates/report.md.j2` | Jinja2 template for the final report (Phase 9). |
 | `skills/remy-inspect/render.py` | Template rendering helper. Uses Jinja2 when available, falls back to `str.format()`. |
 
 ## Optional Dependency: Jinja2
@@ -65,7 +65,7 @@ Supports three effort levels for multi-angle analysis:
 
 | Effort | Prediction Angles | Semantic Audit Angles | Total Agents |
 | :--- | :--- | :--- | :--- |
-| low | 0 (skip Phase 2.5) | 0 (regex only in Phase 6) | 0 |
+| low | 0 (skip Phase 3) | 0 (regex only in Phase 7) | 0 |
 | medium | 2 (A: Input Boundary, B: Error Path) | 1 (A: Coverage Gap) | 3 |
 | high | 3 (A + B + C: State/Interaction) | 3 (A + B: Assertion Strength + C: Test Isolation) | 6 |
 
@@ -75,7 +75,7 @@ Final reports are saved to `.claude/temp_inspect/report_{timestamp}.md` in the p
 
 ---
 
-## 1. Phase 1: Scope Identification
+## Phase 1: Scope Identification
 
 **Goal**: Determine what changed and what needs testing.
 
@@ -88,7 +88,7 @@ Final reports are saved to `.claude/temp_inspect/report_{timestamp}.md` in the p
 
 ---
 
-## 2. Phase 2: Test Discovery
+## Phase 2: Test Discovery
 
 **Goal**: Find existing tests that cover the change set.
 
@@ -101,7 +101,7 @@ Load detection rules from `frameworks.json`. Each entry defines:
 
 Execute indicator checks for each framework entry in priority order. Stop at the first match.
 
-If no framework is detected and no test directories exist → proceed to Phase 2.5 (or Phase 3 if effort=low).
+If no framework is detected and no test directories exist → proceed to Phase 3 (or Phase 4 if effort=low).
 
 ### 2.2 Mapping Changes to Tests
 
@@ -116,13 +116,13 @@ For each item in `change_set`:
 
 ---
 
-## 2.5. Phase 2.5: Defect Prediction (Multi-Angle)
+## Phase 3: Defect Prediction (Multi-Angle) (Trigger: effort ≥ medium)
 
 **Trigger**: effort level is `medium` or `high`. Skip entirely when effort is `low`.
 
-**Goal**: Use parallel agents to identify failure scenarios from multiple independent perspectives, driving targeted test generation in Phase 3.
+**Goal**: Use parallel agents to identify failure scenarios from multiple independent perspectives, driving targeted test generation in Phase 4.
 
-### 2.5.1 Context Preparation
+### 3.1 Context Preparation
 
 Gather the following context for agent prompts:
 1. **Diff**: `git diff HEAD` output for the target files (or full source if no prior version).
@@ -130,7 +130,7 @@ Gather the following context for agent prompts:
 3. **Existing tests**: List of test function names discovered in Phase 2 (to avoid duplicating coverage).
 4. **Callers/callees** (optional): If `.claude/logic_index.db` exists, run `impact.py` and include the upstream/downstream summary. MCP alternative: `query_callers` / `query_callees` tools if `remy-index` server is active.
 
-### 2.5.2 Agent Dispatch
+### 3.2 Agent Dispatch
 
 Read the prompt templates from `~/.claude/skills/remy-inspect/prompts/`:
 
@@ -150,13 +150,13 @@ Agent({
 
 Launch all agents **in parallel** (single message, multiple Agent tool calls).
 
-### 2.5.3 Result Processing
+### 3.3 Result Processing
 
 1. **Parse**: Extract JSON array from each agent's response. If parsing fails (malformed JSON), discard that angle's results with a warning.
 2. **Merge**: Concatenate all scenario arrays.
 3. **Dedup**: For scenarios with the same `symbol` + similar `scenario` text (>80% token overlap), keep the one with higher priority.
 4. **Sort**: Order by priority (high → medium → low).
-5. **Record**: Store as `scenario_list` for Phase 3 consumption.
+5. **Record**: Store as `scenario_list` for Phase 4 consumption.
 
 **Output**: Print the merged scenario list as a table:
 
@@ -165,13 +165,13 @@ Launch all agents **in parallel** (single message, multiple Agent tool calls).
 
 ---
 
-## 3. Phase 3: Test Creation (Conditional)
+## Phase 4: Test Creation (Conditional)
 
 **Trigger**: Any symbol in `change_set` has no existing test coverage, OR `scenario_list` is non-empty.
 
-### 3.1 Scenario-Driven Generation (when scenario_list available)
+### 4.1 Scenario-Driven Generation (when scenario_list available)
 
-When Phase 2.5 produced scenarios:
+When Phase 3 produced scenarios:
 1. For each scenario in `scenario_list`, generate a test targeting that specific failure condition.
 2. Test naming: `test_{symbol}_{category_short}_{scenario_slug}`
    - `category_short`: `boundary`, `errpath`, `state`
@@ -180,14 +180,14 @@ When Phase 2.5 produced scenarios:
 4. Use `expected_behavior` to derive the assertion.
 5. `priority=high` scenarios are generated first.
 
-### 3.2 Placement Strategy (Mixed)
+### 4.2 Placement Strategy (Mixed)
 
 | Condition | Location | Cleanup |
 | :--- | :--- | :--- |
-| Module importable without project-specific setup | `/tmp/_postverify_{timestamp}/` | Delete entire directory after Phase 7 |
-| Module requires project structure (relative imports, config files, fixtures) | Project directory: `_temp_postverify_test_{timestamp}.py` | Delete file after Phase 7 |
+| Module importable without project-specific setup | `/tmp/_postverify_{timestamp}/` | Delete entire directory after Phase 8 |
+| Module requires project structure (relative imports, config files, fixtures) | Project directory: `_temp_postverify_test_{timestamp}.py` | Delete file after Phase 8 |
 
-### 3.3 Template-Based Generation
+### 4.3 Template-Based Generation
 
 Use `render.render_template()` to generate test files from the appropriate language template (`test_python.py.j2`, `test_javascript.js.j2`, `test_go.go.j2`, `test_c.c.j2`).
 
@@ -230,7 +230,7 @@ The `framework` value is determined by Phase 2 detection. `suite_name` is derive
 
 If the target language has no matching template, generate tests directly via LLM (no template).
 
-### 3.4 Test Quality Requirements
+### 4.4 Test Quality Requirements
 
 Temporary tests MUST satisfy:
 
@@ -243,7 +243,7 @@ Temporary tests MUST satisfy:
 - **No mocks** unless the dependency is external I/O (network, filesystem, database). When mocking is unavoidable, mock at the boundary, not deep internals.
 - **Deterministic**. No random data without fixed seeds. No time-dependent assertions without freezing time.
 
-### 3.5 Test Naming Convention
+### 4.5 Test Naming Convention
 
 ```
 test_{function_name}_{scenario}_{expected_outcome}
@@ -253,15 +253,15 @@ Example: `test_load_policy_missing_env_var_returns_always`
 
 ---
 
-## 4. Phase 4: Test Execution & Fix Loop
+## Phase 5: Test Execution & Fix Loop
 
-### 4.1 Initial Run
+### 5.1 Initial Run
 
 1. **Run** the relevant test command (from `frameworks.json` or constructed for temp tests).
 2. **Capture** stdout, stderr, and exit code.
 3. **Parse** results: count passed, failed, errored.
 
-### 4.2 Failure Triage (Critical)
+### 5.2 Failure Triage (Critical)
 
 When a test fails, determine the fault location **before** attempting any fix. Do NOT default to blaming the implementation.
 
@@ -283,11 +283,11 @@ Test fails
 
 **Rule**: When triage is ambiguous, report both hypotheses to the user via `AskUserQuestion` and let them decide. Do NOT guess.
 
-### 4.3 Prediction Accuracy Tracking
+### 5.3 Prediction Accuracy Tracking
 
-When `scenario_list` exists: for each scenario-driven test that fails (revealing a real implementation issue), increment `prediction_confirmed` counter. This feeds into Phase 8 accuracy metrics.
+When `scenario_list` exists: for each scenario-driven test that fails (revealing a real implementation issue), increment `prediction_confirmed` counter. This feeds into Phase 9 accuracy metrics.
 
-### 4.4 Fix Loop
+### 5.4 Fix Loop
 
 ```
 iteration = 0
@@ -298,7 +298,7 @@ LOOP:
       HALT. Report: "Reached maximum retry limit ({max_retries}). {N} tests still failing."
       EXIT with failure summary.
 
-  1. Triage failure (Section 4.2).
+  1. Triage failure (Section 5.2).
   2. Propose fix via AskUserQuestion:
      - Show: failing test name, error message, triage conclusion (test defect vs. code defect).
      - Options: "Apply fix" / "Skip this failure" / "Abort verification".
@@ -308,22 +308,22 @@ LOOP:
      - IF all pass → break LOOP.
      - ELSE → iteration += 1, continue LOOP.
   4. IF user skips → continue to next failure.
-  5. IF user aborts → EXIT immediately, skip to Phase 7 cleanup.
+  5. IF user aborts → EXIT immediately, skip to Phase 8 cleanup.
 ```
 
 ---
 
-## 5. Phase 5: Coverage Assessment
+## Phase 6: Coverage Assessment
 
 **Trigger**: All tests pass (or user chose to skip remaining failures).
 
-### 5.1 Branch Coverage Measurement
+### 6.1 Branch Coverage Measurement
 
 1. **If coverage tool available**: Use the `coverage_command` from `frameworks.json` (e.g., `pytest --cov={module} --cov-branch --cov-report=term-missing`).
 2. **If coverage tool unavailable**: Perform static analysis — enumerate branches (if/elif/else, try/except, ternary, loop conditions) in changed functions and check whether tests exercise both sides.
 3. **Threshold**: Branch coverage of changed functions/classes >= `TEST_COVERAGE_THRESHOLD`% (default: 80).
 
-### 5.2 Coverage Report
+### 6.2 Coverage Report
 
 Print a table:
 
@@ -332,21 +332,21 @@ Print a table:
 | `load_policy` | 6 | 5 | 83% | PASS |
 | `inject_all` | 10 | 7 | 70% | FAIL |
 
-### 5.3 Below Threshold
+### 6.3 Below Threshold
 
 If any symbol is below `TEST_COVERAGE_THRESHOLD`%:
 
 1. Identify uncovered branches (from `--cov-report=term-missing` or static analysis).
-2. **Create additional tests** targeting those branches (same rules as Phase 3).
+2. **Create additional tests** targeting those branches (same rules as Phase 4).
 3. Re-run and re-assess. This counts toward the fix loop iteration limit.
 
 ---
 
-## 6. Phase 6: Quality Audit
+## Phase 7: Quality Audit
 
 **Goal**: Verify that passing tests are testing meaningful behavior, not trivially true.
 
-### 6.1 Regex Anti-Pattern Detection (Baseline — Always Runs)
+### 7.1 Regex Anti-Pattern Detection (Baseline — Always Runs)
 
 Load detection rules from `anti_patterns.json`. Each entry defines:
 - `id`, `name`, `severity` (`critical` / `warning` / `info`)
@@ -361,7 +361,7 @@ For each relevant test file:
 3. Apply `ast_scan` rules by reading the test file and analyzing structure.
 4. For rules with `negative_regex`: flag only if positive matches exist AND no negative matches exist.
 
-### 6.2 Semantic Audit Agents (Medium/High Only)
+### 7.2 Semantic Audit Agents (Medium/High Only)
 
 **Trigger**: effort level is `medium` or `high`. Skip when `low`.
 
@@ -383,22 +383,22 @@ Agent({
 
 Launch all audit agents **in parallel**.
 
-### 6.3 Result Merging
+### 7.3 Result Merging
 
 1. **Parse** JSON from each audit agent response. Discard malformed results with a warning.
 2. **Merge** regex findings (6.1) and semantic findings (6.2) into a unified list.
 3. **Dedup**: If regex and semantic analysis flag the same test+line, keep the semantic version (richer context).
 4. **Sort**: critical → warning → info.
 
-### 6.4 Report and Fix
+### 7.4 Report and Fix
 
-Print findings table. Critical findings from either layer MUST be fixed (following the same AskUser fix loop as Phase 4). Warnings are reported but not blocking.
+Print findings table. Critical findings from either layer MUST be fixed (following the same AskUser fix loop as Phase 5). Warnings are reported but not blocking.
 
 ---
 
-## 7. Phase 7: Cleanup
+## Phase 8: Cleanup
 
-1. **Delete** all temporary test files created in Phase 3:
+1. **Delete** all temporary test files created in Phase 4:
    - `/tmp/_postverify_{timestamp}/` — `rm -rf`
    - `_temp_postverify_test_{timestamp}.py` in project directory — `rm -f`
 2. **Delete** any `.pyc` / `__pycache__` generated by temp tests in `/tmp`.
@@ -407,7 +407,7 @@ Print findings table. Critical findings from either layer MUST be fixed (followi
 
 ---
 
-## 8. Final Report
+## Phase 9: Final Report
 
 Use `render.save_report()` to generate and persist the report to `.claude/temp_inspect/report_{timestamp}.md`.
 
@@ -452,13 +452,13 @@ Report:         .claude/temp_inspect/report_{timestamp}.md
 
 ---
 
-## 9. Critical Rules
+## Critical Rules
 
 1. **Never modify production code without user confirmation** via `AskUserQuestion`.
 2. **Never skip failure triage**. Blaming implementation by default is a protocol violation.
-3. **Never leave temporary files behind**. Phase 7 is mandatory even on early abort.
+3. **Never leave temporary files behind**. Phase 8 is mandatory even on early abort.
 4. **Never lower the coverage threshold** below `TEST_COVERAGE_THRESHOLD` (default: 80%). The env var is the single source of truth.
-5. **Never trust a passing test without auditing it** (Phase 6). A tautological test is worse than no test.
+5. **Never trust a passing test without auditing it** (Phase 7). A tautological test is worse than no test.
 6. **Clean separation**: This skill does not write permanent tests for the project unless the user explicitly requests it. All created tests are temporary by default.
 7. **Agent failure tolerance**: If an Agent call fails (permission denied, timeout, malformed response), log a warning and continue without that angle's results. Do NOT halt the entire workflow.
 8. **Effort=low backward compatibility**: When effort is `low`, the skill behaves identically to the pre-v2 version (no agents, no prediction, regex-only audit).
