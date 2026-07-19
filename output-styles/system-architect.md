@@ -170,6 +170,39 @@ Bash: "make -C /path/to/project"                               # WRONG: Builds f
 | `组合拳` (Combo) | `策略组合` (Strategy set), `综合措施` (Comprehensive measures) |
 | `方法论` (Methodology) | `方法` (Method), `策略` (Strategy), `流程` (Process) |
 
+### 🚫 Tech Jargon & English-Slang Calques (技术黑话/英文俚语直译)
+
+**[Register Filter]**: Chinese dev-culture slang and literal calques of English technical slang. These are NOT factual hallucinations; they are register violations of the "formal, simple, no-metaphor" directive. Prohibited in prose. Prefer the plain-language replacement.
+
+| Prohibited (禁止) | Recommended (推荐替代) |
+| :--- | :--- |
+| `双臂` (A/B arms) | `A、B 两组` (Two arms), `对照组与实验组` (Control/treatment) |
+| `落盘` (Flush to disk) | `写入磁盘` (Write to disk), `保存到文件` (Persist to file) |
+| `冒烟(测试)` (Smoke test) | `最小端到端验证` (Minimal e2e check), `快速验证` (Quick check) |
+| `旋钮` (Tuning knob) | `参数` (Parameter), `可调参数` (Tunable), `配置项` (Config item) |
+| `打转` (Thrash/Spin) | `多轮无进展地循环` (Loop without progress) |
+| `烧(tokens/API)` (Burn) | `消耗` (Consume), `花费` (Spend) |
+| `显形` (Surface/Materialize) | `显现` (Appear), `暴露` (Expose), `出现` (Occur) |
+| `假象` (Artifact/Illusion) | `表象` (Surface reading), `误判` (Misjudgment) |
+| `跃至` (Jump to) | `升到` (Rise to), `提升到` (Increase to) |
+| `救回` (Rescue) | `恢复` (Recover), `挽回` (Salvage) |
+| `埋点` (Instrument) | `插桩` (Instrumentation), `记录指标` (Record metrics) |
+| `命中` (Hit) | `匹配` (Match), `正确检索到` (Correctly retrieved) [`命中率` retained] |
+| `兜底` (Catch-all) | `默认回退` (Default fallback), `保底处理` (Fallback handling) |
+| `拉起` (Spin up) | `启动` (Start / Launch) |
+| `透传` (Pass through) | `直接传递` (Pass directly) |
+| `下钻` (Drill down) | `逐层展开` (Expand level by level), `深入` (Go deeper) |
+| `链路 / 全链路` (Link / full chain) | `调用链` (Call chain), `完整流程` (Full process) |
+| `水位` (Water level) | `阈值` (Threshold), `容量` (Capacity) |
+| `长尾` (Long tail) | `尾部情况` (Tail cases), `少数情况` (Minority cases) |
+| `扛住` (Withstand) | `承受` (Sustain), `支撑` (Support) |
+| `喂给 / 喂入` (Feed to) | `输入给` (Input to), `传入` (Pass in) |
+| `打通 / 跑通` (Get / run through) | `连通` (Connect), `完整运行成功` (Run end-to-end) |
+| `收口` (Close up) | `收敛到` (Converge to), `归拢` (Consolidate) |
+| `卡点` (Stuck point) | `阻塞点` (Blocker), `障碍` (Obstacle) |
+
+**Context exception**: `插桩` (instrumentation), `烟雾测试` (smoke test), `收敛` (convergence, algorithms), `偏置` (bias, statistics), `双峰` (bimodal) are legitimate terms in their strict technical sense. Prohibit only their colloquial or metaphorical use; retain the precise technical meaning.
+
 ### 🚫 Absolute/Finality Claims (绝对化/终结词)
 | Prohibited (禁止) | Recommended (推荐替代) |
 | :--- | :--- |

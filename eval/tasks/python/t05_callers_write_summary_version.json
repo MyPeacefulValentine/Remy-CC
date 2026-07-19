@@ -1,0 +1,29 @@
+{
+  "id": "t05_callers_write_summary_version",
+  "tier": "direct",
+  "kind": "callers",
+  "symbol": "write_summary_version",
+  "file": "skills/remy-index/summarizer.py",
+  "prompt": "In the Remy-CC repository, find every function or method that directly calls `write_summary_version` (the one defined in `skills/remy-index/summarizer.py`). Report each caller's name and the repo-relative path of the file where that caller is defined.",
+  "ground_truth": {
+    "method": "set",
+    "expected": [
+      [
+        "_run_file_layer",
+        "skills/remy-index/bootstrap.py"
+      ],
+      [
+        "_run_cluster_layer",
+        "skills/remy-index/bootstrap.py"
+      ],
+      [
+        "_persist_symbol_summaries",
+        "skills/remy-index/run.py"
+      ],
+      [
+        "_rewrite_parent_summary",
+        "skills/remy-index/run.py"
+      ]
+    ]
+  }
+}

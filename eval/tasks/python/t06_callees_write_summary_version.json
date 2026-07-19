@@ -1,0 +1,17 @@
+{
+  "id": "t06_callees_write_summary_version",
+  "tier": "direct",
+  "kind": "callees",
+  "symbol": "write_summary_version",
+  "file": "skills/remy-index/summarizer.py",
+  "prompt": "In the Remy-CC repository, find every project-defined function that `write_summary_version` (defined in `skills/remy-index/summarizer.py`) directly calls. Report each callee's name and the repo-relative path of the file where that callee is defined.",
+  "ground_truth": {
+    "method": "set",
+    "expected": [
+      [
+        "_bump_parent_counter_if_applicable",
+        "skills/remy-index/summarizer.py"
+      ]
+    ]
+  }
+}

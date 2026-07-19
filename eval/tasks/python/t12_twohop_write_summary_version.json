@@ -1,0 +1,25 @@
+{
+  "id": "t12_twohop_write_summary_version",
+  "tier": "multi_hop",
+  "kind": "callers2",
+  "symbol": "write_summary_version",
+  "file": "skills/remy-index/summarizer.py",
+  "prompt": "In the Remy-CC repository, find every function that indirectly calls `write_summary_version` (defined in `skills/remy-index/summarizer.py`) through exactly one intermediate function — that is, the direct callers of the functions that directly call `write_summary_version`. Report each such function's name and the repo-relative path of the file where it is defined.",
+  "ground_truth": {
+    "method": "set",
+    "expected": [
+      [
+        "bootstrap_summaries",
+        "skills/remy-index/bootstrap.py"
+      ],
+      [
+        "run",
+        "skills/remy-index/run.py"
+      ],
+      [
+        "_run_propagation_pass",
+        "skills/remy-index/run.py"
+      ]
+    ]
+  }
+}

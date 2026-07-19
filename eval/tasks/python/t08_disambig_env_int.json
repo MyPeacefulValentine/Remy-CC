@@ -1,0 +1,29 @@
+{
+  "id": "t08_disambig_env_int",
+  "tier": "multi_hop",
+  "kind": "callers",
+  "symbol": "_env_int",
+  "file": "skills/remy-index/struct_scan.py",
+  "prompt": "In the Remy-CC repository, find every function or method that directly calls `_env_int` (the one defined in `skills/remy-index/struct_scan.py`). Report each caller's name and the repo-relative path of the file where that caller is defined.",
+  "ground_truth": {
+    "method": "set",
+    "expected": [
+      [
+        "_compute_kind_hint",
+        "skills/remy-index/struct_scan.py"
+      ],
+      [
+        "_resolve_call_edges",
+        "skills/remy-index/struct_scan.py"
+      ],
+      [
+        "_detect_clusters",
+        "skills/remy-index/struct_scan.py"
+      ],
+      [
+        "scan_all",
+        "skills/remy-index/struct_scan.py"
+      ]
+    ]
+  }
+}

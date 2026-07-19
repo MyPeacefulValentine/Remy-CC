@@ -1,0 +1,17 @@
+{
+  "id": "t09_disambig_render_template",
+  "tier": "multi_hop",
+  "kind": "callers",
+  "symbol": "render_template",
+  "file": "skills/remy-insight/render.py",
+  "prompt": "In the Remy-CC repository, find every function or method that directly calls `render_template` (the one defined in `skills/remy-insight/render.py`). Report each caller's name and the repo-relative path of the file where that caller is defined.",
+  "ground_truth": {
+    "method": "set",
+    "expected": [
+      [
+        "assemble_report",
+        "skills/remy-insight/render.py"
+      ]
+    ]
+  }
+}

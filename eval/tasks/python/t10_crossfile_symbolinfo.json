@@ -1,0 +1,77 @@
+{
+  "id": "t10_crossfile_symbolinfo",
+  "tier": "multi_hop",
+  "kind": "callers",
+  "symbol": "SymbolInfo",
+  "file": "skills/remy-index/parsers/base.py",
+  "prompt": "In the Remy-CC repository, find every function or method that directly calls `SymbolInfo` (the one defined in `skills/remy-index/parsers/base.py`). Report each caller's name and the repo-relative path of the file where that caller is defined.",
+  "ground_truth": {
+    "method": "set",
+    "expected": [
+      [
+        "_ts_walk_node",
+        "skills/remy-index/parsers/c_cpp_parser.py"
+      ],
+      [
+        "_ts_extract_function",
+        "skills/remy-index/parsers/c_cpp_parser.py"
+      ],
+      [
+        "_ts_extract_class_or_struct",
+        "skills/remy-index/parsers/c_cpp_parser.py"
+      ],
+      [
+        "_add_braced_symbol",
+        "skills/remy-index/parsers/c_cpp_parser.py"
+      ],
+      [
+        "_parse_with_regex",
+        "skills/remy-index/parsers/c_cpp_parser.py"
+      ],
+      [
+        "_regex_extract_class_methods",
+        "skills/remy-index/parsers/c_cpp_parser.py"
+      ],
+      [
+        "_extract_symbol",
+        "skills/remy-index/parsers/python_parser.py"
+      ],
+      [
+        "_ts_extract_function",
+        "skills/remy-index/parsers/ts_parser.py"
+      ],
+      [
+        "_ts_extract_class",
+        "skills/remy-index/parsers/ts_parser.py"
+      ],
+      [
+        "_ts_extract_interface",
+        "skills/remy-index/parsers/ts_parser.py"
+      ],
+      [
+        "_ts_extract_type_alias",
+        "skills/remy-index/parsers/ts_parser.py"
+      ],
+      [
+        "_ts_extract_enum",
+        "skills/remy-index/parsers/ts_parser.py"
+      ],
+      [
+        "_ts_extract_namespace",
+        "skills/remy-index/parsers/ts_parser.py"
+      ],
+      [
+        "_ts_extract_arrow_functions",
+        "skills/remy-index/parsers/ts_parser.py"
+      ],
+      [
+        "_add_braced_symbol",
+        "skills/remy-index/parsers/ts_parser.py"
+      ],
+      [
+        "_parse_with_regex",
+        "skills/remy-index/parsers/ts_parser.py"
+      ]
+    ]
+  }
+}

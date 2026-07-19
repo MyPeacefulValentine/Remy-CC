@@ -1,0 +1,37 @@
+{
+  "id": "t04_callers_get_latest_summary",
+  "tier": "direct",
+  "kind": "callers",
+  "symbol": "get_latest_summary",
+  "file": "remy-src/index_mcp_queries.py",
+  "prompt": "In the Remy-CC repository, find every function or method that directly calls `get_latest_summary` (the one defined in `remy-src/index_mcp_queries.py`). Report each caller's name and the repo-relative path of the file where that caller is defined.",
+  "ground_truth": {
+    "method": "set",
+    "expected": [
+      [
+        "query_symbol_impl",
+        "remy-src/index_mcp_queries.py"
+      ],
+      [
+        "query_symbol_summary_impl",
+        "remy-src/index_mcp_queries.py"
+      ],
+      [
+        "query_cluster_summary_impl",
+        "remy-src/index_mcp_queries.py"
+      ],
+      [
+        "query_file_summary_impl",
+        "remy-src/index_mcp_queries.py"
+      ],
+      [
+        "query_cluster_files_impl",
+        "remy-src/index_mcp_queries.py"
+      ],
+      [
+        "_collect_navigate_corpus",
+        "remy-src/index_mcp_queries.py"
+      ]
+    ]
+  }
+}

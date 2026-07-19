@@ -1,0 +1,17 @@
+{
+  "id": "t01_def_write_summary_version",
+  "tier": "direct",
+  "kind": "def",
+  "symbol": "write_summary_version",
+  "file": "skills/remy-index/summarizer.py",
+  "prompt": "In the Remy-CC repository, find where the symbol named `write_summary_version` is defined. Report its name and the repo-relative path of the file that defines it.",
+  "ground_truth": {
+    "method": "set",
+    "expected": [
+      [
+        "write_summary_version",
+        "skills/remy-index/summarizer.py"
+      ]
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "id": "t11_twohop_get_latest_summary",
+  "tier": "multi_hop",
+  "kind": "callers2",
+  "symbol": "get_latest_summary",
+  "file": "remy-src/index_mcp_queries.py",
+  "prompt": "In the Remy-CC repository, find every function that indirectly calls `get_latest_summary` (defined in `remy-src/index_mcp_queries.py`) through exactly one intermediate function — that is, the direct callers of the functions that directly call `get_latest_summary`. Report each such function's name and the repo-relative path of the file where it is defined.",
+  "ground_truth": {
+    "method": "set",
+    "expected": [
+      [
+        "query_symbol",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_symbol_summary",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_cluster_summary",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_file_summary",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_cluster_files",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_navigate_impl",
+        "remy-src/index_mcp_queries.py"
+      ]
+    ]
+  }
+}

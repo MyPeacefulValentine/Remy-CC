@@ -1,0 +1,17 @@
+{
+  "id": "t02_def_with_freshness",
+  "tier": "direct",
+  "kind": "def",
+  "symbol": "_with_freshness",
+  "file": "remy-src/index_mcp_server.py",
+  "prompt": "In the Remy-CC repository, find where the symbol named `_with_freshness` is defined. Report its name and the repo-relative path of the file that defines it.",
+  "ground_truth": {
+    "method": "set",
+    "expected": [
+      [
+        "_with_freshness",
+        "remy-src/index_mcp_server.py"
+      ]
+    ]
+  }
+}

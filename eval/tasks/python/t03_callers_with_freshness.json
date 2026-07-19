@@ -1,0 +1,61 @@
+{
+  "id": "t03_callers_with_freshness",
+  "tier": "direct",
+  "kind": "callers",
+  "symbol": "_with_freshness",
+  "file": "remy-src/index_mcp_server.py",
+  "prompt": "In the Remy-CC repository, find every function or method that directly calls `_with_freshness` (the one defined in `remy-src/index_mcp_server.py`). Report each caller's name and the repo-relative path of the file where that caller is defined.",
+  "ground_truth": {
+    "method": "set",
+    "expected": [
+      [
+        "query_symbol",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_symbol_summary",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_file_summary",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_callers",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_callees",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_impact",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_patterns",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_search",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_flow",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_cluster_summary",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_cluster_files",
+        "remy-src/index_mcp_server.py"
+      ],
+      [
+        "query_navigate",
+        "remy-src/index_mcp_server.py"
+      ]
+    ]
+  }
+}
