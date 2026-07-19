@@ -197,6 +197,134 @@ def _line_number_at(source, pos):
     return source[:pos].count('\n') + 1
 
 
+# --- Function-pointer dispatch fact extraction (feeds c_fnptr_dispatch synthesizer) ---
+# Emits raw, per-file facts; cross-file resolution (typedef/struct layout spanning
+# .h and .c) happens in the synthesizer, which sees every file's patterns.
+
+RE_FNPTR_TYPEDEF = re.compile(r'\btypedef\b[^;{}]*?\(\s*(?:\w+\s+)*\*\s*(\w+)\s*\)\s*\(')
+RE_FNTYPE_TYPEDEF = re.compile(r'\btypedef\b([^;{}]*);')
+RE_STRUCT_DEF = re.compile(r'\bstruct\s+(\w+)\s*\{', re.MULTILINE)
+RE_TABLE_INIT = re.compile(
+    r'(?:^|[;{}])\s*(?:(?:static|const|extern|register|volatile)\s+)*'
+    r'(?:struct\s+)?(\w+)\s+(\w+)\s*(\[[^\]]*\])?\s*=\s*\{',
+    re.MULTILINE)
+RE_DISPATCH = re.compile(r'((?:\w+(?:\s*\[[^\]\[]*\])?\s*(?:->|\.)\s*)+)(\w+)\s*\)?\s*\(')
+_FNPTR_FIELD_RE = re.compile(r'\(\s*(?:\w+\s+)*\*\s*(\w+)\s*\)\s*\(')
+_DESIGNATED_RE = re.compile(r'\.\s*(\w+)\s*=\s*&?\s*(\w+)')
+_IDENT_ONLY_RE = re.compile(r'^&?\s*(\w+)\s*$')
+
+_C_TYPE_KEYWORDS = frozenset({
+    'void', 'int', 'char', 'short', 'long', 'unsigned', 'signed', 'float', 'double',
+    'const', 'struct', 'union', 'enum', 'static', 'volatile', 'register', 'inline',
+    'return', 'if', 'while', 'for', 'switch', 'sizeof', 'case', 'do', 'else', 'typedef',
+})
+
+
+def _blank_comments(source):
+    """Blank line + block comments while preserving byte offsets and newlines."""
+    s = re.sub(r'/\*.*?\*/', lambda m: re.sub(r'[^\n]', ' ', m.group(0)), source, flags=re.DOTALL)
+    s = re.sub(r'//[^\n]*', lambda m: ' ' * len(m.group(0)), s)
+    return s
+
+
+def _strip_preproc_lines(body):
+    """Blank preprocessor-directive lines inside an initializer body (over-keep guarded entries)."""
+    return re.sub(r'(?m)^[ \t]*#[^\n]*', lambda m: ' ' * len(m.group(0)), body)
+
+
+def _split_top_level(body, sep):
+    """Split `body` on `sep` at brace/paren/bracket depth 0."""
+    out = []
+    depth = 0
+    start = 0
+    for i, c in enumerate(body):
+        if c in '{([':
+            depth += 1
+        elif c in '})]':
+            depth -= 1
+        elif c == sep and depth == 0:
+            out.append(body[start:i])
+            start = i + 1
+    out.append(body[start:])
+    return out
+
+
+def _parse_struct_fields(inner):
+    """Parse a struct body into ordered fields: {name, index, is_fnptr(syntactic), type}.
+
+    Only SYNTACTIC `(*name)(...)` fields are flagged is_fnptr here; fields whose type
+    is a fn-pointer/fn-type typedef carry the type token so the synthesizer can flag
+    them once it has the (cross-file) typedef set.
+    """
+    fields = []
+    idx = 0
+    for raw in _split_top_level(inner, ';'):
+        decl = raw.strip()
+        if not decl:
+            continue
+        parts = _split_top_level(decl, ',')
+        first = re.search(r'(\w+)\s+\**\s*(\w+)\s*$', parts[0])
+        shared_type = first.group(1) if first else ''
+        for pi, part in enumerate(parts):
+            p = part.strip()
+            name = None
+            type_tok = ''
+            is_fnptr = False
+            ptr = _FNPTR_FIELD_RE.search(p)
+            if ptr:
+                name = ptr.group(1)
+                is_fnptr = True
+            elif pi == 0:
+                if first:
+                    name = first.group(2)
+                    type_tok = shared_type
+            else:
+                dm = re.match(r'^\**\s*(\w+)', p)
+                if dm:
+                    name = dm.group(1)
+                    type_tok = shared_type
+            fields.append({"name": name or "", "index": idx,
+                           "is_fnptr": bool(name) and is_fnptr, "type": type_tok})
+            idx += 1
+    return fields
+
+
+def _function_ranges(scan):
+    """Map function name -> (start, end) byte offsets, via RE_FUNC + brace matching."""
+    ranges = {}
+    for m in RE_FUNC.finditer(scan):
+        brace = scan.find('{', m.start())
+        if brace == -1:
+            continue
+        end = _find_matching_brace(scan, brace)
+        if end == -1:
+            continue
+        name = m.group(2).strip().lstrip('*').strip()
+        if name and name not in ranges:
+            ranges[name] = (m.start(), end)
+    return ranges
+
+
+def _enclosing_function(func_ranges, pos):
+    """Return the innermost function name whose range contains pos."""
+    best = None
+    best_span = None
+    for name, (s, e) in func_ranges.items():
+        if s <= pos <= e:
+            span = e - s
+            if best_span is None or span < best_span:
+                best, best_span = name, span
+    return best
+
+
+def _local_var_type(body, var):
+    """Resolve the declared struct type of a local/param `var` within a function body."""
+    m = re.search(r'(?:struct\s+)?(\w+)\s*\*?\s*\b' + re.escape(var) + r'\b\s*(?:[,)=;]|\[)', body)
+    if m and m.group(1) not in _C_TYPE_KEYWORDS:
+        return m.group(1)
+    return None
+
+
 # --- Tree-sitter Utilities ---
 
 def _ts_node_text(node):
@@ -725,3 +853,92 @@ class CCppParser(LanguageParser):
 
         _walk_calls(tree.root_node)
         return edges
+
+    def extract_patterns(self, source, file_path):
+        """Emit function-pointer dispatch facts consumed by the c_fnptr_dispatch synthesizer.
+
+        Four fact families (joined cross-file at synthesis time):
+          c_fnptr_typedef  - fn-pointer / fn-type typedef names (kind in metadata)
+          c_struct_layout  - ordered struct fields (name/index/syntactic-fnptr/type)
+          c_fnptr_register - a function bound into a struct table slot / designated field
+          c_fnptr_dispatch - an indirect call `recv.field(...)` + its enclosing function
+        Offsets/lines computed on a comment-blanked copy (byte-for-byte aligned).
+        """
+        patterns = []
+        scan = _blank_comments(source)
+
+        for m in RE_FNPTR_TYPEDEF.finditer(scan):
+            patterns.append({"pattern_type": "c_fnptr_typedef", "signal_name": m.group(1),
+                             "line": _line_number_at(scan, m.start()), "metadata": {"kind": "fnptr"}})
+        for m in RE_FNTYPE_TYPEDEF.finditer(scan):
+            guts = m.group(1)
+            if '(*' in guts or '( *' in guts:
+                continue
+            fm = re.search(r'\b(\w+)\s*\(', guts)
+            if fm and fm.group(1) not in _C_TYPE_KEYWORDS:
+                patterns.append({"pattern_type": "c_fnptr_typedef", "signal_name": fm.group(1),
+                                 "line": _line_number_at(scan, m.start()), "metadata": {"kind": "fntype"}})
+
+        for m in RE_STRUCT_DEF.finditer(scan):
+            brace = scan.find('{', m.start())
+            if brace == -1:
+                continue
+            end = _find_matching_brace(scan, brace)
+            if end == -1:
+                continue
+            fields = _parse_struct_fields(scan[brace + 1:end])
+            if fields:
+                patterns.append({"pattern_type": "c_struct_layout", "signal_name": m.group(1),
+                                 "line": _line_number_at(scan, m.start()), "metadata": {"fields": fields}})
+
+        var_type = {}
+        for m in RE_TABLE_INIT.finditer(scan):
+            struct_name, var_name, arr = m.group(1), m.group(2), m.group(3)
+            brace = m.end() - 1
+            end = _find_matching_brace(scan, brace)
+            if end == -1:
+                continue
+            var_type[var_name] = struct_name
+            line = _line_number_at(scan, m.start())
+            body = _strip_preproc_lines(scan[brace + 1:end])
+            elements = _split_top_level(body, ',') if arr else [body]
+            for el in elements:
+                el = el.strip()
+                if not el:
+                    continue
+                inner = el
+                if inner.startswith('{'):
+                    e = _find_matching_brace(inner, 0)
+                    if e != -1:
+                        inner = inner[1:e]
+                designated = list(_DESIGNATED_RE.finditer(inner))
+                if designated:
+                    for dm in designated:
+                        patterns.append({"pattern_type": "c_fnptr_register", "signal_name": struct_name,
+                                         "handler": dm.group(2), "line": line,
+                                         "metadata": {"field": dm.group(1), "table_var": var_name}})
+                    continue
+                for slot, sv in enumerate(_split_top_level(inner, ',')):
+                    im = _IDENT_ONLY_RE.match(sv.strip())
+                    if im:
+                        patterns.append({"pattern_type": "c_fnptr_register", "signal_name": struct_name,
+                                         "handler": im.group(1), "line": line,
+                                         "metadata": {"slot": slot, "table_var": var_name}})
+
+        func_ranges = _function_ranges(scan)
+        for m in RE_DISPATCH.finditer(scan):
+            base_chain = re.sub(r'\s*(?:->|\.)\s*$', '', m.group(1)).strip()
+            field = m.group(2)
+            pos = m.start()
+            enclosing = _enclosing_function(func_ranges, pos)
+            if not enclosing:
+                continue
+            last_seg = re.sub(r'\s*\[[^\]]*\]', '', base_chain).replace('->', '.').split('.')[-1].strip()
+            struct_hint = var_type.get(last_seg)
+            if not struct_hint:
+                s, e = func_ranges[enclosing]
+                struct_hint = _local_var_type(scan[s:e], last_seg)
+            patterns.append({"pattern_type": "c_fnptr_dispatch", "signal_name": field,
+                             "handler": enclosing, "line": _line_number_at(scan, pos),
+                             "metadata": {"receiver": last_seg, "struct_hint": struct_hint}})
+        return patterns
