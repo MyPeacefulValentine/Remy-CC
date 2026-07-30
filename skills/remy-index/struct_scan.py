@@ -10,7 +10,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import sqlite3
@@ -24,8 +23,9 @@ from parsers.python_parser import PythonParser
 from parsers.c_cpp_parser import CCppParser
 from parsers.ts_parser import TSParser
 from constants import DB_BUSY_TIMEOUT_MS
+from symbol_selection import select_symbols
 
-VERSION = "7.0.0"
+VERSION = "8.0.0"
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 JSON_CACHE_FILE = os.path.join(".claude", "logic_index.json")
 CONFIG_FILE = os.path.join(".claude", "logic_index_config")
@@ -53,6 +53,22 @@ CREATE TABLE IF NOT EXISTS symbols (
     bases TEXT,
     name_tokens TEXT NOT NULL DEFAULT '',
     UNIQUE(file_path, name)
+);
+CREATE TABLE IF NOT EXISTS symbol_occurrences (
+    file_path TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    occurrence_index INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    args TEXT,
+    lineno INTEGER,
+    end_lineno INTEGER,
+    hash TEXT NOT NULL,
+    is_canonical INTEGER NOT NULL CHECK (is_canonical IN (0, 1)),
+    conflict_kind TEXT NOT NULL CHECK (
+        conflict_kind IN ('type_variant', 'signature_variant', 'duplicate_definition')
+    ),
+    selection_reason TEXT NOT NULL,
+    PRIMARY KEY (file_path, name, occurrence_index)
 );
 CREATE TABLE IF NOT EXISTS edges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,6 +148,9 @@ CREATE TABLE IF NOT EXISTS meta (
 CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
 CREATE INDEX IF NOT EXISTS idx_symbols_short ON symbols(short_name);
 CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path);
+CREATE INDEX IF NOT EXISTS idx_occurrences_file_name ON symbol_occurrences(file_path, name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_occurrences_one_canonical
+ON symbol_occurrences(file_path, name) WHERE is_canonical = 1;
 CREATE INDEX IF NOT EXISTS idx_edges_callee_q ON edges(callee_qualified);
 CREATE INDEX IF NOT EXISTS idx_edges_caller ON edges(source_file, caller);
 CREATE INDEX IF NOT EXISTS idx_edges_provenance ON edges(provenance);
@@ -208,11 +227,9 @@ def _compute_kind_hint(sym_count, intra_edges):
 def _migrate_v6_to_v7(db):
     """Apply v6 -> v7 schema migration as a single atomic transaction.
 
-    SCHEMA_SQL (applied by _init_db prior to this handler) is the source of
-    truth for v7 table, index, and trigger definitions. This handler is also
-    safe to invoke directly (e.g. from tests) because it defensively re-creates
-    v7-only objects with IF NOT EXISTS guards before performing data migration
-    and schema mutation.
+    Each migration handler creates the objects it owns so it can run inside its
+    own transaction before _init_db applies the complete current schema. This
+    handler is therefore safe to invoke directly from migration tests.
 
     All SQL statements are issued through single db.execute() calls.
     executescript() is prohibited because CPython's sqlite3 module performs
@@ -347,8 +364,55 @@ def _migrate_v6_to_v7(db):
         raise
 
 
+def _migrate_v7_to_v8(db):
+    """Add auditable same-name occurrences and invalidate file scan hashes."""
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS symbol_occurrences (
+                file_path TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                occurrence_index INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                args TEXT,
+                lineno INTEGER,
+                end_lineno INTEGER,
+                hash TEXT NOT NULL,
+                is_canonical INTEGER NOT NULL CHECK (is_canonical IN (0, 1)),
+                conflict_kind TEXT NOT NULL CHECK (
+                    conflict_kind IN ('type_variant', 'signature_variant', 'duplicate_definition')
+                ),
+                selection_reason TEXT NOT NULL,
+                PRIMARY KEY (file_path, name, occurrence_index)
+            )
+        """)
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_occurrences_file_name "
+            "ON symbol_occurrences(file_path, name)"
+        )
+        db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_occurrences_one_canonical "
+            "ON symbol_occurrences(file_path, name) WHERE is_canonical = 1"
+        )
+        db.execute("UPDATE files SET struct_hash = ''")
+        already = db.execute(
+            "SELECT 1 FROM migration_log WHERE from_version=? AND to_version=?",
+            ('7.0.0', '8.0.0')
+        ).fetchone()
+        if not already:
+            db.execute(
+                "INSERT INTO migration_log (from_version, to_version, applied_at) VALUES (?,?,?)",
+                ('7.0.0', '8.0.0', datetime.now().isoformat(timespec='seconds'))
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
 MIGRATION_HANDLERS = {
     ('6.0.0', '7.0.0'): _migrate_v6_to_v7,
+    ('7.0.0', '8.0.0'): _migrate_v7_to_v8,
 }
 
 
@@ -422,14 +486,16 @@ def tokenize_symbol(name):
 
 def _env_int(name, default):
     try:
-        return int(os.environ.get(name, default))
+        value = os.environ.get(name)
+        return int(value if value is not None else default)
     except (ValueError, TypeError):
         return default
 
 
 def _env_float(name, default):
     try:
-        return float(os.environ.get(name, default))
+        value = os.environ.get(name)
+        return float(value if value is not None else default)
     except (ValueError, TypeError):
         return default
 
@@ -454,8 +520,9 @@ class StructScanner:
         self.db = self._init_db()
 
     def _init_db(self):
+        db_existed = os.path.exists(self.db_path)
         needs_migration = (
-            not os.path.exists(self.db_path)
+            not db_existed
             and os.path.exists(os.path.join(self.root_dir, JSON_CACHE_FILE))
         )
         db = sqlite3.connect(self.db_path)
@@ -463,36 +530,63 @@ class StructScanner:
         db.execute("PRAGMA synchronous=NORMAL")
         db.execute(f"PRAGMA busy_timeout={DB_BUSY_TIMEOUT_MS}")
         db.execute("PRAGMA foreign_keys=ON")
-        db.executescript(SCHEMA_SQL)
 
-        version_row = db.execute("SELECT value FROM meta WHERE key='version'").fetchone()
-        if version_row and version_row[0] != VERSION:
-            chain = _resolve_migration_path(version_row[0], VERSION)
-            if chain is None:
+        existing_tables = {
+            row[0] for row in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+        }
+        if not db_existed or not existing_tables:
+            db.executescript(SCHEMA_SQL)
+            db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?)", (VERSION,))
+            db.commit()
+        else:
+            if 'meta' not in existing_tables:
                 db.close()
                 raise RuntimeError(
-                    f"Migration path v{version_row[0]} -> v{VERSION} missing handler. "
-                    f"The logic_index.db at {self.db_path} is preserved unchanged. "
-                    f"Available handlers: {sorted(MIGRATION_HANDLERS.keys())}"
+                    f"Existing logic_index.db at {self.db_path} has no schema version. "
+                    "The database is preserved unchanged."
                 )
-            backup_path = self.db_path + '.bak'
-            try:
-                shutil.copy2(self.db_path, backup_path)
-            except OSError as backup_err:
+            version_row = db.execute("SELECT value FROM meta WHERE key='version'").fetchone()
+            if not version_row:
                 db.close()
                 raise RuntimeError(
-                    f"Failed to back up logic_index.db before migration: {backup_err}. "
-                    f"Migration aborted to avoid data loss."
-                ) from backup_err
-            for frm, to, handler in chain:
-                handler(db)
-            db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?)", (VERSION,))
-            db.commit()
-            version_row = (VERSION,)
-
-        if not version_row:
-            db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?)", (VERSION,))
-            db.commit()
+                    f"Existing logic_index.db at {self.db_path} has no schema version. "
+                    "The database is preserved unchanged."
+                )
+            if version_row[0] != VERSION:
+                chain = _resolve_migration_path(version_row[0], VERSION)
+                if chain is None:
+                    db.close()
+                    raise RuntimeError(
+                        f"Migration path v{version_row[0]} -> v{VERSION} missing handler. "
+                        f"The logic_index.db at {self.db_path} is preserved unchanged. "
+                        f"Available handlers: {sorted(MIGRATION_HANDLERS.keys())}"
+                    )
+                backup_path = self.db_path + '.bak'
+                backup_db = None
+                try:
+                    backup_db = sqlite3.connect(backup_path)
+                    db.backup(backup_db)
+                except (OSError, sqlite3.Error) as backup_err:
+                    db.close()
+                    raise RuntimeError(
+                        f"Failed to back up logic_index.db before migration: {backup_err}. "
+                        f"Migration aborted to avoid data loss."
+                    ) from backup_err
+                finally:
+                    if backup_db is not None:
+                        backup_db.close()
+                for _from_version, _to_version, handler in chain:
+                    handler(db)
+                db.executescript(SCHEMA_SQL)
+                db.execute(
+                    "INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?)",
+                    (VERSION,)
+                )
+                db.commit()
+            else:
+                db.executescript(SCHEMA_SQL)
 
         if needs_migration:
             self._migrate_json(db)
@@ -676,7 +770,8 @@ class StructScanner:
             return rel_path
 
         imports = parser.resolve_imports(source, file_path, self.root_dir)
-        symbols = parser.parse_symbols(source, file_path)
+        selection = select_symbols(parser.parse_symbols(source, file_path))
+        symbols = selection.canonical_symbols
         call_edges = parser.extract_call_graph(source, file_path)
         pattern_list = parser.extract_patterns(source, file_path)
         layer = self._match_file_to_layer(rel_path)
@@ -700,8 +795,22 @@ class StructScanner:
             existing_versions[row[0]] = row[1]
 
         self.db.execute("DELETE FROM symbols WHERE file_path = ?", (rel_path,))
+        self.db.execute("DELETE FROM symbol_occurrences WHERE file_path = ?", (rel_path,))
         self.db.execute("DELETE FROM edges WHERE source_file = ?", (rel_path,))
         self.db.execute("DELETE FROM patterns WHERE file_path = ?", (rel_path,))
+
+        for occurrence in selection.occurrences:
+            sym_info = occurrence.symbol
+            stripped = self._strip_comments(sym_info.source_segment, parser)
+            self.db.execute(
+                "INSERT INTO symbol_occurrences "
+                "(file_path, name, occurrence_index, type, args, lineno, end_lineno, hash, "
+                "is_canonical, conflict_kind, selection_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (rel_path, sym_info.name, occurrence.occurrence_index, sym_info.type,
+                 sym_info.args, sym_info.lineno, sym_info.end_lineno,
+                 self._calculate_symbol_hash(stripped), int(occurrence.is_canonical),
+                 occurrence.conflict_kind, occurrence.selection_reason)
+            )
 
         now_iso = datetime.now().isoformat(timespec='seconds')
         for sym_info in symbols:
@@ -1064,7 +1173,9 @@ def scan_files(root_dir, file_paths):
 if __name__ == "__main__":
     import argparse
 
-    sys.stdout.reconfigure(encoding='utf-8')
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding='utf-8')
     ap = argparse.ArgumentParser(description="Structural scan for logic_index.db")
     ap.add_argument("--files", nargs="*", help="Incremental: only scan these files")
     ap.add_argument("--cwd", default=os.getcwd(), help="Project root directory")

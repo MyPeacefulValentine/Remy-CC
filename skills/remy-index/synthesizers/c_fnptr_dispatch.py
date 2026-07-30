@@ -6,7 +6,7 @@ indirectly (`table[i].field(arg)`). Consumes the c_fnptr_* facts from
 CCppParser.extract_patterns, resolves them cross-file, and writes edges with
 provenance='inferred', via='c-fnptr-dispatch'.
 
-Design, coverage boundary, and roadmap: plans/c-support-and-symbol-identity-plan.md.
+Design, coverage boundary, and roadmap: plans/remy-index-evolution-plan.md.
 """
 
 import json

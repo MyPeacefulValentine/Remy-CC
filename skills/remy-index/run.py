@@ -29,6 +29,7 @@ from parsers.python_parser import PythonParser
 from parsers.c_cpp_parser import CCppParser
 from parsers.ts_parser import TSParser
 from struct_scan import StructScanner
+from symbol_selection import select_symbols
 from constants import DEFAULT_MAX_WORKERS
 
 VERSION = "4.0.0"
@@ -265,7 +266,7 @@ class LogicIndexer:
             return "Task: Summarize source code: {source_code}"
 
     def _get_dep_context_summaries(self, file_path):
-        """Fetch dep symbols' latest status='ok' short summary from summary_versions (v7 schema)."""
+        """Fetch dependency symbols' latest status='ok' short summary."""
         if not self.db:
             return []
         imports_row = self.db.execute(
@@ -296,7 +297,7 @@ class LogicIndexer:
         return [(name, summary) for name, summary in rows if summary]
 
     def _select_dirty_symbols(self):
-        """Select symbols lacking a status='ok' summary_versions row (v7 schema)."""
+        """Select symbols lacking a status='ok' summary version."""
         if not self.db:
             return []
         return self.db.execute(
@@ -310,7 +311,7 @@ class LogicIndexer:
         ).fetchall()
 
     def _persist_symbol_summaries(self, updates):
-        """Insert summary_versions rows (next version, status='ok') for symbols (v7 schema).
+        """Insert status='ok' symbol summary versions.
 
         Delegates to summarizer.write_summary_version so the parent counter
         bump runs uniformly. Accepts iterable of (summary_text, file_path,
@@ -394,7 +395,8 @@ class LogicIndexer:
     @staticmethod
     def _env_int(name, default):
         try:
-            return int(os.environ.get(name, default))
+            value = os.environ.get(name)
+            return int(value if value is not None else default)
         except (ValueError, TypeError):
             return default
 
@@ -773,7 +775,11 @@ class LogicIndexer:
                 except Exception:
                     continue
                 parsed = parser.parse_symbols(source, full_path)
-                seg_map = {s.name: s.source_segment for s in parsed}
+                selection = select_symbols(parsed)
+                seg_map = {
+                    symbol.name: symbol.source_segment
+                    for symbol in selection.canonical_symbols
+                }
                 for sym_name in sym_names:
                     segment = seg_map.get(sym_name, "")
                     if segment:
@@ -829,7 +835,9 @@ class LogicIndexer:
 if __name__ == "__main__":
     import argparse
 
-    sys.stdout.reconfigure(encoding='utf-8')
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding='utf-8')
     ap = argparse.ArgumentParser(description="Logic Indexer: structural scan + LLM summaries.")
     ap.add_argument("--bootstrap-only", action="store_true",
                     help="Skip symbol-layer LLM; trigger only file/cluster bootstrap.")

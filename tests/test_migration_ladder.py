@@ -1,0 +1,454 @@
+"""Tests for v6 -> v7 migration ladder in struct_scan.py."""
+
+import json
+import os
+import sqlite3
+import sys
+
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skills", "remy-index"))
+from struct_scan import (
+    MIGRATION_HANDLERS,
+    SCHEMA_SQL,
+    VERSION,
+    _migrate_v6_to_v7,
+    _migrate_v7_to_v8,
+    _resolve_migration_path,
+)
+
+
+V6_SCHEMA = """
+CREATE TABLE files (
+    path TEXT PRIMARY KEY,
+    struct_hash TEXT NOT NULL,
+    language TEXT,
+    layer TEXT DEFAULT 'Core',
+    imports TEXT
+);
+CREATE TABLE symbols (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_path TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    short_name TEXT,
+    type TEXT NOT NULL,
+    args TEXT,
+    lineno INTEGER,
+    end_lineno INTEGER,
+    hash TEXT,
+    summary TEXT,
+    bases TEXT,
+    name_tokens TEXT NOT NULL DEFAULT '',
+    UNIQUE(file_path, name)
+);
+CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE VIRTUAL TABLE symbols_fts USING fts5(
+    name, name_tokens, file_path, summary,
+    content='symbols', content_rowid='id', tokenize='unicode61'
+);
+CREATE TRIGGER symbols_fts_ai AFTER INSERT ON symbols BEGIN
+    INSERT INTO symbols_fts(rowid, name, name_tokens, file_path, summary)
+    VALUES (NEW.id, NEW.name, NEW.name_tokens, NEW.file_path, NEW.summary);
+END;
+CREATE TRIGGER symbols_fts_ad AFTER DELETE ON symbols BEGIN
+    INSERT INTO symbols_fts(symbols_fts, rowid, name, name_tokens, file_path, summary)
+    VALUES ('delete', OLD.id, OLD.name, OLD.name_tokens, OLD.file_path, OLD.summary);
+END;
+CREATE TRIGGER symbols_fts_au AFTER UPDATE ON symbols BEGIN
+    INSERT INTO symbols_fts(symbols_fts, rowid, name, name_tokens, file_path, summary)
+    VALUES ('delete', OLD.id, OLD.name, OLD.name_tokens, OLD.file_path, OLD.summary);
+    INSERT INTO symbols_fts(rowid, name, name_tokens, file_path, summary)
+    VALUES (NEW.id, NEW.name, NEW.name_tokens, NEW.file_path, NEW.summary);
+END;
+"""
+
+
+def _make_v6_db(path):
+    db = sqlite3.connect(str(path))
+    db.executescript(V6_SCHEMA)
+    db.execute("INSERT INTO meta (key, value) VALUES ('version', '6.0.0')")
+    db.execute(
+        "INSERT INTO files (path, struct_hash, language, layer, imports) VALUES (?,?,?,?,?)",
+        ("src/foo.py", "h1", "PythonParser", "Core", "[]"),
+    )
+    db.execute(
+        "INSERT INTO symbols (file_path, name, short_name, type, args, lineno, end_lineno, hash, summary, name_tokens) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        ("src/foo.py", "alpha", "alpha", "function", "()", 1, 5, "sh1", "Computes alpha", "alpha"),
+    )
+    db.commit()
+    return db
+
+
+def _make_v7_db(path):
+    db = _make_v6_db(path)
+    _migrate_v6_to_v7(db)
+    db.execute("UPDATE meta SET value='7.0.0' WHERE key='version'")
+    db.execute("UPDATE files SET struct_hash='h1'")
+    db.commit()
+    return db
+
+
+def test_migrate_v6_to_v7_creates_new_tables(tmp_path):
+    db_path = tmp_path / "logic_index.db"
+    db = _make_v6_db(db_path)
+    _migrate_v6_to_v7(db)
+    tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "summary_versions" in tables
+    assert "node_change_counters" in tables
+    assert "judge_cache" in tables
+    assert "migration_log" in tables
+    assert "summary_fts" in tables
+    assert "symbols_fts" not in tables
+    db.close()
+
+
+def test_migrate_preserves_symbol_summaries(tmp_path):
+    db_path = tmp_path / "logic_index.db"
+    db = _make_v6_db(db_path)
+    _migrate_v6_to_v7(db)
+    row = db.execute(
+        "SELECT summary, status, version FROM summary_versions "
+        "WHERE node_kind='symbol' AND node_ref='src/foo.py::alpha'"
+    ).fetchone()
+    assert row is not None
+    payload = json.loads(row[0])
+    assert payload["short"] == "Computes alpha"
+    assert payload["full"] is None
+    assert row[1] == "ok"
+    assert row[2] == 1
+    db.close()
+
+
+def test_migrate_drops_symbols_summary_column(tmp_path):
+    db_path = tmp_path / "logic_index.db"
+    db = _make_v6_db(db_path)
+    _migrate_v6_to_v7(db)
+    cols = {c[1] for c in db.execute("PRAGMA table_info(symbols)").fetchall()}
+    assert "summary" not in cols
+    db.close()
+
+
+def test_migrate_adds_kind_hint_columns(tmp_path):
+    db_path = tmp_path / "logic_index.db"
+    db = _make_v6_db(db_path)
+    _migrate_v6_to_v7(db)
+    cols = {c[1] for c in db.execute("PRAGMA table_info(files)").fetchall()}
+    assert "kind_hint" in cols
+    assert "actual_kind" in cols
+    db.close()
+
+
+def test_migrate_records_log(tmp_path):
+    db_path = tmp_path / "logic_index.db"
+    db = _make_v6_db(db_path)
+    _migrate_v6_to_v7(db)
+    rows = db.execute("SELECT from_version, to_version FROM migration_log").fetchall()
+    assert ("6.0.0", "7.0.0") in rows
+    db.close()
+
+
+class _FailOnMatch:
+    """Test wrapper raising IntegrityError on the first execute() whose SQL contains the marker substring."""
+
+    def __init__(self, real_db, marker):
+        self._real = real_db
+        self._marker = marker
+        self._fired = False
+
+    def execute(self, sql, *params):
+        if not self._fired and self._marker in sql:
+            self._fired = True
+            raise sqlite3.IntegrityError(f"simulated constraint failure on: {sql.strip()[:80]}")
+        if params:
+            return self._real.execute(sql, *params)
+        return self._real.execute(sql)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+def test_migrate_rollback_on_failure(tmp_path):
+    db_path = tmp_path / "logic_index.db"
+    real_db = _make_v6_db(db_path)
+    wrapper = _FailOnMatch(real_db, "ALTER TABLE symbols DROP COLUMN")
+    with pytest.raises(sqlite3.IntegrityError):
+        _migrate_v6_to_v7(wrapper)
+
+    file_cols = {c[1] for c in real_db.execute("PRAGMA table_info(files)").fetchall()}
+    assert "kind_hint" not in file_cols
+    assert "actual_kind" not in file_cols
+
+    sym_cols = {c[1] for c in real_db.execute("PRAGMA table_info(symbols)").fetchall()}
+    assert "summary" in sym_cols
+
+    tables = {r[0] for r in real_db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "symbols_fts" in tables
+
+    if "summary_versions" in tables:
+        sv_count = real_db.execute("SELECT COUNT(*) FROM summary_versions").fetchone()[0]
+        assert sv_count == 0
+
+    if "migration_log" in tables:
+        log_count = real_db.execute("SELECT COUNT(*) FROM migration_log").fetchone()[0]
+        assert log_count == 0
+
+    row = real_db.execute("SELECT summary FROM symbols WHERE name='alpha'").fetchone()
+    assert row is not None
+    assert row[0] == "Computes alpha"
+    real_db.close()
+
+
+def test_resolve_migration_path_direct():
+    chain = _resolve_migration_path("7.0.0", "8.0.0")
+    assert chain is not None
+    assert len(chain) == 1
+    assert chain[0][0] == "7.0.0"
+    assert chain[0][1] == "8.0.0"
+
+
+def test_resolve_migration_path_chained():
+    chain = _resolve_migration_path("6.0.0", "8.0.0")
+    assert chain is not None
+    assert [(step[0], step[1]) for step in chain] == [
+        ("6.0.0", "7.0.0"),
+        ("7.0.0", "8.0.0"),
+    ]
+
+
+def test_resolve_migration_path_missing_returns_none():
+    chain = _resolve_migration_path("3.0.0", "8.0.0")
+    assert chain is None
+
+
+def test_migration_handlers_registered():
+    assert ("6.0.0", "7.0.0") in MIGRATION_HANDLERS
+    assert ("7.0.0", "8.0.0") in MIGRATION_HANDLERS
+    assert callable(MIGRATION_HANDLERS[("6.0.0", "7.0.0")])
+    assert callable(MIGRATION_HANDLERS[("7.0.0", "8.0.0")])
+
+
+def test_version_constant_is_v8():
+    assert VERSION == "8.0.0"
+
+
+def test_ladder_reentry_idempotent(tmp_path):
+    db_path = tmp_path / "logic_index.db"
+    db = _make_v6_db(db_path)
+    for _ in range(3):
+        _migrate_v6_to_v7(db)
+
+    sv_count = db.execute("SELECT COUNT(*) FROM summary_versions").fetchone()[0]
+    assert sv_count == 1
+    fts_count = db.execute("SELECT COUNT(*) FROM summary_fts").fetchone()[0]
+    assert fts_count == 1
+    log_rows = db.execute("SELECT from_version, to_version FROM migration_log").fetchall()
+    assert log_rows == [("6.0.0", "7.0.0")]
+
+    sym_cols = {c[1] for c in db.execute("PRAGMA table_info(symbols)").fetchall()}
+    assert "summary" not in sym_cols
+
+    file_cols = {c[1] for c in db.execute("PRAGMA table_info(files)").fetchall()}
+    assert "kind_hint" in file_cols
+    assert "actual_kind" in file_cols
+
+    tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "symbols_fts" not in tables
+    db.close()
+
+
+def test_fts_trigger_not_fired_on_insert_or_ignore(tmp_path):
+    db_path = tmp_path / "logic_index.db"
+    db = _make_v6_db(db_path)
+    _migrate_v6_to_v7(db)
+
+    before = db.execute("SELECT COUNT(*) FROM summary_fts").fetchone()[0]
+    duplicate_payload = json.dumps({"short": "Replaced", "full": None}, ensure_ascii=False)
+    db.execute(
+        "INSERT OR IGNORE INTO summary_versions (node_kind, node_ref, version, summary, status, created_at) "
+        "VALUES (?,?,?,?,?,?)",
+        ("symbol", "src/foo.py::alpha", 1, duplicate_payload, "ok", "2026-06-29"),
+    )
+    db.commit()
+
+    after = db.execute("SELECT COUNT(*) FROM summary_fts").fetchone()[0]
+    assert after == before
+
+    existing_short = db.execute(
+        "SELECT json_extract(summary, '$.short') FROM summary_versions "
+        "WHERE node_kind='symbol' AND node_ref='src/foo.py::alpha'"
+    ).fetchone()[0]
+    assert existing_short == "Computes alpha"
+    db.close()
+
+
+def test_recovery_from_residual_db(tmp_path):
+    db_path = tmp_path / "logic_index.db"
+    db = _make_v6_db(db_path)
+    db.executescript(SCHEMA_SQL)
+    seed_payload = json.dumps({"short": "Computes alpha", "full": None}, ensure_ascii=False)
+    db.execute(
+        "INSERT OR IGNORE INTO summary_versions (node_kind, node_ref, version, summary, status, created_at) "
+        "VALUES (?,?,?,?,?,?)",
+        ("symbol", "src/foo.py::alpha", 1, seed_payload, "ok", "2026-06-29"),
+    )
+    db.execute("DROP TRIGGER IF EXISTS symbols_fts_ai")
+    db.execute("DROP TRIGGER IF EXISTS symbols_fts_ad")
+    db.execute("DROP TRIGGER IF EXISTS symbols_fts_au")
+    db.execute("DROP TABLE IF EXISTS symbols_fts")
+    db.commit()
+
+    sv_before = db.execute("SELECT COUNT(*) FROM summary_versions").fetchone()[0]
+    fts_before = db.execute("SELECT COUNT(*) FROM summary_fts").fetchone()[0]
+    assert sv_before == 1
+    assert fts_before == 1
+
+    _migrate_v6_to_v7(db)
+
+    sv_after = db.execute("SELECT COUNT(*) FROM summary_versions").fetchone()[0]
+    fts_after = db.execute("SELECT COUNT(*) FROM summary_fts").fetchone()[0]
+    assert sv_after == 1
+    assert fts_after == 1
+
+    file_cols = {c[1] for c in db.execute("PRAGMA table_info(files)").fetchall()}
+    assert "kind_hint" in file_cols
+    assert "actual_kind" in file_cols
+
+    sym_cols = {c[1] for c in db.execute("PRAGMA table_info(symbols)").fetchall()}
+    assert "summary" not in sym_cols
+
+    log_rows = db.execute("SELECT from_version, to_version FROM migration_log").fetchall()
+    assert log_rows == [("6.0.0", "7.0.0")]
+    db.close()
+
+
+def test_v7_to_v8_creates_occurrences_and_invalidates_hashes(tmp_path):
+    db = _make_v7_db(tmp_path / "logic_index.db")
+    _migrate_v7_to_v8(db)
+    tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "symbol_occurrences" in tables
+    assert db.execute("SELECT struct_hash FROM files").fetchone()[0] == ""
+    logs = db.execute(
+        "SELECT from_version, to_version FROM migration_log ORDER BY id"
+    ).fetchall()
+    assert logs[-1] == ("7.0.0", "8.0.0")
+    db.close()
+
+
+def test_v7_to_v8_reentry_is_idempotent(tmp_path):
+    db = _make_v7_db(tmp_path / "logic_index.db")
+    for _ in range(3):
+        _migrate_v7_to_v8(db)
+    count = db.execute(
+        "SELECT COUNT(*) FROM migration_log WHERE from_version='7.0.0' AND to_version='8.0.0'"
+    ).fetchone()[0]
+    assert count == 1
+    db.close()
+
+
+def test_v7_to_v8_rolls_back_on_failure(tmp_path):
+    real_db = _make_v7_db(tmp_path / "logic_index.db")
+    wrapper = _FailOnMatch(real_db, "UPDATE files SET struct_hash")
+    with pytest.raises(sqlite3.IntegrityError):
+        _migrate_v7_to_v8(wrapper)
+    tables = {r[0] for r in real_db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "symbol_occurrences" not in tables
+    assert real_db.execute("SELECT struct_hash FROM files").fetchone()[0] == "h1"
+    real_db.close()
+
+
+def test_schema_sql_is_idempotent(tmp_path):
+    db_path = tmp_path / "logic_index.db"
+    db = sqlite3.connect(str(db_path))
+    try:
+        db.executescript(SCHEMA_SQL)
+        schema_before = sorted(
+            db.execute(
+                "SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"
+            ).fetchall()
+        )
+        db.executescript(SCHEMA_SQL)
+        schema_after = sorted(
+            db.execute(
+                "SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"
+            ).fetchall()
+        )
+        assert schema_before == schema_after
+    finally:
+        db.close()
+
+
+def test_init_db_creates_backup_on_version_mismatch(tmp_path):
+    from struct_scan import StructScanner
+
+    db_dir = tmp_path / ".claude"
+    db_dir.mkdir()
+    db_path = db_dir / "logic_index.db"
+    db = _make_v7_db(db_path)
+    db.close()
+
+    scanner = StructScanner(str(tmp_path))
+    try:
+        bak_path = db_dir / "logic_index.db.bak"
+        assert bak_path.exists()
+
+        bak_db = sqlite3.connect(str(bak_path))
+        try:
+            bak_version = bak_db.execute("SELECT value FROM meta WHERE key='version'").fetchone()
+            assert bak_version[0] == "7.0.0"
+            bak_alpha = bak_db.execute(
+                "SELECT json_extract(summary, '$.short') FROM summary_versions "
+                "WHERE node_ref='src/foo.py::alpha'"
+            ).fetchone()
+            assert bak_alpha == ("Computes alpha",)
+        finally:
+            bak_db.close()
+
+        post_version = scanner.db.execute("SELECT value FROM meta WHERE key='version'").fetchone()
+        assert post_version[0] == VERSION
+    finally:
+        scanner.db.close()
+
+
+def test_init_db_backup_includes_committed_wal_rows(tmp_path):
+    from struct_scan import StructScanner
+
+    db_dir = tmp_path / ".claude"
+    db_dir.mkdir()
+    db_path = db_dir / "logic_index.db"
+    db = _make_v7_db(db_path)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute(
+        "INSERT INTO files (path, struct_hash, language, layer, imports) "
+        "VALUES ('wal.py', 'wal-hash', 'PythonParser', 'Core', '[]')"
+    )
+    db.commit()
+    db.close()
+
+    scanner = StructScanner(str(tmp_path))
+    scanner.db.close()
+    backup = sqlite3.connect(str(db_path) + ".bak")
+    try:
+        assert backup.execute("SELECT path FROM files WHERE path='wal.py'").fetchone() == ("wal.py",)
+    finally:
+        backup.close()
+
+
+def test_init_db_rejects_existing_database_without_version(tmp_path):
+    from struct_scan import StructScanner
+
+    db_dir = tmp_path / ".claude"
+    db_dir.mkdir()
+    db_path = db_dir / "logic_index.db"
+    db = sqlite3.connect(str(db_path))
+    db.execute("CREATE TABLE files (path TEXT PRIMARY KEY, struct_hash TEXT NOT NULL)")
+    db.commit()
+    db.close()
+
+    with pytest.raises(RuntimeError, match="no schema version"):
+        StructScanner(str(tmp_path))
+    db = sqlite3.connect(str(db_path))
+    try:
+        assert {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")} == {"files"}
+    finally:
+        db.close()
