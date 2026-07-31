@@ -124,6 +124,10 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 | `/remy-insight` | Deep multi-agent repository analysis — global, focus, and compare modes with configurable depth | [📖](skills/remy-insight/README.md) |
 | `/remy-ci` | Analyze CI/CD failure logs — compile, link, test, sanitizer, QEMU, style, static analysis, build config | [📖](skills/remy-ci/README.md) |
 
+### Development and testing
+
+See [docs/TESTING.md](docs/TESTING.md) for pinned development dependencies, local verification commands, parser-backend coverage, and CI scope.
+
 ### Development Cycle
 
 A full development cycle follows this sequence. Not every step is required for every change — scale to the task complexity.

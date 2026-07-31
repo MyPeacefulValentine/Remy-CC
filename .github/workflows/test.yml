@@ -1,0 +1,39 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - python-version: "3.10"
+            tree_sitter: false
+          - python-version: "3.12"
+            tree_sitter: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install -r requirements-dev.txt
+      - if: matrix.tree_sitter
+        run: python -m pip install -r requirements-tree-sitter.txt
+      - run: python -m pytest tests -q -p no:cacheprovider
+      - run: pyright -p pyrightconfig.json
+
+  windows-locks:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pytest tests/test_index_state.py -q -p no:cacheprovider

@@ -124,6 +124,10 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | `/remy-insight` | 多智能体仓库深度分析——支持全局、聚焦和对照模式，可配置分析深度 | [📖](skills/remy-insight/README_zh.md) |
 | `/remy-ci` | CI/CD 失败日志分析——编译、链接、测试、sanitizer、QEMU、风格、静态分析、构建配置 | [📖](skills/remy-ci/README_zh.md) |
 
+### 开发与测试
+
+固定版本的开发依赖、本地验证命令、解析器后端覆盖范围和持续集成范围见 [docs/TESTING_zh.md](docs/TESTING_zh.md)。
+
 ### 开发循环
 
 一次完整的开发循环按以下顺序进行。并非每次修改都需要全部步骤——根据任务复杂度选择。
