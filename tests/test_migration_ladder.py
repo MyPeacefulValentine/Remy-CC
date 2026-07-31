@@ -14,6 +14,7 @@ from struct_scan import (
     VERSION,
     _migrate_v6_to_v7,
     _migrate_v7_to_v8,
+    _migrate_v8_to_v9,
     _resolve_migration_path,
 )
 
@@ -200,19 +201,20 @@ def test_migrate_rollback_on_failure(tmp_path):
 
 
 def test_resolve_migration_path_direct():
-    chain = _resolve_migration_path("7.0.0", "8.0.0")
+    chain = _resolve_migration_path("8.0.0", "9.0.0")
     assert chain is not None
     assert len(chain) == 1
-    assert chain[0][0] == "7.0.0"
-    assert chain[0][1] == "8.0.0"
+    assert chain[0][0] == "8.0.0"
+    assert chain[0][1] == "9.0.0"
 
 
 def test_resolve_migration_path_chained():
-    chain = _resolve_migration_path("6.0.0", "8.0.0")
+    chain = _resolve_migration_path("6.0.0", "9.0.0")
     assert chain is not None
     assert [(step[0], step[1]) for step in chain] == [
         ("6.0.0", "7.0.0"),
         ("7.0.0", "8.0.0"),
+        ("8.0.0", "9.0.0"),
     ]
 
 
@@ -224,12 +226,14 @@ def test_resolve_migration_path_missing_returns_none():
 def test_migration_handlers_registered():
     assert ("6.0.0", "7.0.0") in MIGRATION_HANDLERS
     assert ("7.0.0", "8.0.0") in MIGRATION_HANDLERS
+    assert ("8.0.0", "9.0.0") in MIGRATION_HANDLERS
     assert callable(MIGRATION_HANDLERS[("6.0.0", "7.0.0")])
     assert callable(MIGRATION_HANDLERS[("7.0.0", "8.0.0")])
+    assert callable(MIGRATION_HANDLERS[("8.0.0", "9.0.0")])
 
 
-def test_version_constant_is_v8():
-    assert VERSION == "8.0.0"
+def test_version_constant_is_v9():
+    assert VERSION == "9.0.0"
 
 
 def test_ladder_reentry_idempotent(tmp_path):
@@ -299,16 +303,12 @@ def test_recovery_from_residual_db(tmp_path):
     db.commit()
 
     sv_before = db.execute("SELECT COUNT(*) FROM summary_versions").fetchone()[0]
-    fts_before = db.execute("SELECT COUNT(*) FROM summary_fts").fetchone()[0]
     assert sv_before == 1
-    assert fts_before == 1
 
     _migrate_v6_to_v7(db)
 
     sv_after = db.execute("SELECT COUNT(*) FROM summary_versions").fetchone()[0]
-    fts_after = db.execute("SELECT COUNT(*) FROM summary_fts").fetchone()[0]
     assert sv_after == 1
-    assert fts_after == 1
 
     file_cols = {c[1] for c in db.execute("PRAGMA table_info(files)").fetchall()}
     assert "kind_hint" in file_cols
@@ -354,6 +354,69 @@ def test_v7_to_v8_rolls_back_on_failure(tmp_path):
     tables = {r[0] for r in real_db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert "symbol_occurrences" not in tables
     assert real_db.execute("SELECT struct_hash FROM files").fetchone()[0] == "h1"
+    real_db.close()
+
+
+def _make_v8_db(path):
+    db = _make_v7_db(path)
+    _migrate_v7_to_v8(db)
+    db.execute("UPDATE meta SET value='8.0.0' WHERE key='version'")
+    db.execute("UPDATE files SET struct_hash='h1'")
+    db.commit()
+    return db
+
+
+def test_v8_to_v9_builds_current_projection_and_removes_old_fts(tmp_path):
+    db = _make_v8_db(tmp_path / "logic_index.db")
+    db.execute(
+        "INSERT INTO summary_versions "
+        "(node_kind,node_ref,version,summary,status,created_at) "
+        "VALUES ('symbol','src/foo.py::alpha',2,?, 'ok','2026-01-01')",
+        (json.dumps({"short": "current alpha", "full": None}),),
+    )
+    db.commit()
+    _migrate_v8_to_v9(db)
+    tables = {r[0] for r in db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    )}
+    assert "retrieval_documents" in tables
+    assert "retrieval_fts" in tables
+    assert "summary_fts" not in tables
+    row = db.execute(
+        "SELECT node_kind,node_ref,summary_short,source_version "
+        "FROM retrieval_documents WHERE node_kind='symbol'"
+    ).fetchone()
+    assert row == ("symbol", "src/foo.py::alpha", "current alpha", 2)
+    db.close()
+
+
+def test_v8_to_v9_reentry_is_idempotent(tmp_path):
+    db = _make_v8_db(tmp_path / "logic_index.db")
+    for _ in range(3):
+        _migrate_v8_to_v9(db)
+    assert db.execute(
+        "SELECT COUNT(*) FROM migration_log "
+        "WHERE from_version='8.0.0' AND to_version='9.0.0'"
+    ).fetchone()[0] == 1
+    assert db.execute(
+        "SELECT COUNT(*) FROM retrieval_documents WHERE node_kind='symbol'"
+    ).fetchone()[0] == 1
+    db.close()
+
+
+def test_v8_to_v9_rolls_back_on_failure(tmp_path):
+    real_db = _make_v8_db(tmp_path / "logic_index.db")
+    wrapper = _FailOnMatch(real_db, "DROP TABLE IF EXISTS summary_fts")
+    with pytest.raises(sqlite3.IntegrityError):
+        _migrate_v8_to_v9(wrapper)
+    tables = {r[0] for r in real_db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    )}
+    assert "summary_fts" in tables
+    assert "retrieval_documents" not in tables
+    assert real_db.execute(
+        "SELECT COUNT(*) FROM summary_versions"
+    ).fetchone()[0] == 1
     real_db.close()
 
 

@@ -44,6 +44,9 @@ def _load_config_ui():
         sys.exit(1)
     import importlib.util
     spec = importlib.util.spec_from_file_location("config_ui", str(script))
+    if spec is None or spec.loader is None:
+        print("Error: unable to load config_ui.py at " + str(script), file=sys.stderr)
+        sys.exit(1)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -79,6 +82,9 @@ def _load_logic_scope_ui():
         sys.exit(1)
     import importlib.util
     spec = importlib.util.spec_from_file_location("logic_scope_ui", str(script))
+    if spec is None or spec.loader is None:
+        print("Error: unable to load logic_scope_ui.py at " + str(script), file=sys.stderr)
+        sys.exit(1)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -169,7 +175,7 @@ def _load_summary_modules():
     sys.path.insert(0, str(skill_dir))
     import importlib
     modules = {}
-    for name in ("bootstrap", "summarizer", "llm_judge"):
+    for name in ("bootstrap", "summarizer", "llm_judge", "index_state", "retrieval_projection"):
         try:
             modules[name] = importlib.import_module(name)
         except ImportError as exc:
@@ -215,6 +221,8 @@ def cmd_summary_rebuild(args):
     modules, _ = _load_summary_modules()
     bootstrap = modules["bootstrap"]
     summarizer = modules["summarizer"]
+    lock = modules["index_state"].project_scan_lock(str(cwd))
+    lock.acquire()
     llm_call = _default_llm_call()
     db = _open_logic_db(cwd)
     try:
@@ -243,6 +251,7 @@ def cmd_summary_rebuild(args):
                 result.get("pending_files", 0), result.get("pending_clusters", 0)))
     finally:
         db.close()
+        lock.release()
 
 
 def cmd_summary_vacuum(args):
@@ -250,6 +259,10 @@ def cmd_summary_vacuum(args):
     if not cwd.is_dir():
         print("Error: directory not found: " + str(cwd), file=sys.stderr)
         sys.exit(1)
+    modules, _ = _load_summary_modules()
+    lock = modules["index_state"].project_scan_lock(str(cwd))
+    projection = modules["retrieval_projection"]
+    lock.acquire()
     db = _open_logic_db(cwd)
     try:
         from datetime import datetime, timedelta
@@ -265,19 +278,28 @@ def cmd_summary_vacuum(args):
         print("judge_cache: removed {} entries older than {} days (kept {}).".format(before - after, days, after))
 
         if args.prune_summary_history:
-            removed = db.execute(
-                """DELETE FROM summary_versions
-                   WHERE id NOT IN (
-                       SELECT MAX(id) FROM summary_versions
-                       GROUP BY node_kind, node_ref
-                   )
-                   AND created_at < ?""",
-                (cutoff,),
-            )
+            protected = projection.protected_summary_ids(db)
+            if protected:
+                placeholders = ",".join(["?"] * len(protected))
+                params = [cutoff] + sorted(protected)
+                db.execute(
+                    "DELETE FROM summary_versions WHERE created_at < ? "
+                    f"AND id NOT IN ({placeholders})",
+                    params,
+                )
+            else:
+                db.execute(
+                    "DELETE FROM summary_versions WHERE created_at < ?", (cutoff,)
+                )
             db.commit()
-            print("summary_versions: pruned old non-latest versions older than {} days.".format(days))
+            print(
+                "summary_versions: pruned old unprotected versions older than {} days.".format(
+                    days
+                )
+            )
     finally:
         db.close()
+        lock.release()
 
 
 def cmd_summary_audit(args):
@@ -324,6 +346,7 @@ VERSION_RAW_URL = "https://raw.githubusercontent.com/MyPeacefulValentine/Remy-CC
 
 
 def _fetch_remote_version():
+    import urllib.error
     import urllib.request
     try:
         req = urllib.request.Request(VERSION_RAW_URL, headers={"User-Agent": "remy-cc"})
@@ -332,7 +355,7 @@ def _fetch_remote_version():
             if not raw or len(raw) > 20 or "<" in raw:
                 return None
             return raw
-    except (OSError, urllib.request.URLError):
+    except (OSError, urllib.error.URLError):
         return None
 
 
@@ -418,7 +441,8 @@ def _get_lang():
 def _um(key, **kwargs):
     lang = _get_lang()
     msgs = _UNINSTALL_MSG.get(lang, _UNINSTALL_MSG["en"])
-    template = msgs.get(key, _UNINSTALL_MSG["en"].get(key, key))
+    fallback = _UNINSTALL_MSG["en"].get(key) or key
+    template = msgs.get(key) or fallback
     return template.format(**kwargs) if kwargs else template
 
 

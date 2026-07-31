@@ -59,7 +59,7 @@ class TestInitDb:
     def test_version_in_meta(self, scanner):
         row = scanner.db.execute("SELECT value FROM meta WHERE key='version'").fetchone()
         assert row is not None
-        assert row[0] == "8.0.0"
+        assert row[0] == "9.0.0"
 
     def test_wal_mode_enabled(self, scanner):
         mode = scanner.db.execute("PRAGMA journal_mode").fetchone()[0]
@@ -85,7 +85,7 @@ class TestInitDb:
         assert version == "4.0.0"
         db.close()
 
-    def test_v6_to_v8_ladder_applied(self, tmp_path):
+    def test_v6_to_v9_ladder_applied(self, tmp_path):
         claude_dir = tmp_path / ".claude"
         claude_dir.mkdir()
         config = claude_dir / "logic_index_config"
@@ -116,12 +116,14 @@ class TestInitDb:
 
         scanner = StructScanner(str(tmp_path))
         version = scanner.db.execute("SELECT value FROM meta WHERE key='version'").fetchone()[0]
-        assert version == "8.0.0"
+        assert version == "9.0.0"
         tables = {r[0] for r in scanner.db.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()}
         assert "summary_versions" in tables
-        assert "summary_fts" in tables
+        assert "retrieval_documents" in tables
+        assert "retrieval_fts" in tables
+        assert "summary_fts" not in tables
         assert "symbol_occurrences" in tables
         assert "symbols_fts" not in tables
         cols = {c[1] for c in scanner.db.execute("PRAGMA table_info(symbols)").fetchall()}
@@ -179,6 +181,52 @@ class TestMigrateJson:
         row = scanner.db.execute("SELECT name_tokens FROM symbols WHERE name = 'getUserById'").fetchone()
         assert row is not None
         assert row[0] == "get User By Id"
+
+    def test_json_migration_rebuilds_retrieval_projection(self, tmp_path):
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        (claude_dir / "logic_index_config").write_text(
+            "!.git/\n!.claude/\n", encoding="utf-8"
+        )
+        json_path = claude_dir / "logic_index.json"
+        json_path.write_text(
+            json.dumps({
+                "_meta": {"version": "3.0.0"},
+                "x.py": {
+                    "struct_hash": "a",
+                    "language": "PythonParser",
+                    "layer": "Core",
+                    "imports": [],
+                    "symbols": [{
+                        "name": "entry",
+                        "type": "function",
+                        "args": "()",
+                        "lineno": 1,
+                        "end_lineno": 2,
+                        "hash": "h1",
+                        "summary": "JSON migration summary",
+                    }],
+                    "calls": [],
+                },
+            }),
+            encoding="utf-8",
+        )
+
+        scanner = StructScanner(str(tmp_path))
+        try:
+            row = scanner.db.execute(
+                "SELECT name, signature, summary_short FROM retrieval_documents "
+                "WHERE node_kind='symbol' AND node_ref='x.py::entry'"
+            ).fetchone()
+            assert row == ("entry", "()", "JSON migration summary")
+            match = scanner.db.execute(
+                "SELECT d.node_ref FROM retrieval_fts "
+                "JOIN retrieval_documents d ON d.doc_id = retrieval_fts.rowid "
+                "WHERE retrieval_fts MATCH 'JSON'"
+            ).fetchone()
+            assert match == ("x.py::entry",)
+        finally:
+            scanner.db.close()
 
     def test_json_renamed_after_migration(self, tmp_path):
         claude_dir = tmp_path / ".claude"
@@ -497,6 +545,28 @@ class TestScanAll:
         count = scanner.db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
         assert count == 1
 
+    def test_deleted_files_remove_retrieval_projection(self, scanner, temp_project):
+        scanner.scan_all()
+        symbol_ref = "src/utils.py::helper"
+        assert scanner.db.execute(
+            "SELECT 1 FROM retrieval_documents WHERE node_ref=?", (symbol_ref,)
+        ).fetchone() is not None
+
+        os.remove(str(temp_project / "src" / "utils.py"))
+        scanner.scan_all()
+
+        assert scanner.db.execute(
+            "SELECT 1 FROM retrieval_documents "
+            "WHERE node_ref IN ('src/utils.py', ?)",
+            (symbol_ref,),
+        ).fetchone() is None
+        assert scanner.db.execute(
+            "SELECT d.node_ref FROM retrieval_fts "
+            "JOIN retrieval_documents d ON d.doc_id = retrieval_fts.rowid "
+            "WHERE d.node_ref IN ('src/utils.py', ?)",
+            (symbol_ref,),
+        ).fetchone() is None
+
     def test_meta_updated(self, scanner, temp_project):
         scanner.scan_all()
         row = scanner.db.execute("SELECT value FROM meta WHERE key='last_updated'").fetchone()
@@ -582,6 +652,38 @@ class TestScanFiles:
         ).fetchall()}
         assert "new_func" in names
 
+    def test_incremental_change_marks_old_summary_stale(self, scanner, temp_project):
+        scanner.scan_all()
+        node_ref = "src/main.py::greet"
+        scanner.db.execute(
+            "INSERT INTO summary_versions "
+            "(node_kind,node_ref,version,summary,status,created_at) "
+            "VALUES ('symbol',?,2,?,'ok','2026-01-01')",
+            (node_ref, json.dumps({"short": "old semantic text", "full": None})),
+        )
+        from retrieval_projection import refresh_node
+        refresh_node(scanner.db, "symbol", node_ref)
+        scanner.db.commit()
+
+        (temp_project / "src" / "main.py").write_text(
+            'def main():\n    return 42\n\ndef greet(name):\n    return name.upper()\n',
+            encoding="utf-8",
+        )
+        scanner.scan_files(["src/main.py"])
+
+        status = scanner.db.execute(
+            "SELECT status FROM summary_versions "
+            "WHERE node_kind='symbol' AND node_ref=? AND version=2",
+            (node_ref,),
+        ).fetchone()
+        assert status == ("stale",)
+        document = scanner.db.execute(
+            "SELECT summary_short, source_version FROM retrieval_documents "
+            "WHERE node_kind='symbol' AND node_ref=?",
+            (node_ref,),
+        ).fetchone()
+        assert document == (None, None)
+
     def test_deleted_conflict_file_removes_occurrences(self, tmp_path):
         claude_dir = tmp_path / ".claude"
         claude_dir.mkdir()
@@ -650,12 +752,13 @@ class TestTokenizeSymbol:
 
 
 class TestFTSSync:
-    def test_summary_fts_table_created(self, scanner):
+    def test_retrieval_tables_created(self, scanner):
         tables = {r[0] for r in scanner.db.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()}
-        assert "summary_fts" in tables
-        assert "symbols_fts" not in tables
+        assert "retrieval_documents" in tables
+        assert "retrieval_fts" in tables
+        assert "summary_fts" not in tables
 
     def test_name_tokens_populated(self, scanner, temp_project):
         main_py = str(temp_project / "src" / "main.py")
@@ -669,14 +772,16 @@ class TestFTSSync:
         assert row is not None
         assert row[0] == "main"
 
-    def test_symbol_summary_indexed_via_summary_fts(self, scanner, temp_project):
+    def test_symbol_summary_indexed_via_retrieval_fts(self, scanner, temp_project):
         main_py = str(temp_project / "src" / "main.py")
         from parsers.python_parser import PythonParser
         scanner.scan_file(main_py, PythonParser())
         scanner.db.commit()
 
         rows = scanner.db.execute(
-            "SELECT node_kind, node_ref FROM summary_fts WHERE summary_fts MATCH 'Entry'"
+            "SELECT d.node_kind, d.node_ref FROM retrieval_fts "
+            "JOIN retrieval_documents d ON d.doc_id = retrieval_fts.rowid "
+            "WHERE retrieval_fts MATCH 'Entry'"
         ).fetchall()
         assert any(r[0] == "symbol" and r[1] == "src/main.py::main" for r in rows)
 

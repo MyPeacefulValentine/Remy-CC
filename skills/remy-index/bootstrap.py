@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import summarizer
 from constants import DEFAULT_MAX_WORKERS, DB_BUSY_TIMEOUT_MS, DB_CONNECT_TIMEOUT_S
+from retrieval_projection import AVAILABLE_SUMMARY_STATUSES, has_current_summary
 
 
 VALID_MODES = ("auto", "ask", "never")
@@ -34,19 +35,7 @@ def _env_int(name, default):
 
 
 def needs_bootstrap(db):
-    file_count = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
-    summarized_files = db.execute(
-        "SELECT COUNT(DISTINCT node_ref) FROM summary_versions "
-        "WHERE status='ok' AND node_kind='file'"
-    ).fetchone()[0]
-    if summarized_files < file_count:
-        return True
-    cluster_count = db.execute("SELECT COUNT(*) FROM clusters").fetchone()[0]
-    summarized_clusters = db.execute(
-        "SELECT COUNT(DISTINCT node_ref) FROM summary_versions "
-        "WHERE status='ok' AND node_kind='cluster'"
-    ).fetchone()[0]
-    return summarized_clusters < cluster_count
+    return bool(_pending_files(db) or _pending_clusters(db))
 
 
 def resolve_mode(db):
@@ -64,23 +53,19 @@ def resolve_mode(db):
 
 
 def _pending_files(db):
-    return [r[0] for r in db.execute(
-        """SELECT path FROM files
-           WHERE NOT EXISTS (
-               SELECT 1 FROM summary_versions sv
-               WHERE sv.node_kind='file' AND sv.node_ref = files.path AND sv.status='ok'
-           )"""
-    ).fetchall()]
+    return [
+        path
+        for (path,) in db.execute("SELECT path FROM files").fetchall()
+        if not has_current_summary(db, "file", path)
+    ]
 
 
 def _pending_clusters(db):
-    return [r[0] for r in db.execute(
-        """SELECT name FROM clusters
-           WHERE NOT EXISTS (
-               SELECT 1 FROM summary_versions sv
-               WHERE sv.node_kind='cluster' AND sv.node_ref = clusters.name AND sv.status='ok'
-           )"""
-    ).fetchall()]
+    return [
+        name
+        for (name,) in db.execute("SELECT name FROM clusters").fetchall()
+        if not has_current_summary(db, "cluster", name)
+    ]
 
 
 def _run_file_layer(db, llm_call, concurrency):
@@ -109,7 +94,7 @@ def _run_file_layer(db, llm_call, concurrency):
             if payload is None and status == "pending":
                 continue
             summarizer.write_summary_version(db, "file", fp, payload, status)
-            if status == "ok":
+            if status in AVAILABLE_SUMMARY_STATUSES:
                 done += 1
         print(f"[bootstrap] file layer done: {done}/{len(pending)} ok", flush=True)
         return {"requested": len(pending), "done": done, "failed": len(pending) - done}
@@ -140,7 +125,7 @@ def _run_file_layer(db, llm_call, concurrency):
         if payload is None and status == "pending":
             continue
         summarizer.write_summary_version(db, "file", fp, payload, status)
-        if status == "ok":
+        if status in AVAILABLE_SUMMARY_STATUSES:
             done += 1
     print(f"[bootstrap] file layer done: {done}/{len(pending)} ok", flush=True)
     return {"requested": len(pending), "done": done, "failed": len(pending) - done}
@@ -163,7 +148,7 @@ def _run_cluster_layer(db, llm_call, concurrency):
             if payload is None and status == "pending":
                 continue
             summarizer.write_summary_version(db, "cluster", name, payload, status)
-            if status == "ok":
+            if status in AVAILABLE_SUMMARY_STATUSES:
                 done += 1
         print(f"[bootstrap] cluster layer done: {done}/{len(pending)} ok", flush=True)
         return {"requested": len(pending), "done": done, "failed": len(pending) - done}
@@ -194,7 +179,7 @@ def _run_cluster_layer(db, llm_call, concurrency):
         if payload is None and status == "pending":
             continue
         summarizer.write_summary_version(db, "cluster", name, payload, status)
-        if status == "ok":
+        if status in AVAILABLE_SUMMARY_STATUSES:
             done += 1
     print(f"[bootstrap] cluster layer done: {done}/{len(pending)} ok", flush=True)
     return {"requested": len(pending), "done": done, "failed": len(pending) - done}

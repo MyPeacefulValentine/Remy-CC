@@ -18,6 +18,7 @@ from impact import (
     get_line_range,
 )
 from struct_scan import tokenize_symbol
+from retrieval_projection import select_current_summary
 
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 _DB_NOT_FOUND = "Error: logic_index.db not found. Run /remy-index to initialize the project index."
@@ -25,7 +26,8 @@ _DB_NOT_FOUND = "Error: logic_index.db not found. Run /remy-index to initialize 
 
 def _env_int(name, default):
     try:
-        return int(os.environ.get(name, default))
+        value = os.environ.get(name)
+        return int(value if value is not None else default)
     except (ValueError, TypeError):
         return default
 
@@ -56,27 +58,19 @@ def _open_db():
 
 
 def get_latest_summary(db, node_kind, node_ref):
-    row = db.execute(
-        "SELECT summary, status FROM summary_versions "
-        "WHERE node_kind = ? AND node_ref = ? "
-        "ORDER BY version DESC LIMIT 1",
-        (node_kind, node_ref),
-    ).fetchone()
-    if row is None:
-        return None
-    summary_json, status = row
-    if summary_json is None:
-        return {"short": None, "full": None, "status": status}
-    try:
-        payload = json.loads(summary_json)
-    except (json.JSONDecodeError, TypeError):
-        return {"short": None, "full": None, "status": "corrupt"}
-    if not isinstance(payload, dict):
-        return {"short": None, "full": None, "status": "corrupt"}
+    current = select_current_summary(db, node_kind, node_ref)
+    if current.get("id") is None:
+        if current.get("status") is None:
+            return None
+        return {
+            "short": None,
+            "full": None,
+            "status": current.get("status"),
+        }
     return {
-        "short": payload.get("short"),
-        "full": payload.get("full"),
-        "status": status,
+        "short": current.get("short"),
+        "full": current.get("full"),
+        "status": current.get("status"),
     }
 
 
@@ -428,7 +422,7 @@ def _format_impact_result(db, target_files, seeds, upstream, downstream):
 
 def _fts_available(db):
     row = db.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='summary_fts'"
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='retrieval_fts'"
     ).fetchone()
     return row is not None
 
@@ -442,17 +436,19 @@ def _search_fts(db, text, limit, file_hint):
     sanitized = [t for t in sanitized if t]
     if not sanitized:
         return []
-    fts_query = " ".join(f'"{t}"*' for t in sanitized)
+    term_query = " ".join(f'"{t}"*' for t in sanitized)
+    fts_query = "{summary_short summary_full} : (" + term_query + ")"
     sql = (
-        "SELECT s.name, s.file_path, s.lineno, s.type, s.short_name, "
-        "bm25(summary_fts, 5.0, 1.0) AS rank "
-        "FROM summary_fts "
-        "JOIN symbols s ON (s.file_path || '::' || s.name) = summary_fts.node_ref "
-        "WHERE summary_fts MATCH ? AND summary_fts.node_kind = 'symbol' "
+        "SELECT d.name, d.file_path, s.lineno, d.symbol_type, s.short_name, "
+        "bm25(retrieval_fts, 0.0, 0.0, 0.0, 0.0, 5.0, 1.0) AS rank "
+        "FROM retrieval_fts "
+        "JOIN retrieval_documents d ON d.doc_id = retrieval_fts.rowid "
+        "JOIN symbols s ON s.file_path = d.file_path AND s.name = d.name "
+        "WHERE retrieval_fts MATCH ? AND d.node_kind = 'symbol' "
     )
     params = [fts_query]
     if file_hint:
-        sql += "AND s.file_path LIKE ? "
+        sql += "AND d.file_path LIKE ? "
         params.append(f"%{file_hint}%")
     sql += "ORDER BY rank LIMIT ?"
     params.append(limit * 5)

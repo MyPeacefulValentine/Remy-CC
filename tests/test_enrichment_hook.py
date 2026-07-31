@@ -115,7 +115,9 @@ class TestV7SchemaCompatibility:
         db.close()
         assert "summary_versions" in tables
         assert "node_change_counters" in tables
-        assert "summary_fts" in tables
+        assert "retrieval_documents" in tables
+        assert "retrieval_fts" in tables
+        assert "summary_fts" not in tables
 
     def test_build_enrichment_does_not_invoke_urllib(self, hook_env, monkeypatch):
         import urllib.request

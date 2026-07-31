@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "remy-src"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skills", "remy-index"))
 
 from struct_scan import SCHEMA_SQL
+import retrieval_projection
 
 
 @pytest.fixture
@@ -45,6 +46,7 @@ def db_dir(tmp_path, monkeypatch):
     db.execute("INSERT INTO clusters (id,name,label,entry_symbols,file_count) VALUES (2,'empty_cluster',NULL,'[]',0)")
     db.execute("INSERT INTO cluster_members (cluster_id,file_path) VALUES (1,'c.py')")
     db.execute("INSERT INTO cluster_members (cluster_id,file_path) VALUES (1,'d.py')")
+    retrieval_projection.rebuild_projection(db)
     db.commit()
     db.close()
     return tmp_path
@@ -858,6 +860,7 @@ class TestSearchFtsNodeKindFilter:
             "'{\"short\":\"shared keyword indicator\",\"full\":null}', 'ok', ?)",
             (_now,),
         )
+        retrieval_projection.refresh_node(conn, "symbol", "a.py::main")
         conn.execute(
             "INSERT INTO summary_versions "
             "(node_kind, node_ref, version, summary, status, created_at) "

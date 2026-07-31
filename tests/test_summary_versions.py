@@ -88,6 +88,41 @@ class TestSummaryVersions:
                 "VALUES ('symbol', 'f::x', 1, '{}', NULL, '2025-01-01T00:00:00')"
             )
 
+    def test_write_rolls_back_summary_when_projection_refresh_fails(self, db, monkeypatch):
+        def fail_refresh(*_args, **_kwargs):
+            raise sqlite3.OperationalError("projection failure")
+
+        monkeypatch.setattr(summarizer, "refresh_node", fail_refresh)
+        with pytest.raises(sqlite3.OperationalError, match="projection failure"):
+            summarizer.write_summary_version(
+                db, "cluster", "c1", {"short": "x", "full": None}, "ok"
+            )
+        assert db.execute(
+            "SELECT COUNT(*) FROM summary_versions "
+            "WHERE node_kind='cluster' AND node_ref='c1'"
+        ).fetchone()[0] == 0
+
+    def test_write_rolls_back_summary_when_parent_counter_fails(self, db, monkeypatch):
+        db.execute("INSERT INTO files (path, struct_hash) VALUES ('a.py', 'h1')")
+        summarizer.write_summary_version(
+            db, "file", "a.py", {"short": "parent", "full": None}, "ok"
+        )
+
+        def fail_counter(*_args, **_kwargs):
+            raise sqlite3.OperationalError("counter failure")
+
+        monkeypatch.setattr(
+            summarizer, "_bump_parent_counter_if_applicable", fail_counter
+        )
+        with pytest.raises(sqlite3.OperationalError, match="counter failure"):
+            summarizer.write_summary_version(
+                db, "symbol", "a.py::foo", {"short": "child", "full": None}, "ok"
+            )
+        assert db.execute(
+            "SELECT COUNT(*) FROM summary_versions "
+            "WHERE node_kind='symbol' AND node_ref='a.py::foo'"
+        ).fetchone()[0] == 0
+
     def test_json_facet_parseable(self, db):
         payload = {"short": "hello world", "full": "[定位] ..."}
         summarizer.write_summary_version(db, "cluster", "c1", payload, "ok")

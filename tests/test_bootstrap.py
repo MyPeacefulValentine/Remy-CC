@@ -182,6 +182,28 @@ class TestConcurrentBootstrap:
         bootstrap.bootstrap_summaries(db, tracking_llm, mode="auto")
         assert len(invocations) >= 3
 
+    def test_concurrent_oversized_warn_counts_as_completed(self, db, monkeypatch):
+        db.execute("PRAGMA journal_mode=WAL")
+        monkeypatch.setenv("OPENAI_MAX_WORKERS", "2")
+        monkeypatch.setenv("REMY_LANG", "en")
+        oversized = json.dumps({"short": "x" * 350, "full": None})
+
+        result = bootstrap.bootstrap_summaries(
+            db, lambda _prompt: oversized, mode="auto"
+        )
+
+        assert result["file_done"] == 2
+        assert result["cluster_done"] == 1
+        assert result["file_failed"] == 0
+        assert result["cluster_failed"] == 0
+        statuses = {
+            row[0]
+            for row in db.execute(
+                "SELECT DISTINCT status FROM summary_versions"
+            ).fetchall()
+        }
+        assert statuses == {"oversized_warn", "ok"}
+
     def test_concurrent_resume_skips_completed(self, db, monkeypatch):
         summarizer.write_summary_version(
             db, "file", "a.py", {"short": "done", "full": None}, "ok"

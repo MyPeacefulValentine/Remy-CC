@@ -9,6 +9,12 @@ import os
 import re
 from datetime import datetime
 
+from retrieval_projection import (
+    AVAILABLE_SUMMARY_STATUSES,
+    refresh_node,
+    select_current_summary,
+)
+
 
 DEFAULT_LIMITS = {
     "symbol": 100,
@@ -27,14 +33,16 @@ _LEVEL_ENV = {
 
 def _env_int(name, default):
     try:
-        return int(os.environ.get(name, default))
+        value = os.environ.get(name)
+        return int(value if value is not None else default)
     except (ValueError, TypeError):
         return default
 
 
 def _env_float(name, default):
     try:
-        return float(os.environ.get(name, default))
+        value = os.environ.get(name)
+        return float(value if value is not None else default)
     except (ValueError, TypeError):
         return default
 
@@ -123,25 +131,30 @@ def write_summary_version(db, node_kind, node_ref, payload, status,
     ).fetchone()
     next_version = (row[0] or 0) + 1
     summary_json = json.dumps(payload, ensure_ascii=False) if payload is not None else None
-    db.execute(
-        "INSERT INTO summary_versions (node_kind, node_ref, version, summary, status, "
-        "decision_rationale, decision_dimension, decision_confidence, created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
-        (
-            node_kind,
-            node_ref,
-            next_version,
-            summary_json,
-            status,
-            decision_rationale,
-            decision_dimension,
-            decision_confidence,
-            datetime.now().isoformat(timespec="seconds"),
-        ),
-    )
-    db.commit()
-    if status == "ok":
-        _bump_parent_counter_if_applicable(db, node_kind, node_ref)
+    try:
+        db.execute(
+            "INSERT INTO summary_versions (node_kind, node_ref, version, summary, status, "
+            "decision_rationale, decision_dimension, decision_confidence, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                node_kind,
+                node_ref,
+                next_version,
+                summary_json,
+                status,
+                decision_rationale,
+                decision_dimension,
+                decision_confidence,
+                datetime.now().isoformat(timespec="seconds"),
+            ),
+        )
+        refresh_node(db, node_kind, node_ref)
+        if status in AVAILABLE_SUMMARY_STATUSES:
+            _bump_parent_counter_if_applicable(db, node_kind, node_ref)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return next_version
 
 
@@ -157,36 +170,21 @@ def _bump_parent_counter_if_applicable(db, child_kind, child_ref):
     parent_kind, parent_ref = _resolve_parent(db, child_kind, child_ref)
     if parent_kind is None or parent_ref is None:
         return
-    has_ok = db.execute(
-        "SELECT 1 FROM summary_versions "
-        "WHERE node_kind = ? AND node_ref = ? AND status = 'ok' LIMIT 1",
-        (parent_kind, parent_ref),
-    ).fetchone()
-    if not has_ok:
+    has_current = select_current_summary(db, parent_kind, parent_ref)["id"] is not None
+    if not has_current:
         return
-    try:
-        db.execute("BEGIN IMMEDIATE")
-    except Exception:
-        pass
-    try:
-        db.execute(
-            "INSERT OR IGNORE INTO node_change_counters "
-            "(node_kind, node_ref, child_change_count, leaf_descendant_count) "
-            "VALUES (?, ?, 0, 0)",
-            (parent_kind, parent_ref),
-        )
-        db.execute(
-            "UPDATE node_change_counters "
-            "SET child_change_count = child_change_count + 1 "
-            "WHERE node_kind = ? AND node_ref = ?",
-            (parent_kind, parent_ref),
-        )
-        db.commit()
-    except Exception:
-        try:
-            db.rollback()
-        except Exception:
-            pass
+    db.execute(
+        "INSERT OR IGNORE INTO node_change_counters "
+        "(node_kind, node_ref, child_change_count, leaf_descendant_count) "
+        "VALUES (?, ?, 0, 0)",
+        (parent_kind, parent_ref),
+    )
+    db.execute(
+        "UPDATE node_change_counters "
+        "SET child_change_count = child_change_count + 1 "
+        "WHERE node_kind = ? AND node_ref = ?",
+        (parent_kind, parent_ref),
+    )
 
 
 def _resolve_parent(db, child_kind, child_ref):
@@ -270,22 +268,13 @@ def _resolve_kind_conditionals(text, kind_hint):
 
 def _file_input(db, file_path, kind_hint):
     sym_rows = db.execute(
-        """SELECT s.name,
-                  (SELECT summary FROM summary_versions sv
-                   WHERE sv.node_kind='symbol' AND sv.node_ref = ? || s.name
-                   ORDER BY sv.version DESC LIMIT 1)
-           FROM symbols s WHERE s.file_path = ?""",
-        (f"{file_path}::", file_path),
+        "SELECT s.name FROM symbols s WHERE s.file_path = ?", (file_path,)
     ).fetchall()
     symbol_summaries = []
-    for name, summary_json in sym_rows:
-        if not summary_json:
-            continue
-        try:
-            data = json.loads(summary_json)
-            symbol_summaries.append({"name": name, "short": data.get("short")})
-        except (json.JSONDecodeError, TypeError):
-            continue
+    for (name,) in sym_rows:
+        current = select_current_summary(db, "symbol", f"{file_path}::{name}")
+        if current.get("short"):
+            symbol_summaries.append({"name": name, "short": current["short"]})
     imports_row = db.execute(
         "SELECT imports FROM files WHERE path = ?", (file_path,)
     ).fetchone()
@@ -305,24 +294,16 @@ def _file_input(db, file_path, kind_hint):
 
 def _cluster_input(db, cluster_name):
     file_rows = db.execute(
-        """SELECT cm.file_path,
-                  (SELECT summary FROM summary_versions sv
-                   WHERE sv.node_kind='file' AND sv.node_ref = cm.file_path
-                   ORDER BY sv.version DESC LIMIT 1)
-           FROM cluster_members cm
+        """SELECT cm.file_path FROM cluster_members cm
            JOIN clusters c ON cm.cluster_id = c.id
            WHERE c.name = ?""",
         (cluster_name,),
     ).fetchall()
     file_summaries = []
-    for fp, summary_json in file_rows:
-        if not summary_json:
-            continue
-        try:
-            data = json.loads(summary_json)
-            file_summaries.append({"file": fp, "short": data.get("short")})
-        except (json.JSONDecodeError, TypeError):
-            continue
+    for (fp,) in file_rows:
+        current = select_current_summary(db, "file", fp)
+        if current.get("short"):
+            file_summaries.append({"file": fp, "short": current["short"]})
     entry_row = db.execute(
         "SELECT entry_symbols FROM clusters WHERE name = ?", (cluster_name,)
     ).fetchone()

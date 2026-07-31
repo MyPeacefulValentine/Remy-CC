@@ -16,6 +16,17 @@ import re
 import sqlite3
 from datetime import datetime, timedelta
 
+_SKILL_DIR = os.path.join(
+    os.path.expanduser("~"), ".claude", "skills", "remy-index"
+)
+_REPO_SKILL_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "skills", "remy-index")
+)
+for _skill_dir in (_SKILL_DIR, _REPO_SKILL_DIR):
+    if os.path.isdir(_skill_dir) and _skill_dir not in sys.path:
+        sys.path.insert(0, _skill_dir)
+from retrieval_projection import select_current_summary
+
 CLAUDE_MD = "CLAUDE.md"
 SETTINGS_FILE = os.path.join(".claude", "settings.local.json")
 TIMELINE_FILE = os.path.join(".claude", "history", "timeline.md")
@@ -354,17 +365,12 @@ def _render_full(db, output, selected_files, file_count, lang, icon_map):
                 pass
 
         symbols = db.execute(
-            """SELECT s.name, s.type, s.args,
-                      json_extract(
-                          (SELECT sv.summary FROM summary_versions sv
-                           WHERE sv.node_kind='symbol'
-                                 AND sv.node_ref = s.file_path || '::' || s.name
-                           ORDER BY sv.version DESC LIMIT 1),
-                          '$.short') AS short_summary
-               FROM symbols s WHERE s.file_path = ? ORDER BY s.lineno""",
-            (path,)
+            "SELECT name, type, args FROM symbols WHERE file_path = ? ORDER BY lineno",
+            (path,),
         ).fetchall()
-        for name, sym_type, args, summary in symbols:
+        for name, sym_type, args in symbols:
+            current = select_current_summary(db, "symbol", f"{path}::{name}")
+            summary = current.get("short")
             icon = icon_map.get(sym_type, "?")
             display_name = f"{name}{args}" if args else name
             desc = summary or "No summary"
@@ -374,13 +380,8 @@ def _render_full(db, output, selected_files, file_count, lang, icon_map):
 
 def _render_cluster(db, output, selected_files, file_count, lang, icon_map):
     clusters = db.execute(
-        """SELECT c.id, c.name, c.label, c.entry_symbols, c.file_count,
-                  json_extract(
-                      (SELECT sv.summary FROM summary_versions sv
-                       WHERE sv.node_kind='cluster' AND sv.node_ref = c.name
-                       ORDER BY sv.version DESC LIMIT 1),
-                      '$.short') AS short_summary
-           FROM clusters c ORDER BY c.name"""
+        "SELECT id, name, label, entry_symbols, file_count "
+        "FROM clusters ORDER BY name"
     ).fetchall()
 
     if not clusters:
@@ -394,7 +395,9 @@ def _render_cluster(db, output, selected_files, file_count, lang, icon_map):
             output.insert(4, _meta_line(lang, shown, total_files))
 
     output.append("## 项目功能拓扑\n")
-    for cluster_id, name, label, entry_json, fc, short_summary in clusters:
+    for cluster_id, name, label, entry_json, fc in clusters:
+        current = select_current_summary(db, "cluster", name)
+        short_summary = current.get("short")
         try:
             entries = json.loads(entry_json)
         except (json.JSONDecodeError, TypeError):
@@ -429,19 +432,17 @@ def _render_cluster(db, output, selected_files, file_count, lang, icon_map):
 
         for (fp,) in member_files:
             symbols = db.execute(
-                """SELECT s.name, s.type, s.args,
-                          json_extract(
-                              (SELECT sv.summary FROM summary_versions sv
-                               WHERE sv.node_kind='symbol'
-                                     AND sv.node_ref = s.file_path || '::' || s.name
-                               ORDER BY sv.version DESC LIMIT 1),
-                              '$.short') AS short_summary
-                   FROM symbols s WHERE s.file_path = ? ORDER BY s.lineno""",
-                (fp,)
+                "SELECT name, type, args FROM symbols "
+                "WHERE file_path = ? ORDER BY lineno",
+                (fp,),
             ).fetchall()
             if symbols:
                 output.append(f"#### `{fp}`")
-                for sym_name, sym_type, args, summary in symbols:
+                for sym_name, sym_type, args in symbols:
+                    current = select_current_summary(
+                        db, "symbol", f"{fp}::{sym_name}"
+                    )
+                    summary = current.get("short")
                     icon = icon_map.get(sym_type, "?")
                     display_name = f"{sym_name}{args}" if args else sym_name
                     desc = summary or ""
@@ -457,13 +458,7 @@ def _render_cluster(db, output, selected_files, file_count, lang, icon_map):
 
 def _render_cluster_summary(db, output, lang):
     clusters = db.execute(
-        """SELECT c.name, c.label, c.file_count,
-                  json_extract(
-                      (SELECT sv.summary FROM summary_versions sv
-                       WHERE sv.node_kind='cluster' AND sv.node_ref = c.name
-                       ORDER BY sv.version DESC LIMIT 1),
-                      '$.short') AS short_summary
-           FROM clusters c ORDER BY c.file_count DESC"""
+        "SELECT name, label, file_count FROM clusters ORDER BY file_count DESC"
     ).fetchall()
 
     if not clusters:
@@ -471,7 +466,9 @@ def _render_cluster_summary(db, output, lang):
         return
 
     output.append("## 项目功能拓扑 (摘要)\n")
-    for name, label, fc, short_summary in clusters:
+    for name, label, fc in clusters:
+        current = select_current_summary(db, "cluster", name)
+        short_summary = current.get("short")
         locator = f"{label} ({name})" if label else name
         line = f"- **{locator}** ({fc} files)"
         if short_summary:
@@ -486,13 +483,7 @@ def _render_mcp_minimal(db, output, lang):
     file_count = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
     symbol_count = db.execute("SELECT COUNT(*) FROM symbols").fetchone()[0]
     clusters = db.execute(
-        """SELECT c.name, c.label, c.file_count,
-                  json_extract(
-                      (SELECT sv.summary FROM summary_versions sv
-                       WHERE sv.node_kind='cluster' AND sv.node_ref = c.name
-                       ORDER BY sv.version DESC LIMIT 1),
-                      '$.short') AS short_summary
-           FROM clusters c ORDER BY c.file_count DESC"""
+        "SELECT name, label, file_count FROM clusters ORDER BY file_count DESC"
     ).fetchall()
 
     tpl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_minimal_template.json")
@@ -527,7 +518,9 @@ def _render_mcp_minimal(db, output, lang):
         output.append(f"| {cc[0]} | {cc[1]} | {cc[2]} |")
         output.append("| :-- | :-- | :-- |")
 
-        for name, label, fc, short_summary in clusters:
+        for name, label, fc in clusters:
+            current = select_current_summary(db, "cluster", name)
+            short_summary = current.get("short")
             locator = f"{label} ({name})" if label else name
             description = short_summary or ("(no summary)" if lk == "en" else "(暂无描述)")
             output.append(f"| {locator} | {fc} | {description} |")
@@ -636,7 +629,9 @@ def inject_all(cwd):
 
 
 def main():
-    sys.stdout.reconfigure(encoding='utf-8')
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding='utf-8')
     cwd = os.getcwd()
     inject_all(cwd)
 

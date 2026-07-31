@@ -39,6 +39,11 @@ from index_state import (
     StageError,
     project_scan_lock,
 )
+from retrieval_projection import (
+    AVAILABLE_SUMMARY_STATUSES,
+    has_current_summary,
+    select_current_summary,
+)
 
 VERSION = "4.0.0"
 DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
@@ -275,7 +280,7 @@ class LogicIndexer:
             return "Task: Summarize source code: {source_code}"
 
     def _get_dep_context_summaries(self, file_path):
-        """Fetch dependency symbols' latest status='ok' short summary."""
+        """Fetch dependency symbols' current short summary."""
         if not self.db:
             return []
         imports_row = self.db.execute(
@@ -291,33 +296,31 @@ class LogicIndexer:
             return []
         placeholders = ','.join(['?'] * len(import_list))
         rows = self.db.execute(
-            f"""SELECT s.name,
-                      json_extract(
-                          (SELECT sv.summary FROM summary_versions sv
-                           WHERE sv.node_kind='symbol'
-                                 AND sv.node_ref = s.file_path || '::' || s.name
-                                 AND sv.status='ok'
-                           ORDER BY sv.version DESC LIMIT 1),
-                          '$.short') AS short_summary
-               FROM symbols s
-               WHERE s.file_path IN ({placeholders})""",
-            import_list
+            f"SELECT file_path, name FROM symbols "
+            f"WHERE file_path IN ({placeholders})",
+            import_list,
         ).fetchall()
-        return [(name, summary) for name, summary in rows if summary]
+        summaries = []
+        for dep_file, name in rows:
+            current = select_current_summary(
+                self.db, "symbol", f"{dep_file}::{name}"
+            )
+            if current.get("short"):
+                summaries.append((name, current["short"]))
+        return summaries
 
     def _select_dirty_symbols(self):
-        """Select symbols lacking a status='ok' summary version."""
+        """Select symbols lacking a current usable summary."""
         if not self.db:
             return []
-        return self.db.execute(
-            """SELECT s.file_path, s.name FROM symbols s
-               WHERE NOT EXISTS (
-                   SELECT 1 FROM summary_versions sv
-                   WHERE sv.node_kind='symbol'
-                         AND sv.node_ref = s.file_path || '::' || s.name
-                         AND sv.status='ok'
-               )"""
-        ).fetchall()
+        rows = self.db.execute("SELECT file_path, name FROM symbols").fetchall()
+        return [
+            (file_path, name)
+            for file_path, name in rows
+            if not has_current_summary(
+                self.db, "symbol", f"{file_path}::{name}"
+            )
+        ]
 
     def _persist_symbol_summaries(self, updates):
         """Insert status='ok' symbol summary versions.
@@ -332,29 +335,9 @@ class LogicIndexer:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
             from summarizer import write_summary_version
         except ImportError as exc:
-            print(f"Warning: summarizer unavailable ({exc}); falling back to direct INSERT.")
-            now_iso = datetime.now().isoformat(timespec='seconds')
-            rows = []
-            for summary_text, file_path, sym_name in updates:
-                node_ref = f"{file_path}::{sym_name}"
-                version_row = self.db.execute(
-                    "SELECT MAX(version) FROM summary_versions "
-                    "WHERE node_kind='symbol' AND node_ref = ?",
-                    (node_ref,)
-                ).fetchone()
-                next_version = (version_row[0] or 0) + 1
-                summary_json = json.dumps(
-                    {"short": summary_text, "full": None}, ensure_ascii=False
-                )
-                rows.append(("symbol", node_ref, next_version, summary_json, "ok", now_iso))
-            self.db.executemany(
-                "INSERT INTO summary_versions "
-                "(node_kind, node_ref, version, summary, status, created_at) "
-                "VALUES (?,?,?,?,?,?)",
-                rows
-            )
-            self.db.commit()
-            return
+            raise RuntimeError(
+                f"summarizer unavailable; summary projection cannot be updated: {exc}"
+            ) from exc
 
         for summary_text, file_path, sym_name in updates:
             node_ref = f"{file_path}::{sym_name}"
@@ -459,39 +442,28 @@ class LogicIndexer:
         self.db.commit()
 
     def _collect_propagation_candidates(self, parent_kind):
-        """Return parents with ok summary AND child_change_count > 0."""
+        """Return parents with a current summary and child_change_count > 0."""
         if not self.db:
             return []
-        return self.db.execute(
-            """SELECT cnt.node_ref, cnt.child_change_count
-               FROM node_change_counters cnt
-               WHERE cnt.node_kind = ?
-                     AND cnt.child_change_count > 0
-                     AND EXISTS (
-                         SELECT 1 FROM summary_versions sv
-                         WHERE sv.node_kind = cnt.node_kind
-                               AND sv.node_ref = cnt.node_ref
-                               AND sv.status = 'ok'
-                     )""",
+        rows = self.db.execute(
+            "SELECT node_ref, child_change_count FROM node_change_counters "
+            "WHERE node_kind = ? AND child_change_count > 0",
             (parent_kind,),
         ).fetchall()
+        return [
+            (node_ref, count)
+            for node_ref, count in rows
+            if has_current_summary(self.db, parent_kind, node_ref)
+        ]
 
     def _get_latest_ok_summary(self, node_kind, node_ref):
-        """Return parsed JSON of the latest status='ok' summary_versions row, or None."""
+        """Return the current usable summary payload, or None."""
         if not self.db:
             return None
-        row = self.db.execute(
-            "SELECT summary FROM summary_versions "
-            "WHERE node_kind = ? AND node_ref = ? AND status = 'ok' "
-            "ORDER BY version DESC LIMIT 1",
-            (node_kind, node_ref),
-        ).fetchone()
-        if not row or not row[0]:
+        current = select_current_summary(self.db, node_kind, node_ref)
+        if current.get("id") is None:
             return None
-        try:
-            return json.loads(row[0])
-        except (json.JSONDecodeError, TypeError):
-            return None
+        return {"short": current.get("short"), "full": current.get("full")}
 
     def _build_child_changes_payload(self, parent_kind, parent_ref):
         """Assemble {child_ref, old_summary, new_summary} list for judge_propagation.
@@ -523,22 +495,24 @@ class LogicIndexer:
 
         changes = []
         for child_ref in child_refs:
-            versions = self.db.execute(
-                "SELECT summary FROM summary_versions "
-                "WHERE node_kind = ? AND node_ref = ? AND status = 'ok' "
-                "ORDER BY version DESC LIMIT 2",
-                (child_kind, child_ref),
-            ).fetchall()
-            if not versions:
+            current = select_current_summary(self.db, child_kind, child_ref)
+            if current.get("id") is None:
                 continue
-            try:
-                new_summary = json.loads(versions[0][0]) if versions[0][0] else None
-            except (json.JSONDecodeError, TypeError):
-                new_summary = None
+            new_summary = {
+                "short": current.get("short"),
+                "full": current.get("full"),
+            }
+            previous_rows = self.db.execute(
+                "SELECT summary FROM summary_versions "
+                "WHERE node_kind = ? AND node_ref = ? "
+                "AND status IN ('ok', 'oversized_warn') AND version < ? "
+                "ORDER BY version DESC LIMIT 1",
+                (child_kind, child_ref, current["version"]),
+            ).fetchall()
             old_summary = None
-            if len(versions) > 1 and versions[1][0]:
+            if previous_rows and previous_rows[0][0]:
                 try:
-                    old_summary = json.loads(versions[1][0])
+                    old_summary = json.loads(previous_rows[0][0])
                 except (json.JSONDecodeError, TypeError):
                     old_summary = None
             if new_summary == old_summary:
@@ -570,7 +544,7 @@ class LogicIndexer:
             payload, status = summarizer.summarize_cluster(self.db, parent_ref, self._call_llm)
         else:
             return False
-        if payload is None or status != "ok":
+        if payload is None or status not in AVAILABLE_SUMMARY_STATUSES:
             return False
         summarizer.write_summary_version(
             self.db, parent_kind, parent_ref, payload, status

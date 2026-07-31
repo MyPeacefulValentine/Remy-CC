@@ -32,8 +32,18 @@ from index_state import (
     StageError,
     project_scan_lock,
 )
+from retrieval_projection import (
+    RETRIEVAL_SCHEMA_SQL,
+    create_projection_schema,
+    delete_file_nodes,
+    delete_node,
+    mark_current_summary_stale,
+    mark_node_and_ancestors_stale,
+    rebuild_projection,
+    refresh_node,
+)
 
-VERSION = "8.0.0"
+VERSION = "9.0.0"
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 JSON_CACHE_FILE = os.path.join(".claude", "logic_index.json")
 CONFIG_FILE = os.path.join(".claude", "logic_index_config")
@@ -169,35 +179,7 @@ CREATE INDEX IF NOT EXISTS idx_sv_lookup ON summary_versions(node_kind, node_ref
 CREATE INDEX IF NOT EXISTS idx_sv_status ON summary_versions(status, node_kind);
 CREATE INDEX IF NOT EXISTS idx_jc_created ON judge_cache(created_at);
 
-CREATE VIRTUAL TABLE IF NOT EXISTS summary_fts USING fts5(
-    node_kind UNINDEXED,
-    node_ref UNINDEXED,
-    short,
-    full,
-    tokenize='unicode61'
-);
-
-CREATE TRIGGER IF NOT EXISTS summary_fts_ai AFTER INSERT ON summary_versions
-WHEN NEW.status NOT IN ('pending', 'corrupt') BEGIN
-    INSERT INTO summary_fts(rowid, node_kind, node_ref, short, full)
-    VALUES (NEW.id, NEW.node_kind, NEW.node_ref,
-            COALESCE(json_extract(NEW.summary, '$.short'), ''),
-            COALESCE(json_extract(NEW.summary, '$.full'), ''));
-END;
-
-CREATE TRIGGER IF NOT EXISTS summary_fts_ad AFTER DELETE ON summary_versions BEGIN
-    DELETE FROM summary_fts WHERE rowid = OLD.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS summary_fts_au AFTER UPDATE ON summary_versions BEGIN
-    DELETE FROM summary_fts WHERE rowid = OLD.id;
-    INSERT INTO summary_fts(rowid, node_kind, node_ref, short, full)
-    SELECT NEW.id, NEW.node_kind, NEW.node_ref,
-           COALESCE(json_extract(NEW.summary, '$.short'), ''),
-           COALESCE(json_extract(NEW.summary, '$.full'), '')
-    WHERE NEW.status NOT IN ('pending', 'corrupt');
-END;
-"""
+""" + RETRIEVAL_SCHEMA_SQL
 
 SUMMARY_STATUS_ENUM = frozenset({'ok', 'pending', 'stale', 'oversized_warn', 'oversized_hard', 'corrupt'})
 
@@ -418,9 +400,35 @@ def _migrate_v7_to_v8(db):
         raise
 
 
+def _migrate_v8_to_v9(db):
+    """Create the current retrieval projection and retire historical-summary FTS."""
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        create_projection_schema(db)
+        rebuild_projection(db)
+        db.execute("DROP TRIGGER IF EXISTS summary_fts_ai")
+        db.execute("DROP TRIGGER IF EXISTS summary_fts_ad")
+        db.execute("DROP TRIGGER IF EXISTS summary_fts_au")
+        db.execute("DROP TABLE IF EXISTS summary_fts")
+        already = db.execute(
+            "SELECT 1 FROM migration_log WHERE from_version=? AND to_version=?",
+            ('8.0.0', '9.0.0')
+        ).fetchone()
+        if not already:
+            db.execute(
+                "INSERT INTO migration_log (from_version, to_version, applied_at) VALUES (?,?,?)",
+                ('8.0.0', '9.0.0', datetime.now().isoformat(timespec='seconds'))
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
 MIGRATION_HANDLERS = {
     ('6.0.0', '7.0.0'): _migrate_v6_to_v7,
     ('7.0.0', '8.0.0'): _migrate_v7_to_v8,
+    ('8.0.0', '9.0.0'): _migrate_v8_to_v9,
 }
 
 
@@ -647,6 +655,7 @@ class StructScanner:
                          call.get("line"), call.get("provenance"),
                          call.get("synthesized_from"), call.get("via"))
                     )
+            rebuild_projection(db)
             db.commit()
 
             keep = str(os.environ.get("MIGRATION_KEEP_JSON", "false")).lower() == "true"
@@ -784,23 +793,43 @@ class StructScanner:
         pattern_list = parser.extract_patterns(source, file_path)
         layer = self._match_file_to_layer(rel_path)
 
-        self.db.execute(
-            "INSERT OR REPLACE INTO files (path, struct_hash, language, layer, imports) VALUES (?,?,?,?,?)",
-            (rel_path, struct_hash, parser.__class__.__name__, layer, json.dumps(list(imports.keys())))
+        old_hashes = {
+            row[0]: row[1]
+            for row in self.db.execute(
+                "SELECT name, hash FROM symbols WHERE file_path = ?", (rel_path,)
+            )
+        }
+        old_symbol_refs = {f"{rel_path}::{name}" for name in old_hashes}
+        if existing:
+            mark_node_and_ancestors_stale(self.db, "file", rel_path)
+        existing_versions = {
+            row[0]: row[1]
+            for row in self.db.execute(
+                "SELECT node_ref, MAX(version) FROM summary_versions "
+                "WHERE node_kind = 'symbol' AND node_ref LIKE ? GROUP BY node_ref",
+                (f"{rel_path}::%",),
+            )
+        }
+
+        file_values = (
+            struct_hash,
+            parser.__class__.__name__,
+            layer,
+            json.dumps(list(imports.keys())),
+            rel_path,
         )
-
-        old_hashes = {}
-        for row in self.db.execute(
-            "SELECT name, hash FROM symbols WHERE file_path = ?", (rel_path,)
-        ):
-            old_hashes[row[0]] = row[1]
-
-        existing_versions = {}
-        for row in self.db.execute(
-            "SELECT node_ref, MAX(version) FROM summary_versions WHERE node_kind = 'symbol' AND node_ref LIKE ? GROUP BY node_ref",
-            (f"{rel_path}::%",)
-        ):
-            existing_versions[row[0]] = row[1]
+        if existing:
+            self.db.execute(
+                "UPDATE files SET struct_hash=?, language=?, layer=?, imports=? "
+                "WHERE path=?",
+                file_values,
+            )
+        else:
+            self.db.execute(
+                "INSERT INTO files (path, struct_hash, language, layer, imports) "
+                "VALUES (?,?,?,?,?)",
+                (rel_path,) + file_values[:-1],
+            )
 
         self.db.execute("DELETE FROM symbols WHERE file_path = ?", (rel_path,))
         self.db.execute("DELETE FROM symbol_occurrences WHERE file_path = ?", (rel_path,))
@@ -821,6 +850,7 @@ class StructScanner:
             )
 
         now_iso = datetime.now().isoformat(timespec='seconds')
+        new_symbol_refs = set()
         for sym_info in symbols:
             stripped = self._strip_comments(sym_info.source_segment, parser)
             symbol_hash = self._calculate_symbol_hash(stripped)
@@ -836,10 +866,15 @@ class StructScanner:
             )
 
             node_ref = f"{rel_path}::{sym_info.name}"
+            new_symbol_refs.add(node_ref)
             hash_unchanged = old_hashes.get(sym_info.name) == symbol_hash
             has_existing_version = node_ref in existing_versions
             if hash_unchanged and has_existing_version:
+                refresh_node(self.db, "symbol", node_ref)
                 continue
+
+            if has_existing_version:
+                mark_node_and_ancestors_stale(self.db, "symbol", node_ref)
 
             initial_summary = None
             if sym_info.docstring:
@@ -856,6 +891,11 @@ class StructScanner:
                     "INSERT INTO summary_versions (node_kind, node_ref, version, summary, status, created_at) VALUES (?,?,?,?,?,?)",
                     ('symbol', node_ref, new_version, payload, 'ok', now_iso)
                 )
+            refresh_node(self.db, "symbol", node_ref)
+
+        for removed_ref in old_symbol_refs - new_symbol_refs:
+            delete_node(self.db, "symbol", removed_ref)
+        refresh_node(self.db, "file", rel_path)
 
         seen_edges = {}
         for e in call_edges:
@@ -996,6 +1036,19 @@ class StructScanner:
             key = parts[0] if len(parts) > 1 else "_root"
             groups.setdefault(key, []).append(p)
 
+        existing_cluster_members = {
+            name: frozenset(
+                row[0]
+                for row in self.db.execute(
+                    "SELECT cm.file_path FROM cluster_members cm "
+                    "JOIN clusters c ON c.id = cm.cluster_id WHERE c.name = ?",
+                    (name,),
+                ).fetchall()
+            )
+            for (name,) in self.db.execute("SELECT name FROM clusters").fetchall()
+        }
+        existing_cluster_refs = set(existing_cluster_members)
+
         self.db.execute("DELETE FROM cluster_members")
         self.db.execute("DELETE FROM clusters")
 
@@ -1048,13 +1101,18 @@ class StructScanner:
                     "INSERT OR IGNORE INTO node_change_counters (node_kind, node_ref, child_change_count, leaf_descendant_count) VALUES (?,?,?,?)",
                     ('cluster', cluster_name, 0, 0)
                 )
+                if existing_cluster_members.get(cluster_name) != frozenset(cluster_files):
+                    mark_current_summary_stale(self.db, "cluster", cluster_name)
+                refresh_node(self.db, "cluster", cluster_name)
 
-        existing_cluster_refs = {r[0] for r in self.db.execute("SELECT name FROM clusters")}
+        current_cluster_refs = {r[0] for r in self.db.execute("SELECT name FROM clusters")}
+        for removed_ref in existing_cluster_refs - current_cluster_refs:
+            delete_node(self.db, "cluster", removed_ref)
         stale = self.db.execute(
             "SELECT node_ref FROM node_change_counters WHERE node_kind = 'cluster'"
         ).fetchall()
         for (ref,) in stale:
-            if ref not in existing_cluster_refs:
+            if ref not in current_cluster_refs:
                 self.db.execute(
                     "DELETE FROM node_change_counters WHERE node_kind = 'cluster' AND node_ref = ?",
                     (ref,)
@@ -1110,6 +1168,15 @@ class StructScanner:
         db_paths = {r[0] for r in self.db.execute("SELECT path FROM files")}
         deleted = db_paths - discovered_paths
         if deleted:
+            for path in deleted:
+                symbol_refs = [
+                    row[0]
+                    for row in self.db.execute(
+                        "SELECT file_path || '::' || name FROM symbols WHERE file_path = ?",
+                        (path,),
+                    ).fetchall()
+                ]
+                delete_file_nodes(self.db, path, symbol_refs)
             self.db.executemany("DELETE FROM files WHERE path = ?", [(p,) for p in deleted])
             self.db.commit()
 
@@ -1170,6 +1237,14 @@ class StructScanner:
             discovered_paths.add(rel)
 
             if not os.path.exists(full_path):
+                symbol_refs = [
+                    row[0]
+                    for row in self.db.execute(
+                        "SELECT file_path || '::' || name FROM symbols WHERE file_path = ?",
+                        (rel,),
+                    ).fetchall()
+                ]
+                delete_file_nodes(self.db, rel, symbol_refs)
                 self.db.execute("DELETE FROM files WHERE path = ?", (rel,))
                 successful_paths.add(rel)
                 deleted_paths.add(rel)
