@@ -57,6 +57,8 @@ Stage 2: LLM Summarization (API-dependent, manual invocation)
 └──────────────────────────────────────────────────────────┘
 ```
 
+The structural and semantic writers share a project-level process lock. Structural scans return `success`, `partial`, or `failed` and map these states to exit codes `0`, `2`, and `1`. Dirty paths move through a crash-recoverable processing snapshot; only paths covered by a successful structural scan and global post-pass are acknowledged.
+
 ## Supported Languages
 
 | Language | Extensions | Parsing Method | Call Graph |

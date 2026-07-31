@@ -140,28 +140,36 @@ def generate_language_md():
 
 def run_struct_scan(cwd):
     if not os.path.exists(STRUCT_SCAN_SCRIPT):
-        return
+        return None
     db_file = os.path.join(cwd, ".claude", "logic_index.db")
     json_file = os.path.join(cwd, ".claude", "logic_index.json")
     if not os.path.exists(db_file) and not os.path.exists(json_file):
-        return
+        return None
     try:
         scan_timeout = int(os.environ.get("STRUCT_SCAN_TIMEOUT", "60"))
+        lock_timeout = float(os.environ.get("INDEX_SCAN_LOCK_TIMEOUT", "30"))
     except ValueError:
         scan_timeout = 60
+        lock_timeout = 30.0
+    total_timeout = max(1.0, scan_timeout + lock_timeout + 5.0)
     try:
-        subprocess.run(
-            [sys.executable, STRUCT_SCAN_SCRIPT, "--cwd", cwd],
+        completed = subprocess.run(
+            [sys.executable, STRUCT_SCAN_SCRIPT, "--cwd", cwd,
+             "--lock-timeout", str(lock_timeout), "--consume-dirty"],
             cwd=cwd,
-            check=True,
+            check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
-            timeout=scan_timeout
+            timeout=total_timeout
         )
-    except subprocess.CalledProcessError as e:
-        print(f"[StructScan] Failed: {e.stderr.decode('utf-8', errors='replace')}", file=sys.stderr)
+        if completed.returncode == 2:
+            print(f"[StructScan] Partial: {completed.stderr.decode('utf-8', errors='replace')}", file=sys.stderr)
+        elif completed.returncode != 0:
+            print(f"[StructScan] Failed: {completed.stderr.decode('utf-8', errors='replace')}", file=sys.stderr)
+        return completed.returncode
     except Exception as e:
         print(f"[StructScan] Unexpected error: {e}", file=sys.stderr)
+        return 1
 
 
 def maybe_launch_scope_ui(cwd, mcp_minimal=False):
@@ -191,6 +199,8 @@ def maybe_launch_scope_ui(cwd, mcp_minimal=False):
         try:
             import importlib.util
             spec = importlib.util.spec_from_file_location("injector", injector_path)
+            if spec is None or spec.loader is None:
+                return
             _inj = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(_inj)
             new_files = _inj.detect_new_logic_files(cwd)
@@ -246,9 +256,12 @@ def update_tree(cwd, max_depth=None):
         print(f"[TreeUpdater] Unexpected error: {e}", file=sys.stderr)
 
 def main():
-    # Force UTF-8
-    sys.stdin.reconfigure(encoding='utf-8')
-    sys.stdout.reconfigure(encoding='utf-8')
+    stdin_reconfigure = getattr(sys.stdin, "reconfigure", None)
+    if stdin_reconfigure is not None:
+        stdin_reconfigure(encoding="utf-8")
+    stdout_reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if stdout_reconfigure is not None:
+        stdout_reconfigure(encoding="utf-8")
 
     try:
         if sys.stdin.isatty():

@@ -24,6 +24,14 @@ from parsers.c_cpp_parser import CCppParser
 from parsers.ts_parser import TSParser
 from constants import DB_BUSY_TIMEOUT_MS
 from symbol_selection import select_symbols
+from index_state import (
+    DirtyQueue,
+    LockTimeoutError,
+    RunStatus,
+    ScanResult,
+    StageError,
+    project_scan_lock,
+)
 
 VERSION = "8.0.0"
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
@@ -1054,9 +1062,26 @@ class StructScanner:
 
         self.db.commit()
 
+    def _scan_one_file(self, full_path, parser, rel_path):
+        savepoint = "scan_file"
+        self.db.execute(f"SAVEPOINT {savepoint}")
+        try:
+            result = self.scan_file(full_path, parser)
+            if result is None:
+                raise OSError(f"Unable to read source file: {rel_path}")
+            self.db.execute(f"RELEASE SAVEPOINT {savepoint}")
+            return result, None
+        except Exception as exc:
+            self.db.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            self.db.execute(f"RELEASE SAVEPOINT {savepoint}")
+            return None, StageError("file_scan", str(exc), rel_path)
+
     def scan_all(self):
         batch_size = _env_int("SCAN_COMMIT_BATCH_SIZE", 100)
-        scanned_paths = set()
+        discovered_paths = set()
+        successful_paths = set()
+        failed_paths = set()
+        errors = []
         count = 0
 
         for root, dirs, files in os.walk(self.root_dir):
@@ -1068,106 +1093,205 @@ class StructScanner:
                 parser = self._get_parser_for_file(file)
                 if not parser:
                     continue
-                result = self.scan_file(full_path, parser)
-                if result:
-                    scanned_paths.add(result)
-                    count += 1
-                    if count % batch_size == 0:
-                        self.db.commit()
+                rel_path = os.path.relpath(full_path, self.root_dir).replace(os.sep, '/')
+                discovered_paths.add(rel_path)
+                result, error = self._scan_one_file(full_path, parser, rel_path)
+                if error is not None:
+                    failed_paths.add(rel_path)
+                    errors.append(error)
+                    continue
+                successful_paths.add(result)
+                count += 1
+                if count % batch_size == 0:
+                    self.db.commit()
 
         self.db.commit()
 
         db_paths = {r[0] for r in self.db.execute("SELECT path FROM files")}
-        deleted = db_paths - scanned_paths
+        deleted = db_paths - discovered_paths
         if deleted:
             self.db.executemany("DELETE FROM files WHERE path = ?", [(p,) for p in deleted])
             self.db.commit()
 
-        self._resolve_call_edges()
-        self._run_synthesizers()
-        self._compute_file_kinds()
-        self._detect_clusters()
+        postprocess_complete = True
+        for stage, operation in (
+            ("resolve_edges", self._resolve_call_edges),
+            ("synthesizers", self._run_synthesizers),
+            ("file_kinds", self._compute_file_kinds),
+            ("clusters", self._detect_clusters),
+        ):
+            try:
+                operation()
+            except Exception as exc:
+                self.db.rollback()
+                errors.append(StageError(stage, str(exc)))
+                postprocess_complete = False
+                break
 
-        self.db.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES ('last_updated', ?)",
-            (datetime.now().isoformat(timespec='seconds'),)
-        )
-        self.db.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES ('file_count', ?)",
-            (str(len(scanned_paths)),)
-        )
-        head, _ = _resolve_git_head(self.root_dir, self.db)
-        if head:
+        if postprocess_complete:
             self.db.execute(
-                "INSERT OR REPLACE INTO meta (key, value) VALUES ('source_commit', ?)",
-                (head,)
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('last_updated', ?)",
+                (datetime.now().isoformat(timespec='seconds'),)
             )
-        self.db.commit()
+            self.db.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('file_count', ?)",
+                (str(len(discovered_paths)),)
+            )
+            head, _ = _resolve_git_head(self.root_dir, self.db)
+            if head:
+                self.db.execute(
+                    "INSERT OR REPLACE INTO meta (key, value) VALUES ('source_commit', ?)",
+                    (head,)
+                )
+            self.db.commit()
+
+        return ScanResult.from_parts(
+            discovered_paths=discovered_paths,
+            successful_paths=successful_paths,
+            failed_paths=failed_paths,
+            deleted_paths=deleted,
+            errors=errors,
+            postprocess_complete=postprocess_complete,
+        )
 
     def scan_files(self, file_paths):
+        discovered_paths = set()
+        successful_paths = set()
+        failed_paths = set()
+        deleted_paths = set()
+        errors = []
         scanned_rel_paths = []
         for file_path in file_paths:
             if os.path.isabs(file_path):
                 full_path = file_path
             else:
                 full_path = os.path.join(self.root_dir, file_path)
+            rel = os.path.relpath(full_path, self.root_dir).replace(os.sep, '/')
+            discovered_paths.add(rel)
 
             if not os.path.exists(full_path):
-                rel = os.path.relpath(full_path, self.root_dir).replace(os.sep, '/')
                 self.db.execute("DELETE FROM files WHERE path = ?", (rel,))
+                successful_paths.add(rel)
+                deleted_paths.add(rel)
                 continue
 
             parser = self._get_parser_for_file(os.path.basename(full_path))
             if not parser:
+                successful_paths.add(rel)
                 continue
 
-            result = self.scan_file(full_path, parser)
-            if result:
-                scanned_rel_paths.append(result)
+            result, error = self._scan_one_file(full_path, parser, rel)
+            if error is not None:
+                failed_paths.add(rel)
+                errors.append(error)
+                continue
+            successful_paths.add(result)
+            scanned_rel_paths.append(result)
 
         self.db.commit()
-        self._purge_heuristic_edges(scanned_rel_paths)
+        postprocess_complete = True
+        try:
+            self._purge_heuristic_edges(scanned_rel_paths)
 
-        if scanned_rel_paths:
-            placeholders = ','.join(['?'] * len(scanned_rel_paths))
-            affected_edges = self.db.execute(
-                f"""SELECT e.id FROM edges e
-                    JOIN files f ON e.source_file = f.path
-                    WHERE e.callee_qualified IS NOT NULL
-                    AND e.callee_file IN ({placeholders})""",
-                scanned_rel_paths
-            ).fetchall()
-            if affected_edges:
-                edge_ids = [r[0] for r in affected_edges]
-                id_placeholders = ','.join(['?'] * len(edge_ids))
-                self.db.execute(
-                    f"UPDATE edges SET callee_qualified = NULL, callee_file = NULL WHERE id IN ({id_placeholders})",
-                    edge_ids
-                )
-                self.db.execute(
-                    f"DELETE FROM edge_candidates WHERE edge_id IN ({id_placeholders})",
-                    edge_ids
-                )
+            if scanned_rel_paths:
+                placeholders = ','.join(['?'] * len(scanned_rel_paths))
+                affected_edges = self.db.execute(
+                    f"""SELECT e.id FROM edges e
+                        JOIN files f ON e.source_file = f.path
+                        WHERE e.callee_qualified IS NOT NULL
+                        AND e.callee_file IN ({placeholders})""",
+                    scanned_rel_paths
+                ).fetchall()
+                if affected_edges:
+                    edge_ids = [r[0] for r in affected_edges]
+                    id_placeholders = ','.join(['?'] * len(edge_ids))
+                    self.db.execute(
+                        f"UPDATE edges SET callee_qualified = NULL, callee_file = NULL WHERE id IN ({id_placeholders})",
+                        edge_ids
+                    )
+                    self.db.execute(
+                        f"DELETE FROM edge_candidates WHERE edge_id IN ({id_placeholders})",
+                        edge_ids
+                    )
 
-        self._resolve_call_edges()
-        self._compute_file_kinds()
-        self.db.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES ('last_updated', ?)",
-            (datetime.now().isoformat(timespec='seconds'),)
+            self._resolve_call_edges()
+            self._compute_file_kinds()
+            self.db.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('last_updated', ?)",
+                (datetime.now().isoformat(timespec='seconds'),)
+            )
+            self.db.commit()
+        except Exception as exc:
+            self.db.rollback()
+            errors.append(StageError("incremental_postprocess", str(exc)))
+            postprocess_complete = False
+
+        return ScanResult.from_parts(
+            discovered_paths=discovered_paths,
+            successful_paths=successful_paths,
+            failed_paths=failed_paths,
+            deleted_paths=deleted_paths,
+            errors=errors,
+            postprocess_complete=postprocess_complete,
         )
-        self.db.commit()
 
 
-def scan_all(root_dir):
-    scanner = StructScanner(root_dir)
-    scanner.scan_all()
-    scanner.db.close()
+def scan_all(root_dir, acquire_lock=True, lock_timeout=None, manage_dirty=False):
+    lock = project_scan_lock(root_dir, timeout=lock_timeout) if acquire_lock else None
+    queue = DirtyQueue(root_dir) if manage_dirty else None
+    claim = None
+    result = None
+    try:
+        if lock is not None:
+            lock.acquire()
+        if queue is not None:
+            claim = queue.claim()
+        scanner = StructScanner(root_dir)
+        try:
+            result = scanner.scan_all()
+            return result
+        finally:
+            scanner.db.close()
+    finally:
+        if queue is not None and claim is not None:
+            if result is not None and result.postprocess_complete:
+                acknowledged = set(result.successful_paths) | set(result.deleted_paths)
+                queue.finish(claim, acknowledged)
+            else:
+                queue.finish(claim, retry_all=True)
+        if lock is not None:
+            lock.release()
 
 
-def scan_files(root_dir, file_paths):
-    scanner = StructScanner(root_dir)
-    scanner.scan_files(file_paths)
-    scanner.db.close()
+def scan_files(root_dir, file_paths, acquire_lock=True, lock_timeout=None, manage_dirty=False):
+    lock = project_scan_lock(root_dir, timeout=lock_timeout) if acquire_lock else None
+    queue = DirtyQueue(root_dir) if manage_dirty else None
+    claim = None
+    result = None
+    try:
+        if lock is not None:
+            lock.acquire()
+        if queue is not None:
+            claim = queue.claim(file_paths)
+            scan_targets = claim.paths
+        else:
+            scan_targets = file_paths
+        if not scan_targets:
+            return ScanResult.from_parts()
+        scanner = StructScanner(root_dir)
+        try:
+            result = scanner.scan_files(scan_targets)
+            return result
+        finally:
+            scanner.db.close()
+    finally:
+        if queue is not None and claim is not None:
+            if result is not None and result.postprocess_complete:
+                queue.finish(claim, result.successful_paths)
+            else:
+                queue.finish(claim, retry_all=True)
+        if lock is not None:
+            lock.release()
 
 
 if __name__ == "__main__":
@@ -1179,9 +1303,30 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Structural scan for logic_index.db")
     ap.add_argument("--files", nargs="*", help="Incremental: only scan these files")
     ap.add_argument("--cwd", default=os.getcwd(), help="Project root directory")
+    ap.add_argument("--lock-timeout", type=float, default=None,
+                    help="Override project scan lock wait in seconds")
+    ap.add_argument("--consume-dirty", action="store_true",
+                    help="Claim and acknowledge matching dirty queue entries")
     args = ap.parse_args()
 
-    if args.files:
-        scan_files(args.cwd, args.files)
-    else:
-        scan_all(args.cwd)
+    try:
+        if args.files:
+            result = scan_files(
+                args.cwd, args.files, lock_timeout=args.lock_timeout,
+                manage_dirty=args.consume_dirty,
+            )
+        else:
+            result = scan_all(
+                args.cwd, lock_timeout=args.lock_timeout,
+                manage_dirty=args.consume_dirty,
+            )
+    except LockTimeoutError as exc:
+        print(f"Structural scan failed: {exc}", file=sys.stderr)
+        sys.exit(RunStatus.FAILED.exit_code)
+
+    for error in result.errors:
+        location = f" ({error.path})" if error.path else ""
+        print(f"[{error.stage}]{location} {error.message}", file=sys.stderr)
+    print(f"STRUCT_SCAN_RESULT status={result.status.value} "
+          f"successful={len(result.successful_paths)} failed={len(result.failed_paths)}")
+    sys.exit(result.exit_code)

@@ -9,15 +9,24 @@ import sys
 import json
 import os
 
-DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
-SOURCE_EXTENSIONS = frozenset((
-    ".py", ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx", ".ts", ".tsx",
-))
+
+def _load_index_state():
+    skill_dir = os.path.join(os.path.expanduser("~"), ".claude", "skills", "remy-index")
+    if not os.path.isdir(skill_dir):
+        skill_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills", "remy-index")
+    if skill_dir not in sys.path:
+        sys.path.insert(0, skill_dir)
+    from index_state import DirtyQueue
+    return DirtyQueue
 
 
 def main():
-    sys.stdin.reconfigure(encoding='utf-8')
-    sys.stdout.reconfigure(encoding='utf-8')
+    stdin_reconfigure = getattr(sys.stdin, "reconfigure", None)
+    if stdin_reconfigure is not None:
+        stdin_reconfigure(encoding="utf-8")
+    stdout_reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if stdout_reconfigure is not None:
+        stdout_reconfigure(encoding="utf-8")
 
     try:
         if sys.stdin.isatty():
@@ -35,23 +44,8 @@ def main():
         if not file_path:
             sys.exit(0)
 
-        _, ext = os.path.splitext(file_path)
-        if ext.lower() not in SOURCE_EXTENSIONS:
-            sys.exit(0)
-
-        if os.path.isabs(file_path):
-            try:
-                rel = os.path.relpath(file_path, cwd)
-            except ValueError:
-                sys.exit(0)
-            rel = rel.replace(os.sep, "/")
-        else:
-            rel = file_path.replace(os.sep, "/")
-
-        dirty_path = os.path.join(cwd, DIRTY_FILE)
-        os.makedirs(os.path.dirname(dirty_path), exist_ok=True)
-        with open(dirty_path, 'a', encoding='utf-8') as f:
-            f.write(rel + '\n')
+        DirtyQueue = _load_index_state()
+        DirtyQueue(cwd).record(file_path)
 
         sys.exit(0)
 

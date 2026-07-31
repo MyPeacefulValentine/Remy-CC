@@ -11,6 +11,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skills", "remy-index"))
 from struct_scan import StructScanner, scan_all, scan_files, tokenize_symbol
+from index_state import DirtyQueue, StageError
 from parsers.base import SymbolInfo
 from symbol_selection import (
     DUPLICATE_DEFINITION,
@@ -346,6 +347,58 @@ class TestScanFile:
             scanner.db.close()
 
 
+    def test_scan_file_failure_does_not_delete_existing_row(self, temp_project, monkeypatch):
+        scanner = StructScanner(str(temp_project))
+        scanner.scan_all()
+        original = scanner.db.execute(
+            "SELECT struct_hash FROM files WHERE path='main.py'"
+        ).fetchone()
+        parser = scanner._get_parser_for_file("main.py")
+
+        def fail_parse(*_args, **_kwargs):
+            raise RuntimeError("simulated parser failure")
+
+        monkeypatch.setattr(parser, "parse_symbols", fail_parse)
+        (temp_project / "main.py").write_text("def changed():\n    return 2\n", encoding="utf-8")
+        result = scanner.scan_all()
+        row = scanner.db.execute(
+            "SELECT struct_hash FROM files WHERE path='main.py'"
+        ).fetchone()
+        scanner.db.close()
+        assert result.status.value == "partial"
+        assert "main.py" in result.failed_paths
+        assert row == original
+
+    def test_scan_files_returns_structured_result(self, temp_project):
+        scanner = StructScanner(str(temp_project))
+        result = scanner.scan_files(["main.py"])
+        scanner.db.close()
+        assert result.status.value == "success"
+        assert result.successful_paths == ("main.py",)
+    def test_scan_files_failure_requeues_only_failed_path(self, tmp_path, monkeypatch):
+        (tmp_path / ".claude").mkdir()
+        for name in ("a.py", "b.py"):
+            (tmp_path / name).write_text(f"def {name[0]}():\n    return 1\n", encoding="utf-8")
+        scanner = StructScanner(str(tmp_path))
+        scanner.scan_all()
+        scanner.db.close()
+        queue = DirtyQueue(str(tmp_path))
+        queue.record("a.py")
+        queue.record("b.py")
+
+        original = StructScanner._scan_one_file
+
+        def selective_failure(self, full_path, parser, rel_path):
+            if rel_path == "b.py":
+                return None, StageError("file_scan", "simulated", rel_path)
+            return original(self, full_path, parser, rel_path)
+
+        monkeypatch.setattr(StructScanner, "_scan_one_file", selective_failure)
+        result = scan_files(str(tmp_path), ["a.py", "b.py"], manage_dirty=True)
+        assert result.status.value == "partial"
+        assert queue.peek() == {"b.py"}
+
+
 class TestResolveCallEdges:
     def test_same_file_priority(self, scanner, temp_project):
         scanner.scan_all()
@@ -559,7 +612,7 @@ class TestModuleLevelApi:
 
     def test_scan_files_function(self, temp_project):
         scan_all(str(temp_project))
-        scan_files(str(temp_project), ["src/main.py"])
+        scan_files(str(temp_project), ["src/main.py"], manage_dirty=False)
         db = sqlite3.connect(str(temp_project / ".claude" / "logic_index.db"))
         count = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
         db.close()

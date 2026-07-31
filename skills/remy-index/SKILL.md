@@ -42,7 +42,10 @@ You MUST execute the following steps strictly in order.
     ```bash
     python "~/.claude/skills/remy-index/run.py"
     ```
-3.  Wait for completion.
+3.  Wait for completion and inspect the exit code:
+    - `0` (`success`): continue normally.
+    - `2` (`partial`): report the incomplete stages, then continue to Phase 3 so any bootstrap confirmation marker is still handled.
+    - `1` (`failed`): stop. Do not run injection; dirty paths remain queued for retry.
 
 ### Phase 3: Hierarchical Bootstrap Confirmation (Trigger: run.py stdout contains BOOTSTRAP_PENDING_CONFIRMATION)
 

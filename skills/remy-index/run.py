@@ -31,6 +31,14 @@ from parsers.ts_parser import TSParser
 from struct_scan import StructScanner
 from symbol_selection import select_symbols
 from constants import DEFAULT_MAX_WORKERS
+from index_state import (
+    DirtyQueue,
+    LockTimeoutError,
+    RunResult,
+    RunStatus,
+    StageError,
+    project_scan_lock,
+)
 
 VERSION = "4.0.0"
 DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
@@ -96,6 +104,7 @@ class LogicIndexer:
         self._load_config()
         self.db = None
         self.dirty_nodes = []
+        self.summary_errors = []
 
         self.parsers = [PythonParser(), CCppParser(), TSParser()]
         self._extension_map = {}
@@ -542,15 +551,15 @@ class LogicIndexer:
         return changes
 
     def _rewrite_parent_summary(self, parent_kind, parent_ref):
-        """Regenerate parent summary via summarizer and persist as a new version."""
+        """Regenerate a parent summary and return whether an ok version was written."""
         if not self.db:
-            return None
+            return False
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
             import summarizer
         except ImportError as exc:
             print(f"Warning: summarizer unavailable ({exc}); cannot rewrite {parent_kind} {parent_ref}.")
-            return None
+            return False
         if parent_kind == "file":
             row = self.db.execute(
                 "SELECT kind_hint FROM files WHERE path = ?", (parent_ref,)
@@ -560,12 +569,13 @@ class LogicIndexer:
         elif parent_kind == "cluster":
             payload, status = summarizer.summarize_cluster(self.db, parent_ref, self._call_llm)
         else:
-            return None
-        if payload is None and status == "pending":
-            return None
-        return summarizer.write_summary_version(
+            return False
+        if payload is None or status != "ok":
+            return False
+        summarizer.write_summary_version(
             self.db, parent_kind, parent_ref, payload, status
         )
+        return True
 
     def _run_propagation_pass(self):
         """Run propagation judgment for file then cluster level.
@@ -588,6 +598,7 @@ class LogicIndexer:
         stats = {
             "file_force": 0, "file_propagate": 0, "file_skip": 0,
             "cluster_force": 0, "cluster_propagate": 0, "cluster_skip": 0,
+            "errors": 0,
         }
         for parent_kind in ("file", "cluster"):
             candidates = self._collect_propagation_candidates(parent_kind)
@@ -595,9 +606,12 @@ class LogicIndexer:
                 if self.circuit_open:
                     break
                 if self._force_recompute_check(parent_kind, parent_ref):
-                    self._rewrite_parent_summary(parent_kind, parent_ref)
-                    self._zero_counter(parent_kind, parent_ref, mark_force=True)
-                    stats[f"{parent_kind}_force"] += 1
+                    if self._rewrite_parent_summary(parent_kind, parent_ref):
+                        self._zero_counter(parent_kind, parent_ref, mark_force=True)
+                        stats[f"{parent_kind}_force"] += 1
+                    else:
+                        stats[f"{parent_kind}_skip"] += 1
+                        stats["errors"] += 1
                     continue
                 parent_prev = self._get_latest_ok_summary(parent_kind, parent_ref)
                 child_changes = self._build_child_changes_payload(parent_kind, parent_ref)
@@ -612,11 +626,15 @@ class LogicIndexer:
                 except Exception as exc:
                     print(f"Error judging {parent_kind} {parent_ref}: {exc}")
                     stats[f"{parent_kind}_skip"] += 1
+                    stats["errors"] += 1
                     continue
                 if verdict.get("propagate"):
-                    self._rewrite_parent_summary(parent_kind, parent_ref)
-                    self._zero_counter(parent_kind, parent_ref)
-                    stats[f"{parent_kind}_propagate"] += 1
+                    if self._rewrite_parent_summary(parent_kind, parent_ref):
+                        self._zero_counter(parent_kind, parent_ref)
+                        stats[f"{parent_kind}_propagate"] += 1
+                    else:
+                        stats[f"{parent_kind}_skip"] += 1
+                        stats["errors"] += 1
                 else:
                     stats[f"{parent_kind}_skip"] += 1
 
@@ -661,7 +679,9 @@ class LogicIndexer:
         try:
             res = self._call_llm(prompt)
             if isinstance(res, str) and res.startswith("Error:"):
-                print(f"API Error for {file_path}: {res}")
+                message = f"API Error for {file_path}: {res}"
+                print(message)
+                self.summary_errors.append(StageError("symbol_summary", message, file_path))
                 return
 
             summaries = json.loads(res)
@@ -677,7 +697,9 @@ class LogicIndexer:
             for symbol, segment in items:
                 self._run_atomic_task(symbol, segment, context_summaries, parser)
         except Exception as e:
-            print(f"Error parsing batch response for {file_path}: {e}")
+            message = f"Error parsing batch response for {file_path}: {e}"
+            print(message)
+            self.summary_errors.append(StageError("symbol_summary", message, file_path))
 
     def _run_atomic_task(self, symbol, segment, context_summaries, parser):
         """Runs a single symbol task (Atomic Mode)."""
@@ -692,8 +714,11 @@ class LogicIndexer:
             res = self._call_llm(prompt)
             data = json.loads(res)
             symbol['summary'] = data[0]['summary'] if isinstance(data, list) else data['summary']
-        except Exception:
-            symbol['summary'] = "Error generating summary (Atomic fallback failed)"
+        except Exception as exc:
+            symbol['summary'] = None
+            self.summary_errors.append(
+                StageError("symbol_summary", str(exc), symbol.get("name"))
+            )
 
     def process_llm_queue(self):
         """Process dirty nodes grouped by file to minimize API calls."""
@@ -738,11 +763,14 @@ class LogicIndexer:
                         print(".", end="", flush=True)
                     except FatalError as e:
                         print(f"\n{e}")
+                        self.summary_errors.append(StageError("symbol_summary", str(e)))
                         self.circuit_open = True
                         executor.shutdown(wait=False, cancel_futures=True)
                         break
                     except Exception as e:
-                        print(f"Error processing file batch: {e}")
+                        message = f"Error processing file batch: {e}"
+                        print(message)
+                        self.summary_errors.append(StageError("symbol_summary", message))
             except KeyboardInterrupt:
                 print("\nInterrupted by user. Shutting down...")
                 executor.shutdown(wait=False, cancel_futures=True)
@@ -750,15 +778,31 @@ class LogicIndexer:
 
     def run(self):
         print("Scanning codebase...")
+        errors = []
+        scan_result = None
+        symbol_requested = 0
+        symbol_completed = 0
+        file_requested = 0
+        file_completed = 0
+        cluster_requested = 0
+        cluster_completed = 0
+        queue = DirtyQueue(self.root_dir)
+        claim = None
+        lock = project_scan_lock(self.root_dir)
 
         try:
+            lock.acquire()
+            claim = queue.claim()
             scanner = StructScanner(self.root_dir)
-            scanner.scan_all()
+            scan_result = scanner.scan_all()
             self.db = scanner.db
+            errors.extend(scan_result.errors)
+            if scan_result.status == RunStatus.FAILED:
+                return RunResult(RunStatus.FAILED, scan=scan_result, errors=tuple(errors))
             print("Structural scan complete.", flush=True)
 
             dirty_rows = self._select_dirty_symbols()
-
+            symbol_requested = len(dirty_rows)
             dirty_by_file = {}
             for fpath, sym_name in dirty_rows:
                 dirty_by_file.setdefault(fpath, []).append(sym_name)
@@ -768,14 +812,15 @@ class LogicIndexer:
                 full_path = os.path.join(self.root_dir, path)
                 parser = self._get_parser_for_file(os.path.basename(path))
                 if not parser:
+                    errors.append(StageError("symbol_summary", "No parser available", path))
                     continue
                 try:
                     with open(full_path, 'r', encoding='utf-8') as f:
                         source = f.read()
-                except Exception:
+                    selection = select_symbols(parser.parse_symbols(source, full_path))
+                except Exception as exc:
+                    errors.append(StageError("symbol_summary", str(exc), path))
                     continue
-                parsed = parser.parse_symbols(source, full_path)
-                selection = select_symbols(parsed)
                 seg_map = {
                     symbol.name: symbol.source_segment
                     for symbol in selection.canonical_symbols
@@ -785,51 +830,105 @@ class LogicIndexer:
                     if segment:
                         sym_dict = {"name": sym_name, "summary": None}
                         self.dirty_nodes.append((path, sym_dict, segment, parser))
+                    else:
+                        errors.append(StageError("symbol_summary", "Canonical source segment unavailable", f"{path}::{sym_name}"))
 
             if self.dirty_nodes:
                 if not self.api_key:
-                    print("Warning: OPENAI_API_KEY not found. Skipping LLM generation.")
+                    message = "OPENAI_API_KEY not found; symbol summaries remain pending."
+                    print(f"Warning: {message}")
+                    errors.append(StageError("symbol_summary", message))
                 else:
                     print(f"Symbol layer: dispatching {len(self.dirty_nodes)} segment(s) to LLM (max_workers={self.max_workers})...", flush=True)
                     self.process_llm_queue()
+                    errors.extend(self.summary_errors)
 
-                    updates = [(sym["summary"], path, sym["name"])
-                               for path, sym, _seg, _p in self.dirty_nodes
-                               if sym.get("summary")]
+                    updates = [
+                        (sym["summary"], path, sym["name"])
+                        for path, sym, _segment, _parser in self.dirty_nodes
+                        if sym.get("summary")
+                    ]
                     if updates:
                         self._persist_symbol_summaries(updates)
+                    symbol_completed = len(updates)
+                    if symbol_completed < symbol_requested:
+                        errors.append(StageError(
+                            "symbol_summary",
+                            f"Completed {symbol_completed} of {symbol_requested} requested summaries",
+                        ))
                     print(f"\nSymbol layer: persisted {len(updates)} summaries.", flush=True)
             else:
                 print("Symbol layer: no dirty symbols, skipping LLM phase.", flush=True)
 
-            self._run_hierarchical_bootstrap()
-            self._run_propagation_pass()
+            bootstrap_result = self._run_hierarchical_bootstrap()
+            if bootstrap_result:
+                file_requested = bootstrap_result.get("file_requested", 0)
+                file_completed = bootstrap_result.get("file_done", 0)
+                cluster_requested = bootstrap_result.get("cluster_requested", 0)
+                cluster_completed = bootstrap_result.get("cluster_done", 0)
+                if bootstrap_result.get("file_failed", 0) or bootstrap_result.get("cluster_failed", 0):
+                    errors.append(StageError("hierarchical_summary", "One or more requested summaries remain incomplete"))
+            elif self.db and not self.api_key:
+                from bootstrap import _pending_clusters, _pending_files
+                pending_files = len(_pending_files(self.db))
+                pending_clusters = len(_pending_clusters(self.db))
+                if pending_files or pending_clusters:
+                    file_requested = pending_files
+                    cluster_requested = pending_clusters
+                    errors.append(StageError(
+                        "hierarchical_summary",
+                        "Auto bootstrap could not run without OPENAI_API_KEY",
+                    ))
 
-        except Exception as e:
-            if not isinstance(e, FatalError):
-                print(f"Error during run: {e}")
+            propagation_result = self._run_propagation_pass()
+            if self.api_key and not self.circuit_open:
+                if propagation_result is None:
+                    errors.append(StageError("propagation", "Propagation pass did not complete"))
+                elif propagation_result.get("errors", 0):
+                    errors.append(StageError(
+                        "propagation",
+                        f"{propagation_result['errors']} propagation operation(s) failed",
+                    ))
+
+            if scan_result.status == RunStatus.PARTIAL or errors:
+                status = RunStatus.PARTIAL
+            else:
+                status = RunStatus.SUCCESS
+            return RunResult(
+                status,
+                scan=scan_result,
+                errors=tuple(errors),
+                symbol_requested=symbol_requested,
+                symbol_completed=symbol_completed,
+                file_requested=file_requested,
+                file_completed=file_completed,
+                cluster_requested=cluster_requested,
+                cluster_completed=cluster_completed,
+            )
+        except LockTimeoutError as exc:
+            errors.append(StageError("scan_lock", str(exc)))
+            return RunResult(RunStatus.FAILED, scan=scan_result, errors=tuple(errors))
+        except Exception as exc:
+            errors.append(StageError("run", str(exc)))
+            status = RunStatus.PARTIAL if scan_result and scan_result.successful_paths else RunStatus.FAILED
+            return RunResult(status, scan=scan_result, errors=tuple(errors))
         finally:
-            print("\nLogic index updated.")
-
-            dirty_path = os.path.join(self.root_dir, DIRTY_FILE)
-            try:
-                if os.path.exists(dirty_path):
-                    os.remove(dirty_path)
-            except OSError:
-                pass
-
+            if claim is not None:
+                if scan_result is not None and scan_result.postprocess_complete:
+                    queue.finish(claim, claim.paths)
+                else:
+                    queue.finish(claim, retry_all=True)
             duration = time.time() - self.stats["start_time"]
-            dirty_count = len(self.dirty_nodes)
             file_count = self.db.execute("SELECT COUNT(*) FROM files").fetchone()[0] if self.db else 0
             print("\n=== Logic Indexer Stats ===")
             print(f"Files in Index      : {file_count}")
-            print(f"Symbols for LLM     : {dirty_count}")
+            print(f"Symbols for LLM     : {len(self.dirty_nodes)}")
             print(f"API Calls           : {self.stats['api_calls']}")
             print(f"Total Duration      : {duration:.2f}s")
             print("===========================\n")
-
             if self.db:
                 self.db.close()
+            lock.release()
 
 
 if __name__ == "__main__":
@@ -847,13 +946,29 @@ if __name__ == "__main__":
 
     indexer = LogicIndexer(os.getcwd())
     if cli_args.bootstrap_only:
-        scanner = StructScanner(indexer.root_dir)
-        scanner.scan_all()
-        indexer.db = scanner.db
         try:
-            indexer._run_hierarchical_bootstrap(mode_override=cli_args.mode)
+            with project_scan_lock(indexer.root_dir):
+                scanner = StructScanner(indexer.root_dir)
+                scan_result = scanner.scan_all()
+                indexer.db = scanner.db
+                result = indexer._run_hierarchical_bootstrap(mode_override=cli_args.mode)
+                status = scan_result.status
+                if result and (result.get("file_failed", 0) or result.get("cluster_failed", 0)):
+                    status = RunStatus.PARTIAL
+        except LockTimeoutError as exc:
+            print(f"[scan_lock] {exc}", file=sys.stderr)
+            sys.exit(RunStatus.FAILED.exit_code)
         finally:
             if indexer.db:
                 indexer.db.close()
+        sys.exit(status.exit_code)
     else:
-        indexer.run()
+        result = indexer.run()
+        for error in result.errors:
+            location = f" ({error.path})" if error.path else ""
+            print(f"[{error.stage}]{location} {error.message}", file=sys.stderr)
+        if result.status == RunStatus.SUCCESS:
+            print("\nLogic index updated.")
+        else:
+            print(f"\nLOGIC_INDEX_RESULT status={result.status.value}", file=sys.stderr)
+        sys.exit(result.exit_code)

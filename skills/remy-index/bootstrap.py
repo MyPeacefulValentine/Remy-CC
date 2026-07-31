@@ -27,7 +27,8 @@ VALID_MODES = ("auto", "ask", "never")
 
 def _env_int(name, default):
     try:
-        return int(os.environ.get(name, default))
+        value = os.environ.get(name)
+        return int(value if value is not None else default)
     except (ValueError, TypeError):
         return default
 
@@ -86,7 +87,7 @@ def _run_file_layer(db, llm_call, concurrency):
     pending = _pending_files(db)
     if not pending:
         print("[bootstrap] file layer: 0 pending, skipped", flush=True)
-        return 0
+        return {"requested": 0, "done": 0, "failed": 0}
     print(f"[bootstrap] file layer: {len(pending)} pending, concurrency={concurrency}", flush=True)
     hint_map = {
         path: hint
@@ -111,7 +112,7 @@ def _run_file_layer(db, llm_call, concurrency):
             if status == "ok":
                 done += 1
         print(f"[bootstrap] file layer done: {done}/{len(pending)} ok", flush=True)
-        return done
+        return {"requested": len(pending), "done": done, "failed": len(pending) - done}
 
     db_path = _db_path(db)
     results = []
@@ -142,14 +143,14 @@ def _run_file_layer(db, llm_call, concurrency):
         if status == "ok":
             done += 1
     print(f"[bootstrap] file layer done: {done}/{len(pending)} ok", flush=True)
-    return done
+    return {"requested": len(pending), "done": done, "failed": len(pending) - done}
 
 
 def _run_cluster_layer(db, llm_call, concurrency):
     pending = _pending_clusters(db)
     if not pending:
         print("[bootstrap] cluster layer: 0 pending, skipped", flush=True)
-        return 0
+        return {"requested": 0, "done": 0, "failed": 0}
     print(f"[bootstrap] cluster layer: {len(pending)} pending, concurrency={concurrency}", flush=True)
     done = 0
     if concurrency <= 1:
@@ -165,7 +166,7 @@ def _run_cluster_layer(db, llm_call, concurrency):
             if status == "ok":
                 done += 1
         print(f"[bootstrap] cluster layer done: {done}/{len(pending)} ok", flush=True)
-        return done
+        return {"requested": len(pending), "done": done, "failed": len(pending) - done}
 
     db_path = _db_path(db)
     results = []
@@ -196,7 +197,7 @@ def _run_cluster_layer(db, llm_call, concurrency):
         if status == "ok":
             done += 1
     print(f"[bootstrap] cluster layer done: {done}/{len(pending)} ok", flush=True)
-    return done
+    return {"requested": len(pending), "done": done, "failed": len(pending) - done}
 
 
 def _db_path(db):
@@ -208,23 +209,37 @@ def bootstrap_summaries(db, llm_call, mode=None):
     if mode is None:
         mode = resolve_mode(db)
     if mode == "never":
-        return {"mode": "never", "file_done": 0, "cluster_done": 0, "skipped": True}
+        return {
+            "mode": "never", "file_done": 0, "cluster_done": 0,
+            "file_requested": 0, "cluster_requested": 0,
+            "file_failed": 0, "cluster_failed": 0, "skipped": True,
+        }
     if mode == "ask":
+        pending_files = len(_pending_files(db))
+        pending_clusters = len(_pending_clusters(db))
         return {
             "mode": "ask",
             "file_done": 0,
             "cluster_done": 0,
+            "file_requested": 0,
+            "cluster_requested": 0,
+            "file_failed": 0,
+            "cluster_failed": 0,
             "skipped": True,
             "needs_user_confirmation": True,
-            "pending_files": len(_pending_files(db)),
-            "pending_clusters": len(_pending_clusters(db)),
+            "pending_files": pending_files,
+            "pending_clusters": pending_clusters,
         }
     concurrency = _env_int("OPENAI_MAX_WORKERS", DEFAULT_MAX_WORKERS)
-    file_done = _run_file_layer(db, llm_call, concurrency)
-    cluster_done = _run_cluster_layer(db, llm_call, concurrency)
+    file_result = _run_file_layer(db, llm_call, concurrency)
+    cluster_result = _run_cluster_layer(db, llm_call, concurrency)
     return {
         "mode": mode,
-        "file_done": file_done,
-        "cluster_done": cluster_done,
+        "file_done": file_result["done"],
+        "cluster_done": cluster_result["done"],
+        "file_requested": file_result["requested"],
+        "cluster_requested": cluster_result["requested"],
+        "file_failed": file_result["failed"],
+        "cluster_failed": cluster_result["failed"],
         "skipped": False,
     }

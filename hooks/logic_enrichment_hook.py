@@ -11,18 +11,26 @@ import os
 import sqlite3
 from collections import OrderedDict
 
+
+def _load_index_state():
+    skill_dir = os.path.join(os.path.expanduser("~"), ".claude", "skills", "remy-index")
+    if not os.path.isdir(skill_dir):
+        skill_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills", "remy-index")
+    if skill_dir not in sys.path:
+        sys.path.insert(0, skill_dir)
+    from index_state import DirtyQueue, LockTimeoutError
+    return DirtyQueue, LockTimeoutError
+
+
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
-DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
 
 
 def _consume_dirty_files(cwd, target_path):
-    dirty_path = os.path.join(cwd, DIRTY_FILE)
-    if not os.path.exists(dirty_path):
-        return
+    DirtyQueue, LockTimeoutError = _load_index_state()
+    queue = DirtyQueue(cwd)
     try:
-        with open(dirty_path, 'r', encoding='utf-8') as f:
-            dirty_paths = {line.strip() for line in f if line.strip()}
-    except Exception:
+        dirty_paths = queue.peek()
+    except LockTimeoutError:
         return
     if not dirty_paths:
         return
@@ -57,22 +65,19 @@ def _consume_dirty_files(cwd, target_path):
         claude_home = os.path.join(os.path.expanduser("~"), ".claude")
         struct_scan_path = os.path.join(claude_home, "skills", "remy-index", "struct_scan.py")
 
-        if os.path.exists(struct_scan_path):
-            import subprocess
-            args = [sys.executable, struct_scan_path, "--cwd", cwd, "--files"] + list(relevant)
-            subprocess.run(args, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=30)
+        if not os.path.exists(struct_scan_path):
+            return
+        import subprocess
+        args = [
+            sys.executable, struct_scan_path, "--cwd", cwd,
+            "--lock-timeout", "0", "--consume-dirty", "--files", *sorted(relevant),
+        ]
+        subprocess.run(
+            args, cwd=cwd, stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE, timeout=30,
+        )
     except Exception:
         return
-
-    remaining = dirty_paths - relevant
-    try:
-        if remaining:
-            with open(dirty_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(sorted(remaining)) + '\n')
-        else:
-            os.remove(dirty_path)
-    except Exception:
-        pass
 
 
 def _normalize_path(file_path, cwd):
@@ -243,8 +248,12 @@ def _build_enrichment(target_path, db):
 
 
 def main():
-    sys.stdin.reconfigure(encoding='utf-8')
-    sys.stdout.reconfigure(encoding='utf-8')
+    stdin_reconfigure = getattr(sys.stdin, "reconfigure", None)
+    if stdin_reconfigure is not None:
+        stdin_reconfigure(encoding="utf-8")
+    stdout_reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if stdout_reconfigure is not None:
+        stdout_reconfigure(encoding="utf-8")
 
     try:
         if sys.stdin.isatty():

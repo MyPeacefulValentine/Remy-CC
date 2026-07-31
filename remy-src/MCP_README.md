@@ -40,7 +40,7 @@ The server exits gracefully (exit code 0) if `mcp` is not installed or if `MCP_S
                                                      └──────────────────────────┘
 ```
 
-**Data flow**: `struct_scan.py` (triggered at SessionStart or by dirty-file consumer) writes symbols, edges, and patterns into `logic_index.db`. The MCP server opens the database in read-only WAL mode and serves queries. The two processes never write concurrently to the same file.
+**Data flow**: `struct_scan.py` (triggered at SessionStart or by the dirty-file consumer) writes symbols, edges, and patterns into `logic_index.db`. The MCP server opens the database in read-only WAL mode and serves queries. Full, incremental, and manual index writers share a project scan lock; MCP reads remain concurrent with the active writer.
 
 ## Startup & Registration
 
