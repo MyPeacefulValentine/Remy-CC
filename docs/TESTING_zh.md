@@ -28,12 +28,20 @@ python -m pytest tests/test_migration_ladder.py -q -p no:cacheprovider
 python -m pytest tests/test_synthesizers.py tests/test_c_fnptr_dispatch.py -q -p no:cacheprovider
 python -m pytest tests/test_struct_scan.py tests/test_fts_three_layer.py -q -p no:cacheprovider
 python -m pytest tests/test_tee_canary.py -q -p no:cacheprovider
+PYTHONPATH=. python -m eval.cli retrieval-baseline --help
+PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_baseline/p1_1.json --save
 python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend regex --scope product
 # 已安装 requirements-tree-sitter.txt 时：
 python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend tree-sitter --scope product
 ```
 
 持续集成在不安装tree-sitter的Python 3.10环境和安装固定tree-sitter包的Python 3.12环境运行全部测试。两个作业分别使用可用解析后端执行固定公开TEE fixture canary。Windows Python 3.12作业运行进程锁和脏队列测试。
+
+## P1.1确定性检索基线
+
+`eval/tasks/retrieval_baseline/p1_1.json`声明合成schema 10.0.0 fixture和人工审查的候选级真值。基线记录FTS、LIKE、fuzzy各通道、公共回退输出、Recall@1/5/10、MRR、无结果指标、数据库/WAL大小和全部延迟样本。每项测量执行3次预热和30次记录。耗时只作观测，不作为通过阈值。
+
+`eval/results/`中的带时间标识原始记录继续由Git忽略。审查后必须显式传入`--update-snapshot`才能更新`eval/baselines/p1_1.json`。命令记录Git提交、schema、Python版本、平台和合成解析配置。提供`--navigate-db`时，命令还记录cluster/file数量和prompt字符数，但不调用LLM，也不写入`judge_cache`。
 
 ## 公开TEE canary
 

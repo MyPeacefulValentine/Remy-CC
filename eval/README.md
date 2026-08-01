@@ -1,13 +1,17 @@
-# Remy-CC A/B Retrieval Eval
+# Remy-CC Retrieval Evaluation
 
-A quantitative harness that measures whether an agent answers code-structure
-questions **more accurately and/or more cheaply** when it has Remy-CC's MCP
-code-intelligence tools than when it has only `grep`/`glob`/`read`.
+This package contains two retrieval evaluations:
 
-The unit of comparison is a single agent over a fixed task set; the only
-variable is whether the Remy-CC tools are attached. Metrics are `ΔF1` (accuracy),
-`Δtokens` / `Δcalls` / `Δturns` (cost), and `answer-rate` (output-contract
-compliance).
+1. an agent A/B harness that compares baseline source tools with Remy-CC MCP
+   tools; and
+2. a deterministic candidate-level baseline for the current FTS, LIKE, fuzzy,
+   and public fallback pipeline.
+
+## Agent A/B evaluation
+
+The A/B harness measures whether an agent answers code-structure questions more
+accurately or with fewer tokens, calls, and turns when Remy-CC's MCP tools are
+attached.
 
 ## Arms
 
@@ -50,7 +54,10 @@ eval/
   gen_gt.py       pyright LSP client → non-circular GT
   build_tasks.py  spec table → tasks/python/*.json via gen_gt
   report.py       median-over-reps aggregate, gain-by-tier, per-task, answer-rate
-  tasks/python/   task set (*.json, KBench schema)
+  retrieval_baseline.py  deterministic fixture, channel capture, ranking, timing
+  tasks/python/   agent task set (*.json, KBench schema)
+  tasks/retrieval_baseline/p1_1.json  declarative candidate-level ground truth
+  baselines/p1_1.json  committed P1.1 reference snapshot
   .scoped/        scoped logic_index.db for B-remy (gitignored)
   results/ reports/  run artifacts (gitignored)
 ```
@@ -105,6 +112,42 @@ python eval/gen_gt.py --root Remy-CC --file skills/remy-index/summarizer.py \
 
 Reports land in `eval/reports/<run_id>/report.md`; raw per-episode records
 (including full `tool_trace`) in `eval/results/<run_id>/records.json`.
+
+## Deterministic candidate baseline
+
+The `retrieval-baseline` compatibility subcommand does not use an API endpoint,
+model, network, or parser. It creates a temporary schema 10.0.0 SQLite database
+from `tasks/retrieval_baseline/p1_1.json`. The same file declares relevant node
+identities and expected fallback channels. Expected values are reviewed data;
+they are never generated from the functions under test.
+
+Each task records the candidates and ranks returned independently by `_search_fts`,
+`_search_like`, and `_search_fuzzy`, plus the formatted output from
+`query_search_impl`. Metrics are Recall@1/5/10, MRR, actual no-result rate, and
+expected-empty accuracy. Empty-ground-truth tasks are excluded from Recall and
+MRR. Each task and channel is warmed up three times and measured thirty times
+with `perf_counter_ns`; raw samples and nearest-rank P50/P95 values are retained.
+No latency value is a pass threshold.
+
+```bash
+# create a timestamped raw result under eval/results/ (gitignored)
+python -m eval.cli retrieval-baseline \
+  --tasks eval/tasks/retrieval_baseline/p1_1.json \
+  --navigate-db ../.claude/logic_index.db \
+  --save
+
+# explicitly replace the committed P1.1 reference snapshot after review
+python -m eval.cli retrieval-baseline \
+  --tasks eval/tasks/retrieval_baseline/p1_1.json \
+  --navigate-db ../.claude/logic_index.db \
+  --update-snapshot eval/baselines/p1_1.json
+```
+
+The record includes the Git commit, suite and schema versions, Python and
+platform versions, parser configuration, database/WAL sizes, all timing samples,
+and `query_navigate` corpus counts and prompt characters. Navigation measurement
+only calls corpus and prompt helpers; it does not call an LLM or write the cache.
+Normal runs cannot update the committed snapshot.
 
 ## Reading the results
 

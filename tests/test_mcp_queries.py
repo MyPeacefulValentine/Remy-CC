@@ -3,10 +3,15 @@ import os
 import sys
 import sqlite3
 import tempfile
+import inspect
+import json
+from pathlib import Path
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "remy-src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skills", "remy-index"))
+_REMY_ROOT = os.path.join(os.path.dirname(__file__), "..")
+sys.path.insert(0, _REMY_ROOT)
+sys.path.insert(0, os.path.join(_REMY_ROOT, "remy-src"))
+sys.path.insert(0, os.path.join(_REMY_ROOT, "skills", "remy-index"))
 
 from struct_scan import SCHEMA_SQL
 import retrieval_projection
@@ -444,6 +449,116 @@ class TestQuerySearch:
         result = query_search_impl("proc*", limit=5)
         assert isinstance(result, str)
         assert "error" not in result.lower() or "No symbols" in result
+
+
+class TestRetrievalBaseline:
+    @staticmethod
+    def _module():
+        from eval import retrieval_baseline
+        return retrieval_baseline
+
+    def test_declared_tasks_cover_required_scenarios(self):
+        baseline = self._module()
+        spec_path = (Path(__file__).resolve().parents[1] / "eval" / "tasks" /
+                     "retrieval_baseline" / "p1_1.json")
+        spec = baseline.load_spec(spec_path)
+        scenarios = {task["scenario"] for task in spec["tasks"]}
+        assert scenarios == {
+            "exact qualified name",
+            "exact short name",
+            "name prefix",
+            "snake_case tokenization",
+            "camelCase tokenization",
+            "C++ namespace tokenization",
+            "summary BM25",
+            "summary versus name conflict",
+            "multi-term implicit AND",
+            "LIKE substring fallback",
+            "fuzzy typo fallback",
+            "file_hint positive filter",
+            "file_hint removes all candidates",
+            "empty query records current LIKE wildcard behavior",
+            "special characters and FTS escaping",
+            "no result",
+        }
+
+    def test_declared_ground_truth_is_validated(self, tmp_path):
+        baseline = self._module()
+        spec = {
+            "format_version": "1.0.0",
+            "fixture": {
+                "symbols": [{"file_path": "a.py", "name": "known"}],
+            },
+            "tasks": [{
+                "id": "invalid",
+                "query": "missing",
+                "expected_nodes": ["a.py::missing"],
+                "expected_empty": False,
+            }],
+        }
+        path = tmp_path / "invalid.json"
+        path.write_text(json.dumps(spec), encoding="utf-8")
+        with pytest.raises(ValueError, match="outside the fixture"):
+            baseline.load_spec(path)
+
+    def test_channels_and_public_fallback_are_recorded(self):
+        baseline = self._module()
+        spec_path = (Path(__file__).resolve().parents[1] / "eval" / "tasks" /
+                     "retrieval_baseline" / "p1_1.json")
+        result = baseline.run_baseline(
+            baseline.load_spec(spec_path), warmups=0, iterations=1
+        )
+        assert len(result["tasks"]) == 16
+        assert all(task["channel_matches_expectation"] for task in result["tasks"])
+        assert all(
+            set(task["channels"]) == {"fts", "like", "fuzzy"}
+            for task in result["tasks"]
+        )
+        assert all("public_output" in task for task in result["tasks"])
+        assert result["metrics"]["expected_empty_accuracy"] == 1.0
+
+    def test_measure_records_three_warmups_and_thirty_samples(self):
+        baseline = self._module()
+        calls = {"count": 0}
+
+        def probe():
+            calls["count"] += 1
+
+        timing = baseline.measure(probe, warmups=3, iterations=30)
+        assert calls["count"] == 33
+        assert len(timing["samples"]) == 30
+        assert timing["min"] <= timing["p50"] <= timing["p95"] <= timing["max"]
+
+    def test_rank_metrics_and_empty_tasks_are_separate(self):
+        baseline = self._module()
+        candidates = [
+            {"node_ref": "a.py::first"},
+            {"node_ref": "a.py::target"},
+        ]
+        score = baseline.score_ranked(candidates, ["a.py::target"])
+        assert score["recall_at_1"] == 0.0
+        assert score["recall_at_5"] == 1.0
+        assert score["reciprocal_rank"] == 0.5
+        empty = baseline.score_ranked([], [])
+        assert empty["eligible"] is False
+        assert empty["reciprocal_rank"] is None
+
+    def test_query_search_signature_and_tool_names_remain_stable(self):
+        import asyncio
+        import index_mcp_server
+        import index_mcp_queries
+
+        signature = inspect.signature(index_mcp_queries.query_search_impl)
+        assert list(signature.parameters) == ["text", "limit", "file_hint"]
+        assert signature.parameters["limit"].default == 10
+        assert signature.parameters["file_hint"].default == ""
+        names = {tool.name for tool in asyncio.run(index_mcp_server.mcp.list_tools())}
+        assert names == {
+            "query_symbol", "query_symbol_summary", "query_file_summary",
+            "query_callers", "query_callees", "query_impact", "query_patterns",
+            "query_search", "query_flow", "query_cluster_summary",
+            "query_cluster_files", "query_navigate",
+        }
 
 
 @pytest.fixture

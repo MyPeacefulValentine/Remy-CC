@@ -5,6 +5,7 @@ endpoint, print a per-episode summary, and optionally persist raw records.
 Run from the Remy-CC repo root:
     python -m eval.cli --db .claude/logic_index.db --quick
     python -m eval.cli --reps 3 --arms A-baseline B-remy --db <scoped.db>
+    python -m eval.cli retrieval-baseline --save
 
 The endpoint is read from OPENAI_BASE_URL / OPENAI_API_KEY (same vars remy-index
 uses). B-remy requires a scoped logic_index.db via --db.
@@ -55,7 +56,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
-    args = _build_parser().parse_args(argv)
+    effective_argv = list(sys.argv[1:] if argv is None else argv)
+    if effective_argv[:1] == ["retrieval-baseline"]:
+        from .retrieval_baseline import main as retrieval_baseline_main
+        return retrieval_baseline_main(effective_argv[1:])
+
+    args = _build_parser().parse_args(effective_argv)
 
     tasks = load_tasks(args.tasks, args.only)
     if args.quick:

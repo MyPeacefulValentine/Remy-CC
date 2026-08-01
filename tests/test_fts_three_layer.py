@@ -72,6 +72,24 @@ class TestProjectionCreation:
         ).fetchone()
         assert row == ("parse_input", "parse input", "raw", None)
 
+    def test_projection_exposes_p1_structure_fields_without_schema_change(self, db):
+        columns = {
+            row[1]
+            for row in db.execute("PRAGMA table_info(retrieval_documents)").fetchall()
+        }
+        assert {
+            "language", "symbol_type", "file_path", "name", "name_tokens",
+            "signature", "summary_short", "summary_full",
+        }.issubset(columns)
+        assert VERSION == "10.0.0"
+
+    def test_shared_tokenizer_handles_supported_name_forms(self):
+        from symbol_names import tokenize_symbol
+
+        assert tokenize_symbol("parse_input_record") == "parse input record"
+        assert tokenize_symbol("getUserById") == "get User By Id"
+        assert tokenize_symbol("Auth::TokenParser") == "Auth Token Parser"
+
 
     def test_content_hash_is_stable_for_unchanged_content(self, db):
         first = retrieval_projection.refresh_node(

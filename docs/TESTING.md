@@ -28,12 +28,30 @@ python -m pytest tests/test_migration_ladder.py -q -p no:cacheprovider
 python -m pytest tests/test_synthesizers.py tests/test_c_fnptr_dispatch.py -q -p no:cacheprovider
 python -m pytest tests/test_struct_scan.py tests/test_fts_three_layer.py -q -p no:cacheprovider
 python -m pytest tests/test_tee_canary.py -q -p no:cacheprovider
+PYTHONPATH=. python -m eval.cli retrieval-baseline --help
+PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_baseline/p1_1.json --save
 python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend regex --scope product
 # With requirements-tree-sitter.txt installed:
 python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend tree-sitter --scope product
 ```
 
 CI runs the full suite on Python 3.10 without tree-sitter and Python 3.12 with the pinned tree-sitter packages. Both jobs run the fixed public TEE fixture canary with their available parser backend. A Windows Python 3.12 job executes the process-lock and dirty-queue tests.
+
+## P1.1 deterministic retrieval baseline
+
+`eval/tasks/retrieval_baseline/p1_1.json` declares a synthetic schema 10.0.0
+fixture and reviewed candidate-level truth. The baseline records each FTS, LIKE,
+and fuzzy channel, the public fallback output, Recall@1/5/10, MRR, no-result
+metrics, database/WAL sizes, and all latency samples. Each measurement uses three
+warmups and thirty recorded iterations. Timing values are observations, not pass
+thresholds.
+
+Timestamped raw records under `eval/results/` remain ignored by Git. Updating
+`eval/baselines/p1_1.json` requires the explicit `--update-snapshot` option after
+review. The command records Git commit, schema, Python version, platform, and the
+synthetic parser configuration. When `--navigate-db` is supplied, it also records
+cluster/file counts and prompt characters without calling an LLM or writing
+`judge_cache`.
 
 ## Public TEE canary
 
