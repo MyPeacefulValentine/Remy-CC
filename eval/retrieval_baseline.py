@@ -21,6 +21,7 @@ _EVAL_DIR = Path(__file__).resolve().parent
 _REMY_ROOT = _EVAL_DIR.parent
 _DEFAULT_TASKS = _EVAL_DIR / "tasks" / "retrieval_baseline" / "p1_1.json"
 _DEFAULT_RESULTS = _EVAL_DIR / "results"
+_SUPPORTED_FORMATS = frozenset(("1.0.0", "1.1.0"))
 _CHANNELS: tuple[str, ...] = ("fts", "like", "fuzzy")
 
 
@@ -44,8 +45,10 @@ def _load_index_modules():
 
 def load_spec(path: Path) -> dict:
     spec = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(spec, dict) or spec.get("format_version") != "1.0.0":
-        raise ValueError("retrieval baseline spec must use format_version 1.0.0")
+    if not isinstance(spec, dict) or spec.get("format_version") not in _SUPPORTED_FORMATS:
+        raise ValueError(
+            "retrieval baseline spec must use format_version 1.0.0 or 1.1.0"
+        )
     fixture = spec.get("fixture")
     tasks = spec.get("tasks")
     if not isinstance(fixture, dict) or not isinstance(tasks, list) or not tasks:
@@ -67,12 +70,22 @@ def load_spec(path: Path) -> dict:
         task_ids.add(task_id)
         if not isinstance(expected, list) or any(ref not in node_refs for ref in expected):
             raise ValueError(f"task {task_id} references a symbol outside the fixture")
+        expected_error = task.get("expected_error", False)
+        if not isinstance(expected_error, bool):
+            raise ValueError(f"task {task_id} expected_error must be boolean")
         expected_empty = task.get("expected_empty")
-        if not isinstance(expected_empty, bool) or expected_empty != (len(expected) == 0):
+        if not isinstance(expected_empty, bool):
+            raise ValueError(f"task {task_id} expected_empty must be boolean")
+        if not expected_error and expected_empty != (len(expected) == 0):
             raise ValueError(f"task {task_id} has inconsistent expected_empty")
+        if expected_error and expected:
+            raise ValueError(f"task {task_id} error tasks cannot declare candidates")
         if not isinstance(task.get("query"), str):
             raise ValueError(f"task {task_id} query must be a string")
-        if not isinstance(task.get("limit", 10), int) or task.get("limit", 10) <= 0:
+        limit = task.get("limit", 10)
+        if isinstance(limit, bool) or not isinstance(limit, int):
+            raise ValueError(f"task {task_id} limit must be an integer")
+        if spec["format_version"] == "1.0.0" and limit <= 0:
             raise ValueError(f"task {task_id} limit must be positive")
     return spec
 
@@ -255,8 +268,13 @@ def score_ranked(candidates: list[dict], expected_nodes: list[str]) -> dict:
 
 def aggregate_metrics(task_records: list[dict]) -> dict:
     eligible = [row["score"] for row in task_records if row["score"]["eligible"]]
-    empty_tasks = [row for row in task_records if row["expected_empty"]]
-    actual_empty = [row for row in task_records if not row["selected_candidates"]]
+    empty_tasks = [
+        row for row in task_records
+        if row["expected_empty"] and not row.get("expected_error", False)
+    ]
+    error_tasks = [row for row in task_records if row.get("expected_error", False)]
+    successful = [row for row in task_records if not row.get("actual_error", False)]
+    actual_empty = [row for row in successful if not row["selected_candidates"]]
 
     def mean(field: str) -> float | None:
         if not eligible:
@@ -264,16 +282,23 @@ def aggregate_metrics(task_records: list[dict]) -> dict:
         return sum(row[field] for row in eligible) / len(eligible)
 
     empty_correct = sum(not row["selected_candidates"] for row in empty_tasks)
+    error_correct = sum(row.get("actual_error", False) for row in error_tasks)
     return {
         "eligible_task_count": len(eligible),
         "recall_at_1": mean("recall_at_1"),
         "recall_at_5": mean("recall_at_5"),
         "recall_at_10": mean("recall_at_10"),
         "mrr": mean("reciprocal_rank"),
-        "actual_no_result_rate": len(actual_empty) / len(task_records),
+        "actual_no_result_rate": (
+            len(actual_empty) / len(successful) if successful else None
+        ),
         "expected_empty_task_count": len(empty_tasks),
         "expected_empty_accuracy": (
             empty_correct / len(empty_tasks) if empty_tasks else None
+        ),
+        "expected_error_task_count": len(error_tasks),
+        "expected_error_accuracy": (
+            error_correct / len(error_tasks) if error_tasks else None
         ),
     }
 
@@ -295,58 +320,134 @@ CandidateRow = tuple[str, str, int | None, str, float]
 ChannelCall = Callable[[], list[CandidateRow]]
 
 
+def _task_arguments(task: dict) -> dict:
+    return {
+        "match": task.get("match", "all"),
+        "language": task.get("language", ""),
+        "symbol_type": task.get("symbol_type", ""),
+        "path_hint": task.get("path_hint", ""),
+    }
+
+
 def _channel_calls(queries: Any, db: sqlite3.Connection,
-                   task: dict) -> tuple[dict[str, ChannelCall], Callable[[], str]]:
+                   task: dict) -> tuple[dict[str, ChannelCall], Callable[[], str],
+                                        dict, dict]:
     text = task["query"]
     limit = task.get("limit", 10)
     file_hint = task.get("file_hint", "")
+    arguments = _task_arguments(task)
+    diagnostics: dict = {}
+    query = queries._make_search_query(
+        text, limit, file_hint, **arguments
+    )
     channels: dict[str, ChannelCall] = {
         "fts": lambda: cast(list[CandidateRow], queries._search_fts(
-            db, text, limit, file_hint
+            db, query, diagnostics=diagnostics
         )),
-        "like": lambda: cast(list[CandidateRow], queries._search_like(
-            db, text, limit, file_hint
-        )),
-        "fuzzy": lambda: cast(list[CandidateRow], queries._search_fuzzy(
-            db, text, limit, file_hint
-        )),
+        "like": lambda: cast(list[CandidateRow], queries._search_like(db, query)),
+        "fuzzy": lambda: cast(list[CandidateRow], queries._search_fuzzy(db, query)),
     }
-    public = lambda: cast(str, queries.query_search_impl(text, limit, file_hint))
-    return channels, public
+    public = lambda: cast(str, queries.query_search_impl(
+        text, limit, file_hint, **arguments
+    ))
+    return channels, public, diagnostics, arguments
+
+
+def _capture_channel(call: ChannelCall) -> tuple[list[CandidateRow], dict]:
+    try:
+        rows = call()
+    except sqlite3.Error as error:
+        return [], {
+            "status": "channel_error",
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+        }
+    return rows, {"status": "ok" if rows else "no_match"}
+
+
+def _safe_measure_call(call: Callable[[], object]) -> Callable[[], object]:
+    def invoke():
+        try:
+            return call()
+        except sqlite3.Error:
+            return None
+    return invoke
 
 
 def evaluate_task(queries, db, db_path: Path, task: dict,
                   warmups: int, iterations: int) -> dict:
-    channel_calls, public_call = _channel_calls(queries, db, task)
-    channels = {
-        channel: _candidate_rows(channel_calls[channel](), channel)
-        for channel in _CHANNELS
+    text = task["query"]
+    limit = task.get("limit", 10)
+    file_hint = task.get("file_hint", "")
+    arguments = _task_arguments(task)
+    public_call = lambda: cast(str, queries.query_search_impl(
+        text, limit, file_hint, **arguments
+    ))
+    diagnostics: dict = {}
+    channels: dict[str, list[dict]] = {name: [] for name in _CHANNELS}
+    channel_status = {
+        name: {"status": "not_applicable"} for name in _CHANNELS
     }
+    channel_calls: dict[str, ChannelCall] = {}
+
+    try:
+        channel_calls, public_call, diagnostics, arguments = _channel_calls(
+            queries, db, task
+        )
+    except queries._SearchInputError:
+        pass
+    else:
+        for channel in _CHANNELS:
+            rows, status = _capture_channel(channel_calls[channel])
+            channels[channel] = _candidate_rows(rows, channel)
+            channel_status[channel] = status
+
     selected = _selected_channel(channels)
     selected_candidates = channels[selected] if selected else []
     with _query_db_path(db_path):
         public_output = public_call()
+        timed_calls: dict[str, Callable[[], object]] = {
+            name: _safe_measure_call(call) for name, call in channel_calls.items()
+        }
+        timed_calls["public"] = public_call
         timings = {
             name: measure(call, warmups, iterations)
-            for name, call in {**channel_calls, "public": public_call}.items()
+            for name, call in timed_calls.items()
         }
 
     expected_channel = task.get("expected_channel")
+    expected_error = task.get("expected_error", False)
+    actual_error = public_output.startswith("Error:")
+    score = score_ranked(selected_candidates, task["expected_nodes"])
+    if expected_error:
+        score = {
+            "eligible": False,
+            "recall_at_1": None,
+            "recall_at_5": None,
+            "recall_at_10": None,
+            "reciprocal_rank": None,
+        }
     return {
         "id": task["id"],
         "scenario": task.get("scenario", task["id"]),
-        "query": task["query"],
-        "limit": task.get("limit", 10),
-        "file_hint": task.get("file_hint", ""),
+        "query": text,
+        "limit": limit,
+        "file_hint": file_hint,
+        **arguments,
         "expected_nodes": task["expected_nodes"],
         "expected_empty": task["expected_empty"],
+        "expected_error": expected_error,
         "expected_channel": expected_channel,
         "actual_channel": selected,
+        "actual_error": actual_error,
+        "error_matches_expectation": expected_error == actual_error,
         "channel_matches_expectation": expected_channel == selected,
+        "channel_status": channel_status,
+        "channel_diagnostics": {"fts": diagnostics},
         "channels": channels,
         "selected_candidates": selected_candidates,
         "public_output": public_output,
-        "score": score_ranked(selected_candidates, task["expected_nodes"]),
+        "score": score,
         "timings": timings,
     }
 
@@ -395,6 +496,59 @@ def _database_sizes(db_path: Path) -> dict:
     }
 
 
+def compare_results(current: dict, baseline: dict) -> dict:
+    baseline_tasks = {task["id"]: task for task in baseline.get("tasks", [])}
+    changes = []
+    for task in current.get("tasks", []):
+        previous = baseline_tasks.get(task["id"])
+        if previous is None:
+            changes.append({"id": task["id"], "classification": "new_task"})
+            continue
+        previous_refs = [row["node_ref"] for row in previous.get("selected_candidates", [])]
+        current_refs = [row["node_ref"] for row in task.get("selected_candidates", [])]
+        changed = (
+            previous.get("actual_channel") != task.get("actual_channel")
+            or previous_refs != current_refs
+            or previous.get("public_output") != task.get("public_output")
+        )
+        if task["id"] == "empty_query" and task.get("actual_error"):
+            classification = "intentional_contract_change"
+        elif changed:
+            classification = "behavior_change"
+        else:
+            classification = "unchanged"
+        changes.append({
+            "id": task["id"],
+            "classification": classification,
+            "before_channel": previous.get("actual_channel"),
+            "after_channel": task.get("actual_channel"),
+            "before_candidates": previous_refs,
+            "after_candidates": current_refs,
+        })
+    excluded_ids = {
+        row["id"] for row in changes
+        if row["classification"] == "intentional_contract_change"
+    }
+    comparable_current = [
+        task for task in current.get("tasks", []) if task["id"] not in excluded_ids
+    ]
+    comparable_baseline = [
+        task for task in baseline.get("tasks", []) if task["id"] not in excluded_ids
+    ]
+    return {
+        "baseline_spec_id": baseline.get("meta", {}).get("spec_id"),
+        "baseline_git_commit": baseline.get("meta", {}).get("git_commit"),
+        "metrics_before_raw": baseline.get("metrics"),
+        "metrics_after_raw": current.get("metrics"),
+        "metrics_before": aggregate_metrics(comparable_baseline),
+        "metrics_after": aggregate_metrics(comparable_current),
+        "excluded_contract_change_ids": sorted(excluded_ids),
+        "database_before": baseline.get("database"),
+        "database_after": current.get("database"),
+        "tasks": changes,
+    }
+
+
 def run_baseline(spec: dict, *, warmups: int = 3, iterations: int = 30,
                  navigate_db: Path | None = None) -> dict:
     queries, _, _, schema_version, _ = _load_index_modules()
@@ -423,7 +577,7 @@ def run_baseline(spec: dict, *, warmups: int = 3, iterations: int = 30,
             db.close()
 
     return {
-        "format_version": "1.0.0",
+        "format_version": spec.get("format_version", "1.0.0"),
         "meta": {
             "suite_version": (_REMY_ROOT / "VERSION").read_text(encoding="utf-8").strip(),
             "git_commit": _git_commit(),
@@ -478,6 +632,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--save", action="store_true")
     parser.add_argument("--update-snapshot", type=Path, default=None)
+    parser.add_argument("--compare-baseline", type=Path, default=None)
+    parser.add_argument("--comparison-output", type=Path, default=None)
     return parser
 
 
@@ -505,11 +661,25 @@ def main(argv=None) -> int:
     if args.update_snapshot:
         _atomic_write_json(args.update_snapshot, result)
         written.append(args.update_snapshot)
+    comparison = None
+    if args.compare_baseline:
+        baseline = json.loads(args.compare_baseline.read_text(encoding="utf-8"))
+        comparison = compare_results(result, baseline)
+        if args.comparison_output:
+            _atomic_write_json(args.comparison_output, {
+                "format_version": "1.1.0",
+                "result": result,
+                "comparison": comparison,
+            })
+            written.append(args.comparison_output)
+    elif args.comparison_output:
+        raise ValueError("--comparison-output requires --compare-baseline")
 
     print(json.dumps({
         "spec_id": result["meta"]["spec_id"],
         "task_count": len(result["tasks"]),
         "metrics": result["metrics"],
+        "comparison": comparison,
         "written": [str(path) for path in written],
     }, indent=2, ensure_ascii=False))
     return 0

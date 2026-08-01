@@ -225,16 +225,24 @@ event/callback patterns (3 results)
 
 ### query_search
 
-Fuzzy search symbols by name. Uses a three-tier fallback strategy:
-1. **FTS5 prefix match** (fastest, leverages full-text index)
-2. **LIKE substring match** (if FTS returns nothing)
-3. **Edit-distance match** (if LIKE returns nothing, catches typos)
+Search symbols through FTS5, token-prefix LIKE matching, and edit-distance fallback.
+Invalid input or a channel execution failure returns an `Error:` result and does
+not continue to later channels.
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `text` | `str` | (required) | Search query (partial name, prefix, or approximate) |
-| `limit` | `int` | `10` | Maximum results to return |
-| `file_hint` | `str` | `""` | Substring filter on file paths |
+| `text` | `str` | (required) | Query text; operators and punctuation are treated as separators |
+| `limit` | `int` | `10` | Result limit in the range `1..MCP_RESULT_LIMIT` |
+| `file_hint` | `str` | `""` | Compatibility alias for `path_hint` |
+| `match` | `str` | `"all"` | `all`, `any`, or exact contiguous `phrase` semantics |
+| `language` | `str` | `""` | `python`, `c_cpp`, or `typescript` parser family |
+| `symbol_type` | `str` | `""` | Exact symbol type filter |
+| `path_hint` | `str` | `""` | Case-insensitive literal path substring filter |
+
+`file_hint` and `path_hint` may both be supplied only when they normalize to the
+same value. Path separators are normalized. `%` and `_` are literal characters,
+not wildcards. The result fields for symbol type, file, name, and line remain
+unchanged.
 
 **Output example:**
 ```
@@ -332,7 +340,7 @@ All parameters are set via environment variables in the `env` block of `settings
 | `MCP_BFS_MAX_DEPTH` | `5` | Hard cap on BFS depth for callers/callees/impact |
 | `MCP_IMPACT_MAX_DEPTH_UP` | `3` | Default upstream depth for `query_impact` |
 | `MCP_IMPACT_MAX_DEPTH_DOWN` | `3` | Default downstream depth for `query_impact` |
-| `MCP_RESULT_LIMIT` | `50` | Max results per depth level in BFS output |
+| `MCP_RESULT_LIMIT` | `50` | Shared result cap: maximum entries retained per BFS depth and maximum accepted `query_search.limit`; configurable from 10 to 500 in `remy-cc config` |
 | `MCP_STATIC_ONLY_DEFAULT` | `false` | Default value for `static_only` when not specified |
 | `FLOW_MAX_DEPTH` | `15` | Default max BFS depth for `query_flow` |
 | `FLOW_MAX_VISITED` | `2000` | Default max visited nodes for `query_flow` |

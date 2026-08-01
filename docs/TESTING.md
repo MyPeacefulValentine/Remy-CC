@@ -53,6 +53,20 @@ synthetic parser configuration. When `--navigate-db` is supplied, it also record
 cluster/file counts and prompt characters without calling an LLM or writing
 `judge_cache`.
 
+## P1.2 query semantics and filters
+
+Run the format 1.1.0 task set and the unchanged P1.1 compatibility comparison:
+
+```bash
+PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_baseline/p1_2.json --update-snapshot eval/baselines/p1_2.json
+PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_baseline/p1_1.json --compare-baseline eval/baselines/p1_1.json --comparison-output eval/baselines/p1_2_compat.json
+```
+
+The P1.2 record covers all/any/phrase matching, language/type/path SQL filters,
+input and channel errors, insertion-order-independent LIKE/fuzzy results, and
+the final fuzzy limit for same-name symbols. Both runs retain three warmups and
+thirty measured iterations. Schema remains 10.0.0 and no migration is applied.
+
 ## Public TEE canary
 
 The committed fixture comes from `openharmony-sig/tee_tee_os_framework` commit `b11ffb19d83da42047cc0b5cbfbbfb95ba3304f4` under MulanPSL-2.0. Its manifest records each copied file's Git blob SHA. The fixture retains the upstream license and source headers. CI does not access the network.

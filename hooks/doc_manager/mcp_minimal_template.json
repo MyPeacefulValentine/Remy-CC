@@ -45,9 +45,9 @@
       "purpose": {"zh-CN": "Django/PyQt 信号连接关系", "en": "Django/PyQt signal connections"}
     },
     {
-      "scenario": {"zh-CN": "模糊搜索", "en": "Fuzzy search"},
-      "call": "query_search(text)",
-      "purpose": {"zh-CN": "按名称模糊搜索符号（前缀/子串/编辑距离）", "en": "Fuzzy symbol search by name (prefix/substring/edit-distance)"}
+      "scenario": {"zh-CN": "结构化搜索", "en": "Structured search"},
+      "call": "query_search(text, match='all', language='', symbol_type='', path_hint='')",
+      "purpose": {"zh-CN": "按all/any/phrase语义搜索符号，并按语言、类型和路径过滤", "en": "Search symbols with all/any/phrase semantics and language/type/path filters"}
     },
     {
       "scenario": {"zh-CN": "调用路径", "en": "Call path"},

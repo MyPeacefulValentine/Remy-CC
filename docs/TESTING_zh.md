@@ -43,6 +43,19 @@ python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend
 
 `eval/results/`中的带时间标识原始记录继续由Git忽略。审查后必须显式传入`--update-snapshot`才能更新`eval/baselines/p1_1.json`。命令记录Git提交、schema、Python版本、平台和合成解析配置。提供`--navigate-db`时，命令还记录cluster/file数量和prompt字符数，但不调用LLM，也不写入`judge_cache`。
 
+## P1.2查询语义与过滤
+
+运行格式1.1.0任务集和未修改P1.1任务的兼容比较：
+
+```bash
+PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_baseline/p1_2.json --update-snapshot eval/baselines/p1_2.json
+PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_baseline/p1_1.json --compare-baseline eval/baselines/p1_1.json --comparison-output eval/baselines/p1_2_compat.json
+```
+
+P1.2记录all/any/phrase匹配、语言/类型/路径SQL过滤、输入和通道错误、
+与插入顺序无关的LIKE/fuzzy结果，以及同名符号fuzzy最终limit。两次运行仍执行
+3次预热和30次测量。schema保持10.0.0，不执行migration。
+
 ## 公开TEE canary
 
 已提交fixture来自`openharmony-sig/tee_tee_os_framework`的`b11ffb19d83da42047cc0b5cbfbbfb95ba3304f4`提交，许可证为MulanPSL-2.0。清单记录每个复制文件的Git blob SHA。fixture保留上游许可证和源码文件头。CI不访问网络。

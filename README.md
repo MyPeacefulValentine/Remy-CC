@@ -90,7 +90,7 @@ The `remy-index` MCP server exposes 12 query tools over the Model Context Protoc
 | `query_callees` | BFS downstream callees |
 | `query_impact` | Full impact analysis for modified files (equivalent to `impact.py` CLI) |
 | `query_patterns` | Query event/callback registration patterns |
-| `query_search` | Fuzzy symbol search — FTS5 prefix → LIKE substring → edit-distance fallback |
+| `query_search` | Structured symbol search with all/any/phrase matching, language/type/path filters, and edit-distance fallback |
 | `query_flow` | Find call paths among named symbols via bidirectional BFS |
 | `query_cluster_summary` | Per-cluster semantic summary (short / full) and metadata |
 | `query_cluster_files` | List a cluster's member files with layer; optional inline short summaries |

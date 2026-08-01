@@ -373,9 +373,9 @@ class TestQuerySearch:
         lines = [l for l in result.splitlines() if "a.py::main" in l]
         assert len(lines) == 1
 
-    def test_like_fallback_on_substring(self, db_dir):
+    def test_like_fallback_on_prefix(self, db_dir):
         from index_mcp_queries import query_search_impl
-        result = query_search_impl("elpe", limit=5)
+        result = query_search_impl("hel", limit=5)
         assert "helper" in result
         assert "LIKE" in result
 
@@ -509,13 +509,49 @@ class TestRetrievalBaseline:
             baseline.load_spec(spec_path), warmups=0, iterations=1
         )
         assert len(result["tasks"]) == 16
-        assert all(task["channel_matches_expectation"] for task in result["tasks"])
+        assert all("channel_status" in task for task in result["tasks"])
         assert all(
             set(task["channels"]) == {"fts", "like", "fuzzy"}
             for task in result["tasks"]
         )
         assert all("public_output" in task for task in result["tasks"])
-        assert result["metrics"]["expected_empty_accuracy"] == 1.0
+        assert result["metrics"]["expected_error_task_count"] == 0
+
+    def test_p1_2_spec_records_errors_filters_and_diagnostics(self):
+        baseline = self._module()
+        spec_path = (Path(__file__).resolve().parents[1] / "eval" / "tasks" /
+                     "retrieval_baseline" / "p1_2.json")
+        result = baseline.run_baseline(
+            baseline.load_spec(spec_path), warmups=0, iterations=1
+        )
+        assert result["format_version"] == "1.1.0"
+        assert result["metrics"]["expected_error_accuracy"] == 1.0
+        assert all(task["error_matches_expectation"] for task in result["tasks"])
+        any_task = next(task for task in result["tasks"] if task["id"] == "summary_bm25_any")
+        assert any_task["channel_diagnostics"]["fts"]["candidate_cap"] == 50
+        assert "per_term" in any_task["channel_diagnostics"]["fts"]
+
+    def test_compare_results_classifies_empty_query_contract_change(self):
+        baseline = self._module()
+        old = {
+            "meta": {"spec_id": "old"},
+            "tasks": [{
+                "id": "empty_query", "actual_channel": "like",
+                "selected_candidates": [{"node_ref": "a.py::main"}],
+                "public_output": "old",
+            }],
+            "metrics": {}, "database": {},
+        }
+        new = {
+            "tasks": [{
+                "id": "empty_query", "actual_channel": None,
+                "actual_error": True, "selected_candidates": [],
+                "public_output": "Error: text must not be empty.",
+            }],
+            "metrics": {}, "database": {},
+        }
+        comparison = baseline.compare_results(new, old)
+        assert comparison["tasks"][0]["classification"] == "intentional_contract_change"
 
     def test_measure_records_three_warmups_and_thirty_samples(self):
         baseline = self._module()
@@ -549,9 +585,14 @@ class TestRetrievalBaseline:
         import index_mcp_queries
 
         signature = inspect.signature(index_mcp_queries.query_search_impl)
-        assert list(signature.parameters) == ["text", "limit", "file_hint"]
+        assert list(signature.parameters) == [
+            "text", "limit", "file_hint", "match", "language",
+            "symbol_type", "path_hint",
+        ]
         assert signature.parameters["limit"].default == 10
         assert signature.parameters["file_hint"].default == ""
+        assert signature.parameters["match"].default == "all"
+        assert signature.parameters["match"].kind == inspect.Parameter.KEYWORD_ONLY
         names = {tool.name for tool in asyncio.run(index_mcp_server.mcp.list_tools())}
         assert names == {
             "query_symbol", "query_symbol_summary", "query_file_summary",
@@ -559,6 +600,156 @@ class TestRetrievalBaseline:
             "query_search", "query_flow", "query_cluster_summary",
             "query_cluster_files", "query_navigate",
         }
+
+    @pytest.mark.parametrize("text", ["", "   ", "*** (:)"])
+    def test_invalid_query_returns_error(self, db_dir, text):
+        from index_mcp_queries import query_search_impl
+
+        assert query_search_impl(text).startswith("Error:")
+
+    @pytest.mark.parametrize("field,value", [
+        ("match", "invalid"),
+        ("language", "rust"),
+        ("language", "   "),
+        ("symbol_type", "method"),
+        ("symbol_type", "   "),
+    ])
+    def test_invalid_enum_returns_error(self, db_dir, field, value):
+        from index_mcp_queries import query_search_impl
+
+        assert query_search_impl("target", **{field: value}).startswith("Error:")
+
+    def test_path_alias_conflict_returns_error(self, db_dir):
+        from index_mcp_queries import query_search_impl
+
+        result = query_search_impl(
+            "target", file_hint="src/", path_hint="tests/"
+        )
+        assert result.startswith("Error:")
+
+    def test_path_nul_returns_error(self, db_dir):
+        from index_mcp_queries import query_search_impl
+
+        result = query_search_impl("target", path_hint="src/\0file")
+        assert result.startswith("Error:")
+        assert "NUL" in result
+
+    def test_path_alias_equivalence_and_normalization(self, db_dir):
+        from index_mcp_queries import query_search_impl
+
+        result = query_search_impl(
+            "main", file_hint="A.PY", path_hint="a.py"
+        )
+        assert "a.py::main" in result
+
+    def test_language_and_type_filters(self, db_dir):
+        from index_mcp_queries import query_search_impl
+
+        result = query_search_impl(
+            "entry", language="python", symbol_type="function"
+        )
+        assert "a.py::main" in result
+        assert query_search_impl("entry", language="c_cpp").startswith(
+            "No symbols found"
+        )
+
+    def test_match_modes(self, db_dir):
+        from index_mcp_queries import query_search_impl
+
+        assert "a.py::main" in query_search_impl("entry point", match="all")
+        any_result = query_search_impl("entry data", match="any")
+        assert "a.py::main" in any_result
+        assert "b.py::process" in any_result
+        assert "a.py::main" in query_search_impl("entry point", match="phrase")
+        assert query_search_impl("point entry", match="phrase").startswith(
+            "No symbols found"
+        )
+
+    def test_fuzzy_same_name_respects_final_limit(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        db = sqlite3.connect(str(claude_dir / "logic_index.db"))
+        db.executescript(SCHEMA_SQL)
+        for index, path in enumerate(("b.py", "a.py")):
+            db.execute(
+                "INSERT INTO files (path, struct_hash, language) VALUES (?,?,?)",
+                (path, f"h{index}", "PythonParser"),
+            )
+            db.execute(
+                "INSERT INTO symbols (file_path,name,short_name,type,lineno,name_tokens) "
+                "VALUES (?,?,?,?,?,?)",
+                (path, "duplicateHandler", "duplicateHandler", "function",
+                 index + 1, "duplicate Handler"),
+            )
+        retrieval_projection.rebuild_projection(db)
+        db.commit()
+        db.close()
+
+        from index_mcp_queries import query_search_impl
+        result = query_search_impl("duplicateHandlr", limit=1)
+        lines = [line for line in result.splitlines() if line.strip().startswith("[")]
+        assert len(lines) == 1
+        assert "a.py::duplicateHandler" in lines[0]
+
+    @pytest.mark.parametrize("failing_channel", ["fts", "like", "fuzzy"])
+    def test_channel_sqlite_error_stops_fallback(self, db_dir, monkeypatch,
+                                                 failing_channel):
+        import index_mcp_queries
+
+        calls = []
+
+        def no_match(_db, _query):
+            calls.append("no_match")
+            return []
+
+        def fail(_db, _query):
+            calls.append(failing_channel)
+            raise sqlite3.OperationalError("private database detail")
+
+        monkeypatch.setattr(index_mcp_queries, "_search_fts", no_match)
+        monkeypatch.setattr(index_mcp_queries, "_search_like", no_match)
+        monkeypatch.setattr(index_mcp_queries, "_search_fuzzy", no_match)
+        monkeypatch.setattr(index_mcp_queries, f"_search_{failing_channel}", fail)
+
+        result = index_mcp_queries.query_search_impl("missing")
+        assert result == (
+            f"Error: {failing_channel.upper() if failing_channel != 'fuzzy' else 'fuzzy'} "
+            "search failed (OperationalError)."
+        )
+        assert "private database detail" not in result
+        assert calls[-1] == failing_channel
+        expected_calls = {"fts": 1, "like": 2, "fuzzy": 3}[failing_channel]
+        assert len(calls) == expected_calls
+
+    def test_like_and_fuzzy_order_ignore_insertion_order(self):
+        from index_mcp_queries import (
+            _make_search_query, _search_fuzzy, _search_like,
+        )
+
+        def search(order):
+            db = sqlite3.connect(":memory:")
+            db.executescript(SCHEMA_SQL)
+            for index, path in enumerate(order):
+                db.execute(
+                    "INSERT INTO files (path, struct_hash, language) VALUES (?,?,?)",
+                    (path, f"h{index}", "PythonParser"),
+                )
+                db.execute(
+                    "INSERT INTO symbols "
+                    "(file_path,name,short_name,type,lineno,name_tokens) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (path, "stableHandler", "stableHandler", "function",
+                     index + 1, "stable Handler"),
+                )
+            query = _make_search_query("stableHan", 10)
+            like = [(row[0], row[1]) for row in _search_like(db, query)]
+            fuzzy_query = _make_search_query("stableHandlr", 10)
+            fuzzy = [(row[0], row[1]) for row in _search_fuzzy(db, fuzzy_query)]
+            db.close()
+            return like, fuzzy
+
+        assert search(("b.py", "a.py")) == search(("a.py", "b.py"))
 
 
 @pytest.fixture

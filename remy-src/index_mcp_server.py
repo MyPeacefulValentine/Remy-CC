@@ -228,9 +228,19 @@ def query_patterns(pattern_type: str = "", signal_name: str = "", file: str = ""
 
 
 @mcp.tool()
-def query_search(text: str, limit: int = 10, file_hint: str = "") -> str:
-    """Fuzzy search symbols by name. Three-tier fallback: FTS5 prefix → LIKE substring → edit-distance. Use when you don't know the exact symbol name."""
-    return _with_freshness(query_search_impl(text, limit, file_hint or ""))
+def query_search(text: str, limit: int = 10, file_hint: str = "",
+                 match: str = "all", language: str = "",
+                 symbol_type: str = "", path_hint: str = "") -> str:
+    """Search symbols with all/any/phrase matching and structural filters."""
+    return _with_freshness(query_search_impl(
+        text,
+        limit,
+        file_hint or "",
+        match=match,
+        language=language,
+        symbol_type=symbol_type,
+        path_hint=path_hint,
+    ))
 
 
 @mcp.tool()

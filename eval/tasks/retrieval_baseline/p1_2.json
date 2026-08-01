@@ -1,0 +1,79 @@
+{
+  "format_version": "1.1.0",
+  "id": "p1_2_query_boundaries",
+  "fixture": {
+    "files": [
+      {"path": "src/exact.py", "language": "PythonParser", "layer": "Core"},
+      {"path": "src/other.py", "language": "python", "layer": "Core"},
+      {"path": "src/names.py", "language": "PythonParser", "layer": "Core"},
+      {"path": "src/cpp.cc", "language": "CCppParser", "layer": "Core"},
+      {"path": "src/summary.py", "language": "python", "layer": "Core"},
+      {"path": "tests/test_exact.py", "language": "python", "layer": "Test"},
+      {"path": "src/duplicate_a.py", "language": "PythonParser", "layer": "Core"},
+      {"path": "src/duplicate_b.py", "language": "python", "layer": "Core"},
+      {"path": "Src/Ä/Unicode.py", "language": "PythonParser", "layer": "Core"},
+      {"path": "web/router.ts", "language": "TSParser", "layer": "Core"}
+    ],
+    "symbols": [
+      {"file_path": "src/exact.py", "name": "ExactTarget", "type": "class", "args": "", "lineno": 10, "summary_short": "canonical precision lookup target"},
+      {"file_path": "src/other.py", "name": "ExactTargetHelper", "type": "function", "args": "value", "lineno": 20, "summary_short": "canonical precision lookup helper"},
+      {"file_path": "src/names.py", "name": "parse_input_record", "type": "function", "args": "raw", "lineno": 30, "summary_short": "normalizes source records"},
+      {"file_path": "src/names.py", "name": "getUserById", "type": "function", "args": "user_id", "lineno": 40, "summary_short": "loads one account identity"},
+      {"file_path": "src/cpp.cc", "name": "Auth::TokenParser", "short_name": "TokenParser", "type": "class", "args": "", "lineno": 50, "summary_short": "validates namespace credentials"},
+      {"file_path": "src/summary.py", "name": "persist_blob", "type": "function", "args": "payload", "lineno": 60, "summary_short": "encrypts session tokens before storage"},
+      {"file_path": "src/summary.py", "name": "encrypt_session_tokens", "type": "function", "args": "payload", "lineno": 70, "summary_short": "writes opaque data"},
+      {"file_path": "src/summary.py", "name": "helper_function", "type": "function", "args": "value", "lineno": 80, "summary_short": "generic utility"},
+      {"file_path": "src/summary.py", "name": "processData", "type": "function", "args": "data", "lineno": 90, "summary_short": "transforms one payload"},
+      {"file_path": "tests/test_exact.py", "name": "ExactTarget", "type": "function", "args": "", "lineno": 15, "summary_short": "test fixture canonical precision lookup target"},
+      {"file_path": "src/duplicate_a.py", "name": "duplicateHandler", "type": "function", "args": "event", "lineno": 11, "summary_short": "handles alpha duplicate events"},
+      {"file_path": "src/duplicate_b.py", "name": "duplicateHandler", "type": "function", "args": "event", "lineno": 12, "summary_short": "handles beta duplicate events"},
+      {"file_path": "Src/Ä/Unicode.py", "name": "unicodeTarget", "type": "function", "args": "", "lineno": 13, "summary_short": "unicode path marker"},
+      {"file_path": "web/router.ts", "name": "RouterInterface", "type": "interface", "args": "", "lineno": 14, "summary_short": "route contract marker"}
+    ],
+    "file_summaries": {
+      "src/exact.py": "Exact target definitions",
+      "src/cpp.cc": "C++ authentication symbols"
+    },
+    "clusters": [
+      {"name": "src", "label": "Source", "members": ["src/exact.py", "src/other.py", "src/names.py", "src/cpp.cc", "src/summary.py", "src/duplicate_a.py", "src/duplicate_b.py", "Src/Ä/Unicode.py"], "entry_symbols": ["src/exact.py::ExactTarget"], "summary_short": "Application source modules"},
+      {"name": "tests", "label": "Tests", "members": ["tests/test_exact.py"], "entry_symbols": ["tests/test_exact.py::ExactTarget"], "summary_short": "Test modules"},
+      {"name": "web", "label": "Web", "members": ["web/router.ts"], "entry_symbols": ["web/router.ts::RouterInterface"], "summary_short": "Web modules"}
+    ]
+  },
+  "navigation": {"intent": "locate authentication token parser", "top_k": 5},
+  "tasks": [
+    {"id": "exact_qualified_name", "scenario": "exact qualified name", "query": "Auth::TokenParser", "limit": 10, "expected_nodes": ["src/cpp.cc::Auth::TokenParser"], "expected_empty": false, "expected_channel": "like"},
+    {"id": "exact_short_name", "scenario": "exact short name", "query": "ExactTarget", "limit": 10, "path_hint": "src/exact.py", "expected_nodes": ["src/exact.py::ExactTarget"], "expected_empty": false, "expected_channel": "like"},
+    {"id": "name_prefix", "scenario": "name prefix", "query": "ExactTar", "limit": 10, "expected_nodes": ["src/exact.py::ExactTarget", "tests/test_exact.py::ExactTarget"], "expected_empty": false, "expected_channel": "like"},
+    {"id": "snake_case_tokens", "scenario": "snake_case tokenization", "query": "parse inp", "limit": 10, "expected_nodes": ["src/names.py::parse_input_record"], "expected_empty": false, "expected_channel": "like"},
+    {"id": "camel_case_tokens", "scenario": "camelCase tokenization", "query": "get User", "limit": 10, "expected_nodes": ["src/names.py::getUserById"], "expected_empty": false, "expected_channel": "like"},
+    {"id": "cpp_namespace_tokens", "scenario": "C++ namespace tokenization", "query": "Auth Token", "limit": 10, "expected_nodes": ["src/cpp.cc::Auth::TokenParser"], "expected_empty": false, "expected_channel": "like"},
+    {"id": "summary_bm25_all", "scenario": "multi-term all", "query": "session storage", "match": "all", "limit": 10, "expected_nodes": ["src/summary.py::persist_blob"], "expected_empty": false, "expected_channel": "fts"},
+    {"id": "summary_bm25_any", "scenario": "multi-term any", "query": "session identity", "match": "any", "limit": 10, "expected_nodes": ["src/summary.py::persist_blob", "src/names.py::getUserById"], "expected_empty": false, "expected_channel": "fts"},
+    {"id": "summary_phrase", "scenario": "exact phrase", "query": "session tokens", "match": "phrase", "limit": 10, "expected_nodes": ["src/summary.py::persist_blob"], "expected_empty": false, "expected_channel": "fts"},
+    {"id": "summary_phrase_empty", "scenario": "phrase order mismatch", "query": "tokens session", "match": "phrase", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_channel": null},
+    {"id": "language_python", "scenario": "python language filter", "query": "canonical precision", "language": "python", "path_hint": "src/exact.py", "limit": 10, "expected_nodes": ["src/exact.py::ExactTarget"], "expected_empty": false, "expected_channel": "fts"},
+    {"id": "language_c_cpp", "scenario": "c cpp language filter", "query": "Auth Token", "language": "c_cpp", "limit": 10, "expected_nodes": ["src/cpp.cc::Auth::TokenParser"], "expected_empty": false, "expected_channel": "like"},
+    {"id": "language_filter_empty", "scenario": "language removes candidates", "query": "canonical precision", "language": "c_cpp", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_channel": null},
+    {"id": "language_typescript", "scenario": "typescript language family", "query": "route contract", "language": "typescript", "symbol_type": "interface", "limit": 10, "expected_nodes": ["web/router.ts::RouterInterface"], "expected_empty": false, "expected_channel": "fts"},
+    {"id": "symbol_type_class", "scenario": "symbol type class filter", "query": "canonical precision", "symbol_type": "class", "limit": 10, "expected_nodes": ["src/exact.py::ExactTarget"], "expected_empty": false, "expected_channel": "fts"},
+    {"id": "symbol_type_empty", "scenario": "symbol type removes candidates", "query": "canonical precision", "symbol_type": "struct", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_channel": null},
+    {"id": "path_case_separator", "scenario": "path case and separator normalization", "query": "ExactTarget", "path_hint": "SRC\\EXACT.PY", "limit": 10, "expected_nodes": ["src/exact.py::ExactTarget"], "expected_empty": false, "expected_channel": "like"},
+    {"id": "path_unicode", "scenario": "unicode path casefold", "query": "unicode path", "path_hint": "src/ä", "limit": 10, "expected_nodes": ["Src/Ä/Unicode.py::unicodeTarget"], "expected_empty": false, "expected_channel": "fts"},
+    {"id": "file_hint_compat", "scenario": "legacy file hint compatibility", "query": "ExactTarget", "file_hint": "tests/", "limit": 10, "expected_nodes": ["tests/test_exact.py::ExactTarget"], "expected_empty": false, "expected_channel": "like"},
+    {"id": "fuzzy_typo", "scenario": "fuzzy typo fallback", "query": "processDta", "limit": 10, "expected_nodes": ["src/summary.py::processData"], "expected_empty": false, "expected_channel": "fuzzy"},
+    {"id": "fuzzy_duplicate_limit", "scenario": "fuzzy same-name final limit", "query": "duplicateHandlr", "limit": 1, "expected_nodes": ["src/duplicate_a.py::duplicateHandler"], "expected_empty": false, "expected_channel": "fuzzy"},
+    {"id": "special_characters", "scenario": "special characters become separators", "query": "token* (parser) \"", "limit": 10, "expected_nodes": ["src/cpp.cc::Auth::TokenParser"], "expected_empty": false, "expected_channel": "like"},
+    {"id": "unicode_query", "scenario": "unicode query", "query": "unicode path", "limit": 10, "expected_nodes": ["Src/Ä/Unicode.py::unicodeTarget"], "expected_empty": false, "expected_channel": "fts"},
+    {"id": "no_result", "scenario": "no result", "query": "zzzz_nonexistent_symbol_987", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_channel": null},
+    {"id": "empty_query", "scenario": "empty query error", "query": "", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
+    {"id": "punctuation_only", "scenario": "punctuation only error", "query": "*** (:) \"", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
+    {"id": "invalid_match", "scenario": "invalid match error", "query": "target", "match": "invalid", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
+    {"id": "invalid_language", "scenario": "invalid language error", "query": "target", "language": "rust", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
+    {"id": "invalid_symbol_type", "scenario": "invalid symbol type error", "query": "target", "symbol_type": "method", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
+    {"id": "whitespace_language", "scenario": "whitespace language error", "query": "target", "language": "   ", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
+    {"id": "path_conflict", "scenario": "path alias conflict error", "query": "target", "file_hint": "src/", "path_hint": "tests/", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
+    {"id": "limit_zero", "scenario": "zero limit error", "query": "target", "limit": 0, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
+    {"id": "limit_over_max", "scenario": "limit upper bound error", "query": "target", "limit": 51, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null}
+  ]
+}

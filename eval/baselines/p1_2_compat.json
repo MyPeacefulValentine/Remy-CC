@@ -1,0 +1,4082 @@
+{
+  "format_version": "1.1.0",
+  "result": {
+    "format_version": "1.0.0",
+    "meta": {
+      "suite_version": "1.6.1",
+      "git_commit": "57c8fbc429992f02643f73117971027dd0745e7e",
+      "schema_version": "10.0.0",
+      "python_version": "3.12.9",
+      "platform": "Windows-11-10.0.26200-SP0",
+      "parser_backend": "synthetic-fixture",
+      "parser_configuration": "not-applicable",
+      "warmups": 3,
+      "iterations": 30,
+      "generated_at": "2026-08-01T18:03:59.188278+00:00",
+      "spec_id": "p1_1_current_retrieval"
+    },
+    "database": {
+      "database_bytes": 208896,
+      "wal_bytes": 0,
+      "version_before": "10.0.0",
+      "version_after": "10.0.0",
+      "migration_count_before": 0,
+      "migration_count_after": 0
+    },
+    "navigation": {
+      "measured": false,
+      "reason": "navigate database not provided"
+    },
+    "tasks": [
+      {
+        "id": "exact_qualified_name",
+        "scenario": "exact qualified name",
+        "query": "Auth::TokenParser",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/cpp.cc::Auth::TokenParser"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "like",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "fts": {
+            "status": "no_match"
+          },
+          "like": {
+            "status": "ok"
+          },
+          "fuzzy": {
+            "status": "ok"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [],
+          "like": [
+            {
+              "channel": "like",
+              "rank": 1,
+              "node_ref": "src/cpp.cc::Auth::TokenParser",
+              "name": "Auth::TokenParser",
+              "file_path": "src/cpp.cc",
+              "line": 50,
+              "symbol_type": "class",
+              "score": 0.0
+            }
+          ],
+          "fuzzy": [
+            {
+              "channel": "fuzzy",
+              "rank": 1,
+              "node_ref": "src/cpp.cc::Auth::TokenParser",
+              "name": "Auth::TokenParser",
+              "file_path": "src/cpp.cc",
+              "line": 50,
+              "symbol_type": "class",
+              "score": 1.0
+            }
+          ]
+        },
+        "selected_candidates": [
+          {
+            "channel": "like",
+            "rank": 1,
+            "node_ref": "src/cpp.cc::Auth::TokenParser",
+            "name": "Auth::TokenParser",
+            "file_path": "src/cpp.cc",
+            "line": 50,
+            "symbol_type": "class",
+            "score": 0.0
+          }
+        ],
+        "public_output": "search results for 'Auth::TokenParser' (1 results, matched via LIKE)\n\n  [class] src/cpp.cc::Auth::TokenParser  src/cpp.cc:L50 (Core)",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              52300,
+              47300,
+              45100,
+              51300,
+              46400,
+              44100,
+              43300,
+              43200,
+              43700,
+              43300,
+              43200,
+              42900,
+              42900,
+              42600,
+              43600,
+              42600,
+              43000,
+              43100,
+              43200,
+              45400,
+              43400,
+              42900,
+              43000,
+              44100,
+              43700,
+              42600,
+              42500,
+              42300,
+              42800,
+              42600
+            ],
+            "min": 42300,
+            "p50": 43200,
+            "p95": 51300,
+            "max": 52300
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              79800,
+              79000,
+              78500,
+              78400,
+              78000,
+              78700,
+              78400,
+              152600,
+              116600,
+              85600,
+              79200,
+              78000,
+              77200,
+              77800,
+              77500,
+              77100,
+              77100,
+              76800,
+              76900,
+              77000,
+              76700,
+              76900,
+              77300,
+              81000,
+              77000,
+              76800,
+              76500,
+              77100,
+              146800,
+              113900
+            ],
+            "min": 76500,
+            "p50": 77800,
+            "p95": 146800,
+            "max": 152600
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              147400,
+              147000,
+              146600,
+              145700,
+              145100,
+              145400,
+              151300,
+              145200,
+              145100,
+              145100,
+              144900,
+              144700,
+              144500,
+              144400,
+              144300,
+              144100,
+              144900,
+              144300,
+              144300,
+              144000,
+              147400,
+              144500,
+              145200,
+              144500,
+              144400,
+              144600,
+              144700,
+              144700,
+              150000,
+              145400
+            ],
+            "min": 144000,
+            "p50": 144900,
+            "p95": 150000,
+            "max": 151300
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              837000,
+              793700,
+              793700,
+              791500,
+              775700,
+              778500,
+              767300,
+              768500,
+              763100,
+              800400,
+              758800,
+              762000,
+              779200,
+              769400,
+              756200,
+              747900,
+              753100,
+              745900,
+              753200,
+              759600,
+              750100,
+              758100,
+              749200,
+              765000,
+              765400,
+              751900,
+              750000,
+              751400,
+              741900,
+              759400
+            ],
+            "min": 741900,
+            "p50": 759600,
+            "p95": 800400,
+            "max": 837000
+          }
+        }
+      },
+      {
+        "id": "exact_short_name",
+        "scenario": "exact short name",
+        "query": "ExactTarget",
+        "limit": 10,
+        "file_hint": "src/exact.py",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/exact.py::ExactTarget"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "like",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "fts": {
+            "status": "no_match"
+          },
+          "like": {
+            "status": "ok"
+          },
+          "fuzzy": {
+            "status": "ok"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [],
+          "like": [
+            {
+              "channel": "like",
+              "rank": 1,
+              "node_ref": "src/exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "src/exact.py",
+              "line": 10,
+              "symbol_type": "class",
+              "score": 0.0
+            }
+          ],
+          "fuzzy": [
+            {
+              "channel": "fuzzy",
+              "rank": 1,
+              "node_ref": "src/exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "src/exact.py",
+              "line": 10,
+              "symbol_type": "class",
+              "score": 1.0
+            }
+          ]
+        },
+        "selected_candidates": [
+          {
+            "channel": "like",
+            "rank": 1,
+            "node_ref": "src/exact.py::ExactTarget",
+            "name": "ExactTarget",
+            "file_path": "src/exact.py",
+            "line": 10,
+            "symbol_type": "class",
+            "score": 0.0
+          }
+        ],
+        "public_output": "search results for 'ExactTarget' (1 results, matched via LIKE)\n\n  [class] src/exact.py::ExactTarget  src/exact.py:L10 (Core)",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              46000,
+              44000,
+              43300,
+              43000,
+              42800,
+              42500,
+              42700,
+              42800,
+              42200,
+              42600,
+              42200,
+              42300,
+              42100,
+              42200,
+              41800,
+              51000,
+              43700,
+              43800,
+              42900,
+              43200,
+              42400,
+              41900,
+              42000,
+              42000,
+              41700,
+              42400,
+              42200,
+              41800,
+              42800,
+              162900
+            ],
+            "min": 41700,
+            "p50": 42500,
+            "p95": 51000,
+            "max": 162900
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              83100,
+              82000,
+              81500,
+              81200,
+              80900,
+              85400,
+              81200,
+              80400,
+              81000,
+              80700,
+              93100,
+              80800,
+              80400,
+              80700,
+              80200,
+              80300,
+              80500,
+              84100,
+              80900,
+              80800,
+              80900,
+              80600,
+              80500,
+              80600,
+              80200,
+              80300,
+              80800,
+              80600,
+              80500,
+              80400
+            ],
+            "min": 80200,
+            "p50": 80700,
+            "p95": 85400,
+            "max": 93100
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              28000,
+              26600,
+              25900,
+              25700,
+              26200,
+              25500,
+              25400,
+              25100,
+              25100,
+              25000,
+              25100,
+              24700,
+              25000,
+              24700,
+              32800,
+              25600,
+              25000,
+              24800,
+              24500,
+              24800,
+              24900,
+              24800,
+              24500,
+              24800,
+              24500,
+              24700,
+              24600,
+              24600,
+              24600,
+              24700
+            ],
+            "min": 24500,
+            "p50": 24900,
+            "p95": 28000,
+            "max": 32800
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              851300,
+              869700,
+              807700,
+              815100,
+              825700,
+              786500,
+              795100,
+              823400,
+              796800,
+              809400,
+              776900,
+              927800,
+              793500,
+              780900,
+              781800,
+              772100,
+              792500,
+              779100,
+              770400,
+              777800,
+              792800,
+              783100,
+              779800,
+              775500,
+              779600,
+              898600,
+              840600,
+              771300,
+              779100,
+              789200
+            ],
+            "min": 770400,
+            "p50": 789200,
+            "p95": 898600,
+            "max": 927800
+          }
+        }
+      },
+      {
+        "id": "name_prefix",
+        "scenario": "name prefix",
+        "query": "ExactTar",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/exact.py::ExactTarget",
+          "tests/test_exact.py::ExactTarget"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "like",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "fts": {
+            "status": "no_match"
+          },
+          "like": {
+            "status": "ok"
+          },
+          "fuzzy": {
+            "status": "ok"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [],
+          "like": [
+            {
+              "channel": "like",
+              "rank": 1,
+              "node_ref": "src/exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "src/exact.py",
+              "line": 10,
+              "symbol_type": "class",
+              "score": 0.0
+            },
+            {
+              "channel": "like",
+              "rank": 2,
+              "node_ref": "tests/test_exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "tests/test_exact.py",
+              "line": 15,
+              "symbol_type": "function",
+              "score": 0.0
+            },
+            {
+              "channel": "like",
+              "rank": 3,
+              "node_ref": "src/other.py::ExactTargetHelper",
+              "name": "ExactTargetHelper",
+              "file_path": "src/other.py",
+              "line": 20,
+              "symbol_type": "function",
+              "score": 0.0
+            }
+          ],
+          "fuzzy": [
+            {
+              "channel": "fuzzy",
+              "rank": 1,
+              "node_ref": "src/exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "src/exact.py",
+              "line": 10,
+              "symbol_type": "class",
+              "score": 0.8421052631578947
+            },
+            {
+              "channel": "fuzzy",
+              "rank": 2,
+              "node_ref": "tests/test_exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "tests/test_exact.py",
+              "line": 15,
+              "symbol_type": "function",
+              "score": 0.8421052631578947
+            },
+            {
+              "channel": "fuzzy",
+              "rank": 3,
+              "node_ref": "src/other.py::ExactTargetHelper",
+              "name": "ExactTargetHelper",
+              "file_path": "src/other.py",
+              "line": 20,
+              "symbol_type": "function",
+              "score": 0.64
+            }
+          ]
+        },
+        "selected_candidates": [
+          {
+            "channel": "like",
+            "rank": 1,
+            "node_ref": "src/exact.py::ExactTarget",
+            "name": "ExactTarget",
+            "file_path": "src/exact.py",
+            "line": 10,
+            "symbol_type": "class",
+            "score": 0.0
+          },
+          {
+            "channel": "like",
+            "rank": 2,
+            "node_ref": "tests/test_exact.py::ExactTarget",
+            "name": "ExactTarget",
+            "file_path": "tests/test_exact.py",
+            "line": 15,
+            "symbol_type": "function",
+            "score": 0.0
+          },
+          {
+            "channel": "like",
+            "rank": 3,
+            "node_ref": "src/other.py::ExactTargetHelper",
+            "name": "ExactTargetHelper",
+            "file_path": "src/other.py",
+            "line": 20,
+            "symbol_type": "function",
+            "score": 0.0
+          }
+        ],
+        "public_output": "search results for 'ExactTar' (3 results, matched via LIKE)\n\n  [class] src/exact.py::ExactTarget  src/exact.py:L10 (Core)\n  [function] tests/test_exact.py::ExactTarget  tests/test_exact.py:L15 (Test)\n  [function] src/other.py::ExactTargetHelper  src/other.py:L20 (Core)",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 0.5,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              42800,
+              41100,
+              40600,
+              40000,
+              40200,
+              39500,
+              45400,
+              41300,
+              39600,
+              39300,
+              39200,
+              39300,
+              39000,
+              39000,
+              39100,
+              38900,
+              39300,
+              39100,
+              39100,
+              39100,
+              38800,
+              39100,
+              39100,
+              39400,
+              39600,
+              39200,
+              38900,
+              39000,
+              38900,
+              39000
+            ],
+            "min": 38800,
+            "p50": 39200,
+            "p95": 42800,
+            "max": 45400
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              97900,
+              97300,
+              96600,
+              97000,
+              96600,
+              96300,
+              96200,
+              96400,
+              96500,
+              96500,
+              96200,
+              96400,
+              104100,
+              97200,
+              96300,
+              96200,
+              96100,
+              96200,
+              98400,
+              96500,
+              99400,
+              96800,
+              96600,
+              98400,
+              96300,
+              96200,
+              95900,
+              95900,
+              95900,
+              96000
+            ],
+            "min": 95900,
+            "p50": 96400,
+            "p95": 99400,
+            "max": 104100
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              101300,
+              100700,
+              100200,
+              99800,
+              99400,
+              98800,
+              98700,
+              98600,
+              99700,
+              100900,
+              99600,
+              98900,
+              98600,
+              98400,
+              98600,
+              98300,
+              98800,
+              98500,
+              98500,
+              98600,
+              100200,
+              98400,
+              98500,
+              98600,
+              98300,
+              98300,
+              98300,
+              112200,
+              113500,
+              104500
+            ],
+            "min": 98300,
+            "p50": 98700,
+            "p95": 112200,
+            "max": 113500
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              829600,
+              851700,
+              803000,
+              790500,
+              794700,
+              1101300,
+              877600,
+              799000,
+              793000,
+              793800,
+              786700,
+              787700,
+              788500,
+              790100,
+              788100,
+              786400,
+              794100,
+              807100,
+              818700,
+              824300,
+              837600,
+              909400,
+              788800,
+              791800,
+              925200,
+              800800,
+              811500,
+              794100,
+              782700,
+              913400
+            ],
+            "min": 782700,
+            "p50": 794700,
+            "p95": 925200,
+            "max": 1101300
+          }
+        }
+      },
+      {
+        "id": "snake_case_tokens",
+        "scenario": "snake_case tokenization",
+        "query": "parse input",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/names.py::parse_input_record"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "like",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "fts": {
+            "status": "no_match"
+          },
+          "like": {
+            "status": "ok"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [],
+          "like": [
+            {
+              "channel": "like",
+              "rank": 1,
+              "node_ref": "src/names.py::parse_input_record",
+              "name": "parse_input_record",
+              "file_path": "src/names.py",
+              "line": 30,
+              "symbol_type": "function",
+              "score": 0.0
+            }
+          ],
+          "fuzzy": []
+        },
+        "selected_candidates": [
+          {
+            "channel": "like",
+            "rank": 1,
+            "node_ref": "src/names.py::parse_input_record",
+            "name": "parse_input_record",
+            "file_path": "src/names.py",
+            "line": 30,
+            "symbol_type": "function",
+            "score": 0.0
+          }
+        ],
+        "public_output": "search results for 'parse input' (1 results, matched via LIKE)\n\n  [function] src/names.py::parse_input_record  src/names.py:L30 (Core)",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              41700,
+              40600,
+              39900,
+              39700,
+              39400,
+              39400,
+              39300,
+              39100,
+              39600,
+              39100,
+              39200,
+              39100,
+              39400,
+              39200,
+              39400,
+              39000,
+              39400,
+              39100,
+              39000,
+              39300,
+              43900,
+              39400,
+              38900,
+              39400,
+              39000,
+              39000,
+              38800,
+              39000,
+              39900,
+              39000
+            ],
+            "min": 38800,
+            "p50": 39300,
+            "p95": 41700,
+            "max": 43900
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              76900,
+              76400,
+              76000,
+              75700,
+              78800,
+              75800,
+              75500,
+              75900,
+              75700,
+              75400,
+              75400,
+              75800,
+              75600,
+              75600,
+              75500,
+              75300,
+              75600,
+              77600,
+              75300,
+              75100,
+              75500,
+              75600,
+              75600,
+              75200,
+              75600,
+              75600,
+              75300,
+              75700,
+              75400,
+              75600
+            ],
+            "min": 75100,
+            "p50": 75600,
+            "p95": 77600,
+            "max": 78800
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              900,
+              900,
+              900,
+              900,
+              800,
+              800,
+              800,
+              800,
+              800,
+              900,
+              800,
+              800,
+              800,
+              900,
+              800,
+              900,
+              800,
+              900,
+              900,
+              800,
+              800,
+              800,
+              800,
+              900,
+              900,
+              900,
+              800,
+              800,
+              800,
+              900
+            ],
+            "min": 800,
+            "p50": 800,
+            "p95": 900,
+            "max": 900
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              774200,
+              794000,
+              797800,
+              774000,
+              994300,
+              835900,
+              840700,
+              827800,
+              772000,
+              769900,
+              776300,
+              772100,
+              756600,
+              785900,
+              761100,
+              762400,
+              758300,
+              744300,
+              809300,
+              753200,
+              747800,
+              767300,
+              779500,
+              805200,
+              770300,
+              744800,
+              756000,
+              777300,
+              746100,
+              826000
+            ],
+            "min": 744300,
+            "p50": 772100,
+            "p95": 840700,
+            "max": 994300
+          }
+        }
+      },
+      {
+        "id": "camel_case_tokens",
+        "scenario": "camelCase tokenization",
+        "query": "get User",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/names.py::getUserById"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "like",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "fts": {
+            "status": "no_match"
+          },
+          "like": {
+            "status": "ok"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [],
+          "like": [
+            {
+              "channel": "like",
+              "rank": 1,
+              "node_ref": "src/names.py::getUserById",
+              "name": "getUserById",
+              "file_path": "src/names.py",
+              "line": 40,
+              "symbol_type": "function",
+              "score": 0.0
+            }
+          ],
+          "fuzzy": []
+        },
+        "selected_candidates": [
+          {
+            "channel": "like",
+            "rank": 1,
+            "node_ref": "src/names.py::getUserById",
+            "name": "getUserById",
+            "file_path": "src/names.py",
+            "line": 40,
+            "symbol_type": "function",
+            "score": 0.0
+          }
+        ],
+        "public_output": "search results for 'get User' (1 results, matched via LIKE)\n\n  [function] src/names.py::getUserById  src/names.py:L40 (Core)",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              41500,
+              40500,
+              46900,
+              41200,
+              39400,
+              38800,
+              38700,
+              38700,
+              38800,
+              38500,
+              38500,
+              39200,
+              38700,
+              42700,
+              43100,
+              39400,
+              38800,
+              38800,
+              38700,
+              38600,
+              38400,
+              38600,
+              38800,
+              38700,
+              38500,
+              38500,
+              38600,
+              38600,
+              38400,
+              38400
+            ],
+            "min": 38400,
+            "p50": 38700,
+            "p95": 43100,
+            "max": 46900
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              72400,
+              75800,
+              72400,
+              73100,
+              71300,
+              70700,
+              70600,
+              70700,
+              71500,
+              74400,
+              71000,
+              70500,
+              71300,
+              70500,
+              70800,
+              81400,
+              72800,
+              70700,
+              70800,
+              70600,
+              70500,
+              70200,
+              70500,
+              70900,
+              70600,
+              70400,
+              70600,
+              70700,
+              70300,
+              74800
+            ],
+            "min": 70200,
+            "p50": 70700,
+            "p95": 75800,
+            "max": 81400
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              900,
+              800,
+              800,
+              800,
+              700,
+              800,
+              800,
+              800,
+              800,
+              700,
+              800,
+              800,
+              800,
+              700,
+              800,
+              800,
+              800,
+              800,
+              800,
+              700,
+              700,
+              800,
+              800,
+              800,
+              700,
+              700,
+              800,
+              700,
+              700,
+              700
+            ],
+            "min": 700,
+            "p50": 800,
+            "p95": 800,
+            "max": 900
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              819300,
+              761000,
+              764000,
+              752100,
+              761200,
+              1022300,
+              816200,
+              870500,
+              779300,
+              802500,
+              765100,
+              800900,
+              762300,
+              762700,
+              790400,
+              758800,
+              746600,
+              750500,
+              742000,
+              764300,
+              754500,
+              851700,
+              794800,
+              744800,
+              777600,
+              1060500,
+              1114500,
+              1057700,
+              1054000,
+              1045700
+            ],
+            "min": 742000,
+            "p50": 777600,
+            "p95": 1060500,
+            "max": 1114500
+          }
+        }
+      },
+      {
+        "id": "cpp_namespace_tokens",
+        "scenario": "C++ namespace tokenization",
+        "query": "Auth Token",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/cpp.cc::Auth::TokenParser"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "like",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "fts": {
+            "status": "no_match"
+          },
+          "like": {
+            "status": "ok"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [],
+          "like": [
+            {
+              "channel": "like",
+              "rank": 1,
+              "node_ref": "src/cpp.cc::Auth::TokenParser",
+              "name": "Auth::TokenParser",
+              "file_path": "src/cpp.cc",
+              "line": 50,
+              "symbol_type": "class",
+              "score": 0.0
+            }
+          ],
+          "fuzzy": []
+        },
+        "selected_candidates": [
+          {
+            "channel": "like",
+            "rank": 1,
+            "node_ref": "src/cpp.cc::Auth::TokenParser",
+            "name": "Auth::TokenParser",
+            "file_path": "src/cpp.cc",
+            "line": 50,
+            "symbol_type": "class",
+            "score": 0.0
+          }
+        ],
+        "public_output": "search results for 'Auth Token' (1 results, matched via LIKE)\n\n  [class] src/cpp.cc::Auth::TokenParser  src/cpp.cc:L50 (Core)",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              67000,
+              65400,
+              64000,
+              63800,
+              63100,
+              65600,
+              64600,
+              63500,
+              62900,
+              63200,
+              62300,
+              63200,
+              65300,
+              69300,
+              61900,
+              63200,
+              63300,
+              69900,
+              62800,
+              61900,
+              62200,
+              62200,
+              62400,
+              61900,
+              61900,
+              62100,
+              62200,
+              62400,
+              61600,
+              61800
+            ],
+            "min": 61600,
+            "p50": 62900,
+            "p95": 69300,
+            "max": 69900
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              117400,
+              116400,
+              115300,
+              114700,
+              119400,
+              117500,
+              115100,
+              114600,
+              117300,
+              115200,
+              114800,
+              115000,
+              115600,
+              115400,
+              115400,
+              115400,
+              116000,
+              115200,
+              115100,
+              119200,
+              115300,
+              115200,
+              115500,
+              115000,
+              115300,
+              114800,
+              114100,
+              114700,
+              113900,
+              114500
+            ],
+            "min": 113900,
+            "p50": 115200,
+            "p95": 119200,
+            "max": 119400
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1400,
+              1400,
+              1300,
+              1300,
+              1300,
+              1300,
+              1300,
+              1300,
+              1200,
+              1300,
+              1300,
+              1300,
+              1300,
+              1200,
+              1200,
+              1300,
+              1300,
+              1300,
+              1200,
+              1300,
+              1300,
+              1300,
+              1300,
+              1300,
+              1300,
+              1300,
+              1300,
+              1300,
+              1300,
+              1300
+            ],
+            "min": 1200,
+            "p50": 1300,
+            "p95": 1400,
+            "max": 1400
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              789000,
+              856800,
+              772000,
+              752400,
+              751800,
+              758300,
+              757800,
+              766500,
+              779900,
+              744400,
+              744900,
+              749800,
+              741500,
+              759200,
+              735600,
+              736400,
+              748600,
+              758500,
+              849500,
+              752300,
+              754100,
+              756700,
+              733300,
+              739400,
+              739200,
+              733000,
+              742100,
+              741500,
+              741200,
+              739600
+            ],
+            "min": 733000,
+            "p50": 749800,
+            "p95": 849500,
+            "max": 856800
+          }
+        }
+      },
+      {
+        "id": "summary_bm25",
+        "scenario": "summary BM25",
+        "query": "canonical precision",
+        "limit": 10,
+        "file_hint": "src/exact.py",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/exact.py::ExactTarget"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "fts",
+        "actual_channel": "fts",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "fts": {
+            "status": "ok"
+          },
+          "like": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [
+            {
+              "channel": "fts",
+              "rank": 1,
+              "node_ref": "src/exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "src/exact.py",
+              "line": 10,
+              "symbol_type": "class",
+              "score": -5.301070998336473
+            }
+          ],
+          "like": [],
+          "fuzzy": []
+        },
+        "selected_candidates": [
+          {
+            "channel": "fts",
+            "rank": 1,
+            "node_ref": "src/exact.py::ExactTarget",
+            "name": "ExactTarget",
+            "file_path": "src/exact.py",
+            "line": 10,
+            "symbol_type": "class",
+            "score": -5.301070998336473
+          }
+        ],
+        "public_output": "search results for 'canonical precision' (1 results, matched via FTS5)\n\n  [class] src/exact.py::ExactTarget  src/exact.py:L10 (Core)",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              68400,
+              68200,
+              60900,
+              59900,
+              59300,
+              59300,
+              59000,
+              58400,
+              58100,
+              58100,
+              58300,
+              58300,
+              57800,
+              58300,
+              58000,
+              57400,
+              59000,
+              58500,
+              57600,
+              57300,
+              57300,
+              57300,
+              57400,
+              57500,
+              57600,
+              58000,
+              57400,
+              57200,
+              57200,
+              57400
+            ],
+            "min": 57200,
+            "p50": 58000,
+            "p95": 68200,
+            "max": 68400
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              59000,
+              63200,
+              58300,
+              57900,
+              57800,
+              57600,
+              57500,
+              57400,
+              58300,
+              57600,
+              57500,
+              57500,
+              57600,
+              57500,
+              57200,
+              57400,
+              57300,
+              57400,
+              57900,
+              57300,
+              57300,
+              57500,
+              57700,
+              57500,
+              57500,
+              57400,
+              57500,
+              57300,
+              57300,
+              57400
+            ],
+            "min": 57200,
+            "p50": 57500,
+            "p95": 59000,
+            "max": 63200
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1000,
+              900,
+              1000,
+              1000,
+              1000,
+              1000,
+              1000,
+              900,
+              1000,
+              1000,
+              1000,
+              900,
+              900,
+              1000,
+              1000,
+              900,
+              1100,
+              900,
+              900,
+              900,
+              900,
+              900,
+              1000,
+              900,
+              900,
+              1000,
+              900,
+              900,
+              900,
+              900
+            ],
+            "min": 900,
+            "p50": 900,
+            "p95": 1000,
+            "max": 1100
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              711200,
+              710300,
+              817700,
+              763200,
+              701000,
+              701800,
+              686500,
+              707200,
+              697300,
+              687700,
+              680000,
+              691400,
+              680500,
+              683900,
+              689900,
+              675600,
+              700500,
+              685900,
+              679900,
+              679700,
+              691000,
+              678000,
+              673800,
+              777400,
+              728400,
+              832400,
+              694900,
+              702800,
+              694200,
+              697800
+            ],
+            "min": 673800,
+            "p50": 694200,
+            "p95": 817700,
+            "max": 832400
+          }
+        }
+      },
+      {
+        "id": "summary_name_conflict",
+        "scenario": "summary versus name conflict",
+        "query": "encrypt session tokens",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/summary.py::persist_blob"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "fts",
+        "actual_channel": "fts",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "fts": {
+            "status": "ok"
+          },
+          "like": {
+            "status": "ok"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [
+            {
+              "channel": "fts",
+              "rank": 1,
+              "node_ref": "src/summary.py::persist_blob",
+              "name": "persist_blob",
+              "file_path": "src/summary.py",
+              "line": 60,
+              "symbol_type": "function",
+              "score": -12.592034164280129
+            }
+          ],
+          "like": [
+            {
+              "channel": "like",
+              "rank": 1,
+              "node_ref": "src/summary.py::encrypt_session_tokens",
+              "name": "encrypt_session_tokens",
+              "file_path": "src/summary.py",
+              "line": 70,
+              "symbol_type": "function",
+              "score": 0.0
+            }
+          ],
+          "fuzzy": []
+        },
+        "selected_candidates": [
+          {
+            "channel": "fts",
+            "rank": 1,
+            "node_ref": "src/summary.py::persist_blob",
+            "name": "persist_blob",
+            "file_path": "src/summary.py",
+            "line": 60,
+            "symbol_type": "function",
+            "score": -12.592034164280129
+          }
+        ],
+        "public_output": "search results for 'encrypt session tokens' (1 results, matched via FTS5)\n\n  [function] src/summary.py::persist_blob  src/summary.py:L60 (Core)",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              64200,
+              62700,
+              61700,
+              61100,
+              61300,
+              61100,
+              60800,
+              60800,
+              60700,
+              61000,
+              60700,
+              60500,
+              60300,
+              60200,
+              60500,
+              62900,
+              61700,
+              60800,
+              60200,
+              60300,
+              60300,
+              61400,
+              60500,
+              60000,
+              68400,
+              62000,
+              60600,
+              60200,
+              60100,
+              60100
+            ],
+            "min": 60000,
+            "p50": 60700,
+            "p95": 64200,
+            "max": 68400
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              80300,
+              80000,
+              79600,
+              79300,
+              78900,
+              79400,
+              79400,
+              78800,
+              78500,
+              79500,
+              78800,
+              78800,
+              78700,
+              78700,
+              78700,
+              79000,
+              78700,
+              83100,
+              78900,
+              87600,
+              78900,
+              78800,
+              78800,
+              78300,
+              78600,
+              78600,
+              78300,
+              78400,
+              78500,
+              78800
+            ],
+            "min": 78300,
+            "p50": 78800,
+            "p95": 83100,
+            "max": 87600
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1000,
+              1000,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              800,
+              900,
+              900,
+              800,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              800,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900
+            ],
+            "min": 800,
+            "p50": 900,
+            "p95": 1000,
+            "max": 1000
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              691200,
+              710400,
+              685900,
+              700900,
+              790000,
+              711300,
+              690400,
+              698300,
+              730500,
+              716000,
+              701600,
+              682800,
+              731400,
+              692300,
+              761400,
+              706300,
+              674000,
+              734800,
+              715900,
+              676400,
+              678900,
+              676600,
+              675200,
+              682100,
+              673800,
+              668300,
+              1131900,
+              820300,
+              848700,
+              761900
+            ],
+            "min": 668300,
+            "p50": 700900,
+            "p95": 848700,
+            "max": 1131900
+          }
+        }
+      },
+      {
+        "id": "multiterm_and",
+        "scenario": "multi-term implicit AND",
+        "query": "session storage",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/summary.py::persist_blob"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "fts",
+        "actual_channel": "fts",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "fts": {
+            "status": "ok"
+          },
+          "like": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [
+            {
+              "channel": "fts",
+              "rank": 1,
+              "node_ref": "src/summary.py::persist_blob",
+              "name": "persist_blob",
+              "file_path": "src/summary.py",
+              "line": 60,
+              "symbol_type": "function",
+              "score": -8.39468944285342
+            }
+          ],
+          "like": [],
+          "fuzzy": []
+        },
+        "selected_candidates": [
+          {
+            "channel": "fts",
+            "rank": 1,
+            "node_ref": "src/summary.py::persist_blob",
+            "name": "persist_blob",
+            "file_path": "src/summary.py",
+            "line": 60,
+            "symbol_type": "function",
+            "score": -8.39468944285342
+          }
+        ],
+        "public_output": "search results for 'session storage' (1 results, matched via FTS5)\n\n  [function] src/summary.py::persist_blob  src/summary.py:L60 (Core)",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              56600,
+              55200,
+              54700,
+              54800,
+              53600,
+              53200,
+              53100,
+              53300,
+              62500,
+              53600,
+              53500,
+              53700,
+              53200,
+              54000,
+              57500,
+              53400,
+              55700,
+              64900,
+              54500,
+              53200,
+              53100,
+              53100,
+              52600,
+              52500,
+              52600,
+              52800,
+              52700,
+              52700,
+              52600,
+              52600
+            ],
+            "min": 52500,
+            "p50": 53300,
+            "p95": 62500,
+            "max": 64900
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              63100,
+              72400,
+              67000,
+              63400,
+              62400,
+              61700,
+              61800,
+              61400,
+              61200,
+              61100,
+              61100,
+              61800,
+              61400,
+              61200,
+              61300,
+              61400,
+              60800,
+              65900,
+              61600,
+              61100,
+              61300,
+              61500,
+              62000,
+              61300,
+              61600,
+              61700,
+              61300,
+              61200,
+              61100,
+              61400
+            ],
+            "min": 60800,
+            "p50": 61400,
+            "p95": 67000,
+            "max": 72400
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1000,
+              1000,
+              1000,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              1000,
+              900,
+              900,
+              900,
+              900,
+              800,
+              900,
+              800,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900
+            ],
+            "min": 800,
+            "p50": 900,
+            "p95": 1000,
+            "max": 1000
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              697000,
+              696100,
+              684600,
+              686000,
+              703600,
+              748500,
+              731600,
+              1291900,
+              831300,
+              770900,
+              723100,
+              776200,
+              1042400,
+              812300,
+              758000,
+              1005700,
+              926500,
+              827700,
+              703900,
+              700500,
+              689800,
+              683300,
+              708700,
+              676400,
+              678300,
+              774000,
+              748100,
+              698200,
+              687100,
+              671800
+            ],
+            "min": 671800,
+            "p50": 708700,
+            "p95": 1042400,
+            "max": 1291900
+          }
+        }
+      },
+      {
+        "id": "like_substring",
+        "scenario": "LIKE substring fallback",
+        "query": "elper_funct",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/summary.py::helper_function"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "fuzzy",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "fts": {
+            "status": "no_match"
+          },
+          "like": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "ok"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [],
+          "like": [],
+          "fuzzy": [
+            {
+              "channel": "fuzzy",
+              "rank": 1,
+              "node_ref": "src/summary.py::helper_function",
+              "name": "helper_function",
+              "file_path": "src/summary.py",
+              "line": 80,
+              "symbol_type": "function",
+              "score": 0.8461538461538461
+            }
+          ]
+        },
+        "selected_candidates": [
+          {
+            "channel": "fuzzy",
+            "rank": 1,
+            "node_ref": "src/summary.py::helper_function",
+            "name": "helper_function",
+            "file_path": "src/summary.py",
+            "line": 80,
+            "symbol_type": "function",
+            "score": 0.8461538461538461
+          }
+        ],
+        "public_output": "search results for 'elper_funct' (1 results, matched via fuzzy)\n\n  [function] src/summary.py::helper_function  src/summary.py:L80 (Core)",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              41200,
+              40200,
+              40100,
+              39500,
+              39600,
+              38900,
+              38700,
+              38300,
+              38700,
+              39100,
+              38500,
+              38500,
+              38300,
+              38400,
+              38300,
+              38100,
+              38200,
+              38100,
+              38000,
+              38200,
+              38800,
+              39200,
+              38300,
+              38300,
+              38000,
+              38400,
+              38300,
+              38000,
+              38400,
+              38300
+            ],
+            "min": 38000,
+            "p50": 38400,
+            "p95": 40200,
+            "max": 41200
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              56700,
+              56700,
+              56600,
+              56200,
+              56800,
+              55900,
+              56000,
+              55700,
+              55700,
+              56200,
+              55700,
+              55700,
+              55800,
+              55500,
+              55600,
+              55900,
+              55800,
+              55600,
+              55600,
+              55900,
+              55700,
+              55700,
+              55500,
+              55400,
+              55500,
+              56600,
+              55900,
+              55700,
+              55600,
+              55900
+            ],
+            "min": 55400,
+            "p50": 55700,
+            "p95": 56700,
+            "max": 56800
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              111400,
+              110000,
+              110000,
+              108800,
+              108100,
+              108300,
+              108600,
+              107900,
+              108100,
+              107900,
+              107900,
+              108400,
+              107700,
+              108000,
+              107900,
+              108400,
+              111200,
+              109000,
+              108800,
+              109300,
+              110200,
+              110700,
+              108800,
+              108400,
+              108200,
+              108000,
+              107400,
+              107900,
+              108000,
+              107800
+            ],
+            "min": 107400,
+            "p50": 108300,
+            "p95": 111200,
+            "max": 111400
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              862500,
+              1067000,
+              895000,
+              886700,
+              869700,
+              853900,
+              859800,
+              857500,
+              856300,
+              861500,
+              851300,
+              859900,
+              850000,
+              868600,
+              847700,
+              857500,
+              860900,
+              842700,
+              856400,
+              986000,
+              916600,
+              854800,
+              944000,
+              866500,
+              860000,
+              858600,
+              850300,
+              856100,
+              847900,
+              858300
+            ],
+            "min": 842700,
+            "p50": 858600,
+            "p95": 986000,
+            "max": 1067000
+          }
+        }
+      },
+      {
+        "id": "fuzzy_typo",
+        "scenario": "fuzzy typo fallback",
+        "query": "processDta",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/summary.py::processData"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "fuzzy",
+        "actual_channel": "fuzzy",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "fts": {
+            "status": "no_match"
+          },
+          "like": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "ok"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [],
+          "like": [],
+          "fuzzy": [
+            {
+              "channel": "fuzzy",
+              "rank": 1,
+              "node_ref": "src/summary.py::processData",
+              "name": "processData",
+              "file_path": "src/summary.py",
+              "line": 90,
+              "symbol_type": "function",
+              "score": 0.9523809523809523
+            }
+          ]
+        },
+        "selected_candidates": [
+          {
+            "channel": "fuzzy",
+            "rank": 1,
+            "node_ref": "src/summary.py::processData",
+            "name": "processData",
+            "file_path": "src/summary.py",
+            "line": 90,
+            "symbol_type": "function",
+            "score": 0.9523809523809523
+          }
+        ],
+        "public_output": "search results for 'processDta' (1 results, matched via fuzzy)\n\n  [function] src/summary.py::processData  src/summary.py:L90 (Core)",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              41300,
+              47900,
+              40400,
+              39100,
+              38800,
+              38700,
+              38400,
+              38400,
+              38200,
+              38300,
+              38300,
+              38400,
+              38100,
+              38200,
+              38300,
+              39100,
+              38400,
+              38500,
+              38200,
+              38000,
+              38100,
+              38300,
+              39500,
+              39000,
+              38800,
+              38200,
+              38000,
+              37800,
+              37700,
+              38000
+            ],
+            "min": 37700,
+            "p50": 38300,
+            "p95": 41300,
+            "max": 47900
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              61800,
+              61200,
+              60800,
+              60600,
+              60400,
+              60800,
+              60600,
+              60900,
+              60400,
+              60600,
+              61200,
+              68700,
+              60600,
+              60400,
+              60400,
+              60500,
+              60200,
+              60300,
+              60100,
+              60300,
+              60300,
+              60400,
+              60200,
+              60200,
+              60300,
+              60300,
+              60600,
+              60400,
+              60400,
+              60300
+            ],
+            "min": 60100,
+            "p50": 60400,
+            "p95": 61800,
+            "max": 68700
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              136000,
+              125300,
+              124600,
+              127300,
+              124200,
+              123800,
+              124300,
+              124000,
+              123800,
+              122900,
+              123600,
+              123700,
+              189100,
+              217500,
+              212400,
+              135900,
+              125700,
+              128500,
+              124800,
+              123600,
+              123600,
+              123500,
+              123700,
+              123700,
+              123800,
+              123500,
+              123300,
+              123100,
+              123000,
+              123100
+            ],
+            "min": 122900,
+            "p50": 123800,
+            "p95": 212400,
+            "max": 217500
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              899400,
+              898800,
+              886100,
+              1014300,
+              924800,
+              883500,
+              908100,
+              890500,
+              887500,
+              882100,
+              899900,
+              985200,
+              929500,
+              894500,
+              886300,
+              884200,
+              879500,
+              887700,
+              894300,
+              900800,
+              969500,
+              911600,
+              872700,
+              884500,
+              873300,
+              888800,
+              892400,
+              864100,
+              1077700,
+              962600
+            ],
+            "min": 864100,
+            "p50": 892400,
+            "p95": 1014300,
+            "max": 1077700
+          }
+        }
+      },
+      {
+        "id": "file_hint_positive",
+        "scenario": "file_hint positive filter",
+        "query": "ExactTarget",
+        "limit": 10,
+        "file_hint": "tests/",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "tests/test_exact.py::ExactTarget"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "like",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "fts": {
+            "status": "no_match"
+          },
+          "like": {
+            "status": "ok"
+          },
+          "fuzzy": {
+            "status": "ok"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [],
+          "like": [
+            {
+              "channel": "like",
+              "rank": 1,
+              "node_ref": "tests/test_exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "tests/test_exact.py",
+              "line": 15,
+              "symbol_type": "function",
+              "score": 0.0
+            }
+          ],
+          "fuzzy": [
+            {
+              "channel": "fuzzy",
+              "rank": 1,
+              "node_ref": "tests/test_exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "tests/test_exact.py",
+              "line": 15,
+              "symbol_type": "function",
+              "score": 1.0
+            }
+          ]
+        },
+        "selected_candidates": [
+          {
+            "channel": "like",
+            "rank": 1,
+            "node_ref": "tests/test_exact.py::ExactTarget",
+            "name": "ExactTarget",
+            "file_path": "tests/test_exact.py",
+            "line": 15,
+            "symbol_type": "function",
+            "score": 0.0
+          }
+        ],
+        "public_output": "search results for 'ExactTarget' (1 results, matched via LIKE)\n\n  [function] tests/test_exact.py::ExactTarget  tests/test_exact.py:L15 (Test)",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              45200,
+              43100,
+              42200,
+              41800,
+              41500,
+              41300,
+              41500,
+              41200,
+              41400,
+              70300,
+              50000,
+              44000,
+              42400,
+              42100,
+              41600,
+              41300,
+              41100,
+              41100,
+              41500,
+              40800,
+              40800,
+              41800,
+              41100,
+              40900,
+              40900,
+              41100,
+              40900,
+              41100,
+              40600,
+              41100
+            ],
+            "min": 40600,
+            "p50": 41300,
+            "p95": 50000,
+            "max": 70300
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              82400,
+              82100,
+              81900,
+              81500,
+              81200,
+              81000,
+              80900,
+              81000,
+              94200,
+              82800,
+              85500,
+              81200,
+              80600,
+              80700,
+              80700,
+              80600,
+              81100,
+              80800,
+              81000,
+              80700,
+              80700,
+              80800,
+              80700,
+              80700,
+              81000,
+              80900,
+              80400,
+              80600,
+              80700,
+              80400
+            ],
+            "min": 80400,
+            "p50": 80900,
+            "p95": 85500,
+            "max": 94200
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              27300,
+              26700,
+              26000,
+              25600,
+              25700,
+              25500,
+              25100,
+              25000,
+              25000,
+              24900,
+              25400,
+              95500,
+              59900,
+              34200,
+              28100,
+              26400,
+              25600,
+              25600,
+              25200,
+              25300,
+              24900,
+              25000,
+              24700,
+              25000,
+              25400,
+              25200,
+              24800,
+              24700,
+              24900,
+              24900
+            ],
+            "min": 24700,
+            "p50": 25300,
+            "p95": 59900,
+            "max": 95500
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              797100,
+              786300,
+              789200,
+              818900,
+              773600,
+              1076200,
+              890900,
+              919800,
+              922300,
+              832300,
+              835200,
+              803100,
+              833300,
+              791800,
+              789900,
+              817400,
+              785100,
+              774400,
+              779000,
+              772400,
+              808400,
+              807900,
+              817900,
+              895000,
+              874700,
+              814300,
+              781300,
+              770700,
+              786500,
+              779300
+            ],
+            "min": 770700,
+            "p50": 803100,
+            "p95": 922300,
+            "max": 1076200
+          }
+        }
+      },
+      {
+        "id": "file_hint_empty",
+        "scenario": "file_hint removes all candidates",
+        "query": "ExactTarget",
+        "limit": 10,
+        "file_hint": "missing/",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [],
+        "expected_empty": true,
+        "expected_error": false,
+        "expected_channel": null,
+        "actual_channel": null,
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "fts": {
+            "status": "no_match"
+          },
+          "like": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [],
+          "like": [],
+          "fuzzy": []
+        },
+        "selected_candidates": [],
+        "public_output": "No symbols found matching 'ExactTarget'",
+        "score": {
+          "eligible": false,
+          "recall_at_1": null,
+          "recall_at_5": null,
+          "recall_at_10": null,
+          "reciprocal_rank": null
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              52100,
+              44100,
+              42200,
+              41700,
+              41200,
+              41800,
+              41100,
+              41000,
+              41100,
+              41100,
+              47900,
+              45900,
+              42500,
+              41400,
+              41000,
+              40900,
+              41500,
+              41200,
+              41000,
+              41200,
+              40800,
+              41000,
+              41000,
+              40700,
+              41000,
+              41400,
+              41100,
+              40600,
+              40600,
+              40600
+            ],
+            "min": 40600,
+            "p50": 41100,
+            "p95": 47900,
+            "max": 52100
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              73200,
+              72000,
+              72000,
+              71600,
+              71700,
+              71400,
+              75500,
+              72600,
+              75200,
+              71500,
+              71900,
+              71700,
+              73800,
+              73500,
+              71700,
+              71500,
+              71500,
+              71300,
+              71300,
+              71200,
+              71200,
+              71200,
+              71400,
+              71300,
+              71700,
+              71600,
+              75700,
+              72300,
+              71500,
+              72000
+            ],
+            "min": 71200,
+            "p50": 71700,
+            "p95": 75500,
+            "max": 75700
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              17900,
+              18100,
+              17800,
+              17900,
+              17800,
+              17700,
+              17700,
+              17800,
+              17700,
+              17700,
+              17600,
+              17700,
+              17700,
+              17600,
+              21000,
+              17900,
+              17900,
+              17800,
+              17700,
+              17600,
+              17700,
+              17600,
+              17500,
+              17500,
+              17600,
+              17700,
+              17600,
+              17700,
+              17600,
+              17600
+            ],
+            "min": 17500,
+            "p50": 17700,
+            "p95": 18100,
+            "max": 21000
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              797400,
+              829400,
+              777100,
+              798500,
+              780700,
+              754800,
+              871700,
+              766200,
+              768300,
+              761600,
+              767700,
+              769500,
+              754800,
+              791200,
+              769300,
+              766400,
+              762600,
+              752900,
+              756200,
+              805900,
+              761300,
+              764200,
+              800400,
+              794900,
+              1254800,
+              812500,
+              779900,
+              948500,
+              837800,
+              791100
+            ],
+            "min": 752900,
+            "p50": 777100,
+            "p95": 948500,
+            "max": 1254800
+          }
+        }
+      },
+      {
+        "id": "empty_query",
+        "scenario": "empty query records current LIKE wildcard behavior",
+        "query": "",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/exact.py::ExactTarget"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": null,
+        "actual_error": true,
+        "error_matches_expectation": false,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "fts": {
+            "status": "not_applicable"
+          },
+          "like": {
+            "status": "not_applicable"
+          },
+          "fuzzy": {
+            "status": "not_applicable"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {}
+        },
+        "channels": {
+          "fts": [],
+          "like": [],
+          "fuzzy": []
+        },
+        "selected_candidates": [],
+        "public_output": "Error: text must not be empty.",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 0.0,
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "reciprocal_rank": 0.0
+        },
+        "timings": {
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              900,
+              700,
+              3200,
+              700,
+              700,
+              700,
+              700,
+              600,
+              700,
+              700,
+              700,
+              600,
+              700,
+              700,
+              600,
+              700,
+              600,
+              700,
+              600,
+              600,
+              700,
+              600,
+              800,
+              700,
+              700,
+              700,
+              600,
+              700,
+              600,
+              700
+            ],
+            "min": 600,
+            "p50": 700,
+            "p95": 900,
+            "max": 3200
+          }
+        }
+      },
+      {
+        "id": "special_characters",
+        "scenario": "special characters and FTS escaping",
+        "query": "token* (parser) \"",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [],
+        "expected_empty": true,
+        "expected_error": false,
+        "expected_channel": null,
+        "actual_channel": "like",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "fts": {
+            "status": "no_match"
+          },
+          "like": {
+            "status": "ok"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [],
+          "like": [
+            {
+              "channel": "like",
+              "rank": 1,
+              "node_ref": "src/cpp.cc::Auth::TokenParser",
+              "name": "Auth::TokenParser",
+              "file_path": "src/cpp.cc",
+              "line": 50,
+              "symbol_type": "class",
+              "score": 0.0
+            }
+          ],
+          "fuzzy": []
+        },
+        "selected_candidates": [
+          {
+            "channel": "like",
+            "rank": 1,
+            "node_ref": "src/cpp.cc::Auth::TokenParser",
+            "name": "Auth::TokenParser",
+            "file_path": "src/cpp.cc",
+            "line": 50,
+            "symbol_type": "class",
+            "score": 0.0
+          }
+        ],
+        "public_output": "search results for 'token* (parser) \"' (1 results, matched via LIKE)\n\n  [class] src/cpp.cc::Auth::TokenParser  src/cpp.cc:L50 (Core)",
+        "score": {
+          "eligible": false,
+          "recall_at_1": null,
+          "recall_at_5": null,
+          "recall_at_10": null,
+          "reciprocal_rank": null
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              41700,
+              39500,
+              38400,
+              38100,
+              38800,
+              64500,
+              41000,
+              38000,
+              37800,
+              37500,
+              37500,
+              37500,
+              37600,
+              38100,
+              38000,
+              37600,
+              38100,
+              37600,
+              37300,
+              37500,
+              37500,
+              37400,
+              37400,
+              37600,
+              37400,
+              37400,
+              37500,
+              37400,
+              37700,
+              37500
+            ],
+            "min": 37300,
+            "p50": 37600,
+            "p95": 41700,
+            "max": 64500
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              77000,
+              76400,
+              75900,
+              75400,
+              75700,
+              75700,
+              76000,
+              75200,
+              75600,
+              75600,
+              79900,
+              75900,
+              75700,
+              75700,
+              75500,
+              75700,
+              75700,
+              75900,
+              75300,
+              75600,
+              75400,
+              75200,
+              75100,
+              75200,
+              75400,
+              75700,
+              75600,
+              76000,
+              75300,
+              75800
+            ],
+            "min": 75100,
+            "p50": 75700,
+            "p95": 77000,
+            "max": 79900
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1000,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              800,
+              900,
+              900,
+              800,
+              900,
+              800,
+              900,
+              800,
+              900,
+              800,
+              900,
+              900,
+              800,
+              900,
+              900,
+              800,
+              900,
+              800,
+              900
+            ],
+            "min": 800,
+            "p50": 900,
+            "p95": 900,
+            "max": 1000
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              774000,
+              762200,
+              762800,
+              768800,
+              747300,
+              754700,
+              751000,
+              742200,
+              750400,
+              737900,
+              745200,
+              740000,
+              732900,
+              740000,
+              736000,
+              733300,
+              741700,
+              759400,
+              739500,
+              734100,
+              731900,
+              741500,
+              736200,
+              747900,
+              829500,
+              755300,
+              739600,
+              736900,
+              731000,
+              757900
+            ],
+            "min": 731000,
+            "p50": 741700,
+            "p95": 774000,
+            "max": 829500
+          }
+        }
+      },
+      {
+        "id": "no_result",
+        "scenario": "no result",
+        "query": "zzzz_nonexistent_symbol_987",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [],
+        "expected_empty": true,
+        "expected_error": false,
+        "expected_channel": null,
+        "actual_channel": null,
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "fts": {
+            "status": "no_match"
+          },
+          "like": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "fts": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "fts": [],
+          "like": [],
+          "fuzzy": []
+        },
+        "selected_candidates": [],
+        "public_output": "No symbols found matching 'zzzz_nonexistent_symbol_987'",
+        "score": {
+          "eligible": false,
+          "recall_at_1": null,
+          "recall_at_5": null,
+          "recall_at_10": null,
+          "reciprocal_rank": null
+        },
+        "timings": {
+          "fts": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              47800,
+              45600,
+              45100,
+              44700,
+              44200,
+              44200,
+              44100,
+              44500,
+              44400,
+              44500,
+              44200,
+              43900,
+              43500,
+              43700,
+              43600,
+              43600,
+              43800,
+              43800,
+              43900,
+              44100,
+              43700,
+              43800,
+              44000,
+              43900,
+              43700,
+              43700,
+              43700,
+              43700,
+              44000,
+              43600
+            ],
+            "min": 43500,
+            "p50": 43900,
+            "p95": 45600,
+            "max": 47800
+          },
+          "like": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              59800,
+              59400,
+              59000,
+              59000,
+              58700,
+              63400,
+              59200,
+              58700,
+              58800,
+              59000,
+              59500,
+              58800,
+              58800,
+              58700,
+              58700,
+              58500,
+              58800,
+              58800,
+              58800,
+              58700,
+              58600,
+              58800,
+              58800,
+              58800,
+              59400,
+              58500,
+              58600,
+              58700,
+              58500,
+              58500
+            ],
+            "min": 58500,
+            "p50": 58800,
+            "p95": 59800,
+            "max": 63400
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              196400,
+              195000,
+              194200,
+              194300,
+              194200,
+              194200,
+              197200,
+              195100,
+              195000,
+              197000,
+              195100,
+              194900,
+              194500,
+              193900,
+              194000,
+              195500,
+              195200,
+              194400,
+              196900,
+              194200,
+              194500,
+              194500,
+              194000,
+              194300,
+              194400,
+              194800,
+              218500,
+              198900,
+              198200,
+              194600
+            ],
+            "min": 193900,
+            "p50": 194600,
+            "p95": 198900,
+            "max": 218500
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              966100,
+              953200,
+              958900,
+              948000,
+              942100,
+              950000,
+              979200,
+              948800,
+              934400,
+              942700,
+              939300,
+              944500,
+              1094500,
+              1056300,
+              1055500,
+              964400,
+              944200,
+              982700,
+              946500,
+              949400,
+              939100,
+              968400,
+              937700,
+              939100,
+              935200,
+              948100,
+              931000,
+              936400,
+              950200,
+              1182000
+            ],
+            "min": 931000,
+            "p50": 948100,
+            "p95": 1094500,
+            "max": 1182000
+          }
+        }
+      }
+    ],
+    "metrics": {
+      "eligible_task_count": 13,
+      "recall_at_1": 0.8846153846153846,
+      "recall_at_5": 0.9230769230769231,
+      "recall_at_10": 0.9230769230769231,
+      "mrr": 0.9230769230769231,
+      "actual_no_result_rate": 0.13333333333333333,
+      "expected_empty_task_count": 3,
+      "expected_empty_accuracy": 0.6666666666666666,
+      "expected_error_task_count": 0,
+      "expected_error_accuracy": null
+    }
+  },
+  "comparison": {
+    "baseline_spec_id": "p1_1_current_retrieval",
+    "baseline_git_commit": "a5eebd51b518f65c02d7f9328102ff5b4b644abe",
+    "metrics_before_raw": {
+      "eligible_task_count": 13,
+      "recall_at_1": 0.9615384615384616,
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "mrr": 1.0,
+      "actual_no_result_rate": 0.1875,
+      "expected_empty_task_count": 3,
+      "expected_empty_accuracy": 1.0
+    },
+    "metrics_after_raw": {
+      "eligible_task_count": 13,
+      "recall_at_1": 0.8846153846153846,
+      "recall_at_5": 0.9230769230769231,
+      "recall_at_10": 0.9230769230769231,
+      "mrr": 0.9230769230769231,
+      "actual_no_result_rate": 0.13333333333333333,
+      "expected_empty_task_count": 3,
+      "expected_empty_accuracy": 0.6666666666666666,
+      "expected_error_task_count": 0,
+      "expected_error_accuracy": null
+    },
+    "metrics_before": {
+      "eligible_task_count": 12,
+      "recall_at_1": 0.9583333333333334,
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "mrr": 1.0,
+      "actual_no_result_rate": 0.2,
+      "expected_empty_task_count": 3,
+      "expected_empty_accuracy": 1.0,
+      "expected_error_task_count": 0,
+      "expected_error_accuracy": null
+    },
+    "metrics_after": {
+      "eligible_task_count": 12,
+      "recall_at_1": 0.9583333333333334,
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "mrr": 1.0,
+      "actual_no_result_rate": 0.13333333333333333,
+      "expected_empty_task_count": 3,
+      "expected_empty_accuracy": 0.6666666666666666,
+      "expected_error_task_count": 0,
+      "expected_error_accuracy": null
+    },
+    "excluded_contract_change_ids": [
+      "empty_query"
+    ],
+    "database_before": {
+      "database_bytes": 208896,
+      "wal_bytes": 0,
+      "version_before": "10.0.0",
+      "version_after": "10.0.0",
+      "migration_count_before": 0,
+      "migration_count_after": 0
+    },
+    "database_after": {
+      "database_bytes": 208896,
+      "wal_bytes": 0,
+      "version_before": "10.0.0",
+      "version_after": "10.0.0",
+      "migration_count_before": 0,
+      "migration_count_after": 0
+    },
+    "tasks": [
+      {
+        "id": "exact_qualified_name",
+        "classification": "unchanged",
+        "before_channel": "like",
+        "after_channel": "like",
+        "before_candidates": [
+          "src/cpp.cc::Auth::TokenParser"
+        ],
+        "after_candidates": [
+          "src/cpp.cc::Auth::TokenParser"
+        ]
+      },
+      {
+        "id": "exact_short_name",
+        "classification": "unchanged",
+        "before_channel": "like",
+        "after_channel": "like",
+        "before_candidates": [
+          "src/exact.py::ExactTarget"
+        ],
+        "after_candidates": [
+          "src/exact.py::ExactTarget"
+        ]
+      },
+      {
+        "id": "name_prefix",
+        "classification": "behavior_change",
+        "before_channel": "like",
+        "after_channel": "like",
+        "before_candidates": [
+          "src/exact.py::ExactTarget",
+          "src/other.py::ExactTargetHelper",
+          "tests/test_exact.py::ExactTarget"
+        ],
+        "after_candidates": [
+          "src/exact.py::ExactTarget",
+          "tests/test_exact.py::ExactTarget",
+          "src/other.py::ExactTargetHelper"
+        ]
+      },
+      {
+        "id": "snake_case_tokens",
+        "classification": "unchanged",
+        "before_channel": "like",
+        "after_channel": "like",
+        "before_candidates": [
+          "src/names.py::parse_input_record"
+        ],
+        "after_candidates": [
+          "src/names.py::parse_input_record"
+        ]
+      },
+      {
+        "id": "camel_case_tokens",
+        "classification": "unchanged",
+        "before_channel": "like",
+        "after_channel": "like",
+        "before_candidates": [
+          "src/names.py::getUserById"
+        ],
+        "after_candidates": [
+          "src/names.py::getUserById"
+        ]
+      },
+      {
+        "id": "cpp_namespace_tokens",
+        "classification": "unchanged",
+        "before_channel": "like",
+        "after_channel": "like",
+        "before_candidates": [
+          "src/cpp.cc::Auth::TokenParser"
+        ],
+        "after_candidates": [
+          "src/cpp.cc::Auth::TokenParser"
+        ]
+      },
+      {
+        "id": "summary_bm25",
+        "classification": "unchanged",
+        "before_channel": "fts",
+        "after_channel": "fts",
+        "before_candidates": [
+          "src/exact.py::ExactTarget"
+        ],
+        "after_candidates": [
+          "src/exact.py::ExactTarget"
+        ]
+      },
+      {
+        "id": "summary_name_conflict",
+        "classification": "unchanged",
+        "before_channel": "fts",
+        "after_channel": "fts",
+        "before_candidates": [
+          "src/summary.py::persist_blob"
+        ],
+        "after_candidates": [
+          "src/summary.py::persist_blob"
+        ]
+      },
+      {
+        "id": "multiterm_and",
+        "classification": "unchanged",
+        "before_channel": "fts",
+        "after_channel": "fts",
+        "before_candidates": [
+          "src/summary.py::persist_blob"
+        ],
+        "after_candidates": [
+          "src/summary.py::persist_blob"
+        ]
+      },
+      {
+        "id": "like_substring",
+        "classification": "behavior_change",
+        "before_channel": "like",
+        "after_channel": "fuzzy",
+        "before_candidates": [
+          "src/summary.py::helper_function"
+        ],
+        "after_candidates": [
+          "src/summary.py::helper_function"
+        ]
+      },
+      {
+        "id": "fuzzy_typo",
+        "classification": "unchanged",
+        "before_channel": "fuzzy",
+        "after_channel": "fuzzy",
+        "before_candidates": [
+          "src/summary.py::processData"
+        ],
+        "after_candidates": [
+          "src/summary.py::processData"
+        ]
+      },
+      {
+        "id": "file_hint_positive",
+        "classification": "unchanged",
+        "before_channel": "like",
+        "after_channel": "like",
+        "before_candidates": [
+          "tests/test_exact.py::ExactTarget"
+        ],
+        "after_candidates": [
+          "tests/test_exact.py::ExactTarget"
+        ]
+      },
+      {
+        "id": "file_hint_empty",
+        "classification": "unchanged",
+        "before_channel": null,
+        "after_channel": null,
+        "before_candidates": [],
+        "after_candidates": []
+      },
+      {
+        "id": "empty_query",
+        "classification": "intentional_contract_change",
+        "before_channel": "like",
+        "after_channel": null,
+        "before_candidates": [
+          "src/exact.py::ExactTarget",
+          "src/other.py::ExactTargetHelper",
+          "src/names.py::parse_input_record",
+          "src/names.py::getUserById",
+          "src/cpp.cc::Auth::TokenParser",
+          "src/summary.py::persist_blob",
+          "src/summary.py::encrypt_session_tokens",
+          "src/summary.py::helper_function",
+          "src/summary.py::processData",
+          "tests/test_exact.py::ExactTarget"
+        ],
+        "after_candidates": []
+      },
+      {
+        "id": "special_characters",
+        "classification": "behavior_change",
+        "before_channel": null,
+        "after_channel": "like",
+        "before_candidates": [],
+        "after_candidates": [
+          "src/cpp.cc::Auth::TokenParser"
+        ]
+      },
+      {
+        "id": "no_result",
+        "classification": "unchanged",
+        "before_channel": null,
+        "after_channel": null,
+        "before_candidates": [],
+        "after_candidates": []
+      }
+    ]
+  }
+}

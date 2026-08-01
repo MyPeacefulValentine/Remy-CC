@@ -149,6 +149,36 @@ and `query_navigate` corpus counts and prompt characters. Navigation measurement
 only calls corpus and prompt helpers; it does not call an LLM or write the cache.
 Normal runs cannot update the committed snapshot.
 
+### P1.2 query-boundary baseline
+
+`tasks/retrieval_baseline/p1_2.json` uses format `1.1.0`. It adds
+`match=all/any/phrase`, language/type/path filters, invalid-input contracts,
+Unicode queries, deterministic LIKE/fuzzy ordering, and same-name fuzzy limit
+cases. Channel records distinguish `ok`, `no_match`, `channel_error`, and
+`not_applicable`. FTS `any` records the per-term candidate cap and whether a
+term reached that cap.
+
+P1.1 artifacts remain unchanged. P1.2 uses two committed records:
+
+- `baselines/p1_2.json` stores the expanded P1.2 fixture and tasks.
+- `baselines/p1_2_compat.json` stores a fresh run of the unchanged P1.1 fixture
+  plus the comparison with `baselines/p1_1.json`.
+
+```bash
+python -m eval.cli retrieval-baseline \
+  --tasks eval/tasks/retrieval_baseline/p1_2.json \
+  --update-snapshot eval/baselines/p1_2.json
+
+python -m eval.cli retrieval-baseline \
+  --tasks eval/tasks/retrieval_baseline/p1_1.json \
+  --compare-baseline eval/baselines/p1_1.json \
+  --comparison-output eval/baselines/p1_2_compat.json
+```
+
+The empty-query difference in the compatibility record is classified as
+`intentional_contract_change`. Other candidate, channel, or rank differences
+are classified as `behavior_change` and remain visible in the record.
+
 ## Reading the results
 
 - **direct tier** — expect `ΔF1 ≈ 0` with `Δtokens < 0`: the tool wins on cost,

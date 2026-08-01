@@ -216,16 +216,21 @@ event/callback patterns (3 results)
 
 ### query_search
 
-按名称模糊搜索符号。三级回退策略：
-1. **FTS5 前缀匹配**（最快，利用全文索引）
-2. **LIKE 子串匹配**（FTS 无结果时）
-3. **编辑距离匹配**（LIKE 无结果时，捕获拼写错误）
+通过FTS5、词前缀LIKE匹配和编辑距离回退搜索符号。无效输入或通道执行错误返回
+`Error:`结果，并且不继续执行后续通道。
 
 | 参数 | 类型 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `text` | `str` | （必需） | 搜索查询（部分名称、前缀或近似值） |
-| `limit` | `int` | `10` | 最大返回结果数 |
-| `file_hint` | `str` | `""` | 文件路径子串过滤 |
+| `text` | `str` | （必需） | 查询文本；操作符和标点按分隔符处理 |
+| `limit` | `int` | `10` | 结果上限，范围为`1..MCP_RESULT_LIMIT` |
+| `file_hint` | `str` | `""` | `path_hint`的兼容别名 |
+| `match` | `str` | `"all"` | `all`、`any`或精确连续`phrase`语义 |
+| `language` | `str` | `""` | `python`、`c_cpp`或`typescript`解析器家族 |
+| `symbol_type` | `str` | `""` | 精确符号类型过滤 |
+| `path_hint` | `str` | `""` | 不区分大小写的字面路径子串过滤 |
+
+只有当`file_hint`和`path_hint`规范化后相同时，才可同时提供。路径分隔符会被统一。
+`%`和`_`是普通字符，不是通配符。结果中的符号类型、文件、名称和行号字段保持不变。
 
 **输出示例：**
 ```
@@ -323,7 +328,7 @@ search results for 'pars_fil' (2 results, matched via fuzzy)
 | `MCP_BFS_MAX_DEPTH` | `5` | BFS 深度硬上限（callers/callees/impact） |
 | `MCP_IMPACT_MAX_DEPTH_UP` | `3` | `query_impact` 默认上游深度 |
 | `MCP_IMPACT_MAX_DEPTH_DOWN` | `3` | `query_impact` 默认下游深度 |
-| `MCP_RESULT_LIMIT` | `50` | BFS 输出中每层最大结果数 |
+| `MCP_RESULT_LIMIT` | `50` | 共享结果上限：BFS每层最多保留的条目数，也是`query_search.limit`允许的最大值；可在`remy-cc config`中配置为10至500 |
 | `MCP_STATIC_ONLY_DEFAULT` | `false` | 未指定 `static_only` 时的默认值 |
 | `FLOW_MAX_DEPTH` | `15` | `query_flow` 默认最大 BFS 深度 |
 | `FLOW_MAX_VISITED` | `2000` | `query_flow` 默认最大访问节点数 |

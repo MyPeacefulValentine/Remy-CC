@@ -81,6 +81,11 @@ class TestProjectionCreation:
             "language", "symbol_type", "file_path", "name", "name_tokens",
             "signature", "summary_short", "summary_full",
         }.issubset(columns)
+        indexes = {
+            row[1]
+            for row in db.execute("PRAGMA index_list(retrieval_documents)").fetchall()
+        }
+        assert {"idx_retrieval_kind", "idx_retrieval_file"}.issubset(indexes)
         assert VERSION == "10.0.0"
 
     def test_shared_tokenizer_handles_supported_name_forms(self):

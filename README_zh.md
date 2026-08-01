@@ -90,7 +90,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | `query_callees` | BFS 下游被调用者 |
 | `query_impact` | 完整影响分析（等价于 `impact.py` CLI） |
 | `query_patterns` | 查询事件/回调注册关系 |
-| `query_search` | 模糊符号搜索 — FTS5 前缀 → LIKE 子串 → 编辑距离回退 |
+| `query_search` | 结构化符号搜索，支持all/any/phrase匹配、语言/类型/路径过滤和编辑距离回退 |
 | `query_flow` | 通过双向 BFS 查找命名符号间的调用路径 |
 | `query_cluster_summary` | 单/全集群的语义摘要（short / full）与元数据 |
 | `query_cluster_files` | 列出指定 cluster 的成员文件（含 layer），可选附短摘要 |
