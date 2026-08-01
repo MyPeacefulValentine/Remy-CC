@@ -2,6 +2,10 @@
   "include": [
     "skills/remy-index/index_state.py",
     "skills/remy-index/retrieval_projection.py",
+    "skills/remy-index/schema.py",
+    "skills/remy-index/symbol_names.py",
+    "skills/remy-index/migrations.py",
+    "skills/remy-index/scanner.py",
     "skills/remy-index/struct_scan.py",
     "skills/remy-index/summarizer.py",
     "skills/remy-index/run.py",

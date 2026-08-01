@@ -1,24 +1,27 @@
 """Tests for v6 -> v7 migration ladder in struct_scan.py."""
 
 import hashlib
+import importlib
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skills", "remy-index"))
-from struct_scan import (
-    MIGRATION_HANDLERS,
-    SCHEMA_SQL,
-    VERSION,
-    _migrate_v6_to_v7,
-    _migrate_v7_to_v8,
-    _migrate_v8_to_v9,
-    _migrate_v9_to_v10,
-    _resolve_migration_path,
-)
+migrations = importlib.import_module("migrations")
+schema = importlib.import_module("schema")
+
+MIGRATION_HANDLERS = migrations.MIGRATION_HANDLERS
+_migrate_v6_to_v7 = migrations._migrate_v6_to_v7
+_migrate_v7_to_v8 = migrations._migrate_v7_to_v8
+_migrate_v8_to_v9 = migrations._migrate_v8_to_v9
+_migrate_v9_to_v10 = migrations._migrate_v9_to_v10
+_resolve_migration_path = migrations._resolve_migration_path
+SCHEMA_SQL = schema.SCHEMA_SQL
+VERSION = schema.VERSION
 
 
 V6_SCHEMA = """
@@ -239,6 +242,42 @@ def test_migration_handlers_registered():
 
 def test_version_constant_is_v10():
     assert VERSION == "10.0.0"
+
+
+def test_migration_modules_import_without_parsers():
+    skill_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "skills", "remy-index")
+    )
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        skill_dir + os.pathsep + existing_pythonpath
+        if existing_pythonpath else skill_dir
+    )
+    script = (
+        "import importlib, json, sys; "
+        "importlib.import_module('schema'); "
+        "importlib.import_module('migrations'); "
+        "print(json.dumps(sorted(name for name in sys.modules "
+        "if name == 'parsers' or name.startswith('parsers.'))))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        check=True,
+        env=env,
+        text=True,
+    )
+    assert json.loads(result.stdout) == []
+
+
+def test_struct_scan_reexports_migration_contract():
+    struct_scan = importlib.import_module("struct_scan")
+    assert struct_scan.VERSION == VERSION
+    assert struct_scan.SCHEMA_SQL == SCHEMA_SQL
+    assert struct_scan.MIGRATION_HANDLERS is MIGRATION_HANDLERS
+    assert struct_scan._migrate_v6_to_v7 is _migrate_v6_to_v7
+    assert struct_scan._resolve_migration_path is _resolve_migration_path
 
 
 def test_ladder_reentry_idempotent(tmp_path):
@@ -583,7 +622,7 @@ def test_schema_sql_is_idempotent(tmp_path):
 
 
 def test_init_db_creates_backup_on_version_mismatch(tmp_path):
-    from struct_scan import StructScanner
+    StructScanner = importlib.import_module("struct_scan").StructScanner
 
     db_dir = tmp_path / ".claude"
     db_dir.mkdir()
@@ -615,7 +654,7 @@ def test_init_db_creates_backup_on_version_mismatch(tmp_path):
 
 
 def test_init_db_backup_includes_committed_wal_rows(tmp_path):
-    from struct_scan import StructScanner
+    StructScanner = importlib.import_module("struct_scan").StructScanner
 
     db_dir = tmp_path / ".claude"
     db_dir.mkdir()
@@ -639,7 +678,7 @@ def test_init_db_backup_includes_committed_wal_rows(tmp_path):
 
 
 def test_init_db_rejects_existing_database_without_version(tmp_path):
-    from struct_scan import StructScanner
+    StructScanner = importlib.import_module("struct_scan").StructScanner
 
     db_dir = tmp_path / ".claude"
     db_dir.mkdir()

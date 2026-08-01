@@ -18,7 +18,7 @@ The server exits gracefully (exit code 0) if `mcp` is not installed or if `MCP_S
 ┌─────────────────────┐       JSON-RPC (stdio)       ┌──────────────────────────┐
 │   Claude Code       │ ◄──────────────────────────► │  index_mcp_server.py     │
 │   (MCP client)      │                              │  ├─ _init_freshness()    │
-└─────────────────────┘                              │  ├─ 8 tool handlers      │
+└─────────────────────┘                              │  ├─ 12 tool handlers     │
                                                      │  └─ _with_freshness()    │
                                                      └──────────┬───────────────┘
                                                                 │ import
@@ -30,8 +30,9 @@ The server exits gracefully (exit code 0) if `mcp` is not installed or if `MCP_S
                                                      └──────────┬───────────────┘
                                                                 │ import
                                                      ┌──────────▼───────────────┐
-                                                     │  impact.py + struct_scan │
-                                                     │  (shared BFS / helpers)  │
+                                                     │  impact.py +             │
+                                                     │  struct_scan.py           │
+                                                     │  (stable helper entry)    │
                                                      └──────────┬───────────────┘
                                                                 │ read-only
                                                      ┌──────────▼───────────────┐
@@ -40,7 +41,7 @@ The server exits gracefully (exit code 0) if `mcp` is not installed or if `MCP_S
                                                      └──────────────────────────┘
 ```
 
-**Data flow**: `struct_scan.py` (triggered at SessionStart or by the dirty-file consumer) writes symbols, edges, and patterns into `logic_index.db`. The MCP server opens the database in read-only WAL mode and serves queries. Full, incremental, and manual index writers share a project scan lock; MCP reads remain concurrent with the active writer.
+**Data flow**: `struct_scan.py` remains the stable SessionStart/dirty-consumer entry point and delegates structural work to `scanner.py`; `schema.py`, `symbol_names.py`, and `migrations.py` hold the schema, name-tokenization, and database-migration contracts. The scanner writes symbols, edges, and patterns into `logic_index.db`. The MCP server opens the database in read-only WAL mode and serves queries. Full, incremental, and manual index writers share a project scan lock; MCP reads remain concurrent with the active writer.
 
 ## Startup & Registration
 

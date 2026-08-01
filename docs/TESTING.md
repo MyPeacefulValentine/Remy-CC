@@ -16,7 +16,7 @@ python -m pip install -r requirements-tree-sitter.txt
 
 ## Verification baseline
 
-The repository baseline before P0.1a/P0.1b implementation contained 454 collected tests. New tests may increase this number.
+The repository baseline before P0.1a/P0.1b implementation contained 454 collected tests. The P0.5 structural-module refactor verification collected 509 passing tests on 2026-08-01.
 
 ```bash
 python -m pytest tests -q -p no:cacheprovider
@@ -51,4 +51,4 @@ The full-project command rejects non-Git directories and revisions other than th
 
 ## Boundaries
 
-Committed tests use synthetic source or the fixed MulanPSL-2.0 TEE fixture, temporary directories, and temporary SQLite databases. They do not require an LLM API key or network access. P0.3 compares normalized full and incremental states. P0.4 adds fixed-revision symbols and relationships, repeated full-scan idempotency, handler rename/delete comparisons, parser-backend reporting, and local full-project measurement commands.
+Committed tests use synthetic source or the fixed MulanPSL-2.0 TEE fixture, temporary directories, and temporary SQLite databases. They do not require an LLM API key or network access. P0.3 compares normalized full and incremental states. P0.4 adds fixed-revision symbols and relationships, repeated full-scan idempotency, handler rename/delete comparisons, parser-backend reporting, and local full-project measurement commands. P0.5 moves the structural implementation into `schema.py`, `symbol_names.py`, `migrations.py`, and `scanner.py`; `struct_scan.py` remains the stable CLI/import entry point. Migration tests import without parser modules, while the full suite, Pyright, compatibility exports, both fixture backends, and the three fixed full-project scans verify unchanged external behavior.

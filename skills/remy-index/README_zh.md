@@ -15,11 +15,11 @@ remy-index 是一个基于多语言源码解析和 OpenAI 兼容 API 的语义�
 ```
 Stage 1: 结构扫描（无 LLM，Hook 驱动）
 ┌──────────────────────────────────────────────────────────┐
-│  struct_scan.py（独立扫描器）                            │
-│  ├── 符号提取，含起止行号（end_lineno）                  │
-│  ├── 调用图边 + import 解析                              │
-│  ├── 架构层分配                                          │
-│  ├── struct_hash（原始源码 MD5，跳过未变更文件）         │
+│  struct_scan.py（稳定CLI和导入入口）                     │
+│  ├── schema.py：当前SQLite schema契约                    │
+│  ├── symbol_names.py：共享名称拆词                       │
+│  ├── migrations.py：数据库初始化与migration阶梯          │
+│  └── scanner.py：事实提取、图后处理、全量与增量扫描      │
 │  触发：SessionStart、PreCompact（全量扫描）              │
 │        PreToolUse 脏文件消费（增量扫描）                 │
 └──────────────────────────────────────────────────────────┘
@@ -29,7 +29,7 @@ Stage 2: LLM 摘要生成（依赖 API，手动调用）
 │  run.py（LLM 索引器）                                    │
 │  ├── 将 Stage 1 委托给 struct_scan.py                    │
 │  ├── 为脏符号生成语义摘要                                │
-│  └── 保存 logic_index.db + logic_index.db               │
+│  └── 将结构事实和摘要保存到logic_index.db                 │
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────┐
@@ -62,7 +62,7 @@ Stage 2: LLM 摘要生成（依赖 API，手动调用）
 └──────────────────────────────────────────────────────────┘
 ```
 
-结构扫描和语义摘要写入者共用项目级进程锁。结构扫描返回 `success`、`partial` 或 `failed`，对应退出码 `0`、`2` 和 `1`。脏路径通过可恢复的 processing 快照处理；只有完成结构扫描和全局后处理的路径才会被确认。
+结构扫描和语义摘要写入者共用项目级进程锁。`struct_scan.py`保留既有CLI和Python导入，`schema.py`、`symbol_names.py`、`migrations.py`和`scanner.py`提供内部实现。安装器递归部署整个`skills/remy-index/`目录，因此这些模块会一同安装。结构扫描返回`success`、`partial`或`failed`，对应退出码`0`、`2`和`1`。脏路径通过可恢复的processing快照处理；只有完成结构扫描和全局后处理的路径才会被确认。
 
 ## 支持的语言
 

@@ -9,13 +9,13 @@ The system operates in two stages across four layers:
 ```
 Stage 1: Structural Scanning (no LLM, Hook-driven)
 ┌──────────────────────────────────────────────────────────┐
-│  struct_scan.py (standalone scanner)                     │
-│  ├── Symbol extraction with start/end line numbers       │
-│  ├── Call graph edges + import resolution                │
-│  ├── Architecture layer assignment                       │
-│  ├── struct_hash (raw source MD5, skip-if-unchanged)     │
-│  Triggers: SessionStart, PreCompact (full scan)          │
-│            PreToolUse via dirty file consumer            │
+│  struct_scan.py (stable CLI/import entry point)           │
+│  ├── schema.py: current SQLite schema contract            │
+│  ├── symbol_names.py: shared name tokenization            │
+│  ├── migrations.py: initialization + migration ladder     │
+│  └── scanner.py: extraction, graph post-pass, full/delta  │
+│  Triggers: SessionStart, PreCompact (full scan)           │
+│            PreToolUse via dirty file consumer             │
 └──────────────────────────────────────────────────────────┘
 
 Stage 2: LLM Summarization (API-dependent, manual invocation)
@@ -23,7 +23,7 @@ Stage 2: LLM Summarization (API-dependent, manual invocation)
 │  run.py (LLM indexer)                                    │
 │  ├── Delegates Stage 1 to struct_scan.py                 │
 │  ├── Generates semantic summaries for dirty symbols      │
-│  └── Saves logic_index.db + logic_index.db              │
+│  └── Saves structural facts and summaries to logic_index.db│
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────┐
@@ -57,7 +57,7 @@ Stage 2: LLM Summarization (API-dependent, manual invocation)
 └──────────────────────────────────────────────────────────┘
 ```
 
-The structural and semantic writers share a project-level process lock. Structural scans return `success`, `partial`, or `failed` and map these states to exit codes `0`, `2`, and `1`. Dirty paths move through a crash-recoverable processing snapshot; only paths covered by a successful structural scan and global post-pass are acknowledged.
+The structural and semantic writers share a project-level process lock. `struct_scan.py` preserves the existing CLI and Python imports; `schema.py`, `symbol_names.py`, `migrations.py`, and `scanner.py` provide the internal implementation. The installer deploys the complete `skills/remy-index/` directory, so these modules are installed together. Structural scans return `success`, `partial`, or `failed` and map these states to exit codes `0`, `2`, and `1`. Dirty paths move through a crash-recoverable processing snapshot; only paths covered by a successful structural scan and global post-pass are acknowledged.
 
 ## Supported Languages
 

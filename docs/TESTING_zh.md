@@ -16,7 +16,7 @@ python -m pip install -r requirements-tree-sitter.txt
 
 ## 验证基线
 
-P0.1a/P0.1b 实施前，仓库工作树可收集454项测试。本轮新增测试会增加该数字。
+P0.1a/P0.1b实施前，仓库工作树可收集454项测试。2026-08-01的P0.5结构模块重构验证收集并通过509项测试。
 
 ```bash
 python -m pytest tests -q -p no:cacheprovider
@@ -51,4 +51,4 @@ python tests/tee_project_canary.py /path/to/tee_tee_os_framework --backend regex
 
 ## 边界
 
-已提交测试使用合成源码或固定的MulanPSL-2.0 TEE fixture、临时目录和临时SQLite数据库，不需要LLM API key或网络。P0.3比较全量与增量扫描的规范化状态。P0.4增加固定版本符号和关系、重复全量幂等性、handler重命名/删除比较、解析后端报告及本地完整项目测量命令。
+已提交测试使用合成源码或固定的MulanPSL-2.0 TEE fixture、临时目录和临时SQLite数据库，不需要LLM API key或网络。P0.3比较全量与增量扫描的规范化状态。P0.4增加固定版本符号和关系、重复全量幂等性、handler重命名/删除比较、解析后端报告及本地完整项目测量命令。P0.5将结构扫描实现拆分到`schema.py`、`symbol_names.py`、`migrations.py`和`scanner.py`，`struct_scan.py`继续作为稳定CLI和导入入口。migration测试验证导入时不加载parser模块；完整测试、Pyright、兼容再导出、两种fixture后端和三次固定完整项目扫描验证外部行为不变。
