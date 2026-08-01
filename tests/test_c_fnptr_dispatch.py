@@ -120,6 +120,64 @@ def db_with_schema(tmp_path):
 
 
 class TestExtractPatterns:
+    def test_function_pointer_typedef_symbol_identity_matches_pattern(self, monkeypatch):
+        import parsers.c_cpp_parser as parser_module
+
+        parser = CCppParser()
+        tree_symbols = parser.parse_symbols(HEADER, "disp.h")
+        assert any(
+            symbol.name == "sync_func" and symbol.type == "typedef"
+            for symbol in tree_symbols
+        )
+
+        monkeypatch.setattr(parser_module, "TREE_SITTER_AVAILABLE", False)
+        regex_symbols = CCppParser().parse_symbols(HEADER, "disp.h")
+        typedef = next(
+            symbol for symbol in regex_symbols if symbol.name == "sync_func"
+        )
+        assert typedef.type == "typedef"
+        assert typedef.source_segment == (
+            "typedef int (*sync_func)(const void *cmd);"
+        )
+
+        typedefs = [
+            pattern for pattern in parser.extract_patterns(HEADER, "disp.h")
+            if pattern["pattern_type"] == "c_fnptr_typedef"
+        ]
+        assert any(pattern["signal_name"] == "sync_func" for pattern in typedefs)
+
+    def test_const_function_pointer_typedef_symbol_identity(self, monkeypatch):
+        import parsers.c_cpp_parser as parser_module
+
+        source = "typedef void (* const callback_t)(int);"
+        tree_symbols = CCppParser().parse_symbols(source, "types.h")
+        assert [(symbol.name, symbol.type) for symbol in tree_symbols] == [
+            ("callback_t", "typedef")
+        ]
+
+        monkeypatch.setattr(parser_module, "TREE_SITTER_AVAILABLE", False)
+        regex_symbols = CCppParser().parse_symbols(source, "types.h")
+        assert [(symbol.name, symbol.type) for symbol in regex_symbols] == [
+            ("callback_t", "typedef")
+        ]
+
+    def test_nested_typedef_declarators_use_identifier_leaf(self):
+        source = """\
+typedef int (*sync_func)(const void *cmd);
+typedef int callback_t(void);
+typedef int values_t[4];
+typedef int plain_t;
+"""
+        tree_symbols = CCppParser().parse_symbols(source, "types.h")
+        assert {
+            symbol.name: symbol.type for symbol in tree_symbols
+        } == {
+            "sync_func": "typedef",
+            "callback_t": "typedef",
+            "values_t": "typedef",
+            "plain_t": "typedef",
+        }
+
     def test_emits_four_fact_families(self):
         parser = CCppParser()
         header_pats = parser.extract_patterns(HEADER, "disp.h")

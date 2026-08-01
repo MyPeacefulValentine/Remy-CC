@@ -41,7 +41,7 @@ Examples:
 
 Input:
 - Target Symbols: ["queue_push"]
-- Source Code: int queue_push(queue_t *q, void *item) { if (!q || q->size == q->cap) return -ENOMEM; q->data[q->tail++] = item; return 0; }
+- Source Code: int queue_push(queue_t *q, void *item) {{ if (!q || q->size == q->cap) return -ENOMEM; q->data[q->tail++] = item; return 0; }}
 
 Output:
 [{{"name": "queue_push", "summary": "Enqueue into bounded ring; -ENOMEM if full."}}]

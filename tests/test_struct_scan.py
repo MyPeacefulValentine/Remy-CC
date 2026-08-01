@@ -1140,6 +1140,36 @@ class TestRunPyV8Compat:
         yield instance
         conn.close()
 
+    def test_symbol_prompt_templates_accept_format_substitution(self, indexer):
+        from parsers.c_cpp_parser import CCppParser
+        from parsers.python_parser import PythonParser
+        from parsers.ts_parser import TSParser
+
+        values = {
+            "source_code": "int main(void) { return 0; }",
+            "target_symbols": "main",
+            "context_summaries": "",
+            "lang": "English",
+        }
+        for parser in (PythonParser(), CCppParser(), TSParser()):
+            template = indexer._load_prompt_template(parser)
+            rendered = template.format(**values)
+            assert "main" in rendered
+            assert "int main(void) { return 0; }" in rendered
+
+    def test_c_symbol_prompt_keeps_literal_example_braces(self, indexer):
+        from parsers.c_cpp_parser import CCppParser
+
+        template = indexer._load_prompt_template(CCppParser())
+        rendered = template.format(
+            source_code="source",
+            target_symbols="target",
+            context_summaries="",
+            lang="English",
+        )
+        assert "void *item) { if (!q" in rendered
+        assert "return 0; }" in rendered
+
     def test_select_dirty_runs_under_v8_without_error(self, indexer):
         indexer.db.execute("INSERT INTO files (path, struct_hash) VALUES ('a.py', 'h1')")
         indexer.db.execute(

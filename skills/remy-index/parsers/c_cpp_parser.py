@@ -201,7 +201,10 @@ def _line_number_at(source, pos):
 # Emits raw, per-file facts; cross-file resolution (typedef/struct layout spanning
 # .h and .c) happens in the synthesizer, which sees every file's patterns.
 
-RE_FNPTR_TYPEDEF = re.compile(r'\btypedef\b[^;{}]*?\(\s*(?:\w+\s+)*\*\s*(\w+)\s*\)\s*\(')
+RE_FNPTR_TYPEDEF = re.compile(
+    r'\btypedef\b[^;{}]*?\(\s*(?:\w+\s+)*\*\s*'
+    r'(?:(?:const|volatile|restrict|__restrict|__restrict__)\s+)*(\w+)\s*\)\s*\('
+)
 RE_FNTYPE_TYPEDEF = re.compile(r'\btypedef\b([^;{}]*);')
 RE_STRUCT_DEF = re.compile(r'\bstruct\s+(\w+)\s*\{', re.MULTILINE)
 RE_TABLE_INIT = re.compile(
@@ -388,6 +391,22 @@ def _ts_func_params(node):
     return "()"
 
 
+def _ts_declarator_name(node):
+    """Extract the identifier leaf from a nested C/C++ declarator."""
+    if node is None:
+        return None
+    if node.type in ('identifier', 'type_identifier', 'field_identifier'):
+        return _ts_node_text(node)
+    declarator = node.child_by_field_name('declarator')
+    if declarator is not None:
+        return _ts_declarator_name(declarator)
+    for child in node.named_children:
+        name = _ts_declarator_name(child)
+        if name:
+            return name
+    return None
+
+
 class CCppParser(LanguageParser):
     """Parser for C and C++ source files. Uses tree-sitter when available, regex otherwise."""
 
@@ -461,13 +480,34 @@ class CCppParser(LanguageParser):
         tree = parser.parse(source_bytes)
 
         symbols = []
-        self._ts_walk_node(tree.root_node, source, source_bytes, symbols, parent_name=None)
+        root = tree.root_node
+        self._ts_walk_node(root, source, source_bytes, symbols, parent_name=None)
+        if root.type in self._TS_PREPROC_CONTAINERS:
+            self._ts_walk_node(root, source, source_bytes, symbols, parent_name=None)
+        elif root.type == 'type_definition':
+            self._ts_extract_typedef(root, source_bytes, symbols, parent_name=None)
         symbols.sort(key=lambda s: s.lineno)
         return symbols
 
     _TS_PREPROC_CONTAINERS = frozenset({
         'preproc_ifdef', 'preproc_if', 'preproc_else', 'preproc_elif',
     })
+
+    def _ts_extract_typedef(self, node, source_bytes, symbols, parent_name):
+        decl = node.child_by_field_name('declarator')
+        name = _ts_declarator_name(decl) if decl else None
+        if not name:
+            return
+        full_name = f"{parent_name}.{name}" if parent_name else name
+        symbols.append(SymbolInfo(
+            name=full_name,
+            args="",
+            type="typedef",
+            lineno=node.start_point[0] + 1,
+            source_segment=_ts_node_text(node),
+            end_lineno=node.end_point[0] + 1,
+            docstring=_ts_extract_doxygen(source_bytes, node),
+        ))
 
     def _ts_walk_node(self, node, source, source_bytes, symbols, parent_name):
         """Recursively walk tree-sitter AST and extract symbols."""
@@ -497,19 +537,7 @@ class CCppParser(LanguageParser):
                     ))
 
             elif child.type == 'type_definition':
-                decl = child.child_by_field_name('declarator')
-                if decl:
-                    name = _ts_node_text(decl)
-                    full_name = f"{parent_name}.{name}" if parent_name else name
-                    symbols.append(SymbolInfo(
-                        name=full_name,
-                        args="",
-                        type="typedef",
-                        lineno=child.start_point[0] + 1,
-                        source_segment=_ts_node_text(child),
-                        end_lineno=child.end_point[0] + 1,
-                        docstring=_ts_extract_doxygen(source_bytes, child),
-                    ))
+                self._ts_extract_typedef(child, source_bytes, symbols, parent_name)
 
             elif child.type == 'namespace_definition':
                 ns_name_node = child.child_by_field_name('name')
@@ -722,7 +750,33 @@ class CCppParser(LanguageParser):
                 docstring=docstring,
             ))
 
+        seen_typedefs = set()
+        for m in RE_FNPTR_TYPEDEF.finditer(source):
+            end = source.find(';', m.end())
+            if end == -1:
+                continue
+            end += 1
+            if _overlaps(m.start(), end):
+                continue
+            prefix = _ns_prefix_for(m.start())
+            name = f"{prefix}.{m.group(1)}" if prefix else m.group(1)
+            lineno = _line_number_at(source, m.start())
+            docstring = _extract_doxygen_before(source, m.start())
+            seen_ranges.append((m.start(), end))
+            seen_typedefs.add(m.group(1))
+            symbols.append(SymbolInfo(
+                name=name,
+                args="",
+                type="typedef",
+                lineno=lineno,
+                source_segment=source[m.start():end],
+                end_lineno=_line_number_at(source, end - 1),
+                docstring=docstring,
+            ))
+
         for m in RE_TYPEDEF.finditer(source):
+            if m.group(1) in seen_typedefs:
+                continue
             if not _overlaps(m.start(), m.end()):
                 prefix = _ns_prefix_for(m.start())
                 name = f"{prefix}.{m.group(1)}" if prefix else m.group(1)
