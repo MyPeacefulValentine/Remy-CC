@@ -162,6 +162,11 @@ class TestExtractPatterns:
         ]
 
     def test_nested_typedef_declarators_use_identifier_leaf(self):
+        import parsers.c_cpp_parser as parser_module
+
+        if not parser_module.TREE_SITTER_AVAILABLE:
+            pytest.skip("tree-sitter backend is unavailable")
+
         source = """\
 typedef int (*sync_func)(const void *cmd);
 typedef int callback_t(void);
