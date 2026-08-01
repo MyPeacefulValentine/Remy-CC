@@ -10,6 +10,7 @@
     "skills/remy-index/synthesizers/event_emitter.py",
     "skills/remy-index/synthesizers/interface_dispatch.py",
     "skills/remy-index/synthesizers/c_fnptr_dispatch.py",
+    "tests/tee_project_canary.py",
     "remy-src/index_mcp_queries.py",
     "remy-src/cli.py",
     "hooks/doc_manager/injector.py",

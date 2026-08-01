@@ -128,6 +128,12 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 
 See [docs/TESTING.md](docs/TESTING.md) for pinned development dependencies, local verification commands, parser-backend coverage, and CI scope.
 
+#### Third-party test fixture
+
+`tests/fixtures/tee_canary/` contains a minimal source fixture derived from [OpenTrustee tee_tee_os_framework](https://gitee.com/openharmony-sig/tee_tee_os_framework) at commit `b11ffb19d83da42047cc0b5cbfbbfb95ba3304f4`.
+
+The fixture is used only for offline parser and call-graph regression tests. It remains licensed under MulanPSL-2.0 and is not covered by Remy's MIT license. Its license copy, source revision, and file-level Git blob hashes are recorded in the fixture directory.
+
 ### Development Cycle
 
 A full development cycle follows this sequence. Not every step is required for every change — scale to the task complexity.

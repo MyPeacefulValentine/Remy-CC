@@ -128,6 +128,12 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 固定版本的开发依赖、本地验证命令、解析器后端覆盖范围和持续集成范围见 [docs/TESTING_zh.md](docs/TESTING_zh.md)。
 
+#### 第三方测试样本
+
+`tests/fixtures/tee_canary/`包含取自[OpenTrustee tee_tee_os_framework](https://gitee.com/openharmony-sig/tee_tee_os_framework)提交`b11ffb19d83da42047cc0b5cbfbbfb95ba3304f4`的最小源码样本。
+
+该样本只用于离线解析器和调用图回归测试。它继续适用MulanPSL-2.0，不属于Remy的MIT许可证授权范围。样本目录保存了许可证副本、源码版本和各文件的Git blob SHA。
+
 ### 开发循环
 
 一次完整的开发循环按以下顺序进行。并非每次修改都需要全部步骤——根据任务复杂度选择。

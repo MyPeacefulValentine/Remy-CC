@@ -25,10 +25,30 @@ python -m pytest tests/test_struct_scan.py tests/test_enrichment_hook.py tests/t
 python -m pytest tests/test_migration_ladder.py -q -p no:cacheprovider
 python -m pytest tests/test_synthesizers.py tests/test_c_fnptr_dispatch.py -q -p no:cacheprovider
 python -m pytest tests/test_struct_scan.py tests/test_fts_three_layer.py -q -p no:cacheprovider
+python -m pytest tests/test_tee_canary.py -q -p no:cacheprovider
+python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend regex --scope product
+# With requirements-tree-sitter.txt installed:
+python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend tree-sitter --scope product
 ```
 
-CI runs the full suite on Python 3.10 without tree-sitter and Python 3.12 with the pinned tree-sitter packages. A Windows Python 3.12 job executes the process-lock and dirty-queue tests.
+CI runs the full suite on Python 3.10 without tree-sitter and Python 3.12 with the pinned tree-sitter packages. Both jobs run the fixed public TEE fixture canary with their available parser backend. A Windows Python 3.12 job executes the process-lock and dirty-queue tests.
+
+## Public TEE canary
+
+The committed fixture comes from `openharmony-sig/tee_tee_os_framework` commit `b11ffb19d83da42047cc0b5cbfbbfb95ba3304f4` under MulanPSL-2.0. Its manifest records each copied file's Git blob SHA. The fixture retains the upstream license and source headers. CI does not access the network.
+
+The tree-sitter run asserts known symbols, a direct `handle_ns_cmd -> dispatch_ns_cmd` edge, and the inferred `dispatch_ns_global_cmd -> need_load_app` edge. The regex fallback does not extract direct C call edges; it still asserts symbols, function-pointer facts, and the inferred edge.
+
+Run the fixed full project locally from a Git checkout at the recorded commit:
+
+```bash
+python tests/tee_project_canary.py /path/to/tee_tee_os_framework --backend tree-sitter --scope product --output tee-product.json
+python tests/tee_project_canary.py /path/to/tee_tee_os_framework --backend tree-sitter --scope full-tree --output tee-full-tree.json
+python tests/tee_project_canary.py /path/to/tee_tee_os_framework --backend regex --scope product --output tee-regex.json
+```
+
+The full-project command rejects non-Git directories and revisions other than the recorded commit. It archives the committed tree into a system temporary directory before scanning, so it does not create a database in the input checkout. The JSON report contains the parser backend, scope, source revision, scan status, file/symbol/pattern/direct-edge/inferred-edge/function-pointer-edge counts, elapsed seconds, database bytes, and WAL bytes. Timing and storage fields are observations, not pass/fail thresholds.
 
 ## Boundaries
 
-All committed tests use synthetic source, temporary directories, and temporary SQLite databases. They do not require an LLM API key or network access. P0.3 compares normalized full and incremental states and records global direct-edge resolution and synthesizer timings. The public TEE repository scan is not part of this CI baseline. P0.4 will fix its repository revision, exclusion rules, and expected measurements.
+Committed tests use synthetic source or the fixed MulanPSL-2.0 TEE fixture, temporary directories, and temporary SQLite databases. They do not require an LLM API key or network access. P0.3 compares normalized full and incremental states. P0.4 adds fixed-revision symbols and relationships, repeated full-scan idempotency, handler rename/delete comparisons, parser-backend reporting, and local full-project measurement commands.

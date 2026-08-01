@@ -26,6 +26,10 @@ jobs:
       - if: matrix.tree_sitter
         run: python -m pip install -r requirements-tree-sitter.txt
       - run: python -m pytest tests -q -p no:cacheprovider
+      - if: matrix.tree_sitter
+        run: python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend tree-sitter --scope product
+      - if: ${{ !matrix.tree_sitter }}
+        run: python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend regex --scope product
       - run: pyright -p pyrightconfig.json
 
   windows-locks:

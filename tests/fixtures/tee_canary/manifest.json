@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "upstream": "https://gitee.com/openharmony-sig/tee_tee_os_framework",
+  "commit": "b11ffb19d83da42047cc0b5cbfbbfb95ba3304f4",
+  "license": "MulanPSL-2.0",
+  "purpose": "Regression test fixture",
+  "files": {
+    "LICENSE": "a06734fae22c09128e649d7baf2d28bdf31c2f57",
+    "framework/gtask/src/framework/tee_ns_cmd_dispatch.h": "b3574afc3f489b816943a3b81c9d71310ea3c229",
+    "framework/gtask/src/framework/tee_ns_cmd_dispatch.c": "00b1cc42ed9ae6ff27e57bf353b95dc31bee59e7",
+    "framework/gtask/src/app_load/tee_app_load_srv.c": "b897eb581985dfaf972e3e46b15b081087e08978",
+    "framework/gtask/src/framework/global_task.c": "9637d773889adf8f932491675aa5e501b95b9003"
+  },
+  "scope_rules": {
+    "product": [
+      "**/.git/",
+      "**/__pycache__/",
+      "**/.claude/",
+      "**/dist/",
+      "**/build/",
+      "tests/",
+      "test/",
+      "**/venv/"
+    ],
+    "full-tree": [
+      "**/.git/",
+      "**/__pycache__/",
+      "**/.claude/",
+      "**/dist/",
+      "**/build/",
+      "**/venv/"
+    ]
+  },
+  "required_symbols": [
+    "ns_sync_cmd_t",
+    "dispatch_ns_global_cmd",
+    "dispatch_ns_cmd",
+    "need_load_app",
+    "handle_ns_cmd",
+    "get_tee_version"
+  ],
+  "required_pattern": {
+    "pattern_type": "c_fnptr_typedef",
+    "signal_name": "sync_func"
+  },
+  "required_direct_edge": {
+    "source_file": "framework/gtask/src/framework/global_task.c",
+    "caller": "handle_ns_cmd",
+    "callee_qualified": "framework/gtask/src/framework/tee_ns_cmd_dispatch.c::dispatch_ns_cmd"
+  },
+  "required_inferred_edge": {
+    "source_file": "framework/gtask/src/framework/tee_ns_cmd_dispatch.c",
+    "caller": "dispatch_ns_global_cmd",
+    "callee_qualified": "framework/gtask/src/app_load/tee_app_load_srv.c::need_load_app",
+    "provenance": "inferred",
+    "via": "c-fnptr-dispatch"
+  }
+}
