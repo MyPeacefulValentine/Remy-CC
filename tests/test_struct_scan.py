@@ -45,6 +45,50 @@ def scanner(temp_project):
     return StructScanner(str(temp_project))
 
 
+def _normalized_current_state(db):
+    return {
+        "files": db.execute(
+            "SELECT path,struct_hash,language,layer,imports,kind_hint,actual_kind "
+            "FROM files ORDER BY path"
+        ).fetchall(),
+        "symbols": db.execute(
+            "SELECT file_path,name,short_name,type,args,lineno,end_lineno,hash,bases,name_tokens "
+            "FROM symbols ORDER BY file_path,name"
+        ).fetchall(),
+        "symbol_occurrences": db.execute(
+            "SELECT file_path,name,occurrence_index,type,args,lineno,end_lineno,hash,"
+            "is_canonical,conflict_kind,selection_reason FROM symbol_occurrences "
+            "ORDER BY file_path,name,occurrence_index"
+        ).fetchall(),
+        "edges": db.execute(
+            "SELECT source_file,caller,callee,callee_file,callee_qualified,line,provenance,"
+            "synthesized_from,via FROM edges ORDER BY source_file,caller,callee,"
+            "callee_qualified,line,provenance,via"
+        ).fetchall(),
+        "edge_candidates": db.execute(
+            "SELECT e.source_file,e.caller,e.callee,e.line,ec.candidate_qualified,ec.score "
+            "FROM edge_candidates ec JOIN edges e ON e.id=ec.edge_id "
+            "ORDER BY e.source_file,e.caller,e.callee,e.line,ec.candidate_qualified"
+        ).fetchall(),
+        "patterns": db.execute(
+            "SELECT file_path,pattern_type,signal_name,handler,line,metadata FROM patterns "
+            "ORDER BY file_path,pattern_type,signal_name,handler,line,metadata"
+        ).fetchall(),
+        "clusters": db.execute(
+            "SELECT name,label,entry_symbols,file_count FROM clusters ORDER BY name"
+        ).fetchall(),
+        "cluster_members": db.execute(
+            "SELECT c.name,cm.file_path FROM cluster_members cm "
+            "JOIN clusters c ON c.id=cm.cluster_id ORDER BY c.name,cm.file_path"
+        ).fetchall(),
+        "retrieval_documents": db.execute(
+            "SELECT node_kind,node_ref,language,symbol_type,file_path,name,name_tokens,"
+            "signature,summary_short,summary_full,content_hash FROM retrieval_documents "
+            "ORDER BY node_kind,node_ref"
+        ).fetchall(),
+    }
+
+
 class TestInitDb:
     def test_db_created(self, scanner):
         assert os.path.exists(scanner.db_path)
@@ -59,7 +103,7 @@ class TestInitDb:
     def test_version_in_meta(self, scanner):
         row = scanner.db.execute("SELECT value FROM meta WHERE key='version'").fetchone()
         assert row is not None
-        assert row[0] == "9.0.0"
+        assert row[0] == "10.0.0"
 
     def test_wal_mode_enabled(self, scanner):
         mode = scanner.db.execute("PRAGMA journal_mode").fetchone()[0]
@@ -116,7 +160,7 @@ class TestInitDb:
 
         scanner = StructScanner(str(tmp_path))
         version = scanner.db.execute("SELECT value FROM meta WHERE key='version'").fetchone()[0]
-        assert version == "9.0.0"
+        assert version == "10.0.0"
         tables = {r[0] for r in scanner.db.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()}
@@ -683,6 +727,181 @@ class TestScanFiles:
             (node_ref,),
         ).fetchone()
         assert document == (None, None)
+
+    def test_incremental_postprocess_failure_rolls_back_and_reports_failed(
+        self, scanner, temp_project, monkeypatch
+    ):
+        scanner.scan_all()
+        before = scanner.db.execute(
+            "SELECT struct_hash FROM files WHERE path='src/main.py'"
+        ).fetchone()
+        (temp_project / "src" / "main.py").write_text(
+            "def changed():\n    return 2\n", encoding="utf-8"
+        )
+
+        def fail_postprocess():
+            raise RuntimeError("simulated postprocess failure")
+
+        monkeypatch.setattr(scanner, "_run_postprocess", fail_postprocess)
+        result = scanner.scan_files(["src/main.py"])
+        after = scanner.db.execute(
+            "SELECT struct_hash FROM files WHERE path='src/main.py'"
+        ).fetchone()
+        assert result.status.value == "failed"
+        assert result.successful_paths == ()
+        assert result.failed_paths == ("src/main.py",)
+        assert after == before
+
+    def test_incremental_rebuilds_synthesized_event_edges(self, tmp_path):
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        (claude_dir / "logic_index_config").write_text(
+            "!.claude/\n", encoding="utf-8"
+        )
+        sender = tmp_path / "sender.py"
+        receiver = tmp_path / "receiver.py"
+        sender.write_text(
+            "def emit_saved():\n    saved.send()\n", encoding="utf-8"
+        )
+        receiver.write_text(
+            "def handle_saved():\n    return 1\n\n"
+            "def register():\n    saved.connect(handle_saved)\n",
+            encoding="utf-8",
+        )
+        scanner = StructScanner(str(tmp_path))
+        try:
+            scanner.scan_all()
+            assert scanner.db.execute(
+                "SELECT COUNT(*) FROM edges WHERE via='django-signal'"
+            ).fetchone()[0] == 1
+            receiver.write_text(
+                "def handle_saved():\n    return 1\n", encoding="utf-8"
+            )
+            scanner.scan_files(["receiver.py"])
+            assert scanner.db.execute(
+                "SELECT COUNT(*) FROM edges WHERE via='django-signal'"
+            ).fetchone()[0] == 0
+        finally:
+            scanner.db.close()
+
+    def test_incremental_matches_fresh_full_scan(self, tmp_path):
+        incremental_root = tmp_path / "incremental"
+        full_root = tmp_path / "full"
+        incremental_root.mkdir()
+        full_root.mkdir()
+        for root in (incremental_root, full_root):
+            (root / ".claude").mkdir()
+            (root / ".claude" / "logic_index_config").write_text(
+                "!.claude/\n", encoding="utf-8"
+            )
+
+        initial = {
+            "sender.py": "def emit_saved():\n    saved.send()\n",
+            "receiver.py": (
+                "def handle_saved():\n    return 1\n\n"
+                "def register():\n    saved.connect(handle_saved)\n"
+            ),
+        }
+        final = {
+            "sender.py": "def emit_saved():\n    saved.send()\n",
+            "receiver.py": (
+                "def handle_changed():\n    return 2\n\n"
+                "def register():\n    saved.connect(handle_changed)\n"
+            ),
+            "extra.py": "def helper():\n    return handle_changed()\n",
+        }
+        for name, source in initial.items():
+            (incremental_root / name).write_text(source, encoding="utf-8")
+        incremental = StructScanner(str(incremental_root))
+        try:
+            assert incremental.scan_all().postprocess_complete
+            for name, source in final.items():
+                (incremental_root / name).write_text(source, encoding="utf-8")
+            assert incremental.scan_files(["receiver.py", "extra.py"]).postprocess_complete
+            incremental_state = _normalized_current_state(incremental.db)
+        finally:
+            incremental.db.close()
+
+        for name, source in final.items():
+            (full_root / name).write_text(source, encoding="utf-8")
+        full = StructScanner(str(full_root))
+        try:
+            assert full.scan_all().postprocess_complete
+            full_state = _normalized_current_state(full.db)
+        finally:
+            full.db.close()
+
+        assert incremental_state == full_state
+
+    def test_incremental_new_global_name_makes_existing_edge_speculative(self, tmp_path):
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        (claude_dir / "logic_index_config").write_text(
+            "!.claude/\n", encoding="utf-8"
+        )
+        (tmp_path / "caller.py").write_text(
+            "def caller():\n    target()\n", encoding="utf-8"
+        )
+        (tmp_path / "first.py").write_text(
+            "def target():\n    return 1\n", encoding="utf-8"
+        )
+        scanner = StructScanner(str(tmp_path))
+        try:
+            scanner.scan_all()
+            before = scanner.db.execute(
+                "SELECT provenance,callee_qualified FROM edges "
+                "WHERE source_file='caller.py' AND callee='target'"
+            ).fetchone()
+            assert before == ("probable", "first.py::target")
+
+            (tmp_path / "second.py").write_text(
+                "def target():\n    return 2\n", encoding="utf-8"
+            )
+            scanner.scan_files(["second.py"])
+            after = scanner.db.execute(
+                "SELECT provenance,callee_qualified FROM edges "
+                "WHERE source_file='caller.py' AND callee='target'"
+            ).fetchone()
+            candidates = scanner.db.execute(
+                "SELECT ec.candidate_qualified FROM edge_candidates ec "
+                "JOIN edges e ON e.id=ec.edge_id "
+                "WHERE e.source_file='caller.py' AND e.callee='target' "
+                "ORDER BY ec.candidate_qualified"
+            ).fetchall()
+            assert after == ("speculative", "first.py::target")
+            assert candidates == [("first.py::target",), ("second.py::target",)]
+        finally:
+            scanner.db.close()
+
+    def test_incremental_change_order_is_commutative(self, tmp_path):
+        roots = [tmp_path / "ab", tmp_path / "ba"]
+        initial = {
+            "caller.py": "def caller():\n    target()\n",
+            "first.py": "def target():\n    return 1\n",
+        }
+        final = {
+            "first.py": "def target():\n    return 10\n",
+            "second.py": "def target():\n    return 2\n",
+        }
+        states = []
+        for root, order in zip(roots, (["first.py", "second.py"], ["second.py", "first.py"])):
+            root.mkdir()
+            (root / ".claude").mkdir()
+            (root / ".claude" / "logic_index_config").write_text(
+                "!.claude/\n", encoding="utf-8"
+            )
+            for name, source in initial.items():
+                (root / name).write_text(source, encoding="utf-8")
+            scanner = StructScanner(str(root))
+            try:
+                scanner.scan_all()
+                for name, source in final.items():
+                    (root / name).write_text(source, encoding="utf-8")
+                assert scanner.scan_files(order).postprocess_complete
+                states.append(_normalized_current_state(scanner.db))
+            finally:
+                scanner.db.close()
+        assert states[0] == states[1]
 
     def test_deleted_conflict_file_removes_occurrences(self, tmp_path):
         claude_dir = tmp_path / ".claude"

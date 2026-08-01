@@ -94,6 +94,26 @@ class TestProjectionCreation:
             db, "symbol", "a.py::parse_input"
         )["content_hash"]
         assert before != after
+    def test_content_hash_ignores_summary_version(self, db):
+        summarizer.write_summary_version(
+            db, "symbol", "a.py::parse_input",
+            {"short": "same content", "full": None}, "ok"
+        )
+        first = db.execute(
+            "SELECT content_hash, source_version FROM retrieval_documents "
+            "WHERE node_kind='symbol' AND node_ref='a.py::parse_input'"
+        ).fetchone()
+        summarizer.write_summary_version(
+            db, "symbol", "a.py::parse_input",
+            {"short": "same content", "full": None}, "ok"
+        )
+        second = db.execute(
+            "SELECT content_hash, source_version FROM retrieval_documents "
+            "WHERE node_kind='symbol' AND node_ref='a.py::parse_input'"
+        ).fetchone()
+        assert first[0] == second[0]
+        assert first[1:] == (1,)
+        assert second[1:] == (2,)
 
 
 class TestCurrentSummarySync:

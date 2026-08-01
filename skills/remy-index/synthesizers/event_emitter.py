@@ -16,28 +16,40 @@ def synthesize_event_emitter_edges(db):
     except (ValueError, TypeError):
         fanout_cap = 20
 
-    _synthesize_signal_pattern(db, "django_signal_send", "django_signal_connect", "django-signal", fanout_cap)
-    _synthesize_signal_pattern(db, "pyqt_signal_emit", "pyqt_signal_connect", "pyqt-signal", fanout_cap)
-    _synthesize_signal_pattern(db, "observer_emit", "observer_register", "observer", fanout_cap)
+    inserted = 0
+    inserted += _synthesize_signal_pattern(
+        db, "django_signal_send", "django_signal_connect", "django-signal", fanout_cap
+    )
+    inserted += _synthesize_signal_pattern(
+        db, "pyqt_signal_emit", "pyqt_signal_connect", "pyqt-signal", fanout_cap
+    )
+    inserted += _synthesize_signal_pattern(
+        db, "observer_emit", "observer_register", "observer", fanout_cap
+    )
+    return inserted
 
 
 def _synthesize_signal_pattern(db, emit_type, connect_type, via_label, fanout_cap):
     emitters = db.execute(
-        "SELECT file_path, signal_name, handler, line FROM patterns WHERE pattern_type = ?",
-        (emit_type,)
+        "SELECT file_path, signal_name, handler, line FROM patterns "
+        "WHERE pattern_type = ? "
+        "ORDER BY COALESCE(line, 0), file_path, signal_name, handler",
+        (emit_type,),
     ).fetchall()
 
     if not emitters:
-        return
+        return 0
 
-    signal_names = list({row[1] for row in emitters if row[1]})
+    signal_names = sorted({row[1] for row in emitters if row[1]})
     if not signal_names:
-        return
+        return 0
 
     placeholders = ','.join(['?'] * len(signal_names))
     handlers = db.execute(
-        f"SELECT file_path, signal_name, handler, line FROM patterns WHERE pattern_type = ? AND signal_name IN ({placeholders})",
-        [connect_type] + signal_names
+        f"SELECT file_path, signal_name, handler, line FROM patterns "
+        f"WHERE pattern_type = ? AND signal_name IN ({placeholders}) "
+        "ORDER BY signal_name, COALESCE(line, 0), file_path, handler",
+        [connect_type] + signal_names,
     ).fetchall()
 
     handler_map = {}
@@ -45,6 +57,7 @@ def _synthesize_signal_pattern(db, emit_type, connect_type, via_label, fanout_ca
         handler_map.setdefault(h_signal, []).append((h_path, h_func, h_line))
 
     seen = set()
+    inserted = 0
     for e_path, e_signal, e_func, e_line in emitters:
         if not e_signal or not e_func:
             continue
@@ -54,20 +67,22 @@ def _synthesize_signal_pattern(db, emit_type, connect_type, via_label, fanout_ca
         if len(targets) > fanout_cap:
             continue
 
-        for h_path, h_func, _h_line in targets:
+        for h_path, h_func, _ in targets:
             if not h_func:
                 continue
             if e_path == h_path and e_func == h_func:
                 continue
-            key = f"{e_path}::{e_func}>{h_path}::{h_func}"
+            key = (e_path, e_func, f"{h_path}::{h_func}", via_label)
             if key in seen:
                 continue
             seen.add(key)
 
-            db.execute(
-                "INSERT INTO edges (source_file, caller, callee, callee_file, callee_qualified, line, provenance, synthesized_from, via) VALUES (?,?,?,?,?,?,?,?,?)",
+            cursor = db.execute(
+                "INSERT OR IGNORE INTO edges "
+                "(source_file, caller, callee, callee_file, callee_qualified, "
+                "line, provenance, synthesized_from, via) VALUES (?,?,?,?,?,?,?,?,?)",
                 (e_path, e_func, h_func, h_path, f"{h_path}::{h_func}",
                  e_line or 0, "inferred", e_path, via_label)
             )
-
-    db.commit()
+            inserted += max(cursor.rowcount, 0)
+    return inserted

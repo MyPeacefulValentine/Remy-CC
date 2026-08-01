@@ -11,6 +11,8 @@ from .c_fnptr_dispatch import synthesize_c_fnptr_dispatch_edges
 
 
 def run_all_synthesizers(db):
-    synthesize_event_emitter_edges(db)
-    synthesize_interface_override_edges(db)
-    synthesize_c_fnptr_dispatch_edges(db)
+    return {
+        "event_emitter": synthesize_event_emitter_edges(db),
+        "interface_dispatch": synthesize_interface_override_edges(db),
+        "c_fnptr_dispatch": synthesize_c_fnptr_dispatch_edges(db),
+    }

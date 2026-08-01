@@ -21,10 +21,12 @@ def synthesize_interface_override_edges(db):
         pass
 
     classes_with_bases = db.execute(
-        "SELECT file_path, name, bases FROM symbols WHERE type = 'class' AND bases IS NOT NULL"
+        "SELECT file_path, name, bases FROM symbols "
+        "WHERE type = 'class' AND bases IS NOT NULL ORDER BY file_path, name"
     ).fetchall()
 
     seen = set()
+    inserted = 0
     for impl_path, impl_class, bases_json in classes_with_bases:
         try:
             bases = json.loads(bases_json)
@@ -34,22 +36,26 @@ def synthesize_interface_override_edges(db):
             continue
 
         impl_methods = db.execute(
-            "SELECT name FROM symbols WHERE file_path = ? AND type = 'function' AND name LIKE ?",
+            "SELECT name FROM symbols WHERE file_path = ? AND type = 'function' "
+            "AND name LIKE ? ORDER BY name",
             (impl_path, impl_class + ".%")
         ).fetchall()
         if not impl_methods:
             continue
         impl_method_set = {row[0].split(".")[-1] for row in impl_methods}
 
-        for base_name in bases:
+        for base_name in sorted(set(bases)):
             base_classes = db.execute(
-                "SELECT file_path, name FROM symbols WHERE type = 'class' AND short_name = ?",
+                "SELECT file_path, name FROM symbols WHERE type = 'class' "
+                "AND short_name = ? ORDER BY file_path, name",
                 (base_name,)
             ).fetchall()
 
             for base_path, base_full_name in base_classes:
                 base_methods = db.execute(
-                    "SELECT name, lineno FROM symbols WHERE file_path = ? AND type = 'function' AND name LIKE ?",
+                    "SELECT name, lineno FROM symbols WHERE file_path = ? "
+                    "AND type = 'function' AND name LIKE ? "
+                    "ORDER BY COALESCE(lineno, 0), name",
                     (base_path, base_full_name + ".%")
                 ).fetchall()
                 if not base_methods:
@@ -64,18 +70,19 @@ def synthesize_interface_override_edges(db):
                         continue
 
                     impl_qualified = f"{impl_path}::{impl_class}.{method_short}"
-                    base_qualified = f"{base_path}::{base_method_name}"
-                    key = f"{base_qualified}>{impl_qualified}"
+                    key = (base_path, base_method_name, impl_qualified, "interface-impl")
                     if key in seen:
                         continue
                     seen.add(key)
 
-                    db.execute(
-                        "INSERT INTO edges (source_file, caller, callee, callee_file, callee_qualified, line, provenance, synthesized_from, via) VALUES (?,?,?,?,?,?,?,?,?)",
+                    cursor = db.execute(
+                        "INSERT OR IGNORE INTO edges "
+                        "(source_file, caller, callee, callee_file, callee_qualified, "
+                        "line, provenance, synthesized_from, via) VALUES (?,?,?,?,?,?,?,?,?)",
                         (base_path, base_method_name, f"{impl_class}.{method_short}",
                          impl_path, impl_qualified, base_lineno or 0,
                          "inferred", base_path, "interface-impl")
                     )
+                    inserted += max(cursor.rowcount, 0)
                     added += 1
-
-    db.commit()
+    return inserted

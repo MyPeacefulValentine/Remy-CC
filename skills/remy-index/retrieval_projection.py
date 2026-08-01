@@ -160,7 +160,6 @@ _HASH_FIELDS = (
     "signature",
     "summary_short",
     "summary_full",
-    "source_version",
 )
 
 

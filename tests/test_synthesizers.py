@@ -8,7 +8,7 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skills", "remy-index"))
-from struct_scan import StructScanner, SCHEMA_SQL
+from struct_scan import SCHEMA_SQL
 
 
 @pytest.fixture
@@ -79,6 +79,20 @@ class TestInterfaceDispatch:
 
         count = db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
         assert count == 0
+    def test_interface_rerun_is_idempotent(self, db_with_schema):
+        db = db_with_schema
+        db.execute("INSERT INTO files (path, struct_hash) VALUES ('base.py','h1')")
+        db.execute("INSERT INTO files (path, struct_hash) VALUES ('impl.py','h2')")
+        db.execute("INSERT INTO symbols (file_path,name,short_name,type,bases) VALUES ('base.py','Base','Base','class',NULL)")
+        db.execute("INSERT INTO symbols (file_path,name,short_name,type,lineno) VALUES ('base.py','Base.run','run','function',2)")
+        db.execute("INSERT INTO symbols (file_path,name,short_name,type,bases) VALUES ('impl.py','Impl','Impl','class',?)", (json.dumps(["Base"]),))
+        db.execute("INSERT INTO symbols (file_path,name,short_name,type) VALUES ('impl.py','Impl.run','run','function')")
+        db.commit()
+
+        from synthesizers.interface_dispatch import synthesize_interface_override_edges
+        assert synthesize_interface_override_edges(db) == 1
+        assert synthesize_interface_override_edges(db) == 0
+        assert db.execute("SELECT COUNT(*) FROM edges WHERE via='interface-impl'").fetchone()[0] == 1
 
 
 class TestEventEmitter:
@@ -129,6 +143,29 @@ class TestEventEmitter:
         edges = db.execute("SELECT via FROM edges WHERE provenance='inferred'").fetchall()
         assert len(edges) == 1
         assert edges[0][0] == "observer"
+
+    def test_event_rerun_and_duplicate_support_are_idempotent(self, db_with_schema):
+        db = db_with_schema
+        db.execute("INSERT INTO files (path, struct_hash) VALUES ('sender.py','h1')")
+        db.execute("INSERT INTO files (path, struct_hash) VALUES ('receiver.py','h2')")
+        db.executemany(
+            "INSERT INTO patterns (file_path,pattern_type,signal_name,handler,line) "
+            "VALUES (?,?,?,?,?)",
+            [
+                ('sender.py', 'django_signal_send', 'saved', 'emit_saved', 20),
+                ('sender.py', 'django_signal_send', 'saved', 'emit_saved', 10),
+                ('receiver.py', 'django_signal_connect', 'saved', 'handle_saved', 5),
+            ],
+        )
+        db.commit()
+
+        from synthesizers.event_emitter import synthesize_event_emitter_edges
+        assert synthesize_event_emitter_edges(db) == 1
+        assert synthesize_event_emitter_edges(db) == 0
+        row = db.execute(
+            "SELECT line, synthesized_from FROM edges WHERE via='django-signal'"
+        ).fetchone()
+        assert row == (10, "sender.py")
 
     def test_self_loop_excluded(self, db_with_schema):
         db = db_with_schema

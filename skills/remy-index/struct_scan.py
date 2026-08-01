@@ -43,7 +43,7 @@ from retrieval_projection import (
     refresh_node,
 )
 
-VERSION = "9.0.0"
+VERSION = "10.0.0"
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 JSON_CACHE_FILE = os.path.join(".claude", "logic_index.json")
 CONFIG_FILE = os.path.join(".claude", "logic_index_config")
@@ -173,6 +173,9 @@ CREATE INDEX IF NOT EXISTS idx_edges_callee_q ON edges(callee_qualified);
 CREATE INDEX IF NOT EXISTS idx_edges_caller ON edges(source_file, caller);
 CREATE INDEX IF NOT EXISTS idx_edges_provenance ON edges(provenance);
 CREATE INDEX IF NOT EXISTS idx_edges_source_file ON edges(source_file);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_inferred_identity
+ON edges(source_file, caller, callee_qualified, via)
+WHERE provenance = 'inferred' AND callee_qualified IS NOT NULL AND via IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_patterns_type_signal ON patterns(pattern_type, signal_name);
 CREATE INDEX IF NOT EXISTS idx_patterns_file ON patterns(file_path);
 CREATE INDEX IF NOT EXISTS idx_sv_lookup ON summary_versions(node_kind, node_ref, version DESC);
@@ -425,10 +428,65 @@ def _migrate_v8_to_v9(db):
         raise
 
 
+def _migrate_v9_to_v10(db):
+    """Rebuild content hashes and enforce one inferred edge per identity."""
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        has_edges = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='edges'"
+        ).fetchone() is not None
+        if has_edges:
+            duplicate_groups = db.execute(
+                "SELECT source_file, caller, callee_qualified, via "
+                "FROM edges WHERE provenance = 'inferred' "
+                "AND callee_qualified IS NOT NULL AND via IS NOT NULL "
+                "GROUP BY source_file, caller, callee_qualified, via "
+                "HAVING COUNT(*) > 1 "
+                "ORDER BY source_file, caller, callee_qualified, via"
+            ).fetchall()
+            for identity in duplicate_groups:
+                rows = db.execute(
+                    "SELECT id FROM edges WHERE provenance = 'inferred' "
+                    "AND source_file = ? AND caller = ? AND callee_qualified = ? "
+                    "AND via = ? "
+                    "ORDER BY COALESCE(line, 0), COALESCE(synthesized_from, ''), id",
+                    identity,
+                ).fetchall()
+                duplicate_ids = [row[0] for row in rows[1:]]
+                if duplicate_ids:
+                    placeholders = ','.join(['?'] * len(duplicate_ids))
+                    db.execute(
+                        f"DELETE FROM edges WHERE id IN ({placeholders})",
+                        duplicate_ids,
+                    )
+            db.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_inferred_identity "
+                "ON edges(source_file, caller, callee_qualified, via) "
+                "WHERE provenance = 'inferred' "
+                "AND callee_qualified IS NOT NULL AND via IS NOT NULL"
+            )
+        rebuild_projection(db)
+        already = db.execute(
+            "SELECT 1 FROM migration_log WHERE from_version=? AND to_version=?",
+            ('9.0.0', '10.0.0')
+        ).fetchone()
+        if not already:
+            db.execute(
+                "INSERT INTO migration_log (from_version, to_version, applied_at) "
+                "VALUES (?,?,?)",
+                ('9.0.0', '10.0.0', datetime.now().isoformat(timespec='seconds'))
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
 MIGRATION_HANDLERS = {
     ('6.0.0', '7.0.0'): _migrate_v6_to_v7,
     ('7.0.0', '8.0.0'): _migrate_v7_to_v8,
     ('8.0.0', '9.0.0'): _migrate_v8_to_v9,
+    ('9.0.0', '10.0.0'): _migrate_v9_to_v10,
 }
 
 
@@ -593,7 +651,7 @@ class StructScanner:
                 finally:
                     if backup_db is not None:
                         backup_db.close()
-                for _from_version, _to_version, handler in chain:
+                for _, _, handler in chain:
                     handler(db)
                 db.executescript(SCHEMA_SQL)
                 db.execute(
@@ -932,7 +990,10 @@ class StructScanner:
         score_global = _env_int("RESOLVE_SCORE_GLOBAL", 0)
 
         unresolved = self.db.execute(
-            "SELECT id, source_file, callee FROM edges WHERE callee_qualified IS NULL"
+            "SELECT id, source_file, callee FROM edges "
+            "WHERE callee_qualified IS NULL "
+            "AND (provenance != 'inferred' OR provenance IS NULL) "
+            "ORDER BY source_file, caller, callee, COALESCE(line, 0), id"
         ).fetchall()
 
         for edge_id, source_file, callee_name in unresolved:
@@ -944,7 +1005,9 @@ class StructScanner:
             candidates = []
 
             same_file = self.db.execute(
-                "SELECT file_path || '::' || name FROM symbols WHERE file_path = ? AND (name = ? OR short_name = ?)",
+                "SELECT file_path || '::' || name FROM symbols "
+                "WHERE file_path = ? AND (name = ? OR short_name = ?) "
+                "ORDER BY file_path, name",
                 (source_file, callee_name, callee_name)
             ).fetchall()
             for (q,) in same_file:
@@ -953,7 +1016,9 @@ class StructScanner:
             if import_list:
                 placeholders = ','.join(['?'] * len(import_list))
                 import_syms = self.db.execute(
-                    f"SELECT file_path || '::' || name FROM symbols WHERE file_path IN ({placeholders}) AND (name = ? OR short_name = ?)",
+                    f"SELECT file_path || '::' || name FROM symbols "
+                    f"WHERE file_path IN ({placeholders}) "
+                    "AND (name = ? OR short_name = ?) ORDER BY file_path, name",
                     import_list + [callee_name, callee_name]
                 ).fetchall()
                 for (q,) in import_syms:
@@ -962,7 +1027,9 @@ class StructScanner:
 
             if not candidates:
                 global_syms = self.db.execute(
-                    "SELECT file_path || '::' || name FROM symbols WHERE (name = ? OR short_name = ?) AND file_path != ? LIMIT ?",
+                    "SELECT file_path || '::' || name FROM symbols "
+                    "WHERE (name = ? OR short_name = ?) AND file_path != ? "
+                    "ORDER BY file_path, name LIMIT ?",
                     (callee_name, callee_name, source_file, fanout_cap)
                 ).fetchall()
                 for (q,) in global_syms:
@@ -971,7 +1038,7 @@ class StructScanner:
             if not candidates:
                 continue
 
-            candidates.sort(key=lambda x: x[1], reverse=True)
+            candidates.sort(key=lambda item: (-item[1], item[0]))
             best = candidates[0][0]
             best_file = best.split("::")[0] if "::" in best else None
 
@@ -994,27 +1061,35 @@ class StructScanner:
                         (edge_id, q, score)
                     )
 
-        self.db.commit()
-
     def _run_synthesizers(self):
         from synthesizers import run_all_synthesizers
-        run_all_synthesizers(self.db)
+        return run_all_synthesizers(self.db)
 
-    def _purge_heuristic_edges(self, source_paths):
-        if not source_paths:
-            return
-        placeholders = ','.join(['?'] * len(source_paths))
+    def _purge_heuristic_edges(self):
+        self.db.execute("DELETE FROM edges WHERE provenance = 'inferred'")
+
+    def _reset_direct_edge_resolution(self):
+        self.db.execute("DELETE FROM edge_candidates")
         self.db.execute(
-            f"DELETE FROM edges WHERE provenance = 'inferred' AND synthesized_from IN ({placeholders})",
-            list(source_paths)
+            "UPDATE edges SET callee_qualified = NULL, callee_file = NULL, "
+            "provenance = NULL WHERE provenance != 'inferred' OR provenance IS NULL"
         )
+
+    def _run_postprocess(self):
+        self._reset_direct_edge_resolution()
+        self._resolve_call_edges()
+        self._purge_heuristic_edges()
+        synth_counts = self._run_synthesizers()
+        self._compute_file_kinds()
+        self._detect_clusters()
+        return synth_counts
 
     def _compute_file_kinds(self):
         rows = self.db.execute(
             """SELECT f.path,
                       (SELECT COUNT(*) FROM symbols s WHERE s.file_path = f.path) AS sym_count,
                       (SELECT COUNT(*) FROM edges e WHERE e.source_file = f.path AND e.callee_file = f.path) AS intra_edges
-               FROM files f"""
+               FROM files f ORDER BY f.path"""
         ).fetchall()
         for path, sym_count, intra_edges in rows:
             hint = _compute_kind_hint(sym_count or 0, intra_edges or 0)
@@ -1022,14 +1097,13 @@ class StructScanner:
                 "UPDATE files SET kind_hint = ? WHERE path = ?",
                 (hint, path)
             )
-        self.db.commit()
 
     def _detect_clusters(self):
         density_threshold = _env_float("CLUSTER_DENSITY_THRESHOLD", 0.5)
         max_size = _env_int("CLUSTER_MAX_SIZE", 15)
         entry_count = _env_int("CLUSTER_ENTRY_COUNT", 3)
 
-        all_paths = [r[0] for r in self.db.execute("SELECT path FROM files")]
+        all_paths = [r[0] for r in self.db.execute("SELECT path FROM files ORDER BY path")]
         groups = {}
         for p in all_paths:
             parts = p.split("/")
@@ -1041,11 +1115,14 @@ class StructScanner:
                 row[0]
                 for row in self.db.execute(
                     "SELECT cm.file_path FROM cluster_members cm "
-                    "JOIN clusters c ON c.id = cm.cluster_id WHERE c.name = ?",
+                    "JOIN clusters c ON c.id = cm.cluster_id WHERE c.name = ? "
+                    "ORDER BY cm.file_path",
                     (name,),
                 ).fetchall()
             )
-            for (name,) in self.db.execute("SELECT name FROM clusters").fetchall()
+            for (name,) in self.db.execute(
+                "SELECT name FROM clusters ORDER BY name"
+            ).fetchall()
         }
         existing_cluster_refs = set(existing_cluster_members)
 
@@ -1081,7 +1158,8 @@ class StructScanner:
                 in_degree = self.db.execute(
                     f"""SELECT callee_qualified, COUNT(*) as cnt FROM edges
                         WHERE callee_file IN ({placeholders}) AND callee_qualified IS NOT NULL
-                        GROUP BY callee_qualified ORDER BY cnt DESC LIMIT ?""",
+                        GROUP BY callee_qualified
+                        ORDER BY cnt DESC, callee_qualified ASC LIMIT ?""",
                     cluster_files + [entry_count]
                 ).fetchall()
                 entry_symbols = [row[0] for row in in_degree]
@@ -1105,11 +1183,14 @@ class StructScanner:
                     mark_current_summary_stale(self.db, "cluster", cluster_name)
                 refresh_node(self.db, "cluster", cluster_name)
 
-        current_cluster_refs = {r[0] for r in self.db.execute("SELECT name FROM clusters")}
+        current_cluster_refs = {
+            r[0] for r in self.db.execute("SELECT name FROM clusters ORDER BY name")
+        }
         for removed_ref in existing_cluster_refs - current_cluster_refs:
             delete_node(self.db, "cluster", removed_ref)
         stale = self.db.execute(
-            "SELECT node_ref FROM node_change_counters WHERE node_kind = 'cluster'"
+            "SELECT node_ref FROM node_change_counters "
+            "WHERE node_kind = 'cluster' ORDER BY node_ref"
         ).fetchall()
         for (ref,) in stale:
             if ref not in current_cluster_refs:
@@ -1117,8 +1198,6 @@ class StructScanner:
                     "DELETE FROM node_change_counters WHERE node_kind = 'cluster' AND node_ref = ?",
                     (ref,)
                 )
-
-        self.db.commit()
 
     def _scan_one_file(self, full_path, parser, rel_path):
         savepoint = "scan_file"
@@ -1181,19 +1260,12 @@ class StructScanner:
             self.db.commit()
 
         postprocess_complete = True
-        for stage, operation in (
-            ("resolve_edges", self._resolve_call_edges),
-            ("synthesizers", self._run_synthesizers),
-            ("file_kinds", self._compute_file_kinds),
-            ("clusters", self._detect_clusters),
-        ):
-            try:
-                operation()
-            except Exception as exc:
-                self.db.rollback()
-                errors.append(StageError(stage, str(exc)))
-                postprocess_complete = False
-                break
+        try:
+            self._run_postprocess()
+        except Exception as exc:
+            self.db.rollback()
+            errors.append(StageError("postprocess", str(exc)))
+            postprocess_complete = False
 
         if postprocess_complete:
             self.db.execute(
@@ -1214,9 +1286,9 @@ class StructScanner:
 
         return ScanResult.from_parts(
             discovered_paths=discovered_paths,
-            successful_paths=successful_paths,
-            failed_paths=failed_paths,
-            deleted_paths=deleted,
+            successful_paths=successful_paths if postprocess_complete else (),
+            failed_paths=(failed_paths if postprocess_complete else discovered_paths),
+            deleted_paths=deleted if postprocess_complete else (),
             errors=errors,
             postprocess_complete=postprocess_complete,
         )
@@ -1227,78 +1299,58 @@ class StructScanner:
         failed_paths = set()
         deleted_paths = set()
         errors = []
-        scanned_rel_paths = []
-        for file_path in file_paths:
-            if os.path.isabs(file_path):
-                full_path = file_path
-            else:
-                full_path = os.path.join(self.root_dir, file_path)
-            rel = os.path.relpath(full_path, self.root_dir).replace(os.sep, '/')
-            discovered_paths.add(rel)
-
-            if not os.path.exists(full_path):
-                symbol_refs = [
-                    row[0]
-                    for row in self.db.execute(
-                        "SELECT file_path || '::' || name FROM symbols WHERE file_path = ?",
-                        (rel,),
-                    ).fetchall()
-                ]
-                delete_file_nodes(self.db, rel, symbol_refs)
-                self.db.execute("DELETE FROM files WHERE path = ?", (rel,))
-                successful_paths.add(rel)
-                deleted_paths.add(rel)
-                continue
-
-            parser = self._get_parser_for_file(os.path.basename(full_path))
-            if not parser:
-                successful_paths.add(rel)
-                continue
-
-            result, error = self._scan_one_file(full_path, parser, rel)
-            if error is not None:
-                failed_paths.add(rel)
-                errors.append(error)
-                continue
-            successful_paths.add(result)
-            scanned_rel_paths.append(result)
-
-        self.db.commit()
-        postprocess_complete = True
+        transaction_targets = set()
+        self.db.execute("BEGIN IMMEDIATE")
         try:
-            self._purge_heuristic_edges(scanned_rel_paths)
+            for file_path in file_paths:
+                if os.path.isabs(file_path):
+                    full_path = file_path
+                else:
+                    full_path = os.path.join(self.root_dir, file_path)
+                rel = os.path.relpath(full_path, self.root_dir).replace(os.sep, '/')
+                discovered_paths.add(rel)
+                transaction_targets.add(rel)
 
-            if scanned_rel_paths:
-                placeholders = ','.join(['?'] * len(scanned_rel_paths))
-                affected_edges = self.db.execute(
-                    f"""SELECT e.id FROM edges e
-                        JOIN files f ON e.source_file = f.path
-                        WHERE e.callee_qualified IS NOT NULL
-                        AND e.callee_file IN ({placeholders})""",
-                    scanned_rel_paths
-                ).fetchall()
-                if affected_edges:
-                    edge_ids = [r[0] for r in affected_edges]
-                    id_placeholders = ','.join(['?'] * len(edge_ids))
-                    self.db.execute(
-                        f"UPDATE edges SET callee_qualified = NULL, callee_file = NULL WHERE id IN ({id_placeholders})",
-                        edge_ids
-                    )
-                    self.db.execute(
-                        f"DELETE FROM edge_candidates WHERE edge_id IN ({id_placeholders})",
-                        edge_ids
-                    )
+                if not os.path.exists(full_path):
+                    symbol_refs = [
+                        row[0]
+                        for row in self.db.execute(
+                            "SELECT file_path || '::' || name FROM symbols "
+                            "WHERE file_path = ? ORDER BY name",
+                            (rel,),
+                        ).fetchall()
+                    ]
+                    delete_file_nodes(self.db, rel, symbol_refs)
+                    self.db.execute("DELETE FROM files WHERE path = ?", (rel,))
+                    successful_paths.add(rel)
+                    deleted_paths.add(rel)
+                    continue
 
-            self._resolve_call_edges()
-            self._compute_file_kinds()
+                parser = self._get_parser_for_file(os.path.basename(full_path))
+                if not parser:
+                    successful_paths.add(rel)
+                    continue
+
+                result, error = self._scan_one_file(full_path, parser, rel)
+                if error is not None:
+                    failed_paths.add(rel)
+                    errors.append(error)
+                    continue
+                successful_paths.add(result)
+
+            self._run_postprocess()
             self.db.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('last_updated', ?)",
                 (datetime.now().isoformat(timespec='seconds'),)
             )
             self.db.commit()
+            postprocess_complete = True
         except Exception as exc:
             self.db.rollback()
             errors.append(StageError("incremental_postprocess", str(exc)))
+            failed_paths.update(transaction_targets)
+            successful_paths.clear()
+            deleted_paths.clear()
             postprocess_complete = False
 
         return ScanResult.from_parts(

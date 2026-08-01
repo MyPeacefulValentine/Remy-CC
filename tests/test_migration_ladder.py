@@ -1,5 +1,6 @@
 """Tests for v6 -> v7 migration ladder in struct_scan.py."""
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -15,6 +16,7 @@ from struct_scan import (
     _migrate_v6_to_v7,
     _migrate_v7_to_v8,
     _migrate_v8_to_v9,
+    _migrate_v9_to_v10,
     _resolve_migration_path,
 )
 
@@ -201,20 +203,21 @@ def test_migrate_rollback_on_failure(tmp_path):
 
 
 def test_resolve_migration_path_direct():
-    chain = _resolve_migration_path("8.0.0", "9.0.0")
+    chain = _resolve_migration_path("9.0.0", "10.0.0")
     assert chain is not None
     assert len(chain) == 1
-    assert chain[0][0] == "8.0.0"
-    assert chain[0][1] == "9.0.0"
+    assert chain[0][0] == "9.0.0"
+    assert chain[0][1] == "10.0.0"
 
 
 def test_resolve_migration_path_chained():
-    chain = _resolve_migration_path("6.0.0", "9.0.0")
+    chain = _resolve_migration_path("6.0.0", "10.0.0")
     assert chain is not None
     assert [(step[0], step[1]) for step in chain] == [
         ("6.0.0", "7.0.0"),
         ("7.0.0", "8.0.0"),
         ("8.0.0", "9.0.0"),
+        ("9.0.0", "10.0.0"),
     ]
 
 
@@ -227,13 +230,15 @@ def test_migration_handlers_registered():
     assert ("6.0.0", "7.0.0") in MIGRATION_HANDLERS
     assert ("7.0.0", "8.0.0") in MIGRATION_HANDLERS
     assert ("8.0.0", "9.0.0") in MIGRATION_HANDLERS
+    assert ("9.0.0", "10.0.0") in MIGRATION_HANDLERS
     assert callable(MIGRATION_HANDLERS[("6.0.0", "7.0.0")])
     assert callable(MIGRATION_HANDLERS[("7.0.0", "8.0.0")])
     assert callable(MIGRATION_HANDLERS[("8.0.0", "9.0.0")])
+    assert callable(MIGRATION_HANDLERS[("9.0.0", "10.0.0")])
 
 
-def test_version_constant_is_v9():
-    assert VERSION == "9.0.0"
+def test_version_constant_is_v10():
+    assert VERSION == "10.0.0"
 
 
 def test_ladder_reentry_idempotent(tmp_path):
@@ -417,6 +422,142 @@ def test_v8_to_v9_rolls_back_on_failure(tmp_path):
     assert real_db.execute(
         "SELECT COUNT(*) FROM summary_versions"
     ).fetchone()[0] == 1
+    real_db.close()
+
+
+def _make_v9_db(path):
+    db = _make_v8_db(path)
+    _migrate_v8_to_v9(db)
+    db.execute("UPDATE meta SET value='9.0.0' WHERE key='version'")
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_file TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
+            caller TEXT NOT NULL,
+            callee TEXT NOT NULL,
+            callee_file TEXT,
+            callee_qualified TEXT,
+            line INTEGER,
+            provenance TEXT,
+            synthesized_from TEXT,
+            via TEXT
+        )
+    """)
+    db.commit()
+    return db
+
+
+def test_v9_to_v10_deduplicates_inferred_edges_and_rebuilds_hashes(tmp_path):
+    db = _make_v9_db(tmp_path / "logic_index.db")
+    db.execute(
+        "INSERT INTO files (path, struct_hash) VALUES ('src/bar.py', 'h2')"
+    )
+    edge = (
+        "src/foo.py", "alpha", "beta", "src/bar.py", "src/bar.py::beta",
+        9, "inferred", "src/foo.py", "interface-impl",
+    )
+    db.execute(
+        "INSERT INTO edges (source_file,caller,callee,callee_file,callee_qualified,"
+        "line,provenance,synthesized_from,via) VALUES (?,?,?,?,?,?,?,?,?)",
+        edge,
+    )
+    db.execute(
+        "INSERT INTO edges (source_file,caller,callee,callee_file,callee_qualified,"
+        "line,provenance,synthesized_from,via) VALUES (?,?,?,?,?,?,?,?,?)",
+        edge[:5] + (3,) + edge[6:],
+    )
+    before_hash = "v9-hash-including-source-version"
+    db.execute(
+        "UPDATE retrieval_documents SET content_hash = ? "
+        "WHERE node_kind='symbol' AND node_ref='src/foo.py::alpha'",
+        (before_hash,),
+    )
+    db.commit()
+
+    _migrate_v9_to_v10(db)
+
+    rows = db.execute(
+        "SELECT line FROM edges WHERE provenance='inferred'"
+    ).fetchall()
+    assert rows == [(3,)]
+    assert db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' "
+        "AND name='idx_edges_inferred_identity'"
+    ).fetchone() == (1,)
+    after = db.execute(
+        "SELECT node_kind,node_ref,language,symbol_type,file_path,name,name_tokens,"
+        "signature,summary_short,summary_full,content_hash,source_version "
+        "FROM retrieval_documents WHERE node_kind='symbol' "
+        "AND node_ref='src/foo.py::alpha'"
+    ).fetchone()
+    hash_payload = {
+        "node_kind": after[0],
+        "node_ref": after[1],
+        "language": after[2],
+        "symbol_type": after[3],
+        "file_path": after[4],
+        "name": after[5],
+        "name_tokens": after[6],
+        "signature": after[7],
+        "summary_short": after[8],
+        "summary_full": after[9],
+    }
+    expected_hash = hashlib.sha256(
+        json.dumps(
+            hash_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    ).hexdigest()
+    assert before_hash != after[10]
+    assert after[10] == expected_hash
+    assert after[11] == 1
+    assert db.execute(
+        "SELECT COUNT(*) FROM migration_log "
+        "WHERE from_version='9.0.0' AND to_version='10.0.0'"
+    ).fetchone()[0] == 1
+    db.close()
+
+
+def test_v9_to_v10_reentry_is_idempotent(tmp_path):
+    db = _make_v9_db(tmp_path / "logic_index.db")
+    for _ in range(3):
+        _migrate_v9_to_v10(db)
+    assert db.execute(
+        "SELECT COUNT(*) FROM migration_log "
+        "WHERE from_version='9.0.0' AND to_version='10.0.0'"
+    ).fetchone()[0] == 1
+    db.close()
+
+
+def test_v9_to_v10_rolls_back_on_failure(tmp_path):
+    real_db = _make_v9_db(tmp_path / "logic_index.db")
+    real_db.execute(
+        "INSERT INTO files (path, struct_hash) VALUES ('src/bar.py', 'h2')"
+    )
+    edge = (
+        "src/foo.py", "alpha", "beta", "src/bar.py", "src/bar.py::beta",
+        2, "inferred", "src/foo.py", "interface-impl",
+    )
+    for _ in range(2):
+        real_db.execute(
+            "INSERT INTO edges (source_file,caller,callee,callee_file,callee_qualified,"
+            "line,provenance,synthesized_from,via) VALUES (?,?,?,?,?,?,?,?,?)",
+            edge,
+        )
+    real_db.commit()
+    wrapper = _FailOnMatch(real_db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_inferred_identity")
+    with pytest.raises(sqlite3.IntegrityError):
+        _migrate_v9_to_v10(wrapper)
+    assert real_db.execute(
+        "SELECT COUNT(*) FROM edges WHERE provenance='inferred'"
+    ).fetchone()[0] == 2
+    assert real_db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' "
+        "AND name='idx_edges_inferred_identity'"
+    ).fetchone() is None
+    assert real_db.execute(
+        "SELECT COUNT(*) FROM migration_log "
+        "WHERE from_version='9.0.0' AND to_version='10.0.0'"
+    ).fetchone()[0] == 0
     real_db.close()
 
 

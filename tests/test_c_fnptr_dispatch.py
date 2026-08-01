@@ -174,6 +174,86 @@ class TestSynthesizer:
         assert sorted(r[1] for r in rows) == ["handle_a", "handle_b"]
         assert all(r[0] == "dispatch" for r in rows)
 
+    def test_rerun_returns_zero_and_keeps_single_identity(self, db_with_schema):
+        db = db_with_schema
+        self._seed(db)
+        assert synthesize_c_fnptr_dispatch_edges(db) == 3
+        assert synthesize_c_fnptr_dispatch_edges(db) == 0
+        assert db.execute(
+            "SELECT COUNT(*) FROM edges WHERE via='c-fnptr-dispatch'"
+        ).fetchone()[0] == 3
+
+    def test_handler_rename_replaces_edge_after_global_rebuild(self, db_with_schema):
+        db = db_with_schema
+        self._seed(db)
+        synthesize_c_fnptr_dispatch_edges(db)
+        db.execute(
+            "UPDATE patterns SET handler='handle_renamed' "
+            "WHERE pattern_type='c_fnptr_register' AND handler='handle_a'"
+        )
+        db.execute(
+            "UPDATE symbols SET name='handle_renamed', short_name='handle_renamed' "
+            "WHERE file_path='handlers.c' AND name='handle_a'"
+        )
+        db.execute("DELETE FROM edges WHERE provenance='inferred'")
+
+        assert synthesize_c_fnptr_dispatch_edges(db) == 3
+        callees = {
+            row[0] for row in db.execute(
+                "SELECT callee FROM edges WHERE via='c-fnptr-dispatch'"
+            ).fetchall()
+        }
+        assert callees == {"handle_renamed", "handle_b", "handle_c"}
+
+    def test_handler_delete_removes_edge_after_global_rebuild(self, db_with_schema):
+        db = db_with_schema
+        self._seed(db)
+        synthesize_c_fnptr_dispatch_edges(db)
+        db.execute(
+            "DELETE FROM symbols WHERE file_path='handlers.c' AND name='handle_a'"
+        )
+        db.execute("DELETE FROM edges WHERE provenance='inferred'")
+
+        assert synthesize_c_fnptr_dispatch_edges(db) == 2
+        callees = {
+            row[0] for row in db.execute(
+                "SELECT callee FROM edges WHERE via='c-fnptr-dispatch'"
+            ).fetchall()
+        }
+        assert callees == {"handle_b", "handle_c"}
+
+    def test_registration_delete_removes_edge_after_global_rebuild(self, db_with_schema):
+        db = db_with_schema
+        self._seed(db)
+        synthesize_c_fnptr_dispatch_edges(db)
+        db.execute(
+            "DELETE FROM patterns WHERE pattern_type='c_fnptr_register' "
+            "AND handler='handle_a'"
+        )
+        db.execute("DELETE FROM edges WHERE provenance='inferred'")
+
+        assert synthesize_c_fnptr_dispatch_edges(db) == 2
+        callees = {
+            row[0] for row in db.execute(
+                "SELECT callee FROM edges WHERE via='c-fnptr-dispatch'"
+            ).fetchall()
+        }
+        assert callees == {"handle_b", "handle_c"}
+
+    def test_dispatch_delete_removes_all_edges_after_global_rebuild(self, db_with_schema):
+        db = db_with_schema
+        self._seed(db)
+        synthesize_c_fnptr_dispatch_edges(db)
+        db.execute(
+            "DELETE FROM patterns WHERE pattern_type='c_fnptr_dispatch'"
+        )
+        db.execute("DELETE FROM edges WHERE provenance='inferred'")
+
+        assert synthesize_c_fnptr_dispatch_edges(db) == 0
+        assert db.execute(
+            "SELECT COUNT(*) FROM edges WHERE via='c-fnptr-dispatch'"
+        ).fetchone()[0] == 0
+
     def test_unresolved_handler_skipped(self, db_with_schema):
         db = db_with_schema
         parser = CCppParser()

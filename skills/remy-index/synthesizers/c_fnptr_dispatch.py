@@ -20,7 +20,8 @@ def synthesize_c_fnptr_dispatch_edges(db, profile_name="tee"):
 
     fnptr_typedefs = set()
     for (sig,) in db.execute(
-        "SELECT signal_name FROM patterns WHERE pattern_type = 'c_fnptr_typedef'"
+        "SELECT signal_name FROM patterns WHERE pattern_type = 'c_fnptr_typedef' "
+        "ORDER BY signal_name"
     ).fetchall():
         if sig:
             fnptr_typedefs.add(sig)
@@ -28,7 +29,9 @@ def synthesize_c_fnptr_dispatch_edges(db, profile_name="tee"):
     # struct name -> list of distinct field layouts (a name may recur across files)
     layouts = {}
     for sig, meta in db.execute(
-        "SELECT signal_name, metadata FROM patterns WHERE pattern_type = 'c_struct_layout'"
+        "SELECT signal_name, metadata FROM patterns "
+        "WHERE pattern_type = 'c_struct_layout' "
+        "ORDER BY signal_name, metadata"
     ).fetchall():
         if not sig or not meta:
             continue
@@ -67,7 +70,9 @@ def synthesize_c_fnptr_dispatch_edges(db, profile_name="tee"):
     # (struct, field) -> set of registered handler names
     reg = {}
     for sig, handler, meta in db.execute(
-        "SELECT signal_name, handler, metadata FROM patterns WHERE pattern_type = 'c_fnptr_register'"
+        "SELECT signal_name, handler, metadata FROM patterns "
+        "WHERE pattern_type = 'c_fnptr_register' "
+        "ORDER BY signal_name, handler, metadata"
     ).fetchall():
         if not sig or not handler or not meta:
             continue
@@ -80,7 +85,7 @@ def synthesize_c_fnptr_dispatch_edges(db, profile_name="tee"):
             reg.setdefault((sig, field), set()).add(handler)
 
     if not reg:
-        return
+        return 0
 
     _symbol_cache = {}
 
@@ -89,7 +94,7 @@ def synthesize_c_fnptr_dispatch_edges(db, profile_name="tee"):
         if rows is None:
             rows = db.execute(
                 "SELECT file_path, name FROM symbols WHERE (short_name = ? OR name = ?) "
-                "AND type IN ('function', 'macro')",
+                "AND type IN ('function', 'macro') ORDER BY file_path, name",
                 (name, name)
             ).fetchall()
             _symbol_cache[name] = rows
@@ -105,7 +110,8 @@ def synthesize_c_fnptr_dispatch_edges(db, profile_name="tee"):
     inserted = 0
     for field, enclosing, meta, disp_file, line in db.execute(
         "SELECT signal_name, handler, metadata, file_path, line "
-        "FROM patterns WHERE pattern_type = 'c_fnptr_dispatch'"
+        "FROM patterns WHERE pattern_type = 'c_fnptr_dispatch' "
+        "ORDER BY COALESCE(line, 0), file_path, signal_name, handler, metadata"
     ).fetchall():
         if not field or not enclosing:
             continue
@@ -139,19 +145,24 @@ def synthesize_c_fnptr_dispatch_edges(db, profile_name="tee"):
             callee_file, callee_name = callee
             if caller_file == callee_file and caller_name == callee_name:
                 continue
-            key = f"{caller_file}::{caller_name}>{callee_file}::{callee_name}"
+            key = (
+                caller_file,
+                caller_name,
+                f"{callee_file}::{callee_name}",
+                "c-fnptr-dispatch",
+            )
             if key in seen:
                 continue
             seen.add(key)
-            db.execute(
-                "INSERT INTO edges (source_file, caller, callee, callee_file, callee_qualified, "
+            cursor = db.execute(
+                "INSERT OR IGNORE INTO edges "
+                "(source_file, caller, callee, callee_file, callee_qualified, "
                 "line, provenance, synthesized_from, via) VALUES (?,?,?,?,?,?,?,?,?)",
                 (caller_file, caller_name, callee_name.split(".")[-1], callee_file,
                  f"{callee_file}::{callee_name}", line or 0,
                  "inferred", disp_file, "c-fnptr-dispatch")
             )
             added += 1
-            inserted += 1
+            inserted += max(cursor.rowcount, 0)
 
-    if inserted:
-        db.commit()
+    return inserted
