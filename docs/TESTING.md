@@ -8,6 +8,8 @@ Remy-CC supports Python 3.10 or newer. Install the pinned development tools with
 python -m pip install -r requirements-dev.txt
 ```
 
+This file includes pytest, Pyright, and the MCP SDK required by `tests/test_freshness.py`.
+
 Install the optional high-precision parser packages with:
 
 ```bash

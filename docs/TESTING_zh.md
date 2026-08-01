@@ -8,6 +8,8 @@ Remy-CC 支持 Python 3.10 及以上版本。使用以下命令安装固定版�
 python -m pip install -r requirements-dev.txt
 ```
 
+该文件包含pytest、Pyright以及`tests/test_freshness.py`所需的MCP SDK。
+
 使用以下命令安装可选的高精度解析器包：
 
 ```bash
