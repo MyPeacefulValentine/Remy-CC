@@ -65,6 +65,28 @@ static int dispatch(const void *cmd)
 }
 """
 
+SCALAR_ARRAYS = """\
+char bytes[] = { 0x89, 42, 7U, 9UL, 'a', "text", VALUE };
+int values[] = { 1, 2, 3 };
+"""
+
+DESIGNATED_SOURCE = """\
+static const struct ns_cmd_t g_cmd_table[] = {
+    { .cmd_id = CMD_A, .func = handle_a },
+    { .cmd_id = CMD_B, .func = &handle_b },
+    { .cmd_id = CMD_C, .func = 0x01 },
+    { .cmd_id = CMD_D, .func = handle_d() },
+    { .cmd_id = CMD_E, .func = 处理器 },
+};
+"""
+
+SINGLE_ENTRY = """\
+static const struct ns_cmd_t g_cmd = {
+    .cmd_id = CMD_A,
+    .func = handle_a,
+};
+"""
+
 
 def _insert_file(db, path):
     db.execute("INSERT OR IGNORE INTO files (path, struct_hash, language, layer, imports) "
@@ -118,6 +140,37 @@ class TestExtractPatterns:
 
         disp = [p for p in source_pats if p["pattern_type"] == "c_fnptr_dispatch"]
         assert any(p["signal_name"] == "func" and p["handler"] == "dispatch" for p in disp)
+
+    def test_scalar_arrays_do_not_emit_registration_facts(self):
+        patterns = CCppParser().extract_patterns(SCALAR_ARRAYS, "data.c")
+        assert not [p for p in patterns if p["pattern_type"] == "c_fnptr_register"]
+
+    def test_designated_initializers_require_identifier_handlers(self):
+        patterns = CCppParser().extract_patterns(DESIGNATED_SOURCE, "disp.c")
+        registrations = [
+            (p["metadata"]["field"], p["handler"])
+            for p in patterns
+            if p["pattern_type"] == "c_fnptr_register"
+        ]
+        assert registrations == [
+            ("cmd_id", "CMD_A"),
+            ("func", "handle_a"),
+            ("cmd_id", "CMD_B"),
+            ("func", "handle_b"),
+            ("cmd_id", "CMD_C"),
+            ("cmd_id", "CMD_D"),
+            ("cmd_id", "CMD_E"),
+            ("func", "处理器"),
+        ]
+
+    def test_non_array_designated_initializer_is_preserved(self):
+        patterns = CCppParser().extract_patterns(SINGLE_ENTRY, "disp.c")
+        registrations = [
+            (p["metadata"]["field"], p["handler"])
+            for p in patterns
+            if p["pattern_type"] == "c_fnptr_register"
+        ]
+        assert registrations == [("cmd_id", "CMD_A"), ("func", "handle_a")]
 
 
 class TestSynthesizer:

@@ -16,7 +16,7 @@ python -m pip install -r requirements-tree-sitter.txt
 
 ## 验证基线
 
-P0.1a/P0.1b实施前，仓库工作树可收集454项测试。2026-08-01的P0.5结构模块重构验证收集并通过509项测试。
+P0.1a/P0.1b实施前，仓库工作树可收集454项测试。2026-08-01的P0.6函数指针pattern修正验证收集并通过512项测试。
 
 ```bash
 python -m pytest tests -q -p no:cacheprovider
@@ -47,8 +47,8 @@ python tests/tee_project_canary.py /path/to/tee_tee_os_framework --backend tree-
 python tests/tee_project_canary.py /path/to/tee_tee_os_framework --backend regex --scope product --output tee-regex.json
 ```
 
-完整项目命令拒绝非Git目录和不等于固定提交的版本。脚本将已提交源码归档到系统临时目录后扫描，不会在输入检出目录中创建数据库。JSON报告包含解析后端、范围、源码版本、扫描状态、文件/符号/pattern/直接边/推断边/函数指针边数量、耗时、数据库字节数和WAL字节数。耗时和存储字段只作记录，不作为通过阈值。
+完整项目命令拒绝非Git目录和不等于固定提交的版本。脚本将已提交源码归档到系统临时目录后扫描，不会在输入检出目录中创建数据库。JSON报告包含解析后端、范围、源码版本、扫描状态、文件/符号/pattern/直接边/推断边/函数指针边数量、按类型统计的pattern、全部按文件与类型统计的pattern来源、耗时、数据库字节数和WAL字节数。清单可以为固定提交声明禁止出现的pattern事实；P0.6使用该规则拒绝`pic1080s`、`pic1440s`和`back_png`字节数组的`c_fnptr_register`。耗时和存储字段只作记录，不作为通过阈值。
 
 ## 边界
 
-已提交测试使用合成源码或固定的MulanPSL-2.0 TEE fixture、临时目录和临时SQLite数据库，不需要LLM API key或网络。P0.3比较全量与增量扫描的规范化状态。P0.4增加固定版本符号和关系、重复全量幂等性、handler重命名/删除比较、解析后端报告及本地完整项目测量命令。P0.5将结构扫描实现拆分到`schema.py`、`symbol_names.py`、`migrations.py`和`scanner.py`，`struct_scan.py`继续作为稳定CLI和导入入口。migration测试验证导入时不加载parser模块；完整测试、Pyright、兼容再导出、两种fixture后端和三次固定完整项目扫描验证外部行为不变。
+已提交测试使用合成源码或固定的MulanPSL-2.0 TEE fixture、临时目录和临时SQLite数据库，不需要LLM API key或网络。P0.3比较全量与增量扫描的规范化状态。P0.4增加固定版本符号和关系、重复全量幂等性、handler重命名/删除比较、解析后端报告及本地完整项目测量命令。P0.5将结构扫描实现拆分到`schema.py`、`symbol_names.py`、`migrations.py`和`scanner.py`，`struct_scan.py`继续作为稳定CLI和导入入口。P0.6在生成位置注册事实前拒绝普通标量和字节数组，拒绝数值与表达式handler，保留Unicode单词标识符，报告pattern类型与来源，并检查固定完整项目中的三个已知图片数组。固定项目没有发现省略内层聚合花括号的已知函数指针结构体表，该C形式不属于当前已验证的解析契约。migration测试验证导入时不加载parser模块；完整测试、Pyright、兼容再导出、两种fixture后端和三次固定完整项目扫描验证当前行为。

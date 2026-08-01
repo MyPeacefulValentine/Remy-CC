@@ -202,6 +202,24 @@ def assert_required_facts(
     if row is None:
         raise CanaryError("Required function-pointer typedef fact is missing")
 
+    for forbidden in manifest.get("forbidden_patterns", []):
+        forbidden_tables = set(forbidden.get("table_vars", []))
+        rows = db.execute(
+            "SELECT metadata FROM patterns WHERE file_path=? AND pattern_type=?",
+            (forbidden["file_path"], forbidden["pattern_type"]),
+        ).fetchall()
+        for (metadata,) in rows:
+            try:
+                parsed = json.loads(metadata) if metadata else {}
+            except (json.JSONDecodeError, TypeError):
+                continue
+            table_var = parsed.get("table_var")
+            if table_var in forbidden_tables:
+                raise CanaryError(
+                    "Forbidden pattern found: "
+                    f"{forbidden['file_path']}:{forbidden['pattern_type']}:{table_var}"
+                )
+
     inferred = manifest["required_inferred_edge"]
     row = db.execute(
         "SELECT provenance,via FROM edges WHERE source_file=? AND caller=? "
@@ -250,6 +268,21 @@ def collect_report(
     db = scanner.db
     database_bytes = Path(scanner.db_path).stat().st_size
     wal_path = Path(scanner.db_path + "-wal")
+    pattern_type_counts = {
+        pattern_type: count
+        for pattern_type, count in db.execute(
+            "SELECT pattern_type,COUNT(*) FROM patterns "
+            "GROUP BY pattern_type ORDER BY pattern_type"
+        ).fetchall()
+    }
+    pattern_sources = [
+        {"file_path": file_path, "pattern_type": pattern_type, "count": count}
+        for file_path, pattern_type, count in db.execute(
+            "SELECT file_path,pattern_type,COUNT(*) AS count FROM patterns "
+            "GROUP BY file_path,pattern_type "
+            "ORDER BY count DESC,file_path,pattern_type"
+        ).fetchall()
+    ]
     return {
         "parser_backend": backend,
         "scope": scope,
@@ -262,6 +295,8 @@ def collect_report(
         "file_count": db.execute("SELECT COUNT(*) FROM files").fetchone()[0],
         "symbol_count": db.execute("SELECT COUNT(*) FROM symbols").fetchone()[0],
         "pattern_count": db.execute("SELECT COUNT(*) FROM patterns").fetchone()[0],
+        "pattern_type_counts": pattern_type_counts,
+        "pattern_sources": pattern_sources,
         "direct_edge_count": db.execute(
             "SELECT COUNT(*) FROM edges WHERE provenance IS NULL OR provenance!='inferred'"
         ).fetchone()[0],

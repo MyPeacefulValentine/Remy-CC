@@ -241,6 +241,8 @@ def test_cli_writes_json_report(tmp_path: Path):
         "file_count",
         "symbol_count",
         "pattern_count",
+        "pattern_type_counts",
+        "pattern_sources",
         "direct_edge_count",
         "inferred_edge_count",
         "c_fnptr_dispatch_edge_count",
@@ -248,3 +250,14 @@ def test_cli_writes_json_report(tmp_path: Path):
         "wal_bytes",
     }
     assert required.issubset(report)
+    assert report["pattern_count"] == sum(report["pattern_type_counts"].values())
+    assert report["pattern_count"] == sum(
+        source["count"] for source in report["pattern_sources"]
+    )
+    assert list(report["pattern_type_counts"]) == sorted(report["pattern_type_counts"])
+    assert report["pattern_sources"] == sorted(
+        report["pattern_sources"],
+        key=lambda source: (
+            -source["count"], source["file_path"], source["pattern_type"]
+        ),
+    )

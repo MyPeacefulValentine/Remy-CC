@@ -210,8 +210,10 @@ RE_TABLE_INIT = re.compile(
     re.MULTILINE)
 RE_DISPATCH = re.compile(r'((?:\w+(?:\s*\[[^\]\[]*\])?\s*(?:->|\.)\s*)+)(\w+)\s*\)?\s*\(')
 _FNPTR_FIELD_RE = re.compile(r'\(\s*(?:\w+\s+)*\*\s*(\w+)\s*\)\s*\(')
-_DESIGNATED_RE = re.compile(r'\.\s*(\w+)\s*=\s*&?\s*(\w+)')
-_IDENT_ONLY_RE = re.compile(r'^&?\s*(\w+)\s*$')
+_C_IDENTIFIER = r'[^\W\d]\w*'
+_DESIGNATED_RE = re.compile(
+    rf'\.\s*({_C_IDENTIFIER})\s*=\s*&?\s*({_C_IDENTIFIER})(?=\s*(?:,|$))')
+_IDENT_ONLY_RE = re.compile(rf'^&?\s*({_C_IDENTIFIER})\s*$')
 
 _C_TYPE_KEYWORDS = frozenset({
     'void', 'int', 'char', 'short', 'long', 'unsigned', 'signed', 'float', 'double',
@@ -904,13 +906,14 @@ class CCppParser(LanguageParser):
             elements = _split_top_level(body, ',') if arr else [body]
             for el in elements:
                 el = el.strip()
-                if not el:
+                if not el or (arr and not el.startswith('{')):
                     continue
                 inner = el
                 if inner.startswith('{'):
                     e = _find_matching_brace(inner, 0)
-                    if e != -1:
-                        inner = inner[1:e]
+                    if e == -1 or inner[e + 1:].strip():
+                        continue
+                    inner = inner[1:e]
                 designated = list(_DESIGNATED_RE.finditer(inner))
                 if designated:
                     for dm in designated:

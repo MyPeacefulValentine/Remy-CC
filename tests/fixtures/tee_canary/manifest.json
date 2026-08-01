@@ -43,6 +43,13 @@
     "pattern_type": "c_fnptr_typedef",
     "signal_name": "sync_func"
   },
+  "forbidden_patterns": [
+    {
+      "file_path": "test/xts/ta/test_device_api/src/tee_test_device_api.h",
+      "pattern_type": "c_fnptr_register",
+      "table_vars": ["pic1080s", "pic1440s", "back_png"]
+    }
+  ],
   "required_direct_edge": {
     "source_file": "framework/gtask/src/framework/global_task.c",
     "caller": "handle_ns_cmd",
