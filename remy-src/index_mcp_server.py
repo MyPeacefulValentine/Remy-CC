@@ -18,11 +18,13 @@ except ImportError:
     )
     sys.exit(0)
 
-if os.environ.get("MCP_SERVER_ENABLED", "true").lower() == "false":
-    print("remy-index MCP server disabled (MCP_SERVER_ENABLED=false)", file=sys.stderr)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import remy_config
+
+if not remy_config.load_config(strict=False).get_bool("REMY_MCP_SERVER_ENABLED"):
+    print("remy-index MCP server disabled (REMY_MCP_SERVER_ENABLED=false)", file=sys.stderr)
     sys.exit(0)
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from index_mcp_queries import (
     query_symbol_impl,
     query_symbol_summary_impl,
@@ -85,8 +87,7 @@ def _init_freshness():
     """
     global _freshness_warning
 
-    db_rel = os.environ.get("LOGIC_INDEX_DB_PATH", _DB_REL_DEFAULT)
-    db_path = os.path.join(os.getcwd(), db_rel)
+    db_path = str(remy_config.load_config(strict=False).get("REMY_LOGIC_INDEX_DB_PATH"))
     if not os.path.exists(db_path):
         return
 

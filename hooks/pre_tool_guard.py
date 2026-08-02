@@ -17,6 +17,13 @@ import json
 import re
 import os
 
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "remy-src"))
+if not os.path.isdir(_REMY_SRC):
+    _REMY_SRC = os.path.join(os.path.expanduser("~"), ".claude", "remy-src")
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
+
 # Tools that are allowed to use absolute paths (Read-only tools)
 READ_ONLY_TOOLS = {"Read", "Glob", "Grep"}
 
@@ -74,7 +81,7 @@ MESSAGES = {
 
 
 def _msg(key, **kwargs):
-    lang = os.environ.get("REMY_LANG", "en")
+    lang = str(remy_config.load_config(strict=False).get("REMY_LANG", "en"))
     template = MESSAGES.get(key, {}).get(lang) or MESSAGES.get(key, {}).get("en", key)
     return template.format(**kwargs) if kwargs else template
 

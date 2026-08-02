@@ -21,6 +21,10 @@ def claude_home(tmp_path, monkeypatch):
     home = tmp_path / "claude_home"
     home.mkdir()
     (home / "settings.json").write_text("{}", encoding="utf-8")
+    (home / "remy-config.json").write_text(
+        json.dumps({"schema_version": "1.0.0", "values": {}}),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(cli, "get_claude_home", lambda: home)
     return home
 
@@ -101,6 +105,30 @@ def test_verify_schema_v1_absolute_still_works(claude_home, capsys):
     cli.cmd_verify(types.SimpleNamespace())
     out = capsys.readouterr().out
     assert "files missing from manifest" not in out
+
+
+def test_verify_missing_remy_config_detected(claude_home, capsys):
+    (claude_home / "remy-config.json").unlink()
+    _write_manifest(claude_home, [])
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_verify(types.SimpleNamespace())
+    assert exc.value.code == 1
+    assert "Remy configuration not found" in capsys.readouterr().out
+
+
+def test_verify_invalid_remy_config_is_redacted(claude_home, capsys):
+    fake_secret = "fake-secret-not-for-output"
+    (claude_home / "remy-config.json").write_text(json.dumps({
+        "schema_version": "1.0.0",
+        "values": {"REMY_LLM_API_KEY": fake_secret, "REMY_LLM_MAX_WORKERS": "zero"},
+    }), encoding="utf-8")
+    _write_manifest(claude_home, [])
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_verify(types.SimpleNamespace())
+    output = capsys.readouterr().out
+    assert exc.value.code == 1
+    assert "Remy configuration invalid" in output
+    assert fake_secret not in output
 
 
 def test_uninstall_schema_v2_removes_files(claude_home, capsys):

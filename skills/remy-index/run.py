@@ -24,13 +24,16 @@ import fnmatch
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "remy-src"))
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
 
 from parsers.python_parser import PythonParser
 from parsers.c_cpp_parser import CCppParser
 from parsers.ts_parser import TSParser
 from struct_scan import StructScanner
 from symbol_selection import select_symbols
-from constants import DEFAULT_MAX_WORKERS
 from index_state import (
     DirtyQueue,
     LockTimeoutError,
@@ -49,11 +52,6 @@ VERSION = "4.0.0"
 DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
 CONFIG_FILE = os.path.join(".claude", "logic_index_config")
 
-DEFAULT_MODEL = "glm-5"
-DEFAULT_API_URL = "https://coding.dashscope.aliyuncs.com/v1/chat/completions"
-DEFAULT_RETRY_LIMIT = 3
-DEFAULT_TIMEOUT = 300
-DEFAULT_MAX_TOKENS = 8192
 DEFAULT_LANG = "English"
 MAX_CTX_CHARS = 200000
 
@@ -74,34 +72,18 @@ class TruncatedResponseError(Exception):
 class LogicIndexer:
     def __init__(self, root_dir):
         self.root_dir = os.path.abspath(root_dir)
+        self.config = remy_config.load_config(self.root_dir, strict=True)
 
-        self.api_key = os.environ.get("OPENAI_API_KEY")
-        self.model = os.environ.get("OPENAI_MODEL", DEFAULT_MODEL)
-        self.base_url = os.environ.get("OPENAI_BASE_URL", DEFAULT_API_URL)
+        self.api_key = self.config.get("REMY_LLM_API_KEY")
+        self.model = self.config.get("REMY_LLM_MODEL")
+        self.base_url = self.config.get("REMY_LLM_BASE_URL")
         self.circuit_open = False
-
-        try:
-            self.max_workers = int(os.environ.get("OPENAI_MAX_WORKERS", DEFAULT_MAX_WORKERS))
-        except ValueError:
-            self.max_workers = DEFAULT_MAX_WORKERS
-
-        try:
-            self.max_tokens = int(os.environ.get("OPENAI_MAX_TOKENS", DEFAULT_MAX_TOKENS))
-        except ValueError:
-            self.max_tokens = DEFAULT_MAX_TOKENS
-
-        try:
-            self.retry_limit = int(os.environ.get("OPENAI_RETRY_LIMIT", DEFAULT_RETRY_LIMIT))
-        except ValueError:
-            self.retry_limit = DEFAULT_RETRY_LIMIT
-
-        try:
-            self.timeout = int(os.environ.get("OPENAI_TIMEOUT", DEFAULT_TIMEOUT))
-        except ValueError:
-            self.timeout = DEFAULT_TIMEOUT
-
-        self.filter_small = str(os.environ.get("LOGIC_INDEX_FILTER_SMALL", DEFAULT_FILTER_SMALL)).lower() == "true"
-        remy_lang = os.environ.get("REMY_LANG", "en")
+        self.max_workers = self.config.get_int("REMY_LLM_MAX_WORKERS")
+        self.max_tokens = self.config.get_int("REMY_LLM_MAX_TOKENS")
+        self.retry_limit = self.config.get_int("REMY_LLM_RETRY_LIMIT")
+        self.timeout = self.config.get_int("REMY_LLM_TIMEOUT")
+        self.filter_small = self.config.get_bool("REMY_LOGIC_INDEX_FILTER_SMALL")
+        remy_lang = self.config.get("REMY_LANG", "en")
         self.lang = {"zh-CN": "Simplified Chinese", "en": "English"}.get(remy_lang, DEFAULT_LANG)
 
         self.exclusions = []
@@ -192,7 +174,7 @@ class LogicIndexer:
 
     def _call_llm(self, prompt):
         if not self.api_key:
-            return "Error: OPENAI_API_KEY not set."
+            return "Error: REMY_LLM_API_KEY not set."
 
         if self.circuit_open:
             return "Error: Circuit breaker open."
@@ -347,7 +329,7 @@ class LogicIndexer:
     def _run_hierarchical_bootstrap(self, mode_override=None):
         """Run file/cluster summary bootstrap.
 
-        Reads SUMMARY_BOOTSTRAP_MODE env (auto/ask/never). Prints markers that
+        Reads REMY_SUMMARY_BOOTSTRAP_MODE from the effective Remy configuration (auto/ask/never). Prints markers that
         the /remy-index SKILL.md consumes: BOOTSTRAP_RESULT for status, and
         BOOTSTRAP_PENDING_CONFIRMATION when ask-mode requires user input.
         Returns the result dict from bootstrap_summaries, or None when skipped.
@@ -355,7 +337,7 @@ class LogicIndexer:
         if not self.db or self.circuit_open:
             return None
         if not self.api_key:
-            print("Warning: OPENAI_API_KEY not configured; skipping file/cluster bootstrap.")
+            print("Warning: REMY_LLM_API_KEY not configured; skipping file/cluster bootstrap.")
             return None
         try:
             from bootstrap import bootstrap_summaries
@@ -386,10 +368,10 @@ class LogicIndexer:
 
     @staticmethod
     def _env_int(name, default):
+        key = name if name.startswith("REMY_") else "REMY_" + name
         try:
-            value = os.environ.get(name)
-            return int(value if value is not None else default)
-        except (ValueError, TypeError):
+            return remy_config.load_config(strict=True).get_int(key)
+        except (KeyError, TypeError, remy_config.ConfigError):
             return default
 
     def _force_recompute_check(self, parent_kind, parent_ref):
@@ -404,9 +386,9 @@ class LogicIndexer:
         if not row:
             return False
         child_cnt, leaf_cnt, last_force = row
-        threshold_primary = self._env_int("FORCE_RECOMPUTE_THRESHOLD_PRIMARY", 50)
-        threshold_backup = self._env_int("FORCE_RECOMPUTE_THRESHOLD_BACKUP", -1)
-        interval_days = self._env_int("FORCE_RECOMPUTE_INTERVAL_DAYS", 30)
+        threshold_primary = self._env_int("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", 50)
+        threshold_backup = self._env_int("REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP", -1)
+        interval_days = self._env_int("REMY_FORCE_RECOMPUTE_INTERVAL_DAYS", 30)
         if threshold_primary > 0 and child_cnt >= threshold_primary:
             return True
         if threshold_backup >= 0 and leaf_cnt >= threshold_backup:
@@ -809,7 +791,7 @@ class LogicIndexer:
 
             if self.dirty_nodes:
                 if not self.api_key:
-                    message = "OPENAI_API_KEY not found; symbol summaries remain pending."
+                    message = "REMY_LLM_API_KEY not found; symbol summaries remain pending."
                     print(f"Warning: {message}")
                     errors.append(StageError("symbol_summary", message))
                 else:
@@ -851,7 +833,7 @@ class LogicIndexer:
                     cluster_requested = pending_clusters
                     errors.append(StageError(
                         "hierarchical_summary",
-                        "Auto bootstrap could not run without OPENAI_API_KEY",
+                        "Auto bootstrap could not run without REMY_LLM_API_KEY",
                     ))
 
             propagation_result = self._run_propagation_pass()
@@ -915,7 +897,7 @@ if __name__ == "__main__":
     ap.add_argument("--bootstrap-only", action="store_true",
                     help="Skip symbol-layer LLM; trigger only file/cluster bootstrap.")
     ap.add_argument("--mode", choices=["auto", "ask", "never"], default=None,
-                    help="Override SUMMARY_BOOTSTRAP_MODE for this invocation.")
+                    help="Override REMY_SUMMARY_BOOTSTRAP_MODE for this invocation.")
     cli_args = ap.parse_args()
 
     indexer = LogicIndexer(os.getcwd())

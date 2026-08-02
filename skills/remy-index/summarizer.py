@@ -7,6 +7,7 @@ monotonic ``version`` per ``(node_kind, node_ref)``.
 import json
 import os
 import re
+import sys
 from datetime import datetime
 
 from retrieval_projection import (
@@ -14,6 +15,11 @@ from retrieval_projection import (
     refresh_node,
     select_current_summary,
 )
+
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "remy-src"))
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
 
 
 DEFAULT_LIMITS = {
@@ -24,35 +30,20 @@ DEFAULT_LIMITS = {
 }
 
 _LEVEL_ENV = {
-    "symbol": "SUMMARY_CHAR_LIMIT_SYMBOL",
-    "file_cohesive": "SUMMARY_CHAR_LIMIT_FILE_COHESIVE",
-    "file_utility": "SUMMARY_CHAR_LIMIT_FILE_UTILITY",
-    "cluster": "SUMMARY_CHAR_LIMIT_CLUSTER",
+    "symbol": "REMY_SUMMARY_CHAR_LIMIT_SYMBOL",
+    "file_cohesive": "REMY_SUMMARY_CHAR_LIMIT_FILE_COHESIVE",
+    "file_utility": "REMY_SUMMARY_CHAR_LIMIT_FILE_UTILITY",
+    "cluster": "REMY_SUMMARY_CHAR_LIMIT_CLUSTER",
 }
 
 
-def _env_int(name, default):
-    try:
-        value = os.environ.get(name)
-        return int(value if value is not None else default)
-    except (ValueError, TypeError):
-        return default
-
-
-def _env_float(name, default):
-    try:
-        value = os.environ.get(name)
-        return float(value if value is not None else default)
-    except (ValueError, TypeError):
-        return default
-
-
 def get_char_limit(level):
+    config = remy_config.load_config(strict=True)
     env_name = _LEVEL_ENV.get(level)
-    base = _env_int(env_name, DEFAULT_LIMITS[level]) if env_name else DEFAULT_LIMITS.get(level, 200)
-    lang = os.environ.get("REMY_LANG", "en")
-    if lang.startswith("zh"):
-        factor = _env_float("SUMMARY_ZH_LENGTH_FACTOR", 0.5)
+    base = config.get_int(env_name) if env_name else DEFAULT_LIMITS.get(level, 200)
+    lang = config.get("REMY_LANG", "en")
+    if str(lang).startswith("zh"):
+        factor = config.get_float("REMY_SUMMARY_ZH_LENGTH_FACTOR")
         return max(20, int(base * factor))
     return base
 
@@ -222,7 +213,7 @@ _CLUSTER_TAGS = {
 
 
 def _resolve_cluster_tags():
-    lang = os.environ.get("REMY_LANG", "en")
+    lang = remy_config.load_config(strict=True).get("REMY_LANG", "en")
     return _CLUSTER_TAGS.get(lang, _CLUSTER_TAGS["en"])
 
 

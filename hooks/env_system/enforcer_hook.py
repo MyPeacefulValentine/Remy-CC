@@ -11,14 +11,21 @@
 import sys
 import os
 
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "remy-src"))
+if not os.path.isdir(_REMY_SRC):
+    _REMY_SRC = os.path.join(os.path.expanduser("~"), ".claude", "remy-src")
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
+
 def load_reminder_text():
     """
     Loads the reminder text from the external configuration file.
-    Selects file based on REMY_LANG environment variable.
+    Selects the file using the effective Remy language configuration.
     Returns a default string if the file cannot be found.
     """
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    lang = os.environ.get("REMY_LANG", "en")
+    lang = str(remy_config.load_config(strict=False).get("REMY_LANG", "en"))
     suffix = "zh" if lang == "zh-CN" else "en"
     primary = os.path.join(script_dir, f'reminder_prompt_{suffix}.md')
     fallback = os.path.join(script_dir, f'reminder_prompt_{"en" if suffix == "zh" else "zh"}.md')

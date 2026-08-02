@@ -48,35 +48,42 @@ def _routing_llm(prompt):
 
 class TestResolveMode:
     def test_explicit_never(self, db, monkeypatch):
-        monkeypatch.setenv("SUMMARY_BOOTSTRAP_MODE", "never")
+        monkeypatch.setenv("REMY_SUMMARY_BOOTSTRAP_MODE", "never")
         assert bootstrap.resolve_mode(db) == "never"
 
     def test_explicit_ask(self, db, monkeypatch):
-        monkeypatch.setenv("SUMMARY_BOOTSTRAP_MODE", "ask")
+        monkeypatch.setenv("REMY_SUMMARY_BOOTSTRAP_MODE", "ask")
         assert bootstrap.resolve_mode(db) == "ask"
 
     def test_auto_downgrades_without_api_key(self, db, monkeypatch):
-        monkeypatch.setenv("SUMMARY_BOOTSTRAP_MODE", "auto")
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("REMY_SUMMARY_BOOTSTRAP_MODE", "auto")
+        monkeypatch.delenv("REMY_LLM_API_KEY", raising=False)
         assert bootstrap.resolve_mode(db) == "ask"
 
     def test_auto_with_api_key_stays_auto(self, db, monkeypatch):
-        monkeypatch.setenv("SUMMARY_BOOTSTRAP_MODE", "auto")
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
-        monkeypatch.setenv("BOOTSTRAP_AUTO_SIZE_GUARD", "10")
+        monkeypatch.setenv("REMY_SUMMARY_BOOTSTRAP_MODE", "auto")
+        monkeypatch.setenv("REMY_LLM_API_KEY", "sk-fake")
+        monkeypatch.setenv("REMY_BOOTSTRAP_AUTO_SIZE_GUARD", "10")
         assert bootstrap.resolve_mode(db) == "auto"
 
     def test_auto_downgrades_when_size_exceeds_guard(self, db, monkeypatch):
-        monkeypatch.setenv("SUMMARY_BOOTSTRAP_MODE", "auto")
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
-        monkeypatch.setenv("BOOTSTRAP_AUTO_SIZE_GUARD", "1")
+        monkeypatch.setenv("REMY_SUMMARY_BOOTSTRAP_MODE", "auto")
+        monkeypatch.setenv("REMY_LLM_API_KEY", "sk-fake")
+        monkeypatch.setenv("REMY_BOOTSTRAP_AUTO_SIZE_GUARD", "10")
+        for index in range(9):
+            db.execute(
+                "INSERT INTO files (path, struct_hash) VALUES (?, ?)",
+                (f"extra_{index}.py", f"extra-{index}"),
+            )
+        db.commit()
         assert bootstrap.resolve_mode(db) == "ask"
 
-    def test_invalid_mode_falls_back_to_auto(self, db, monkeypatch):
-        monkeypatch.setenv("SUMMARY_BOOTSTRAP_MODE", "garbage")
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
-        monkeypatch.setenv("BOOTSTRAP_AUTO_SIZE_GUARD", "10")
-        assert bootstrap.resolve_mode(db) == "auto"
+    def test_invalid_mode_is_rejected(self, db, monkeypatch):
+        monkeypatch.setenv("REMY_SUMMARY_BOOTSTRAP_MODE", "garbage")
+        monkeypatch.setenv("REMY_LLM_API_KEY", "sk-fake")
+        monkeypatch.setenv("REMY_BOOTSTRAP_AUTO_SIZE_GUARD", "10")
+        with pytest.raises(ValueError, match="REMY_SUMMARY_BOOTSTRAP_MODE"):
+            bootstrap.resolve_mode(db)
 
 
 class TestNeedsBootstrap:
@@ -104,7 +111,7 @@ class TestBootstrapSummaries:
         assert result["pending_clusters"] == 1
 
     def test_auto_mode_populates_all(self, db, monkeypatch):
-        monkeypatch.setenv("OPENAI_MAX_WORKERS", "1")
+        monkeypatch.setenv("REMY_LLM_MAX_WORKERS", "1")
         result = bootstrap.bootstrap_summaries(db, _routing_llm, mode="auto")
         assert result["skipped"] is False
         assert result["file_done"] == 2
@@ -112,12 +119,12 @@ class TestBootstrapSummaries:
 
     def test_resume_only_pending(self, db, monkeypatch):
         summarizer.write_summary_version(db, "file", "a.py", {"short": "done", "full": None}, "ok")
-        monkeypatch.setenv("OPENAI_MAX_WORKERS", "1")
+        monkeypatch.setenv("REMY_LLM_MAX_WORKERS", "1")
         result = bootstrap.bootstrap_summaries(db, _routing_llm, mode="auto")
         assert result["file_done"] == 1
 
     def test_failed_llm_does_not_write(self, db, monkeypatch):
-        monkeypatch.setenv("OPENAI_MAX_WORKERS", "1")
+        monkeypatch.setenv("REMY_LLM_MAX_WORKERS", "1")
 
         def failing_llm(_prompt):
             return "Error: API down"
@@ -129,7 +136,7 @@ class TestBootstrapSummaries:
 
 
 class TestConcurrentBootstrap:
-    """ThreadPoolExecutor + WAL multi-connection path with OPENAI_MAX_WORKERS > 1 (P1-7)."""
+    """ThreadPoolExecutor + WAL multi-connection path with REMY_LLM_MAX_WORKERS > 1 (P1-7)."""
 
     def test_concurrency_two_completes_all(self, db, monkeypatch):
         for i in range(4):
@@ -140,7 +147,7 @@ class TestConcurrentBootstrap:
         db.commit()
         db.execute("PRAGMA journal_mode=WAL")
 
-        monkeypatch.setenv("OPENAI_MAX_WORKERS", "4")
+        monkeypatch.setenv("REMY_LLM_MAX_WORKERS", "4")
         result = bootstrap.bootstrap_summaries(db, _routing_llm, mode="auto")
         assert result["skipped"] is False
         assert result["file_done"] == 6
@@ -151,7 +158,7 @@ class TestConcurrentBootstrap:
         db.commit()
         db.execute("PRAGMA journal_mode=WAL")
 
-        monkeypatch.setenv("OPENAI_MAX_WORKERS", "3")
+        monkeypatch.setenv("REMY_LLM_MAX_WORKERS", "3")
 
         def selective_llm(prompt):
             if "extra.py" in prompt:
@@ -169,7 +176,7 @@ class TestConcurrentBootstrap:
 
     def test_concurrency_invokes_llm_for_each_pending_node(self, db, monkeypatch):
         db.execute("PRAGMA journal_mode=WAL")
-        monkeypatch.setenv("OPENAI_MAX_WORKERS", "2")
+        monkeypatch.setenv("REMY_LLM_MAX_WORKERS", "2")
 
         invocations = []
 
@@ -184,7 +191,7 @@ class TestConcurrentBootstrap:
 
     def test_concurrent_oversized_warn_counts_as_completed(self, db, monkeypatch):
         db.execute("PRAGMA journal_mode=WAL")
-        monkeypatch.setenv("OPENAI_MAX_WORKERS", "2")
+        monkeypatch.setenv("REMY_LLM_MAX_WORKERS", "2")
         monkeypatch.setenv("REMY_LANG", "en")
         oversized = json.dumps({"short": "x" * 350, "full": None})
 
@@ -209,7 +216,7 @@ class TestConcurrentBootstrap:
             db, "file", "a.py", {"short": "done", "full": None}, "ok"
         )
         db.execute("PRAGMA journal_mode=WAL")
-        monkeypatch.setenv("OPENAI_MAX_WORKERS", "2")
+        monkeypatch.setenv("REMY_LLM_MAX_WORKERS", "2")
 
         result = bootstrap.bootstrap_summaries(db, _routing_llm, mode="auto")
         assert result["file_done"] == 1

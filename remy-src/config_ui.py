@@ -2,405 +2,23 @@
 import http.server
 import json
 import os
-import shutil
 import subprocess
 import sys
 import threading
 import time
 import webbrowser
 from pathlib import Path
+from typing import ClassVar, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import remy_config
 
 HEARTBEAT_INTERVAL = 1
 HEARTBEAT_TIMEOUT = 3
 STARTUP_GRACE = 30
-
-PARAM_REGISTRY = [
-    {"key": "LOGIC_INDEX_FILTER_SMALL", "group": "llm_api", "type": "enum", "default": "false",
-     "options": ["true", "false"],
-     "option_desc_en": ["Skip small functions (< 3 lines, no docstring)", "Summarize all functions"],
-     "option_desc_zh": ["跳过小函数（< 3 行且无文档）", "为所有函数生成摘要"],
-     "desc_en": "Skip LLM summarization for small functions without docstrings",
-     "desc_zh": "跳过无文档小函数的 LLM 摘要生成"},
-    {"key": "OPENAI_API_KEY", "group": "llm_api", "type": "password", "default": "",
-     "desc_en": "API key for OpenAI-compatible LLM service",
-     "desc_zh": "OpenAI 兼容 LLM 服务的 API Key"},
-    {"key": "OPENAI_BASE_URL", "group": "llm_api", "type": "url",
-     "default": "https://api.deepseek.com/v1/chat/completions",
-     "desc_en": "API endpoint URL",
-     "desc_zh": "API 端点 URL"},
-    {"key": "OPENAI_MODEL", "group": "llm_api", "type": "text", "default": "deepseek-v4-flash",
-     "desc_en": "Model name (e.g., deepseek-v4-flash, glm-5)",
-     "desc_zh": "模型名称（如 deepseek-v4-flash、glm-5）"},
-    {"key": "OPENAI_MAX_WORKERS", "group": "llm_api", "type": "int", "default": "3",
-     "min": 1, "max": 10,
-     "desc_en": "Concurrent API request threads",
-     "desc_zh": "并发 API 请求线程数"},
-    {"key": "OPENAI_RETRY_LIMIT", "group": "llm_api", "type": "int", "default": "3",
-     "min": 0, "max": 10,
-     "desc_en": "Max retry attempts on API failure",
-     "desc_zh": "API 失败时的最大重试次数"},
-    {"key": "OPENAI_TIMEOUT", "group": "llm_api", "type": "int", "default": "300",
-     "min": 30, "max": 600,
-     "desc_en": "API request timeout in seconds",
-     "desc_zh": "API 请求超时（秒）"},
-    {"key": "OPENAI_MAX_TOKENS", "group": "llm_api", "type": "int", "default": "8192",
-     "min": 1024, "max": 32768,
-     "desc_en": "Max tokens in API response",
-     "desc_zh": "API 响应最大 token 数"},
-
-    {"key": "LOGIC_INDEX_AUTO_INJECT", "group": "injection", "type": "enum", "default": "ALWAYS",
-     "options": ["ALWAYS", "ASK", "NEVER"],
-     "option_desc_en": ["Auto-inject on every update", "Prompt before injection", "Generate file only, never inject"],
-     "option_desc_zh": ["每次更新自动注入", "注入前询问确认", "仅生成文件，不注入"],
-     "desc_en": "Auto-inject logic_tree_view.md into CLAUDE.md",
-     "desc_zh": "自动将 logic_tree_view.md 注入 CLAUDE.md"},
-    {"key": "LOGIC_INDEX_INTERACTIVE", "group": "injection", "type": "enum", "default": "true",
-     "options": ["true", "false"],
-     "option_desc_en": ["Show scope selector on session start", "Use saved selection silently"],
-     "option_desc_zh": ["会话开始时弹出范围选择器", "静默使用已保存的选择"],
-     "desc_en": "Show logic index scope selector UI on SessionStart",
-     "desc_zh": "SessionStart 时显示逻辑索引范围选择器"},
-    {"key": "NAV_TIER_FULL_MAX", "group": "injection", "type": "int", "default": "200",
-     "min": 0, "max": 50000,
-     "desc_en": "File count threshold for full symbol list injection. Projects with ≤ this many files get complete symbol+signature output",
-     "desc_zh": "完整符号列表注入的文件数阈值。文件数 ≤ 此值时输出全部符号+签名"},
-    {"key": "NAV_MCP_MINIMAL_ENABLED", "group": "injection", "type": "enum", "default": "true",
-     "options": ["true", "false"],
-     "option_desc_en": ["Use minimal injection when MCP server available", "Always use density-based injection"],
-     "option_desc_zh": ["MCP 可用时使用极简注入模式", "始终使用基于密度的注入"],
-     "desc_en": "When MCP server is available, inject only cluster overview + MCP tool hints (project-level)",
-     "desc_zh": "MCP 服务器可用时仅注入集群概览和 MCP 工具提示（项目级参数）"},
-    {"key": "NAV_TIER_CLUSTER_MAX", "group": "injection", "type": "int", "default": "2000",
-     "min": 0, "max": 100000,
-     "desc_en": "File count threshold for cluster+entry injection. Must be >= NAV_TIER_FULL_MAX. Above this: cluster summary only",
-     "desc_zh": "集群+入口注入的文件数阈值。须 >= NAV_TIER_FULL_MAX。超出此值仅输出集群摘要"},
-    {"key": "LOGIC_INDEX_DB_PATH", "group": "injection", "type": "str", "default": ".claude/logic_index.db",
-     "desc_en": "Relative path to the SQLite logic index database",
-     "desc_zh": "SQLite 逻辑索引数据库的相对路径"},
-    {"key": "SCAN_COMMIT_BATCH_SIZE", "group": "injection", "type": "int", "default": "100",
-     "min": 10, "max": 10000,
-     "desc_en": "Number of files per transaction commit during full scan",
-     "desc_zh": "全量扫描时每次事务提交的文件数"},
-    {"key": "CLUSTER_DENSITY_THRESHOLD", "group": "injection", "type": "str", "default": "0.5",
-     "desc_en": "Minimum edge density (edges/files) to confirm a file group as a functional cluster",
-     "desc_zh": "确认文件组为功能集群的最小边密度（边数/文件数）"},
-    {"key": "CLUSTER_MAX_SIZE", "group": "injection", "type": "int", "default": "15",
-     "min": 2, "max": 200,
-     "desc_en": "Max files per cluster before splitting by subdirectory",
-     "desc_zh": "集群最大文件数，超出后按子目录拆分"},
-    {"key": "CLUSTER_ENTRY_COUNT", "group": "injection", "type": "int", "default": "3",
-     "min": 1, "max": 20,
-     "desc_en": "Number of top in-degree symbols selected as cluster entry points",
-     "desc_zh": "每个集群选取的入口符号数量（入度 top-N）"},
-    {"key": "SYNTH_INTERFACE_FANOUT_CAP", "group": "injection", "type": "int", "default": "10",
-     "min": 1, "max": 100,
-     "desc_en": "Max synthetic edges per base-class/subclass pair (interface dispatch)",
-     "desc_zh": "接口分派合成器每对基类-子类的最大合成边数"},
-    {"key": "SYNTH_EVENT_FANOUT_CAP", "group": "injection", "type": "int", "default": "20",
-     "min": 1, "max": 200,
-     "desc_en": "Max synthetic edges per signal name (event emitter)",
-     "desc_zh": "事件合成器每个 signal 的最大连接边数"},
-
-    {"key": "IMPACT_DEPTH_UP", "group": "impact", "type": "int", "default": "2",
-     "min": 1, "max": 10,
-     "desc_en": "Upstream (callers) BFS search depth",
-     "desc_zh": "上游（调用者）BFS 搜索深度"},
-    {"key": "IMPACT_DEPTH_DOWN", "group": "impact", "type": "int", "default": "2",
-     "min": 1, "max": 10,
-     "desc_en": "Downstream (callees) BFS search depth",
-     "desc_zh": "下游（被调用者）BFS 搜索深度"},
-    {"key": "PRECISION_READ_THRESHOLD", "group": "impact", "type": "int", "default": "500",
-     "min": 50, "max": 10000,
-     "desc_en": "Line count threshold for precision Read. Files above this use offset-based Read with [L{start}-L{end}] ranges instead of full-file reads",
-     "desc_zh": "精准 Read 行数阈值。超过此行数的文件使用 [L{start}-L{end}] 行号范围的偏移 Read，而非全量读取"},
-    {"key": "ENRICHMENT_TIER_FULL_MAX", "group": "impact", "type": "int", "default": "200",
-     "min": 0, "max": 10000,
-     "desc_en": "File count threshold for full enrichment output (name + line range + layer + signature)",
-     "desc_zh": "完整 enrichment 输出（名称 + 行号 + 层 + 签名）的文件数阈值"},
-    {"key": "ENRICHMENT_TIER_MID_MAX", "group": "impact", "type": "int", "default": "1000",
-     "min": 0, "max": 50000,
-     "desc_en": "File count threshold for mid-level enrichment (name + line range + layer). Must be >= ENRICHMENT_TIER_FULL_MAX",
-     "desc_zh": "中等 enrichment 输出（名称 + 行号 + 层）的文件数阈值。须 >= ENRICHMENT_TIER_FULL_MAX"},
-    {"key": "ENRICHMENT_CAP", "group": "impact", "type": "int", "default": "15",
-     "min": 1, "max": 100,
-     "desc_en": "Max caller/callee entries in enrichment output (small/mid projects)",
-     "desc_zh": "enrichment 输出中 caller/callee 最大条目数（小/中型项目）"},
-    {"key": "ENRICHMENT_CAP_LARGE", "group": "impact", "type": "int", "default": "10",
-     "min": 1, "max": 100,
-     "desc_en": "Max caller/callee entries for large projects (> ENRICHMENT_TIER_MID_MAX). Must be <= ENRICHMENT_CAP",
-     "desc_zh": "大项目 enrichment 输出最大条目数（> ENRICHMENT_TIER_MID_MAX）。须 <= ENRICHMENT_CAP"},
-    {"key": "ENRICHMENT_SIG_MAX_CHARS", "group": "impact", "type": "int", "default": "80",
-     "min": 0, "max": 500,
-     "desc_en": "Max characters for function signature in enrichment. Truncated signatures show arg count",
-     "desc_zh": "enrichment 中函数签名最大字符数。截断后显示参数个数"},
-
-    {"key": "PROJECT_TREE_AUTO_INJECT", "group": "injection", "type": "enum", "default": "ALWAYS",
-     "options": ["ALWAYS", "ASK", "NEVER"],
-     "option_desc_en": ["Auto-inject on every update", "Prompt before injection", "Generate file only, never inject"],
-     "option_desc_zh": ["每次更新自动注入", "注入前询问确认", "仅生成文件，不注入"],
-     "desc_en": "Auto-inject project_tree.md into CLAUDE.md",
-     "desc_zh": "自动将 project_tree.md 注入 CLAUDE.md"},
-    {"key": "TIMELINE_AUTO_INJECT", "group": "injection", "type": "enum", "default": "ALWAYS",
-     "options": ["ALWAYS", "ASK", "NEVER"],
-     "option_desc_en": ["Auto-inject on every update", "Prompt before injection", "Generate file only, never inject"],
-     "option_desc_zh": ["每次更新自动注入", "注入前询问确认", "仅生成文件，不注入"],
-     "desc_en": "Auto-inject timeline_view.md into CLAUDE.md",
-     "desc_zh": "自动将 timeline_view.md 注入 CLAUDE.md"},
-
-    {"key": "TIMELINE_INJECT_MODE", "group": "timeline", "type": "enum", "default": "all",
-     "options": ["all", "last_n", "since_date", "within_days"],
-     "option_desc_en": ["Show all records", "Keep latest N entries", "Keep entries after date (YYYY-MM-DD)", "Keep entries within N days"],
-     "option_desc_zh": ["显示全部记录", "保留最新 N 条", "保留指定日期之后的记录", "保留最近 N 天内的记录"],
-     "desc_en": "Timeline filter mode",
-     "desc_zh": "时间线过滤模式"},
-    {"key": "TIMELINE_INJECT_VALUE", "group": "timeline", "type": "text", "default": "",
-     "desc_en": "Filter value (e.g., '10' for last_n, '2026-01-01' for since_date, '30' for within_days)",
-     "desc_zh": "过滤参数（如 last_n 填 '10'，since_date 填 '2026-01-01'，within_days 填 '30'）"},
-
-    {"key": "POST_VERIFY_MAX_RETRIES", "group": "post_verify", "type": "int", "default": "-1",
-     "min": -1, "max": 100,
-     "desc_en": "Max test-fix iterations (-1 = unlimited)",
-     "desc_zh": "最大测试修复迭代次数（-1 = 无限制）"},
-    {"key": "POST_VERIFY_EFFORT", "group": "post_verify", "type": "enum", "default": "medium",
-     "options": ["low", "medium", "high"],
-     "desc_en": "Default effort level (low = no agents, medium = 3 agents, high = 6 agents)",
-     "desc_zh": "默认努力级别（low = 无 Agent，medium = 3 Agent，high = 6 Agent）"},
-
-    {"key": "SECURITY_AUDIT_EFFORT", "group": "security_audit", "type": "enum", "default": "medium",
-     "options": ["low", "medium", "high"],
-     "desc_en": "Default effort level (low = regex only, medium = 3 agents, high = 5 agents)",
-     "desc_zh": "默认分析级别（low = 仅正则，medium = 3 Agent，high = 5 Agent）"},
-    {"key": "SECURITY_AUDIT_MAX_FILTER_AGENTS", "group": "security_audit", "type": "int", "default": "15",
-     "min": 1, "max": 50,
-     "desc_en": "Max parallel false-positive filter agents",
-     "desc_zh": "最大并行误报过滤 Agent 数"},
-    {"key": "SECURITY_AUDIT_CONFIDENCE_THRESHOLD", "group": "security_audit", "type": "int", "default": "8",
-     "min": 1, "max": 10,
-     "desc_en": "Minimum confidence score (1-10) for findings in final report",
-     "desc_zh": "最终报告中发现的最低置信度分数（1-10）"},
-
-    {"key": "DEBUG_MAX_HYPOTHESES", "group": "debug", "type": "int", "default": "3",
-     "min": 1, "max": 10,
-     "desc_en": "Max hypothesis iterations before circuit breaker triggers",
-     "desc_zh": "假设循环熔断器触发前的最大迭代次数"},
-
-    {"key": "TEST_GEN_EFFORT", "group": "test_gen", "type": "enum", "default": "medium",
-     "options": ["low", "medium", "high"],
-     "desc_en": "Default effort level (low = no agents, medium = 2 agents, high = 3 agents)",
-     "desc_zh": "默认生成级别（low = 无 Agent，medium = 2 Agent，high = 3 Agent）"},
-    {"key": "TEST_COVERAGE_THRESHOLD", "group": "test_gen", "type": "int", "default": "80",
-     "min": 0, "max": 100,
-     "desc_en": "Branch coverage target percentage (shared with /remy-inspect)",
-     "desc_zh": "分支覆盖率目标百分比（与 /remy-inspect 共享）"},
-    {"key": "TEST_COVERAGE_MAX_SUPPLEMENT_ROUNDS", "group": "test_gen", "type": "int", "default": "3",
-     "min": 1, "max": 10,
-     "desc_en": "Max coverage supplement iterations before stopping",
-     "desc_zh": "覆盖率补充最大轮数"},
-
-    {"key": "CI_LOG_MAX_LINES", "group": "ci", "type": "int", "default": "500",
-     "min": 50, "max": 10000,
-     "desc_en": "Max lines retained per failed CI step for /remy-ci analysis",
-     "desc_zh": "/remy-ci 分析时每个失败步骤保留的最大日志行数"},
-
-    {"key": "INSIGHT_DEFAULT_DEPTH", "group": "insight", "type": "enum", "default": "standard",
-     "options": ["light", "standard", "deep"],
-     "desc_en": "Default analysis depth (light = 2 agents, standard = per-section, deep = multi-instance + 3-vote)",
-     "desc_zh": "默认分析深度（light = 2 Agent，standard = 按 section 分配，deep = 多实例 + 3 投票）"},
-    {"key": "INSIGHT_MAX_CUSTOM_ANGLES", "group": "insight", "type": "int", "default": "2",
-     "min": 0, "max": 5,
-     "desc_en": "Maximum user-defined custom analysis angles per run",
-     "desc_zh": "每次运行中用户可定义的自定义分析视角上限"},
-    {"key": "INSIGHT_MAX_AGENTS", "group": "insight", "type": "int", "default": "40",
-     "min": 5, "max": 60,
-     "desc_en": "Hard cap on total agents (analysis + adversarial) per run",
-     "desc_zh": "单次运行的 Agent 总数上限（分析 + 对抗性验证）"},
-
-    {"key": "MCP_SERVER_ENABLED", "group": "mcp", "type": "enum", "default": "true",
-     "options": ["true", "false"],
-     "option_desc_en": ["MCP server starts on session launch", "MCP server disabled"],
-     "option_desc_zh": ["会话启动时启动 MCP 服务器", "MCP 服务器禁用"],
-     "desc_en": "Enable remy-index MCP server registration",
-     "desc_zh": "启用 remy-index MCP 服务器"},
-    {"key": "MCP_BFS_MAX_DEPTH", "group": "mcp", "type": "int", "default": "5",
-     "min": 1, "max": 10,
-     "desc_en": "Maximum BFS depth for query_callers/query_callees",
-     "desc_zh": "query_callers/query_callees 的最大 BFS 深度"},
-    {"key": "MCP_IMPACT_MAX_DEPTH_UP", "group": "mcp", "type": "int", "default": "3",
-     "min": 1, "max": 10,
-     "desc_en": "Default upstream depth for query_impact",
-     "desc_zh": "query_impact 默认上游深度"},
-    {"key": "MCP_IMPACT_MAX_DEPTH_DOWN", "group": "mcp", "type": "int", "default": "3",
-     "min": 1, "max": 10,
-     "desc_en": "Default downstream depth for query_impact",
-     "desc_zh": "query_impact 默认下游深度"},
-    {"key": "MCP_RESULT_LIMIT", "group": "mcp", "type": "int", "default": "50",
-     "min": 10, "max": 500,
-     "desc_en": "Shared cap for MCP result sets and query_search.limit",
-     "desc_zh": "MCP结果集与query_search.limit的共享上限"},
-    {"key": "MCP_STATIC_ONLY_DEFAULT", "group": "mcp", "type": "enum", "default": "false",
-     "options": ["true", "false"],
-     "option_desc_en": ["Exclude heuristic/synthesized edges by default", "Include all edges by default"],
-     "option_desc_zh": ["默认排除启发式/合成边", "默认包含所有边"],
-     "desc_en": "Default value for static_only in BFS queries",
-     "desc_zh": "BFS 查询中 static_only 的默认值"},
-    {"key": "FLOW_MAX_DEPTH", "group": "mcp", "type": "int", "default": "15",
-     "min": 1, "max": 50,
-     "desc_en": "query_flow bidirectional BFS max expansion depth per side",
-     "desc_zh": "query_flow 双向 BFS 每侧最大扩展深度（层数）"},
-    {"key": "FLOW_MAX_VISITED", "group": "mcp", "type": "int", "default": "2000",
-     "min": 100, "max": 50000,
-     "desc_en": "query_flow BFS max visited nodes (safety cap against high fan-out)",
-     "desc_zh": "query_flow BFS 最大访问节点数（防止高扇出图超时）"},
-
-    {"key": "SUMMARY_CHAR_LIMIT_SYMBOL", "group": "summary", "type": "int", "default": "100",
-     "min": 20, "max": 500,
-     "desc_en": "Soft character limit for symbol-level summary (warn at 1.2x, retry at 1.5x)",
-     "desc_zh": "符号级摘要的软字符上限（1.2x 警告、1.5x 重试）"},
-    {"key": "SUMMARY_CHAR_LIMIT_FILE_COHESIVE", "group": "summary", "type": "int", "default": "250",
-     "min": 50, "max": 1000,
-     "desc_en": "Soft character limit for cohesive-file summary",
-     "desc_zh": "高内聚文件摘要的软字符上限"},
-    {"key": "SUMMARY_CHAR_LIMIT_FILE_UTILITY", "group": "summary", "type": "int", "default": "800",
-     "min": 100, "max": 4000,
-     "desc_en": "Soft character limit for utility-file summary (double-form short+full)",
-     "desc_zh": "工具文件摘要的软字符上限（双形态 short+full）"},
-    {"key": "SUMMARY_CHAR_LIMIT_CLUSTER", "group": "summary", "type": "int", "default": "500",
-     "min": 100, "max": 2000,
-     "desc_en": "Soft character limit for cluster summary (double-form short+full)",
-     "desc_zh": "集群摘要的软字符上限（双形态 short+full）"},
-    {"key": "SUMMARY_ZH_LENGTH_FACTOR", "group": "summary", "type": "float", "default": "0.5",
-     "min": 0.1, "max": 1.0,
-     "desc_en": "Multiplier applied to all SUMMARY_CHAR_LIMIT_* when REMY_LANG starts with 'zh'",
-     "desc_zh": "当 REMY_LANG 以 zh 开头时，对所有 SUMMARY_CHAR_LIMIT_* 应用的乘数"},
-    {"key": "FILE_KIND_MIN_SYMBOLS", "group": "summary", "type": "int", "default": "5",
-     "min": 1, "max": 50,
-     "desc_en": "Files with fewer symbols than this are classified as 'trivial'",
-     "desc_zh": "符号数少于此值的文件归类为 'trivial'"},
-    {"key": "FILE_KIND_LOW_COHESION_THRESHOLD", "group": "summary", "type": "float", "default": "0.25",
-     "min": 0.0, "max": 1.0,
-     "desc_en": "intra_edge / sym_count density below this marks the file as 'low_cohesion'",
-     "desc_zh": "intra_edge / sym_count 密度低于此值时将文件标记为 'low_cohesion'"},
-    {"key": "FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "group": "summary", "type": "int", "default": "50",
-     "min": 1, "max": 10000,
-     "desc_en": "Max consecutive propagate=false count before forced parent-summary rewrite",
-     "desc_zh": "强制重写父摘要前允许的连续 propagate=false 次数上限"},
-    {"key": "FORCE_RECOMPUTE_THRESHOLD_BACKUP", "group": "summary", "type": "int", "default": "-1",
-     "min": -1, "max": 100000,
-     "desc_en": "Backup trigger: total leaf-descendant change count (-1 disables this trigger)",
-     "desc_zh": "兜底触发器：子树叶后代变更累计数（-1 禁用此触发器）"},
-    {"key": "FORCE_RECOMPUTE_INTERVAL_DAYS", "group": "summary", "type": "int", "default": "30",
-     "min": 1, "max": 365,
-     "desc_en": "Forced rewrite interval in days when neither counter threshold is hit",
-     "desc_zh": "未触发任何计数器阈值时的强制重写间隔（天）"},
-    {"key": "SUMMARY_BOOTSTRAP_MODE", "group": "summary", "type": "enum", "default": "auto",
-     "options": ["auto", "ask", "never"],
-     "option_desc_en": [
-         "Auto-run on first session if API key set and project size <= guard",
-         "Always prompt user before generating father-level summaries",
-         "Skip bootstrap; father-level summaries remain empty"
-     ],
-     "option_desc_zh": [
-         "首次会话自动运行（API key 已配置且项目规模在阈值内）",
-         "生成父级摘要前始终询问用户",
-         "跳过 bootstrap；父级摘要保持空白"
-     ],
-     "desc_en": "Hierarchical summary bootstrap policy on first run after install/upgrade",
-     "desc_zh": "安装/升级后首次运行的层级摘要 bootstrap 策略"},
-    {"key": "BOOTSTRAP_AUTO_SIZE_GUARD", "group": "summary", "type": "int", "default": "500",
-     "min": 10, "max": 100000,
-     "desc_en": "When SUMMARY_BOOTSTRAP_MODE=auto, projects with more files than this downgrade to 'ask'",
-     "desc_zh": "当 SUMMARY_BOOTSTRAP_MODE=auto 时，文件数超过此值的项目降级为 'ask'"},
-    {"key": "SUMMARY_LLM_TIMEOUT", "group": "summary", "type": "int", "default": "60",
-     "min": 5, "max": 600,
-     "desc_en": "Per-node LLM call timeout in seconds for file/cluster summary generation",
-     "desc_zh": "file/cluster 摘要单节点 LLM 调用的超时秒数"},
-    {"key": "BASH_DEFAULT_TIMEOUT_MS", "group": "system", "type": "int", "default": "600000",
-     "min": 10000, "max": 600000,
-     "desc_en": "Default Bash command timeout in milliseconds",
-     "desc_zh": "Bash 命令默认超时（毫秒）"},
-    {"key": "BASH_MAX_TIMEOUT_MS", "group": "system", "type": "int", "default": "600000",
-     "min": 10000, "max": 600000,
-     "desc_en": "Maximum Bash command timeout in milliseconds",
-     "desc_zh": "Bash 命令最大超时（毫秒）"},
-    {"key": "REMY_LANG", "group": "system", "type": "enum", "default": "en",
-     "options": ["en", "zh-CN"],
-     "desc_en": "UI and output language",
-     "desc_zh": "界面与输出语言"},
-    {"key": "REMY_BANNER_ENABLED", "group": "system", "type": "enum", "default": "true",
-     "options": ["true", "false"],
-     "desc_en": "Show startup banner on SessionStart",
-     "desc_zh": "SessionStart 时显示启动横幅"},
-    {"key": "REPO_AUDIT_ROOT", "group": "system", "type": "text", "default": "~/claude_audit",
-     "desc_en": "Root directory for reposcout sandbox",
-     "desc_zh": "仓库审计沙盒根目录"},
-    {"key": "STRUCT_SCAN_TIMEOUT", "group": "system", "type": "int", "default": "60",
-     "min": 10, "max": 300,
-     "desc_en": "Timeout in seconds for full structural scan on SessionStart/PreCompact",
-     "desc_zh": "SessionStart/PreCompact 全量结构扫描的超时秒数"},
-    {"key": "INDEX_SCAN_LOCK_TIMEOUT", "group": "system", "type": "int", "default": "30",
-     "min": 0, "max": 300,
-     "desc_en": "Max seconds manual and lifecycle index runs wait for the project scan lock",
-     "desc_zh": "手动和生命周期索引等待项目扫描锁的最大秒数"},
-    {"key": "INDEX_QUEUE_LOCK_TIMEOUT", "group": "system", "type": "int", "default": "1",
-     "min": 0, "max": 30,
-     "desc_en": "Max seconds dirty-path queue operations wait for the queue lock",
-     "desc_zh": "脏路径队列操作等待队列锁的最大秒数"},
-
-    {"key": "ANTHROPIC_API_KEY", "group": "claude_code", "type": "password", "default": "",
-     "desc_en": "Anthropic API key for Claude Code",
-     "desc_zh": "Claude Code 的 Anthropic API Key"},
-    {"key": "ANTHROPIC_BASE_URL", "group": "claude_code", "type": "url", "default": "",
-     "desc_en": "Custom Anthropic API base URL (leave empty for default)",
-     "desc_zh": "自定义 Anthropic API 地址（留空使用默认值）"},
-    {"key": "CLAUDE_CODE_MAX_OUTPUT_TOKENS", "group": "claude_code", "type": "int", "default": "16384",
-     "min": 1024, "max": 131072,
-     "desc_en": "Max output tokens per Claude Code response",
-     "desc_zh": "Claude Code 单次响应最大输出 token 数"},
-    {"key": "CLAUDE_CODE_USE_POWERSHELL_TOOL", "group": "claude_code", "type": "enum", "default": "1",
-     "options": ["1", "0"],
-     "option_desc_en": ["Enabled — PowerShell tool available", "Disabled — PowerShell tool hidden"],
-     "option_desc_zh": ["启用 — PowerShell 工具可用", "禁用 — PowerShell 工具隐藏"],
-     "desc_en": "Enable or disable the PowerShell tool in Claude Code (official parameter)",
-     "desc_zh": "启用或禁用 Claude Code 的 PowerShell 工具（官方参数）"},
-]
-
-GROUPS = [
-    {"id": "llm_api", "label_en": "Logic Index", "label_zh": "语义索引"},
-    {"id": "impact", "label_en": "Impact Analysis", "label_zh": "影响分析"},
-    {"id": "injection", "label_en": "Context Injection", "label_zh": "上下文注入"},
-    {"id": "timeline", "label_en": "Timeline", "label_zh": "时间线"},
-    {"id": "post_verify", "label_en": "Post-Verify", "label_zh": "后验测试"},
-    {"id": "security_audit", "label_en": "Security Audit", "label_zh": "安全审计"},
-    {"id": "debug", "label_en": "Debug", "label_zh": "调试"},
-    {"id": "test_gen", "label_en": "Test Generation", "label_zh": "测试生成"},
-    {"id": "ci", "label_en": "CI/CD", "label_zh": "持续集成"},
-    {"id": "insight", "label_en": "Insight", "label_zh": "仓库洞察"},
-    {"id": "mcp", "label_en": "MCP Server", "label_zh": "MCP 服务器"},
-    {"id": "summary", "label_en": "Summary Hierarchy", "label_zh": "层级摘要"},
-    {"id": "system", "label_en": "System", "label_zh": "系统"},
-    {"id": "claude_code", "label_en": "Claude Code", "label_zh": "Claude Code"},
-]
-
 LOCK_FILE = Path.home() / ".claude" / ".config_ui.lock"
-
-
-def get_settings_path():
-    return Path.home() / ".claude" / "settings.json"
-
-
-def load_settings():
-    path = get_settings_path()
-    if not path.exists():
-        return {}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def load_json_file(path):
-    if not path.exists():
-        return {}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+PARAM_REGISTRY = remy_config.registry_for_ui()
+GROUPS = list(remy_config.GROUPS)
 
 
 def _is_pid_alive(pid):
@@ -409,7 +27,8 @@ def _is_pid_alive(pid):
     if sys.platform == "win32":
         result = subprocess.run(
             ["tasklist", "/FI", "PID eq {}".format(pid), "/NH"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         return str(pid) in result.stdout
     try:
@@ -422,8 +41,7 @@ def _is_pid_alive(pid):
 def acquire_lock(url, mode, target):
     if LOCK_FILE.exists():
         try:
-            with open(LOCK_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            data = json.loads(LOCK_FILE.read_text(encoding="utf-8"))
             if _is_pid_alive(data.get("pid", -1)):
                 print("Error: Another config UI instance is running.")
                 print("  URL:    " + data.get("url", "unknown"))
@@ -434,9 +52,10 @@ def acquire_lock(url, mode, target):
         except (json.JSONDecodeError, OSError):
             pass
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(LOCK_FILE, "w", encoding="utf-8") as f:
-        json.dump({"pid": os.getpid(), "url": url, "mode": mode,
-                    "target": str(target or "")}, f)
+    LOCK_FILE.write_text(
+        json.dumps({"pid": os.getpid(), "url": url, "mode": mode, "target": str(target or "")}),
+        encoding="utf-8",
+    )
 
 
 def release_lock():
@@ -446,13 +65,37 @@ def release_lock():
         pass
 
 
+def _document_values(path, project=False, strict=True):
+    if not path.exists():
+        return {}, [], ()
+    if strict:
+        document = remy_config.read_document(path, strict=True, project=project)
+        diagnostics = ()
+    else:
+        inspected = remy_config.inspect_document(path, project=project)
+        document = {"values": inspected["values"]}
+        diagnostics = inspected["diagnostics"]
+    values = document["values"]
+    unknown = sorted(key for key in values if key not in remy_config.FIELD_SPECS)
+    return values, unknown, diagnostics
+
+
+def _safe_values(values):
+    return {
+        key: value
+        for key, value in values.items()
+        if key not in remy_config.SECRET_KEYS
+    }
+
+
 class ConfigHandler(http.server.BaseHTTPRequestHandler):
     timeout = 10
-    html_path = None
-    server_ref = None
-    mode = "global"
-    target_path = None
-    last_heartbeat = 0
+    html_path: ClassVar[Optional[Path]] = None
+    server_ref: ClassVar[Optional[http.server.ThreadingHTTPServer]] = None
+    mode: ClassVar[str] = "global"
+    target_path: ClassVar[Optional[Path]] = None
+    project_root: ClassVar[Optional[Path]] = None
+    last_heartbeat: ClassVar[float] = 0
 
     def log_message(self, format, *args):
         pass
@@ -461,8 +104,8 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", len(body))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1")
         self.end_headers()
         self.wfile.write(body)
 
@@ -470,7 +113,7 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
         body = content.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", len(body))
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
@@ -480,134 +123,137 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
                 self._send_html(self.html_path.read_text(encoding="utf-8"))
             else:
                 self._send_json({"error": "config_ui.html not found"}, 404)
-        elif self.path == "/logo.svg":
+            return
+        if self.path == "/logo.svg":
             logo = Path(__file__).resolve().parent.parent / "remy-assets" / "logo.svg"
-            if logo.exists():
-                body = logo.read_bytes()
-                self.send_response(200)
-                self.send_header("Content-Type", "image/svg+xml")
-                self.send_header("Content-Length", len(body))
-                self.end_headers()
-                self.wfile.write(body)
-            else:
+            if not logo.exists():
                 self.send_error(404)
-        elif self.path == "/api/heartbeat":
+                return
+            body = logo.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/svg+xml")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path == "/api/heartbeat":
             ConfigHandler.last_heartbeat = time.monotonic()
             self._send_json({"status": "ok"})
-        elif self.path == "/api/config":
-            try:
-                global_settings = load_settings()
-            except (json.JSONDecodeError, OSError) as e:
-                self._send_json({"error": "Global settings read failed: " + str(e)}, 500)
-                return
-            env_global = global_settings.get("env", {})
-            lang = env_global.get("REMY_LANG", "en")
-
-            if self.mode == "project" and self.target_path:
-                env_local = {}
-                try:
-                    env_local = load_json_file(self.target_path).get("env", {})
-                except (json.JSONDecodeError, OSError):
-                    pass
-                self._send_json({
-                    "mode": "project",
-                    "target": str(self.target_path),
-                    "env_global": env_global,
-                    "env_local": env_local,
-                    "lang": lang,
-                    "registry": PARAM_REGISTRY,
-                    "groups": GROUPS,
-                })
-            else:
-                registered_keys = {p["key"] for p in PARAM_REGISTRY}
-                unknown = [k for k in env_global if k not in registered_keys]
-                if unknown:
-                    print("  [i] Unregistered env keys: " + ", ".join(unknown))
-                self._send_json({
-                    "mode": "global",
-                    "env": env_global,
-                    "lang": lang,
-                    "registry": PARAM_REGISTRY,
-                    "groups": GROUPS,
-                    "unknown_keys": unknown,
-                })
-        else:
-            self.send_error(404)
-
-    def _save_global(self, data):
-        new_env = data.get("env", {})
-        path = get_settings_path()
-        if not path.exists():
-            self._send_json({"status": "error",
-                             "message": "settings.json not found. Run install.py first."}, 400)
             return
-        shutil.copy2(path, path.with_suffix(".json.bak"))
-        settings = load_settings()
-        current_env = settings.get("env", {})
-        current_env.update(new_env)
-        settings["env"] = current_env
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=2, ensure_ascii=False)
-            f.write("\n")
-        if sys.platform != "win32":
-            os.chmod(path, 0o600)
-        claude_home = path.parent
-        lang = current_env.get("REMY_LANG", "en")
-        patch_script = claude_home / "remy-src" / "patch_descriptions.py"
-        if patch_script.exists():
-            subprocess.run(
-                [sys.executable, str(patch_script),
-                 "--claude-home", str(claude_home), "--lang", lang],
-                check=False,
+        if self.path != "/api/config":
+            self.send_error(404)
+            return
+        snapshot = remy_config.load_config(self.project_root, strict=False)
+        user_values, user_unknown, user_diagnostics = _document_values(
+            remy_config.user_config_path(), strict=False
+        )
+        project_values = {}
+        project_unknown = []
+        project_diagnostics = ()
+        if self.mode == "project" and self.target_path:
+            project_values, project_unknown, project_diagnostics = _document_values(
+                self.target_path, project=True, strict=False
             )
-        self._send_json({"status": "ok"})
+        diagnostics = tuple(dict.fromkeys(
+            (*snapshot.diagnostics, *user_diagnostics, *project_diagnostics)
+        ))
+        secret_state = {
+            key: {
+                "has_value": bool(snapshot.get(key)),
+                "source": snapshot.source_of(key),
+            }
+            for key in remy_config.SECRET_KEYS
+        }
+        self._send_json({
+            "mode": self.mode,
+            "target": str(self.target_path or remy_config.user_config_path()),
+            "values": _safe_values(snapshot.raw_values),
+            "sources": dict(snapshot.sources),
+            "user_values": _safe_values(user_values),
+            "project_values": _safe_values(project_values),
+            "secret_state": secret_state,
+            "lang": str(snapshot.get("REMY_LANG", "en")),
+            "registry": PARAM_REGISTRY,
+            "groups": GROUPS,
+            "unknown_keys": sorted(set(user_unknown + project_unknown)),
+            "diagnostics": list(diagnostics),
+            "read_only": bool(diagnostics),
+            "windows_acl_warning": sys.platform == "win32",
+        })
 
-    def _save_project(self, data):
-        new_env = data.get("env", {})
-        overrides = set(data.get("overrides", []))
-        path = self.target_path
-        local_settings = {}
-        if path.exists():
-            shutil.copy2(path, path.with_suffix(".json.bak"))
-            try:
-                local_settings = load_json_file(path)
-            except (json.JSONDecodeError, OSError):
-                local_settings = {}
-        local_env = {}
-        for key in overrides:
-            if key in new_env:
-                local_env[key] = new_env[key]
-        local_settings["env"] = local_env
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(local_settings, f, indent=2, ensure_ascii=False)
-            f.write("\n")
-        if sys.platform != "win32":
-            os.chmod(path, 0o600)
+    def _save(self, data):
+        if not isinstance(data, dict):
+            raise remy_config.ConfigError("Save payload must be an object")
+        updates = data.get("values", {})
+        if not isinstance(updates, dict):
+            raise remy_config.ConfigError("values must be an object")
+        if any(not isinstance(key, str) or not isinstance(value, str) for key, value in updates.items()):
+            raise remy_config.ConfigError("Configuration values must be strings")
+        clear_secrets = data.get("clear_secrets", [])
+        if not isinstance(clear_secrets, list) or any(not isinstance(key, str) for key in clear_secrets):
+            raise remy_config.ConfigError("clear_secrets must be a string list")
+        reset = bool(data.get("reset", False))
+        project = self.mode == "project"
+        target = self.target_path if project else remy_config.user_config_path()
+        if target is None:
+            raise remy_config.ConfigError("Project target is not configured")
+        inspected = remy_config.inspect_document(target, project=project)
+        if inspected["exists"] and not inspected["valid"]:
+            raise remy_config.ConfigError("Configuration is read-only until file errors are corrected")
+        if reset:
+            remy_config.reset_known_values(target, project=project)
+        else:
+            overrides = data.get("overrides", []) if project else None
+            remove_keys = []
+            if project:
+                if not isinstance(overrides, list) or any(not isinstance(key, str) for key in overrides):
+                    raise remy_config.ConfigError("overrides must be a string list")
+                allowed = set(overrides)
+                updates = {key: value for key, value in updates.items() if key in allowed}
+                current, _, _ = _document_values(target, project=True)
+                remove_keys = [
+                    key for key in remy_config.FIELD_SPECS
+                    if key in current and key not in allowed
+                ]
+            remy_config.save_config(
+                target,
+                updates,
+                remove_keys=remove_keys,
+                clear_secrets=clear_secrets,
+                project=project,
+            )
+        snapshot = remy_config.load_config(self.project_root, strict=True)
+        if not project:
+            claude_home = remy_config.user_config_path().parent
+            lang = str(snapshot.get("REMY_LANG", "en"))
+            patch_script = claude_home / "remy-src" / "patch_descriptions.py"
+            if patch_script.exists():
+                subprocess.run(
+                    [sys.executable, str(patch_script), "--claude-home", str(claude_home), "--lang", lang],
+                    check=False,
+                )
         self._send_json({"status": "ok"})
 
     def do_POST(self):
         if self.path == "/api/save":
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length)
             try:
-                data = json.loads(body)
-                if self.mode == "project" and self.target_path:
-                    self._save_project(data)
-                else:
-                    self._save_global(data)
-            except Exception as e:
-                self._send_json({"status": "error", "message": str(e)}, 500)
-        elif self.path == "/api/shutdown":
+                length = int(self.headers.get("Content-Length", 0))
+                self._save(json.loads(self.rfile.read(length)))
+            except (json.JSONDecodeError, remy_config.ConfigError, OSError) as exc:
+                self._send_json({"status": "error", "message": str(exc)}, 400)
+            except Exception as exc:
+                self._send_json({"status": "error", "message": type(exc).__name__}, 500)
+            return
+        if self.path == "/api/shutdown":
             try:
                 self.send_response(200)
                 self.end_headers()
-            except Exception:
+            except OSError:
                 pass
             if self.server_ref:
                 threading.Thread(target=self.server_ref.shutdown, daemon=True).start()
-        else:
-            self.send_error(404)
+            return
+        self.send_error(404)
 
 
 def _heartbeat_watchdog(server):
@@ -615,48 +261,50 @@ def _heartbeat_watchdog(server):
     while True:
         time.sleep(HEARTBEAT_INTERVAL)
         if ConfigHandler.last_heartbeat > 0:
-            elapsed = time.monotonic() - ConfigHandler.last_heartbeat
-            if elapsed > HEARTBEAT_TIMEOUT:
+            if time.monotonic() - ConfigHandler.last_heartbeat > HEARTBEAT_TIMEOUT:
                 threading.Thread(target=server.shutdown, daemon=True).start()
                 break
-        else:
-            if time.monotonic() - start_time > STARTUP_GRACE:
-                threading.Thread(target=server.shutdown, daemon=True).start()
-                break
+        elif time.monotonic() - start_time > STARTUP_GRACE:
+            threading.Thread(target=server.shutdown, daemon=True).start()
+            break
 
 
 def main(mode="global", target_path=None):
-    html_path = Path(__file__).resolve().parent / "config_ui.html"
-    ConfigHandler.html_path = html_path
+    ConfigHandler.html_path = Path(__file__).resolve().parent / "config_ui.html"
     ConfigHandler.mode = mode
-
     if mode == "project" and target_path:
-        project_dir = Path(target_path)
+        project_dir = Path(target_path).resolve()
         claude_dir = project_dir / ".claude"
         claude_dir.mkdir(parents=True, exist_ok=True)
-        ConfigHandler.target_path = claude_dir / "settings.local.json"
+        ConfigHandler.project_root = project_dir
+        config_path = claude_dir / remy_config.CONFIG_FILE_NAME
+        ConfigHandler.target_path = config_path
+        remy_config.migrate_settings_file(
+            claude_dir / "settings.local.json",
+            config_path,
+            project=True,
+        )
     else:
+        ConfigHandler.project_root = None
         ConfigHandler.target_path = None
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), ConfigHandler)
     port = server.server_address[1]
     ConfigHandler.server_ref = server
     ConfigHandler.last_heartbeat = 0
-
     url = "http://127.0.0.1:{}".format(port)
     acquire_lock(url, mode, target_path)
 
     label = "Global" if mode == "global" else "Project"
     print("Remy Config UI ({}): {}".format(label, url))
-    if mode == "project":
-        print("  Target: " + str(ConfigHandler.target_path))
+    print("  Target: " + str(ConfigHandler.target_path or remy_config.user_config_path()))
+    if sys.platform == "win32":
+        print("  Security: Windows file access depends on inherited user-directory ACLs.")
     print("Press Ctrl+C to stop.\n")
 
     watchdog = threading.Thread(target=_heartbeat_watchdog, args=(server,), daemon=True)
     watchdog.start()
-
     threading.Timer(0.3, lambda: webbrowser.open(url)).start()
-
     try:
         server.serve_forever()
     except KeyboardInterrupt:

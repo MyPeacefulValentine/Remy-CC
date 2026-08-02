@@ -34,11 +34,11 @@ def populated_db(tmp_path):
     db.execute("INSERT INTO meta VALUES ('version','4.0.0')")
     db.commit()
 
-    os.environ["LOGIC_INDEX_DB_PATH"] = ".claude/logic_index.db"
+    os.environ["REMY_LOGIC_INDEX_DB_PATH"] = ".claude/logic_index.db"
     yield db, tmp_path
     db.close()
-    if "LOGIC_INDEX_DB_PATH" in os.environ:
-        del os.environ["LOGIC_INDEX_DB_PATH"]
+    if "REMY_LOGIC_INDEX_DB_PATH" in os.environ:
+        del os.environ["REMY_LOGIC_INDEX_DB_PATH"]
 
 
 class TestOpenDb:
@@ -49,13 +49,13 @@ class TestOpenDb:
         opened.close()
 
     def test_exits_on_missing_db(self, tmp_path):
-        os.environ["LOGIC_INDEX_DB_PATH"] = ".claude/logic_index.db"
+        os.environ["REMY_LOGIC_INDEX_DB_PATH"] = ".claude/logic_index.db"
         try:
             with pytest.raises(SystemExit) as exc_info:
                 open_db(str(tmp_path))
             assert exc_info.value.code == 2
         finally:
-            del os.environ["LOGIC_INDEX_DB_PATH"]
+            del os.environ["REMY_LOGIC_INDEX_DB_PATH"]
 
 
 class TestBfsCallers:

@@ -11,14 +11,16 @@ method with the same name.
 
 import json
 import os
+import sys
+
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "remy-src"))
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
 
 
 def synthesize_interface_override_edges(db):
-    fanout_cap = 10
-    try:
-        fanout_cap = int(os.environ.get("SYNTH_INTERFACE_FANOUT_CAP", 10))
-    except (ValueError, TypeError):
-        pass
+    fanout_cap = remy_config.load_config(strict=True).get_int("REMY_SYNTH_INTERFACE_FANOUT_CAP")
 
     classes_with_bases = db.execute(
         "SELECT file_path, name, bases FROM symbols "

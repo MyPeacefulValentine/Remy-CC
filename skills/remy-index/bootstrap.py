@@ -4,9 +4,9 @@ Populates ``summary_versions`` for files and clusters that lack a
 ``status='ok'`` row, reusing the NULL-as-pending pattern: failed nodes
 remain unsummarized and are selected again on the next invocation.
 
-Mode resolution (``SUMMARY_BOOTSTRAP_MODE`` env, default ``auto``):
-- ``auto`` runs unattended unless ``OPENAI_API_KEY`` is unset or the
-  project exceeds ``BOOTSTRAP_AUTO_SIZE_GUARD`` files (downgrades to
+Mode resolution (``REMY_SUMMARY_BOOTSTRAP_MODE``, default ``auto``):
+- ``auto`` runs unattended unless ``REMY_LLM_API_KEY`` is unset or the
+  project exceeds ``REMY_BOOTSTRAP_AUTO_SIZE_GUARD`` files (downgrades to
   ``ask``).
 - ``ask`` skips execution and returns a ``needs_user_confirmation`` flag.
 - ``never`` skips entirely.
@@ -19,19 +19,16 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import summarizer
-from constants import DEFAULT_MAX_WORKERS, DB_BUSY_TIMEOUT_MS, DB_CONNECT_TIMEOUT_S
+from constants import DB_BUSY_TIMEOUT_MS, DB_CONNECT_TIMEOUT_S
 from retrieval_projection import AVAILABLE_SUMMARY_STATUSES, has_current_summary
+
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "remy-src"))
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
 
 
 VALID_MODES = ("auto", "ask", "never")
-
-
-def _env_int(name, default):
-    try:
-        value = os.environ.get(name)
-        return int(value if value is not None else default)
-    except (ValueError, TypeError):
-        return default
 
 
 def needs_bootstrap(db):
@@ -39,14 +36,15 @@ def needs_bootstrap(db):
 
 
 def resolve_mode(db):
-    requested = os.environ.get("SUMMARY_BOOTSTRAP_MODE", "auto").lower()
+    config = remy_config.load_config(strict=True)
+    requested = config.get("REMY_SUMMARY_BOOTSTRAP_MODE", "auto")
     if requested not in VALID_MODES:
         requested = "auto"
     if requested == "auto":
-        if not os.environ.get("OPENAI_API_KEY"):
+        if not config.get("REMY_LLM_API_KEY"):
             return "ask"
         file_count = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
-        guard = _env_int("BOOTSTRAP_AUTO_SIZE_GUARD", 500)
+        guard = config.get_int("REMY_BOOTSTRAP_AUTO_SIZE_GUARD")
         if file_count > guard:
             return "ask"
     return requested
@@ -215,7 +213,7 @@ def bootstrap_summaries(db, llm_call, mode=None):
             "pending_files": pending_files,
             "pending_clusters": pending_clusters,
         }
-    concurrency = _env_int("OPENAI_MAX_WORKERS", DEFAULT_MAX_WORKERS)
+    concurrency = remy_config.load_config(strict=True).get_int("REMY_LLM_MAX_WORKERS")
     file_result = _run_file_layer(db, llm_call, concurrency)
     cluster_result = _run_cluster_layer(db, llm_call, concurrency)
     return {

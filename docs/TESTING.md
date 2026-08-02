@@ -86,6 +86,22 @@ in the database for both regex and tree-sitter runs.
 python -m pytest tests/test_struct_scan.py tests/test_migration_ladder.py tests/test_tee_canary.py -q -p no:cacheprovider
 ```
 
+## P1.2.2 independent Remy configuration
+
+Python runtime Remy settings use `~/.claude/remy-config.json` with optional
+project overrides in `<project>/.claude/remy-config.json`. Tests cover source
+precedence, strict schema/type validation, secret redaction, project-secret
+rejection, companion locking, atomic replacement, one-time migration backups,
+sentinel rejection, and simulated CC Switch rewrites of `settings.json`.
+
+```bash
+python -m pytest tests/test_remy_config.py tests/test_install_manifest.py tests/test_cli_manifest.py -q -p no:cacheprovider
+```
+
+The Windows CI job runs both `test_remy_config.py` and `test_index_state.py`.
+P1.2.1 schema 11, parser identities, exclusions, and incremental/full-state
+comparisons remain in the full regression suite.
+
 ## Public TEE canary
 
 The committed fixture comes from `openharmony-sig/tee_tee_os_framework` commit `b11ffb19d83da42047cc0b5cbfbbfb95ba3304f4` under MulanPSL-2.0. Its manifest records each copied file's Git blob SHA. The fixture retains the upstream license and source headers. CI does not access the network.

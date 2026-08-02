@@ -136,7 +136,7 @@ def test_tracker_fallback_pending_on_queue_lock(tmp_path, monkeypatch):
     source = tmp_path / "a.py"
     source.write_text("x=1\n", encoding="utf-8")
     queue = DirtyQueue(str(tmp_path))
-    monkeypatch.setenv("INDEX_QUEUE_LOCK_TIMEOUT", "0")
+    monkeypatch.setenv("REMY_INDEX_QUEUE_LOCK_TIMEOUT", "0")
     with InterProcessFileLock(queue.lock_path, 1):
         assert queue.record("a.py") == "a.py"
     pending = list(Path(tmp_path / ".claude").glob("logic_index_dirty.pending.*"))

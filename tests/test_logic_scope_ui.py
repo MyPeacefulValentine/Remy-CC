@@ -50,6 +50,19 @@ class TestOpenDb:
         result = _open_db(str(temp_project))
         assert result is None
 
+    def test_custom_project_db_path(self, temp_project):
+        custom_dir = temp_project / "state"
+        custom_dir.mkdir()
+        db_path = _create_db(str(custom_dir))
+        (temp_project / ".claude" / "remy-config.json").write_text(json.dumps({
+            "schema_version": "1.0.0",
+            "values": {"REMY_LOGIC_INDEX_DB_PATH": "state/logic_index.db"},
+        }), encoding="utf-8")
+        db = _open_db(str(temp_project))
+        assert db is not None
+        assert os.path.samefile(db_path, db.execute("PRAGMA database_list").fetchone()[2])
+        db.close()
+
 
 class TestBuildTreeData:
     def test_no_db_returns_empty(self, temp_project):

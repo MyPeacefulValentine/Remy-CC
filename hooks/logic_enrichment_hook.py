@@ -11,6 +11,13 @@ import os
 import sqlite3
 from collections import OrderedDict
 
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "remy-src"))
+if not os.path.isdir(_REMY_SRC):
+    _REMY_SRC = os.path.join(os.path.expanduser("~"), ".claude", "remy-src")
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
+
 
 def _load_index_state():
     skill_dir = os.path.join(os.path.expanduser("~"), ".claude", "skills", "remy-index")
@@ -35,8 +42,7 @@ def _consume_dirty_files(cwd, target_path):
     if not dirty_paths:
         return
 
-    db_rel = os.environ.get("LOGIC_INDEX_DB_PATH", DB_FILE_DEFAULT)
-    db_path = os.path.join(cwd, db_rel)
+    db_path = str(remy_config.load_config(cwd, strict=False).get("REMY_LOGIC_INDEX_DB_PATH"))
     if not os.path.exists(db_path):
         return
 
@@ -91,8 +97,7 @@ def _normalize_path(file_path, cwd):
 
 
 def _open_db(cwd):
-    db_rel = os.environ.get("LOGIC_INDEX_DB_PATH", DB_FILE_DEFAULT)
-    db_path = os.path.join(cwd, db_rel)
+    db_path = str(remy_config.load_config(cwd, strict=False).get("REMY_LOGIC_INDEX_DB_PATH"))
     if not os.path.exists(db_path):
         return None
     try:
@@ -113,31 +118,12 @@ def _build_enrichment(target_path, db):
     layer, imports_json = file_row
     file_count = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
 
-    tier_full_max = 200
-    tier_mid_max = 1000
-    cap = 15
-    cap_large = 10
-    sig_max = 80
-    try:
-        tier_full_max = int(os.environ.get("ENRICHMENT_TIER_FULL_MAX", 200))
-    except (ValueError, TypeError):
-        pass
-    try:
-        tier_mid_max = int(os.environ.get("ENRICHMENT_TIER_MID_MAX", 1000))
-    except (ValueError, TypeError):
-        pass
-    try:
-        cap = int(os.environ.get("ENRICHMENT_CAP", 15))
-    except (ValueError, TypeError):
-        pass
-    try:
-        cap_large = int(os.environ.get("ENRICHMENT_CAP_LARGE", 10))
-    except (ValueError, TypeError):
-        pass
-    try:
-        sig_max = int(os.environ.get("ENRICHMENT_SIG_MAX_CHARS", 80))
-    except (ValueError, TypeError):
-        pass
+    config = remy_config.load_config(strict=False)
+    tier_full_max = config.get_int("REMY_ENRICHMENT_TIER_FULL_MAX")
+    tier_mid_max = config.get_int("REMY_ENRICHMENT_TIER_MID_MAX")
+    cap = config.get_int("REMY_ENRICHMENT_CAP")
+    cap_large = config.get_int("REMY_ENRICHMENT_CAP_LARGE")
+    sig_max = config.get_int("REMY_ENRICHMENT_SIG_MAX_CHARS")
 
     if tier_full_max > tier_mid_max:
         tier_full_max, tier_mid_max = 200, 1000

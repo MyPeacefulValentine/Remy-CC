@@ -12,7 +12,6 @@ import subprocess
 import sys
 import tempfile
 import time
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, cast
@@ -303,19 +302,6 @@ def aggregate_metrics(task_records: list[dict]) -> dict:
     }
 
 
-@contextmanager
-def _query_db_path(db_path: Path):
-    previous = os.environ.get("LOGIC_INDEX_DB_PATH")
-    os.environ["LOGIC_INDEX_DB_PATH"] = str(db_path.resolve())
-    try:
-        yield
-    finally:
-        if previous is None:
-            os.environ.pop("LOGIC_INDEX_DB_PATH", None)
-        else:
-            os.environ["LOGIC_INDEX_DB_PATH"] = previous
-
-
 CandidateRow = tuple[str, str, int | None, str, float]
 ChannelCall = Callable[[], list[CandidateRow]]
 
@@ -404,7 +390,7 @@ def evaluate_task(queries, db, db_path: Path, task: dict,
 
     selected = _selected_channel(channels)
     selected_candidates = channels[selected] if selected else []
-    with _query_db_path(db_path):
+    with queries.database_override(db_path):
         public_output = public_call()
         timed_calls: dict[str, Callable[[], object]] = {
             name: _safe_measure_call(call) for name, call in channel_calls.items()

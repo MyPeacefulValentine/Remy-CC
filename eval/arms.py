@@ -218,12 +218,15 @@ class RemyTools:
     def dispatch(self, name: str, args: dict) -> str:
         if name not in self._schemas:
             return f"unknown tool: {name}"
-        os.environ["LOGIC_INDEX_DB_PATH"] = str(self.db_path)
-        fn = getattr(self._mod, name, None)
+        module = self._mod
+        if module is None:
+            return "Remy MCP tools are not loaded"
+        fn = getattr(module, name, None)
         if not callable(fn):
             return f"tool not callable: {name}"
         try:
-            return str(fn(**args))
+            with module.database_override(self.db_path):
+                return str(fn(**args))
         except Exception as e:
             return f"ERROR ({name}): {type(e).__name__}: {e}"
 

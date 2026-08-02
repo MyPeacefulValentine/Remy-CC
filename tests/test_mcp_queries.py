@@ -138,7 +138,7 @@ class TestQueryCallersImpl:
         assert "a.py::main" in result
 
     def test_depth_clamped_to_max(self, db_dir, monkeypatch):
-        monkeypatch.setenv("MCP_BFS_MAX_DEPTH", "1")
+        monkeypatch.setenv("REMY_MCP_BFS_MAX_DEPTH", "1")
         import importlib
         import index_mcp_queries
         importlib.reload(index_mcp_queries)
@@ -1057,6 +1057,37 @@ class TestQueryFlowImpl:
         from index_mcp_queries import query_flow_impl
         result = query_flow_impl(["sys_read", "new_sync_read"], max_depth=0)
         assert "Break" in result or "No connected" in result
+
+    def test_flow_parameters_clamped_to_config(self, flow_db_dir, monkeypatch):
+        import index_mcp_queries
+        monkeypatch.setenv("REMY_FLOW_MAX_DEPTH", "1")
+        monkeypatch.setenv("REMY_FLOW_MAX_VISITED", "100")
+        observed = {}
+        original = index_mcp_queries._bidir_bfs
+
+        def capture(src_id, tgt_id, adj_fwd, adj_bwd, max_depth, max_visited):
+            observed["limits"] = (max_depth, max_visited)
+            return original(src_id, tgt_id, adj_fwd, adj_bwd, max_depth, max_visited)
+
+        monkeypatch.setattr(index_mcp_queries, "_bidir_bfs", capture)
+        index_mcp_queries.query_flow_impl(
+            ["sys_read", "new_sync_read"], max_depth=20, max_visited=5000
+        )
+        assert observed["limits"] == (1, 100)
+
+    def test_query_uses_one_config_snapshot(self, flow_db_dir, monkeypatch):
+        import index_mcp_queries
+        calls = 0
+        original = index_mcp_queries.remy_config.load_config
+
+        def counted(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(index_mcp_queries.remy_config, "load_config", counted)
+        index_mcp_queries.query_flow_impl(["sys_read", "new_sync_read"])
+        assert calls == 1
 
     def test_format_flow_probable_label(self, flow_db_dir):
         from index_mcp_queries import _format_flow

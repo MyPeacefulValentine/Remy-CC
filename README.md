@@ -100,7 +100,7 @@ The server includes **index staleness detection**: on the first tool call each s
 
 The server is registered in `~/.claude.json` during installation and launched automatically by Claude Code at session start. It reads from the SQLite logic index (`logic_index.db`) in read-only mode. Configure via the "MCP Server" group in `remy-cc config`.
 
-When the MCP server is available, the context injection system automatically switches to **MCP Minimal mode** — injecting only a cluster overview and MCP tool usage hints (~1 KB) instead of the full symbol tree (~40 KB). Claude uses `query_symbol` / `query_callers` / `query_impact` on demand for detailed analysis. Control this behavior with `NAV_MCP_MINIMAL_ENABLED` (project-level, "Context Injection" group).
+When the MCP server is available, the context injection system automatically switches to **MCP Minimal mode** — injecting only a cluster overview and MCP tool usage hints (~1 KB) instead of the full symbol tree (~40 KB). Claude uses `query_symbol` / `query_callers` / `query_impact` on demand for detailed analysis. Control this behavior with `REMY_NAV_MCP_MINIMAL_ENABLED` (project-level, "Context Injection" group).
 
 ### Skills (User-Invoked)
 
@@ -208,7 +208,7 @@ For small, low-risk changes, steps 3–6 can be skipped.
 | tree-sitter Python packages (optional) | Higher-precision C/C++/TypeScript parsing and call graph extraction |
 | `mcp` Python package (optional) | Required for the remy-index MCP server (`pip install mcp`) |
 
-Language is configurable via the `REMY_LANG` environment variable (`en` or `zh-CN`).
+Language is configured through `REMY_LANG` in `~/.claude/remy-config.json` or through `remy-cc config`.
 
 ### Installation
 
@@ -233,7 +233,8 @@ python install.py --lang zh-CN   # Simplified Chinese
 
 The installer:
 - Copies hooks, skills, output styles, and config files to `~/.claude/`
-- Merges hook registrations and environment variables into `~/.claude/settings.json` (existing values are preserved)
+- Merges Claude hooks, permissions, and skill-protocol settings into `~/.claude/settings.json`
+- Stores Python runtime Remy settings in `~/.claude/remy-config.json` and migrates old values once
 - Registers the remy-index MCP server in `~/.claude.json`
 - Expands hook and MCP server paths to absolute paths for the current machine
 - Prompts for LLM API configuration (URL, model, API key) used by `/remy-index`
@@ -246,15 +247,15 @@ After installation, the `remy-cc` command is available system-wide:
 
 | Command | Description |
 | :--- | :--- |
-| `remy-cc ui` | Open browser-based settings editor for `~/.claude/settings.json` |
-| `remy-cc project <path>` | Open project-level settings editor for `<path>/.claude/settings.local.json` |
+| `remy-cc ui` | Open the user Remy settings editor for `~/.claude/remy-config.json` |
+| `remy-cc project <path>` | Open the project Remy settings editor for `<path>/.claude/remy-config.json` |
 | `remy-cc logic-scope [--path <dir>]` | Configure which logic index files are injected at session start |
 | `remy-cc update` | Fetch and install the latest version |
 | `remy-cc uninstall` | Remove all Remy files and settings |
 | `remy-cc verify` | Check installation integrity |
 | `remy-cc version` | Print installed version |
 
-The settings editor provides a bilingual interface (English / 中文) for managing environment variables across 13 groups (Logic Index, Impact Analysis, Context Injection, Timeline, Post-Verify, Security Audit, Debug, Test Generation, CI/CD, Insight, MCP Server, System, Claude Code). Project-level settings inherit from global by default; individual parameters can be overridden.
+The settings editor manages Python runtime Remy parameters only. Claude Code credentials and skill-protocol settings remain in Claude's settings. Project settings inherit user values and can override individual non-secret fields.
 
 ---
 

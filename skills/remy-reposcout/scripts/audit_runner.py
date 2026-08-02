@@ -14,6 +14,11 @@ import json
 import stat
 from pathlib import Path
 
+_REMY_SRC = Path(__file__).resolve().parents[3] / "remy-src"
+if str(_REMY_SRC) not in sys.path:
+    sys.path.insert(0, str(_REMY_SRC))
+import remy_config
+
 # --- Configuration ---
 MAX_TREE_DEPTH = 3
 MAX_FILES_LIST = 100
@@ -197,10 +202,7 @@ def main():
     repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
 
     # Use TEMP dir for cross-platform compatibility
-    sandbox_base = Path(os.environ.get("REPO_AUDIT_ROOT", tempfile.gettempdir())) / "claude_audit"
-    if not os.environ.get("REPO_AUDIT_ROOT"):
-        # If no explicit root set, fallback to user home for better visibility (instead of temp)
-        sandbox_base = Path.home() / "claude_audit"
+    sandbox_base = Path(str(remy_config.load_config(strict=True).get("REMY_REPO_AUDIT_ROOT")))
 
     sandbox_base.mkdir(exist_ok=True)
 

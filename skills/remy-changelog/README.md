@@ -29,7 +29,7 @@ Uses `render.save_changelog(project_root, context)` to generate the changelog vi
 
 ## Output Format
 
-Changelogs are saved as `.claude/temp_log/_temp_{task_id}_{timestamp}.md`. Language follows `REMY_LANG`.
+Changelogs are saved as `.claude/temp_log/_temp_{task_id}_{timestamp}.md`. Language follows the loaded `language.md` directive.
 
 ## Content Standards
 

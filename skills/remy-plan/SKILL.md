@@ -90,7 +90,7 @@ You MUST execute the following loop until NO ambiguities remain.
 | `[Contract-Change]` | `[接口变更]` | Modification alters a public signature, return type, exception type, or documented invariant. |
 | `[Scope-Refactor]` | `[跨域重构]` | Modification spans ≥ 2 components and re-assigns responsibility. |
 
-When `REMY_LANG=zh-CN`, output the 中文 label; when `REMY_LANG=en`, output the English label.
+When the loaded `language.md` directive selects Chinese, output the 中文 label; otherwise output the English label.
 
 ### 2.1 Scan
 
@@ -131,7 +131,7 @@ Use `AskUserQuestion` to resolve *current layer* ambiguities.
         AskUserQuestion(batch)
     ```
     Exiting Phase 2.3 while `queue` is non-empty is a protocol violation.
-*   **Language**: Follow the `REMY_LANG` environment variable (`zh-CN` → Chinese, `en` → English).
+*   **Language**: Follow the loaded `language.md` directive.
 *   **Format**: Short header, reasonable options.
 *   **Recommendation (MUST)**: Every question MUST have exactly 1 recommended option. Append `（推荐）` to the recommended label and include a 1-sentence reason in its description. Omitting the recommendation is a protocol violation.
 *   **Scope Tagging (MUST)**: For each candidate option proposing a code change, prefix its description with a scope tag from the **Scope Tag Reference** table (output label per `REMY_LANG`).

@@ -56,12 +56,12 @@ class TestInterfaceDispatch:
         db.execute("INSERT INTO meta VALUES ('version','4.0.0')")
         db.commit()
 
-        os.environ["SYNTH_INTERFACE_FANOUT_CAP"] = "5"
+        os.environ["REMY_SYNTH_INTERFACE_FANOUT_CAP"] = "5"
         try:
             from synthesizers.interface_dispatch import synthesize_interface_override_edges
             synthesize_interface_override_edges(db)
         finally:
-            del os.environ["SYNTH_INTERFACE_FANOUT_CAP"]
+            del os.environ["REMY_SYNTH_INTERFACE_FANOUT_CAP"]
 
         count = db.execute("SELECT COUNT(*) FROM edges WHERE via='interface-impl'").fetchone()[0]
         assert count == 5

@@ -97,6 +97,15 @@ def test_fixture_regex_canary():
     assert report["input_unchanged"] is True
 
 
+def test_canary_ignores_external_remy_db_path(tmp_path, monkeypatch):
+    external = tmp_path / "outside" / "logic_index.db"
+    monkeypatch.setenv("REMY_LOGIC_INDEX_DB_PATH", str(external))
+    report = canary.run_canary(canary.FIXTURE_ROOT, backend="regex", fixture=True)
+    assert report["status"] == "success"
+    assert not external.exists()
+    assert Path(canary.FIXTURE_ROOT).is_dir()
+
+
 def test_incremental_handler_rename_matches_fresh_full_scan(
     fixture_copy: Path, tmp_path: Path
 ):

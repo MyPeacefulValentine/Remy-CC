@@ -35,7 +35,7 @@ Two further pre-emit checks (Phase 3.3 Schema Deletion Tree-Wide Scan and Phase 
 
 ### Phase 4: Audit Output (5 Tables)
 
-Once Phase 3 completes, the AI loads the language-matching template (`audit_template_zh.md` for `REMY_LANG=zh-CN`, `audit_template_en.md` for `REMY_LANG=en`) and generates five tables:
+Once Phase 3 completes, the AI loads the template selected by the loaded `language.md` directive (`audit_template_zh.md` for Chinese or `audit_template_en.md` for English) and generates five tables:
 
 | Table | Purpose |
 | :--- | :--- |

@@ -15,6 +15,11 @@
     "skills/remy-index/synthesizers/interface_dispatch.py",
     "skills/remy-index/synthesizers/c_fnptr_dispatch.py",
     "tests/tee_project_canary.py",
+    "remy-src/remy_config.py",
+    "remy-src/config_ui.py",
+    "tests/test_remy_config.py",
+    "tests/test_config_ui.py",
+    "tests/test_lifecycle_hook.py",
     "remy-src/index_mcp_queries.py",
     "remy-src/cli.py",
     "hooks/doc_manager/injector.py",
@@ -27,7 +32,8 @@
     "remy-src",
     "hooks",
     "hooks/doc_manager",
-    "hooks/tree_system"
+    "hooks/tree_system",
+    "eval"
   ],
   "pythonVersion": "3.10",
   "typeCheckingMode": "basic",

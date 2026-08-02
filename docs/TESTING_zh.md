@@ -71,6 +71,20 @@ schema 11.0.0为每个`files`行增加`parser_contract_version`、
 python -m pytest tests/test_struct_scan.py tests/test_migration_ladder.py tests/test_tee_canary.py -q -p no:cacheprovider
 ```
 
+## P1.2.2 Remy独立配置
+
+Python运行时Remy参数使用`~/.claude/remy-config.json`，项目覆盖使用
+`<project>/.claude/remy-config.json`。测试覆盖来源优先级、严格schema与类型校验、
+密钥脱敏、项目密钥拒绝、伴随文件锁、原子替换、一次迁移备份、哨兵拒绝和模拟
+CC Switch重建`settings.json`。
+
+```bash
+python -m pytest tests/test_remy_config.py tests/test_install_manifest.py tests/test_cli_manifest.py -q -p no:cacheprovider
+```
+
+Windows CI同时运行`test_remy_config.py`和`test_index_state.py`。P1.2.1的
+schema 11、解析器身份、排除规则以及增量/全量状态比较继续由全量回归覆盖。
+
 ## 公开TEE canary
 
 已提交fixture来自`openharmony-sig/tee_tee_os_framework`的`b11ffb19d83da42047cc0b5cbfbbfb95ba3304f4`提交，许可证为MulanPSL-2.0。清单记录每个复制文件的Git blob SHA。fixture保留上游许可证和源码文件头。CI不访问网络。

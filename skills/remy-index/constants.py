@@ -6,7 +6,5 @@ introducing a reverse import between the main pipeline and the
 hierarchical-summary bootstrap.
 """
 
-DEFAULT_MAX_WORKERS = 5
-
 DB_BUSY_TIMEOUT_MS = 5000
 DB_CONNECT_TIMEOUT_S = 10

@@ -3,7 +3,13 @@
 import json
 import os
 import sqlite3
+import sys
 from datetime import datetime
+
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "remy-src"))
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
 
 from constants import DB_BUSY_TIMEOUT_MS
 from retrieval_projection import (
@@ -466,7 +472,7 @@ def migrate_json(root_dir, db):
         rebuild_projection(db)
         db.commit()
 
-        keep = str(os.environ.get("MIGRATION_KEEP_JSON", "false")).lower() == "true"
+        keep = remy_config.load_config(root_dir, strict=True).get_bool("REMY_MIGRATION_KEEP_JSON")
         if not keep:
             migrated_path = json_path + ".migrated"
             os.rename(json_path, migrated_path)

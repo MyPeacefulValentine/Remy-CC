@@ -56,6 +56,7 @@ DEPLOY_FILES_MAP = {
     "remy-src/patch_descriptions.py": "remy-src/patch_descriptions.py",
     "remy-src/index_mcp_server.py": "remy-src/index_mcp_server.py",
     "remy-src/index_mcp_queries.py": "remy-src/index_mcp_queries.py",
+    "remy-src/remy_config.py": "remy-src/remy_config.py",
 }
 SETTINGS_TEMPLATE = "settings.example.json"
 MCP_TEMPLATE = "remy_mcp.json"
@@ -458,6 +459,14 @@ def hooks_equal(h1: dict, h2: dict) -> bool:
     return h1.get("command", "").strip() == h2.get("command", "").strip()
 
 
+def _load_remy_config_module():
+    module_dir = SCRIPT_DIR / "remy-src"
+    if str(module_dir) not in sys.path:
+        sys.path.insert(0, str(module_dir))
+    import remy_config
+    return remy_config
+
+
 def merge_settings(template: dict, target_path: Path, claude_home: Path, lang_override: str = None) -> Optional[Path]:
     """
     Merge template settings into existing settings.json.
@@ -532,7 +541,7 @@ def merge_settings(template: dict, target_path: Path, claude_home: Path, lang_ov
         if perm not in ext_perms:
             ext_perms.append(perm)
 
-    # --- env: write only missing keys ---
+    # --- env: keep only Claude-native and skill-protocol settings ---
     tpl_env = template.get("env", {})
     ext_env = existing.setdefault("env", {})
     missing_keys = []
@@ -547,10 +556,6 @@ def merge_settings(template: dict, target_path: Path, claude_home: Path, lang_ov
         if key in ext_env:
             del ext_env[key]
             removed_keys.append(key)
-
-    # --- REMY_LANG override from --lang ---
-    if lang_override:
-        ext_env["REMY_LANG"] = lang_override
 
     # --- outputStyle: write if absent ---
     if "outputStyle" not in existing and "outputStyle" in template:
@@ -730,17 +735,18 @@ def prompt_language() -> str:
     return "en"
 
 
-def configure_api(settings_path: Path) -> None:
+def configure_api(config_path: Path) -> None:
     """Interactive LLM API configuration for Logic Index."""
-    if not settings_path.exists():
-        return
+    remy_config = _load_remy_config_module()
+    document = (
+        remy_config.read_document(config_path, strict=True)
+        if config_path.exists()
+        else {"schema_version": remy_config.SCHEMA_VERSION, "values": {}}
+    )
+    values = document["values"]
 
-    with open(settings_path, "r", encoding="utf-8") as f:
-        settings = json.load(f)
-    env = settings.setdefault("env", {})
-
-    current_key = env.get("OPENAI_API_KEY", "").strip()
-    has_config = current_key not in ("", API_KEY_PLACEHOLDER)
+    current_key = values.get("REMY_LLM_API_KEY", "").strip()
+    has_config = current_key not in remy_config.INVALID_SECRET_VALUES
 
     try:
         if has_config:
@@ -758,8 +764,8 @@ def configure_api(settings_path: Path) -> None:
         while True:
             print()
 
-            default_url = env.get("OPENAI_BASE_URL", "https://api.deepseek.com/v1/chat/completions")
-            default_model = env.get("OPENAI_MODEL", "deepseek-v4-flash")
+            default_url = values.get("REMY_LLM_BASE_URL", "https://api.deepseek.com/v1/chat/completions")
+            default_model = values.get("REMY_LLM_MODEL", "deepseek-v4-flash")
 
             url = input(_t("api_url_prompt", default=default_url)).strip()
             if not url:
@@ -775,15 +781,13 @@ def configure_api(settings_path: Path) -> None:
                 print(_t("api_key_empty"))
                 return
 
-            env["OPENAI_BASE_URL"] = url
-            env["OPENAI_MODEL"] = model
-            env["OPENAI_API_KEY"] = api_key
-
-            with open(settings_path, "w", encoding="utf-8") as f:
-                json.dump(settings, f, indent=2, ensure_ascii=False)
-                f.write("\n")
-            if sys.platform != "win32":
-                os.chmod(settings_path, 0o600)
+            updates = {
+                "REMY_LLM_BASE_URL": url,
+                "REMY_LLM_MODEL": model,
+                "REMY_LLM_API_KEY": api_key,
+            }
+            remy_config.save_config(config_path, updates)
+            values.update(updates)
             print(_t("api_configured"))
 
             print()
@@ -978,7 +982,11 @@ def do_install() -> None:
         with open(tpl_path, "r", encoding="utf-8") as f:
             template = json.load(f)
         settings_path = claude_home / "settings.json"
+        remy_config = _load_remy_config_module()
+        remy_config_path = claude_home / remy_config.CONFIG_FILE_NAME
         settings_backup = merge_settings(template, settings_path, claude_home, lang_override=_ui_lang)
+        remy_config.migrate_settings_file(settings_path, remy_config_path)
+        remy_config.save_config(remy_config_path, {"REMY_LANG": _ui_lang})
         migrate_permissions(settings_path)
         cleanup_old_skill_dirs(claude_home)
         print(_t("db_migrate_notice"))
@@ -991,7 +999,7 @@ def do_install() -> None:
             )
         print(_t("settings_merged"))
         print()
-        configure_api(settings_path)
+        configure_api(remy_config_path)
     else:
         print(_t("settings_tpl_missing", name=SETTINGS_TEMPLATE))
         settings_backup = None
@@ -1240,9 +1248,13 @@ def do_verify() -> None:
     print(_t("verify_gh", status=_t("verify_ts_yes") if gh_available else _t("verify_ts_no")))
 
     api_configured = False
-    if settings_path.exists() and settings:
-        api_key = settings.get("env", {}).get("OPENAI_API_KEY", "").strip()
-        api_configured = api_key not in ("", API_KEY_PLACEHOLDER)
+    try:
+        remy_config = _load_remy_config_module()
+        snapshot = remy_config.load_config(strict=True)
+        api_key = str(snapshot.get("REMY_LLM_API_KEY", "")).strip()
+        api_configured = api_key not in remy_config.INVALID_SECRET_VALUES
+    except (OSError, ValueError):
+        api_configured = False
     if not api_configured:
         print(_t("verify_api_not_configured"))
 

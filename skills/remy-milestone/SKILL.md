@@ -32,7 +32,7 @@ Before generating any files, you MUST perform a deep audit of the work done.
 1.  **Generate Draft**: Use `python "~/.claude/skills/remy-milestone/generate_draft.py"` to create a draft file and update the timeline.
 2.  **Fill Content**: Immediately read the generated draft and populate it using the `Write` tool.
     *   **Data Source**: Use the knowledge gathered in Phase 1.
-    *   **Language Mandate**: All content MUST follow the `REMY_LANG` environment variable (`zh-CN` → Chinese, `en` → English).
+    *   **Language Mandate**: All content MUST follow the loaded `language.md` directive.
 3.  **Validation**: Verify the file is saved and the content matches the schema.
 
 ### Phase 3: Finalization (Summary Sync)

@@ -100,7 +100,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 安装时自动注册到 `~/.claude.json`，Claude Code 会话启动时自动拉起。以只读模式访问 SQLite 逻辑索引。通过 `remy-cc config` 的"MCP 服务器"分组配置参数。
 
-当 MCP 服务器可用时，上下文注入系统自动切换为 **MCP Minimal 模式**——仅注入集群概览和 MCP 工具使用指引（约 1 KB），取代完整符号树（约 40 KB）。Claude 通过 `query_symbol` / `query_callers` / `query_impact` 按需查询详情。通过 `NAV_MCP_MINIMAL_ENABLED`（项目级参数，"上下文注入"分组）控制此行为。
+当 MCP 服务器可用时，上下文注入系统自动切换为 **MCP Minimal 模式**——仅注入集群概览和 MCP 工具使用指引（约 1 KB），取代完整符号树（约 40 KB）。Claude 通过 `query_symbol` / `query_callers` / `query_impact` 按需查询详情。通过 `REMY_NAV_MCP_MINIMAL_ENABLED`（项目级参数，"上下文注入"分组）控制此行为。
 
 ### Skills（手动调用）
 
@@ -208,7 +208,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | tree-sitter Python 包（可选） | C/C++/TypeScript 的高精度解析和调用图提取 |
 | `mcp` Python 包（可选） | remy-index MCP 服务器所需（`pip install mcp`） |
 
-语言可通过 `REMY_LANG` 环境变量配置（`en` 或 `zh-CN`）。
+语言通过`~/.claude/remy-config.json`中的`REMY_LANG`或`remy-cc config`设置。
 
 ### 安装插件
 
@@ -233,7 +233,8 @@ python install.py --lang zh-CN   # 简体中文
 
 安装脚本执行以下操作：
 - 将 Hooks、Skills、输出风格和配置文件复制到 `~/.claude/`
-- 将 Hook 注册和环境变量合并到 `~/.claude/settings.json`（不覆盖已有值）
+- 将Claude Hooks、权限和技能协议参数合并到`~/.claude/settings.json`
+- 将Python运行时Remy参数保存到`~/.claude/remy-config.json`，并一次性迁移旧值
 - 将 remy-index MCP 服务器注册到 `~/.claude.json`
 - 将 Hook 和 MCP 服务器路径展开为当前机器的绝对路径
 - 交互式配置 `/remy-index` 使用的 LLM API（URL、模型、API Key）
@@ -245,15 +246,15 @@ python install.py --lang zh-CN   # 简体中文
 
 | 命令 | 说明 |
 | :--- | :--- |
-| `remy-cc ui` | 打开浏览器设置编辑器，编辑 `~/.claude/settings.json` |
-| `remy-cc project <路径>` | 打开项目级设置编辑器，编辑 `<路径>/.claude/settings.local.json` |
+| `remy-cc ui` | 打开用户Remy配置编辑器，编辑`~/.claude/remy-config.json` |
+| `remy-cc project <路径>` | 打开项目Remy配置编辑器，编辑`<路径>/.claude/remy-config.json` |
 | `remy-cc logic-scope [--path <目录>]` | 配置会话启动时注入哪些逻辑索引文件 |
 | `remy-cc update` | 获取并安装最新版本 |
 | `remy-cc uninstall` | 移除所有 Remy 文件和配置 |
 | `remy-cc verify` | 检查安装完整性 |
 | `remy-cc version` | 显示版本号 |
 
-设置编辑器提供双语界面（English / 中文），管理 13 组环境变量（语义索引、影响分析、上下文注入、时间线、后验测试、安全审计、调试、测试生成、CI/CD、仓库洞察、MCP 服务器、系统、Claude Code）。项目级设置默认继承全局配置，可逐参数覆盖。
+配置编辑器只管理Python运行时Remy参数。Claude Code凭据和技能协议参数继续由Claude设置管理。项目配置继承用户值，并可覆盖单个非密钥字段。
 
 ---
 

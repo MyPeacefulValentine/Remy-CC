@@ -37,7 +37,7 @@ You MUST execute the following steps strictly in order.
 
 ### Phase 2: Execute Scanning
 1.  Check if `.claude/logic_index.db` exists.
-    - If **MISSING**: Output a first-run notice in the language configured by `REMY_LANG` (`zh-CN`: "检测到首次运行。即将执行全量代码库扫描，请耐心等待..." / `en`: "First run detected. Full codebase scan starting, please wait...")
+    - If **MISSING**: Output a first-run notice in the language specified by the loaded `language.md` directive.
 2.  Execute the Python indexer:
     ```bash
     python "~/.claude/skills/remy-index/run.py"
@@ -51,9 +51,9 @@ You MUST execute the following steps strictly in order.
 
 After Phase 2, inspect the stdout produced by `run.py` and decide whether to ask the user about generating file/cluster summaries:
 
-1.  **Search the captured stdout for the line `BOOTSTRAP_PENDING_CONFIRMATION`.** This line is emitted only when `SUMMARY_BOOTSTRAP_MODE=ask` (explicit or downgraded from `auto` due to missing API key / file count exceeding `BOOTSTRAP_AUTO_SIZE_GUARD`).
+1.  **Search the captured stdout for the line `BOOTSTRAP_PENDING_CONFIRMATION`.** This line is emitted only when `REMY_SUMMARY_BOOTSTRAP_MODE=ask` (explicit or downgraded from `auto` due to a missing API key or file count exceeding `REMY_BOOTSTRAP_AUTO_SIZE_GUARD`).
 2.  **If the line is absent**: Skip Phase 3 entirely. `auto` mode already generated file/cluster summaries; `never` mode intentionally skipped.
-3.  **If the line is present**: Parse the `pending_files=X pending_clusters=Y` fields, then use `AskUserQuestion` in the language configured by `REMY_LANG`:
+3.  **If the line is present**: Parse the `pending_files=X pending_clusters=Y` fields, then use `AskUserQuestion` in the language specified by the loaded `language.md` directive:
     - Question (zh-CN): "检测到 {X} 个文件 + {Y} 个集群尚未生成层级摘要。立即生成？（消耗 LLM tokens）"
     - Question (en): "{X} file(s) and {Y} cluster(s) lack hierarchical summaries. Generate now? (consumes LLM tokens)"
     - Options:
@@ -66,10 +66,10 @@ After Phase 2, inspect the stdout produced by `run.py` and decide whether to ask
     ```
     Wait for completion. The output again contains a `BOOTSTRAP_RESULT` line confirming file_done / cluster_done counts.
 5.  **If user chose "Skip"**: Output a single notice: "Skipped. Run `/remy-index` again or `remy-cc summary-rebuild` later to retry."
-6.  **If user chose "Disable permanently"**: Output the command for the user to apply manually (do NOT modify settings without explicit consent): "Set `SUMMARY_BOOTSTRAP_MODE=never` in `.claude/settings.local.json` (env section) or run `remy-cc config` to disable."
+6.  **If user chose "Disable permanently"**: Output the command for the user to apply manually: "Set `REMY_SUMMARY_BOOTSTRAP_MODE=never` through `remy-cc config --path <project>`."
 
 ### Phase 4: Injection Strategy
-1.  Determine the injection policy from `settings.json` (env `LOGIC_INDEX_AUTO_INJECT`).
+1.  Determine the injection policy from the effective Remy configuration key `REMY_LOGIC_INDEX_AUTO_INJECT`.
     - Default is `ALWAYS` if not set.
 
 2.  **Branching Logic**:
@@ -77,7 +77,7 @@ After Phase 2, inspect the stdout produced by `run.py` and decide whether to ask
     - **Case A: Policy == ALWAYS**
         - Execute Injection immediately:
           ```bash
-          LOGIC_INDEX_AUTO_INJECT=ALWAYS python "~/.claude/hooks/doc_manager/injector.py"
+          REMY_LOGIC_INDEX_AUTO_INJECT=ALWAYS python "~/.claude/hooks/doc_manager/injector.py"
           ```
 
     - **Case B: Policy == ASK**
@@ -85,7 +85,7 @@ After Phase 2, inspect the stdout produced by `run.py` and decide whether to ask
         - Options: ["Yes (Inject)", "No (Skip)"]
         - **If Yes**:
           ```bash
-          LOGIC_INDEX_AUTO_INJECT=ALWAYS python "~/.claude/hooks/doc_manager/injector.py"
+          REMY_LOGIC_INDEX_AUTO_INJECT=ALWAYS python "~/.claude/hooks/doc_manager/injector.py"
           ```
         - **If No**:
           - Output: "Skipping injection."
@@ -93,22 +93,26 @@ After Phase 2, inspect the stdout produced by `run.py` and decide whether to ask
     - **Case C: Policy == NEVER**
         - Output: "Skipping injection (Policy: NEVER)."
 
-## Configuration (Environment)
+## Configuration
 
-Requires the following environment variables (injected via `settings.json` > `env`):
+`run.py` reads the independent Remy configuration files through the shared
+registry. User values live in `~/.claude/remy-config.json`; project overrides
+live in `<project>/.claude/remy-config.json`. Same-named process environment
+variables override files for the current process tree.
 
-- `OPENAI_API_KEY`: API Key for OpenAI-compatible service (e.g., Aliyun Bailian).
-- `OPENAI_MODEL`: Model name (default: `glm-5`).
-- `OPENAI_MAX_WORKERS`: Concurrency limit (default: 5).
-- `OPENAI_BASE_URL`: API endpoint (default: `https://coding.dashscope.aliyuncs.com/v1/chat/completions`).
+- `REMY_LLM_API_KEY`: API key for an OpenAI-compatible service.
+- `REMY_LLM_MODEL`: model name (default: `deepseek-v4-flash`).
+- `REMY_LLM_MAX_WORKERS`: concurrency limit (default: `5`).
+- `REMY_LLM_BASE_URL`: endpoint (default: `https://api.deepseek.com/v1/chat/completions`).
+- `REMY_LLM_MAX_TOKENS`: response token limit (default: `32768`).
 
 ## Feature Flags
 
-- `LOGIC_INDEX_AUTO_INJECT`: Controls automated injection of `logic_tree_view.md` into `CLAUDE.md`.
+- `REMY_LOGIC_INDEX_AUTO_INJECT`: Controls automated injection of `logic_tree_view.md` into `CLAUDE.md`.
     - `ALWAYS`: Automatically update CLAUDE.md after indexing.
     - `ASK`: Prompt user for confirmation before injection.
     - `NEVER`: Only generate files, do not inject.
-- `LOGIC_INDEX_FILTER_SMALL`: Skip LLM summarization for small (< 3 lines) functions without docstrings. (Default: `false`)
+- `REMY_LOGIC_INDEX_FILTER_SMALL`: Skip LLM summarization for small (< 3 lines) functions without docstrings. (Default: `false`)
 
 ## Output
 

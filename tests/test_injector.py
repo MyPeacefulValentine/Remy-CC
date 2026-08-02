@@ -130,7 +130,7 @@ class TestGenerateLogicTreeView:
         assert not view_path.exists()
 
     def test_full_mode_generates_output(self, temp_project, monkeypatch):
-        monkeypatch.setenv("NAV_MCP_MINIMAL_ENABLED", "false")
+        monkeypatch.setenv("REMY_NAV_MCP_MINIMAL_ENABLED", "false")
         _setup_db(
             str(temp_project / ".claude"),
             files=[("src/app.py", "h1", "PythonParser", "Core", '["src/lib.py"]')],

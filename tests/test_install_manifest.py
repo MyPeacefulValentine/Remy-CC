@@ -278,6 +278,28 @@ def test_language_md_sha256_consistency_no_spurious_bak(claude_home, monkeypatch
     assert not lang_md_path.exists()
 
 
+def test_uninstall_preserves_user_remy_config(claude_home, monkeypatch):
+    config = claude_home / "remy-config.json"
+    config.write_text(
+        json.dumps({"schema_version": "1.0.0", "values": {"REMY_LANG": "zh-CN"}}),
+        encoding="utf-8",
+    )
+    manifest = {
+        "version": "test",
+        "schema_version": 2,
+        "files": [],
+        "injected_hooks": {},
+        "injected_permissions": [],
+    }
+    (claude_home / install.MANIFEST_FILE).write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
+
+    install.do_uninstall()
+
+    assert config.exists()
+    assert json.loads(config.read_text(encoding="utf-8"))["values"]["REMY_LANG"] == "zh-CN"
+
+
 def test_uninstall_handles_missing_sha256_field(claude_home, monkeypatch):
     """R2 regression: do_uninstall must tolerate manifest entries lacking the sha256 field
     (semantic alignment with cleanup_from_manifest)."""

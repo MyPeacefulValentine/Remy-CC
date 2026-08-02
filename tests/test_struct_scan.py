@@ -1538,34 +1538,34 @@ class TestComputeKindHint:
 
     def test_trivial_below_min_symbols(self, monkeypatch):
         from struct_scan import _compute_kind_hint
-        monkeypatch.delenv("FILE_KIND_MIN_SYMBOLS", raising=False)
-        monkeypatch.delenv("FILE_KIND_LOW_COHESION_THRESHOLD", raising=False)
+        monkeypatch.delenv("REMY_FILE_KIND_MIN_SYMBOLS", raising=False)
+        monkeypatch.delenv("REMY_FILE_KIND_LOW_COHESION_THRESHOLD", raising=False)
         assert _compute_kind_hint(0, 0) == "trivial"
         assert _compute_kind_hint(4, 100) == "trivial"
 
     def test_low_cohesion_below_density_threshold(self, monkeypatch):
         from struct_scan import _compute_kind_hint
-        monkeypatch.delenv("FILE_KIND_MIN_SYMBOLS", raising=False)
-        monkeypatch.delenv("FILE_KIND_LOW_COHESION_THRESHOLD", raising=False)
+        monkeypatch.delenv("REMY_FILE_KIND_MIN_SYMBOLS", raising=False)
+        monkeypatch.delenv("REMY_FILE_KIND_LOW_COHESION_THRESHOLD", raising=False)
         assert _compute_kind_hint(10, 1) == "low_cohesion"
 
     def test_cohesive_above_density_threshold(self, monkeypatch):
         from struct_scan import _compute_kind_hint
-        monkeypatch.delenv("FILE_KIND_MIN_SYMBOLS", raising=False)
-        monkeypatch.delenv("FILE_KIND_LOW_COHESION_THRESHOLD", raising=False)
+        monkeypatch.delenv("REMY_FILE_KIND_MIN_SYMBOLS", raising=False)
+        monkeypatch.delenv("REMY_FILE_KIND_LOW_COHESION_THRESHOLD", raising=False)
         assert _compute_kind_hint(10, 5) == "cohesive"
 
     def test_env_overrides_min_symbols(self, monkeypatch):
         from struct_scan import _compute_kind_hint
-        monkeypatch.setenv("FILE_KIND_MIN_SYMBOLS", "10")
-        monkeypatch.delenv("FILE_KIND_LOW_COHESION_THRESHOLD", raising=False)
+        monkeypatch.setenv("REMY_FILE_KIND_MIN_SYMBOLS", "10")
+        monkeypatch.delenv("REMY_FILE_KIND_LOW_COHESION_THRESHOLD", raising=False)
         assert _compute_kind_hint(8, 100) == "trivial"
         assert _compute_kind_hint(10, 5) == "cohesive"
 
     def test_env_overrides_low_cohesion_threshold(self, monkeypatch):
         from struct_scan import _compute_kind_hint
-        monkeypatch.delenv("FILE_KIND_MIN_SYMBOLS", raising=False)
-        monkeypatch.setenv("FILE_KIND_LOW_COHESION_THRESHOLD", "0.6")
+        monkeypatch.delenv("REMY_FILE_KIND_MIN_SYMBOLS", raising=False)
+        monkeypatch.setenv("REMY_FILE_KIND_LOW_COHESION_THRESHOLD", "0.6")
         assert _compute_kind_hint(10, 5) == "low_cohesion"
 
     def test_zero_sym_count_with_edges_returns_trivial(self):
@@ -1574,8 +1574,8 @@ class TestComputeKindHint:
 
     def test_boundary_at_min_symbols(self, monkeypatch):
         from struct_scan import _compute_kind_hint
-        monkeypatch.delenv("FILE_KIND_MIN_SYMBOLS", raising=False)
-        monkeypatch.delenv("FILE_KIND_LOW_COHESION_THRESHOLD", raising=False)
+        monkeypatch.delenv("REMY_FILE_KIND_MIN_SYMBOLS", raising=False)
+        monkeypatch.delenv("REMY_FILE_KIND_LOW_COHESION_THRESHOLD", raising=False)
         assert _compute_kind_hint(5, 0) == "low_cohesion"
         assert _compute_kind_hint(5, 2) == "cohesive"
 
@@ -1867,7 +1867,7 @@ class TestRunPyV8Compat:
 
 
 class TestRunPyHierarchicalBootstrap:
-    """LogicIndexer._run_hierarchical_bootstrap consumes SUMMARY_BOOTSTRAP_MODE env
+    """LogicIndexer._run_hierarchical_bootstrap consumes REMY_SUMMARY_BOOTSTRAP_MODE
     via bootstrap_summaries and emits marker lines (BOOTSTRAP_RESULT,
     BOOTSTRAP_PENDING_CONFIRMATION) for /remy-index SKILL.md to parse."""
 
@@ -1972,7 +1972,7 @@ class TestRunPyHierarchicalBootstrap:
         result = indexer._run_hierarchical_bootstrap()
         out = capsys.readouterr().out
         assert result is None
-        assert "OPENAI_API_KEY not configured" in out
+        assert "REMY_LLM_API_KEY not configured" in out
 
     def test_bootstrap_exception_caught_and_reported(self, indexer, monkeypatch, capsys):
         import bootstrap
@@ -2047,26 +2047,26 @@ class TestPropagationPass:
         db.commit()
 
     def test_force_check_threshold_primary_fires(self, indexer, monkeypatch):
-        monkeypatch.setenv("FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "3")
-        monkeypatch.setenv("FORCE_RECOMPUTE_THRESHOLD_BACKUP", "-1")
+        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "3")
+        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP", "-1")
         self._seed_counter(indexer.db, "file", "a.py", child=3)
         assert indexer._force_recompute_check("file", "a.py") is True
 
     def test_force_check_below_threshold_does_not_fire(self, indexer, monkeypatch):
-        monkeypatch.setenv("FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "3")
-        monkeypatch.setenv("FORCE_RECOMPUTE_THRESHOLD_BACKUP", "-1")
+        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "3")
+        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP", "-1")
         self._seed_counter(indexer.db, "file", "a.py", child=2)
         assert indexer._force_recompute_check("file", "a.py") is False
 
     def test_force_check_backup_disabled_with_negative_one(self, indexer, monkeypatch):
-        monkeypatch.setenv("FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "1000")
-        monkeypatch.setenv("FORCE_RECOMPUTE_THRESHOLD_BACKUP", "-1")
+        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "1000")
+        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP", "-1")
         self._seed_counter(indexer.db, "file", "a.py", child=0, leaf=99999)
         assert indexer._force_recompute_check("file", "a.py") is False
 
     def test_force_check_backup_threshold_fires(self, indexer, monkeypatch):
-        monkeypatch.setenv("FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "1000")
-        monkeypatch.setenv("FORCE_RECOMPUTE_THRESHOLD_BACKUP", "5")
+        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "1000")
+        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP", "5")
         self._seed_counter(indexer.db, "file", "a.py", child=0, leaf=5)
         assert indexer._force_recompute_check("file", "a.py") is True
 
@@ -2256,7 +2256,7 @@ class TestPropagationPass:
         self._seed_ok_summary(indexer.db, "file", "a.py", short="file_v1")
         self._seed_counter(indexer.db, "file", "a.py", child=100)
 
-        monkeypatch.setenv("FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "50")
+        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "50")
         judge_called = {"count": 0}
 
         def fake_judge(*a, **kw):

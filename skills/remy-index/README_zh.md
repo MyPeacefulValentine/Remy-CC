@@ -176,11 +176,11 @@ python "~/.claude/skills/remy-index/run.py"
 
 ### Phase 3: 层级摘要引导确认（条件触发）
 
-若 `run.py` stdout 包含 `BOOTSTRAP_PENDING_CONFIRMATION`，Skill 通过 `--bootstrap-only --mode auto` 询问用户是否生成 file/cluster 摘要。仅当 `SUMMARY_BOOTSTRAP_MODE=ask` 时触发（显式设置或从 `auto` 降级）。该行缺失时跳过。
+若 `run.py` stdout 包含 `BOOTSTRAP_PENDING_CONFIRMATION`，Skill 通过 `--bootstrap-only --mode auto` 询问用户是否生成 file/cluster 摘要。仅当 `REMY_SUMMARY_BOOTSTRAP_MODE=ask` 时触发（显式设置或从 `auto` 降级）。该行缺失时跳过。
 
 ### Phase 4: 注入策略
 
-根据 `LOGIC_INDEX_AUTO_INJECT` 策略：
+根据 `REMY_LOGIC_INDEX_AUTO_INJECT` 策略：
 
 | 策略 | 行为 |
 | :--- | :--- |
@@ -193,7 +193,7 @@ python "~/.claude/skills/remy-index/run.py"
 对于 `logic_index.db` 超出上下文窗口预算的大型项目，范围选择器可过滤注入的文件。文档注入器基于 `.claude/logic_inject_selection.json` 中的用户选择，生成 `logic_tree_view.md` —— `logic_index.db` 的过滤子集。
 
 配置方式：
-- **SessionStart UI**：当 `LOGIC_INDEX_INTERACTIVE` 为 `true` 时，会话启动（startup/clear/compact 事件）时弹出浏览器选择器 UI。用户可勾选/取消文件和层以控制注入范围。
+- **SessionStart UI**：当 `REMY_LOGIC_INDEX_INTERACTIVE` 为 `true` 时，会话启动（startup/clear/compact 事件）时弹出浏览器选择器 UI。用户可勾选/取消文件和层以控制注入范围。
 - **CLI**：随时运行 `remy-cc logic-scope [--path <目录>]` 打开选择器。
 - **存档**：选择器支持保存/加载命名配置存档（上限 20 个），方便在不同范围配置间切换。
 
@@ -252,28 +252,31 @@ pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
 
 ## 配置
 
-### 环境变量（`settings.json`）
+### Remy配置
 
-在 `settings.local.json`（项目级）或 `~/.claude/settings.json`（全局）中配置：
+用户默认值写入`~/.claude/remy-config.json`，项目覆盖写入
+`<project>/.claude/remy-config.json`。`remy-cc config`编辑用户配置，
+`remy-cc config --path <project>`编辑项目配置。同名`REMY_*`进程环境变量
+只覆盖当前进程树中的文件配置。
 
 | 变量 | 默认值 | 说明 |
 | :--- | :--- | :--- |
-| `OPENAI_API_KEY` | — | API 密钥 |
-| `OPENAI_MODEL` | `deepseek-v4-flash` | 模型名称 |
-| `OPENAI_BASE_URL` | `https://api.deepseek.com/v1/chat/completions` | API 端点 |
-| `OPENAI_MAX_WORKERS` | `3` | 并发线程数 |
-| `OPENAI_RETRY_LIMIT` | `3` | 重试次数 |
-| `OPENAI_TIMEOUT` | `300` | 超时秒数 |
-| `OPENAI_MAX_TOKENS` | `8192` | 响应 Token 限制 |
-| `LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
-| `LOGIC_INDEX_FILTER_SMALL` | `false` | 跳过无 docstring 的短函数的 LLM 摘要 |
-| `LOGIC_INDEX_INTERACTIVE` | `true` | SessionStart 时启动范围选择器 UI（`true` / `false`） |
-| `LOGIC_SCOPE_TIMEOUT` | `300` | 范围选择器 UI 自动关闭超时秒数（0 = 无超时） |
+| `REMY_LLM_API_KEY` | — | API密钥；只允许用户配置或进程环境 |
+| `REMY_LLM_MODEL` | `deepseek-v4-flash` | 模型名称 |
+| `REMY_LLM_BASE_URL` | `https://api.deepseek.com/v1/chat/completions` | API端点 |
+| `REMY_LLM_MAX_WORKERS` | `5` | 并发线程数 |
+| `REMY_LLM_RETRY_LIMIT` | `3` | 重试次数 |
+| `REMY_LLM_TIMEOUT` | `300` | 超时秒数 |
+| `REMY_LLM_MAX_TOKENS` | `32768` | 响应Token上限 |
+| `REMY_REMY_LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
+| `REMY_LOGIC_INDEX_FILTER_SMALL` | `false` | 跳过无文档小函数的LLM摘要 |
+| `REMY_REMY_LOGIC_INDEX_INTERACTIVE` | `true` | SessionStart时启动范围选择器 |
+| `REMY_LOGIC_SCOPE_TIMEOUT` | `300` | 范围选择器超时秒数 |
 | `REMY_LANG` | `en` | 摘要输出语言（`en` / `zh-CN`） |
-| `IMPACT_DEPTH_UP` | `2` | `impact.py` 默认上游（调用者）BFS 深度 |
-| `IMPACT_DEPTH_DOWN` | `2` | `impact.py` 默认下游（被调用者）BFS 深度 |
-| `PRECISION_READ_THRESHOLD` | `500` | 行数阈值；超过此值的文件使用 `[L{start}-L{end}]` 行号范围的偏移 `Read()` |
-| `STRUCT_SCAN_TIMEOUT` | `60` | SessionStart/PreCompact 全量结构扫描的超时秒数 |
+| `REMY_STRUCT_SCAN_TIMEOUT` | `60` | 生命周期结构扫描超时秒数 |
+
+`PRECISION_READ_THRESHOLD`继续作为Claude技能协议参数保留在`settings.json`，
+不属于Python运行时Remy配置。
 
 ### 配置文件（`.claude/logic_index_config`）
 
@@ -318,10 +321,10 @@ pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
 ## 常见问题
 
 ### Q: `Fatal API Error 429: Rate limit exceeded`？
-将 `OPENAI_MAX_WORKERS` 设为 `1`（串行模式），或申请更高配额。
+将`REMY_LLM_MAX_WORKERS`设为`1`（串行模式），或申请更高配额。
 
 ### Q: `Fatal API Error 403: Forbidden`？
-检查 `OPENAI_API_KEY` 是否正确，`OPENAI_MODEL` 在服务端是否可用。
+检查`REMY_LLM_API_KEY`是否正确，`REMY_LLM_MODEL`在服务端是否可用。
 
 ### Q: 中断后会丢失进度吗？
 不会。`try...finally` 保护机制确保已生成的摘要保存到 `.claude/logic_index.db`。

@@ -341,7 +341,7 @@ def run_canary(
         _materialize_project(project, scan_root, manifest, fixture)
         _write_scope_config(scan_root, manifest, scope)
 
-        old_db_path = os.environ.pop("LOGIC_INDEX_DB_PATH", None)
+        old_db_path = os.environ.pop("REMY_LOGIC_INDEX_DB_PATH", None)
         try:
             with parser_backend(backend) as actual_backend:
                 scanner = StructScanner(str(scan_root))
@@ -387,7 +387,7 @@ def run_canary(
                     scanner.db.close()
         finally:
             if old_db_path is not None:
-                os.environ["LOGIC_INDEX_DB_PATH"] = old_db_path
+                os.environ["REMY_LOGIC_INDEX_DB_PATH"] = old_db_path
 
     after = _tree_digest(project)
     if before != after:

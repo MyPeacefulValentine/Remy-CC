@@ -7,7 +7,11 @@ import sys
 import sqlite3
 import unicodedata
 from collections import defaultdict
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import wraps
+from typing import Optional
 
 _IMPACT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "remy-index")
 sys.path.insert(0, _IMPACT_DIR)
@@ -21,39 +25,67 @@ from impact import (
 )
 from struct_scan import tokenize_symbol
 from retrieval_projection import select_current_summary
+import remy_config
 
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 _DB_NOT_FOUND = "Error: logic_index.db not found. Run /remy-index to initialize the project index."
 
 
-def _env_int(name, default):
+_DB_OVERRIDE: ContextVar[Optional[str]] = ContextVar("remy_index_db_override", default=None)
+_QUERY_CONFIG: ContextVar[Optional[remy_config.ConfigSnapshot]] = ContextVar(
+    "remy_index_query_config", default=None
+)
+
+
+def _query_scoped(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        existing = _QUERY_CONFIG.get()
+        if existing is not None:
+            return function(*args, **kwargs)
+        snapshot = _config()
+        token = _QUERY_CONFIG.set(snapshot)
+        try:
+            return function(*args, **kwargs)
+        finally:
+            _QUERY_CONFIG.reset(token)
+    return wrapped
+
+
+@contextmanager
+def database_override(path):
+    token = _DB_OVERRIDE.set(str(path))
     try:
-        value = os.environ.get(name)
-        return int(value if value is not None else default)
-    except (ValueError, TypeError):
-        return default
+        yield
+    finally:
+        _DB_OVERRIDE.reset(token)
 
 
-def _env_bool(name, default):
-    val = os.environ.get(name, str(default)).lower()
-    return val in ("true", "1", "yes")
+def _config():
+    active = _QUERY_CONFIG.get()
+    if active is not None:
+        return active
+    snapshot = remy_config.load_config(strict=False)
+    remy_config.emit_diagnostics(snapshot, prefix="MCPConfig")
+    return snapshot
 
 
-MCP_BFS_MAX_DEPTH = _env_int("MCP_BFS_MAX_DEPTH", 5)
-MCP_IMPACT_MAX_DEPTH_UP = _env_int("MCP_IMPACT_MAX_DEPTH_UP", 3)
-MCP_IMPACT_MAX_DEPTH_DOWN = _env_int("MCP_IMPACT_MAX_DEPTH_DOWN", 3)
-MCP_RESULT_LIMIT = _env_int("MCP_RESULT_LIMIT", 50)
-MCP_STATIC_ONLY_DEFAULT = _env_bool("MCP_STATIC_ONLY_DEFAULT", False)
-FLOW_MAX_DEPTH = _env_int("FLOW_MAX_DEPTH", 15)
-FLOW_MAX_VISITED = _env_int("FLOW_MAX_VISITED", 2000)
+def _config_values():
+    config = _config()
+    return (
+        config.get_int("REMY_MCP_BFS_MAX_DEPTH"),
+        config.get_int("REMY_MCP_RESULT_LIMIT"),
+        config.get_bool("REMY_MCP_STATIC_ONLY_DEFAULT"),
+        config.get_int("REMY_FLOW_MAX_DEPTH"),
+        config.get_int("REMY_FLOW_MAX_VISITED"),
+    )
 
 
-def _open_db():
-    db_rel = os.environ.get("LOGIC_INDEX_DB_PATH", DB_FILE_DEFAULT)
-    db_path = os.path.join(os.getcwd(), db_rel)
-    if not os.path.exists(db_path):
+def _open_db(db_path=None):
+    path = str(db_path or _DB_OVERRIDE.get() or _config().get("REMY_LOGIC_INDEX_DB_PATH"))
+    if not os.path.exists(path):
         return None
-    db = sqlite3.connect(db_path, timeout=5)
+    db = sqlite3.connect(path, timeout=5)
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA busy_timeout=3000")
     return db
@@ -165,9 +197,10 @@ def _resolve_symbol(db, name, file=None):
             "FROM symbols WHERE name = ? OR short_name = ?",
             (name, name),
         ).fetchall()
-    return rows[:MCP_RESULT_LIMIT]
+    return rows[:_config_values()[1]]
 
 
+@_query_scoped
 def query_symbol_impl(name, file=None):
     db = _open_db()
     if not db:
@@ -190,6 +223,7 @@ def query_symbol_impl(name, file=None):
         db.close()
 
 
+@_query_scoped
 def query_symbol_summary_impl(name, file=None):
     db = _open_db()
     if not db:
@@ -215,14 +249,15 @@ def query_symbol_summary_impl(name, file=None):
         db.close()
 
 
+@_query_scoped
 def query_callers_impl(symbol, depth, include_ambiguous, static_only):
     db = _open_db()
     if not db:
         return _DB_NOT_FOUND
     try:
-        depth = min(depth, MCP_BFS_MAX_DEPTH)
+        depth = min(depth, _config_values()[0])
         if static_only is None:
-            static_only = MCP_STATIC_ONLY_DEFAULT
+            static_only = _config_values()[2]
 
         targets = set()
         if "::" in symbol:
@@ -247,14 +282,15 @@ def query_callers_impl(symbol, depth, include_ambiguous, static_only):
         db.close()
 
 
+@_query_scoped
 def query_callees_impl(symbol, depth, include_ambiguous, static_only):
     db = _open_db()
     if not db:
         return _DB_NOT_FOUND
     try:
-        depth = min(depth, MCP_BFS_MAX_DEPTH)
+        depth = min(depth, _config_values()[0])
         if static_only is None:
-            static_only = MCP_STATIC_ONLY_DEFAULT
+            static_only = _config_values()[2]
 
         targets = set()
         if "::" in symbol:
@@ -279,15 +315,16 @@ def query_callees_impl(symbol, depth, include_ambiguous, static_only):
         db.close()
 
 
+@_query_scoped
 def query_impact_impl(files, depth_up, depth_down, include_ambiguous, static_only):
     db = _open_db()
     if not db:
         return _DB_NOT_FOUND
     try:
-        depth_up = min(depth_up, MCP_BFS_MAX_DEPTH)
-        depth_down = min(depth_down, MCP_BFS_MAX_DEPTH)
+        depth_up = min(depth_up, _config_values()[0])
+        depth_down = min(depth_down, _config_values()[0])
         if static_only is None:
-            static_only = MCP_STATIC_ONLY_DEFAULT
+            static_only = _config_values()[2]
 
         target_files = []
         for f in files:
@@ -318,6 +355,7 @@ def query_impact_impl(files, depth_up, depth_down, include_ambiguous, static_onl
         db.close()
 
 
+@_query_scoped
 def query_patterns_impl(pattern_type=None, signal_name=None, file=None):
     db = _open_db()
     if not db:
@@ -337,7 +375,7 @@ def query_patterns_impl(pattern_type=None, signal_name=None, file=None):
 
         where = " AND ".join(conditions) if conditions else "1=1"
         sql = f"SELECT file_path, pattern_type, signal_name, handler, line FROM patterns WHERE {where} LIMIT ?"
-        params.append(MCP_RESULT_LIMIT)
+        params.append(_config_values()[1])
 
         rows = db.execute(sql, params).fetchall()
         if not rows:
@@ -370,7 +408,7 @@ def _format_bfs_result(db, title, levels, max_depth):
         lines.append(f"[depth {depth}]" + (" direct:" if depth == 1 else ""))
         count = 0
         for q in qualified_list:
-            if count >= MCP_RESULT_LIMIT:
+            if count >= _config_values()[1]:
                 lines.append(f"  ... ({len(qualified_list) - count} more)")
                 break
             fpath = q.split("::")[0] if "::" in q else q
@@ -390,7 +428,7 @@ def _format_impact_result(db, target_files, seeds, upstream, downstream):
     lines.append("upstream (callers into these files):")
     if upstream:
         for depth, qualified_list in sorted(upstream.items()):
-            entries = qualified_list[:MCP_RESULT_LIMIT]
+            entries = qualified_list[:_config_values()[1]]
             lines.append(f"  [depth {depth}] " + ", ".join(
                 f"{q.split('::')[0]}" for q in entries[:5]
             ) + (f" ... +{len(entries)-5}" if len(entries) > 5 else ""))
@@ -404,7 +442,7 @@ def _format_impact_result(db, target_files, seeds, upstream, downstream):
     lines.append("downstream (called by these files):")
     if downstream:
         for depth, qualified_list in sorted(downstream.items()):
-            entries = qualified_list[:MCP_RESULT_LIMIT]
+            entries = qualified_list[:_config_values()[1]]
             lines.append(f"  [depth {depth}] " + ", ".join(
                 f"{q.split('::')[0]}" for q in entries[:5]
             ) + (f" ... +{len(entries)-5}" if len(entries) > 5 else ""))
@@ -492,8 +530,8 @@ def _make_search_query(text, limit=10, file_hint="", *, match="all",
         raise _SearchInputError("text must contain at least one searchable word")
     if isinstance(limit, bool) or not isinstance(limit, int):
         raise _SearchInputError("limit must be an integer")
-    if limit < 1 or limit > MCP_RESULT_LIMIT:
-        raise _SearchInputError(f"limit must be between 1 and {MCP_RESULT_LIMIT}")
+    if limit < 1 or limit > _config_values()[1]:
+        raise _SearchInputError(f"limit must be between 1 and {_config_values()[1]}")
     if not isinstance(match, str):
         raise _SearchInputError("match must be a string")
     normalized_match = match.strip().casefold()
@@ -762,6 +800,7 @@ def _channel_error(channel, error):
     return f"Error: {channel} search failed ({type(error).__name__})."
 
 
+@_query_scoped
 def query_search_impl(text, limit=10, file_hint="", *, match="all",
                       language="", symbol_type="", path_hint=""):
     try:
@@ -1071,16 +1110,16 @@ def _format_flow(resolved, segments, id_to_info, static_only, max_depth):
     return "\n".join(lines)
 
 
+@_query_scoped
 def query_flow_impl(symbols, max_depth=None, max_visited=None, static_only=False):
     if not symbols or len(symbols) < 2:
         return "Error: query_flow requires at least 2 symbols."
 
-    if max_depth is None:
-        max_depth = FLOW_MAX_DEPTH
-    if max_visited is None:
-        max_visited = FLOW_MAX_VISITED
+    config_values = _config_values()
+    max_depth = min(config_values[3], config_values[3] if max_depth is None else max_depth)
+    max_visited = min(config_values[4], config_values[4] if max_visited is None else max_visited)
     if static_only is None:
-        static_only = MCP_STATIC_ONLY_DEFAULT
+        static_only = config_values[2]
 
     db = _open_db()
     if not db:
@@ -1130,6 +1169,7 @@ def query_flow_impl(symbols, max_depth=None, max_visited=None, static_only=False
         db.close()
 
 
+@_query_scoped
 def query_cluster_summary_impl(name=None):
     db = _open_db()
     if not db:
@@ -1171,6 +1211,7 @@ def query_cluster_summary_impl(name=None):
         db.close()
 
 
+@_query_scoped
 def query_file_summary_impl(file):
     if not file:
         return "Error: file path is required"
@@ -1199,6 +1240,7 @@ def query_file_summary_impl(file):
         db.close()
 
 
+@_query_scoped
 def query_cluster_files_impl(cluster, with_summary=False):
     if not cluster:
         return "Error: cluster name is required"
@@ -1275,6 +1317,7 @@ def _collect_navigate_corpus(db):
     return clusters, files
 
 
+@_query_scoped
 def query_navigate_impl(intent, top_k=5, llm_call=None):
     db = _open_db()
     if not db:
@@ -1327,7 +1370,7 @@ def query_navigate_impl(intent, top_k=5, llm_call=None):
 
 
 def _try_default_llm_call():
-    if not os.environ.get("OPENAI_API_KEY"):
+    if not _config().get("REMY_LLM_API_KEY"):
         return None
     try:
         sys.path.insert(0, _IMPACT_DIR)

@@ -9,6 +9,9 @@ import time
 import webbrowser
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import remy_config
+
 LOCK_FILE = Path.home() / ".claude" / ".logic_scope_ui.lock"
 SELECTION_FILE = os.path.join(".claude", "logic_inject_selection.json")
 DB_FILE = os.path.join(".claude", "logic_index.db")
@@ -62,7 +65,9 @@ def release_lock():
 
 
 def _open_db(cwd):
-    db_path = os.path.join(cwd, DB_FILE)
+    db_path = str(
+        remy_config.load_config(cwd, strict=False).get("REMY_LOGIC_INDEX_DB_PATH")
+    )
     if not os.path.exists(db_path):
         return None
     try:
@@ -207,38 +212,16 @@ def _save_profiles(cwd, profiles):
 
 
 def _disable_popup(cwd):
-    path = os.path.join(cwd, SETTINGS_LOCAL)
-    settings = {}
-    if os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return
-    env = settings.setdefault("env", {})
-    env["LOGIC_INDEX_INTERACTIVE"] = "false"
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(settings, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    path = remy_config.project_config_path(cwd)
+    remy_config.save_config(
+        path,
+        {"REMY_LOGIC_INDEX_INTERACTIVE": "false"},
+        project=True,
+    )
 
 
 def _get_lang(cwd):
-    settings_path = Path.home() / ".claude" / "settings.json"
-    if settings_path.exists():
-        try:
-            with open(settings_path, "r", encoding="utf-8") as f:
-                return json.load(f).get("env", {}).get("REMY_LANG", "en")
-        except (json.JSONDecodeError, OSError):
-            pass
-    local_path = os.path.join(cwd, SETTINGS_LOCAL)
-    if os.path.exists(local_path):
-        try:
-            with open(local_path, "r", encoding="utf-8") as f:
-                return json.load(f).get("env", {}).get("REMY_LANG", "en")
-        except (json.JSONDecodeError, OSError):
-            pass
-    return "en"
+    return str(remy_config.load_config(cwd, strict=False).get("REMY_LANG", "en"))
 
 
 class ScopeHandler(http.server.BaseHTTPRequestHandler):

@@ -6,10 +6,16 @@ import errno
 import glob
 import importlib
 import os
+import sys
 import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Iterable, Optional, Tuple
+
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "remy-src"))
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
 
 
 SOURCE_EXTENSIONS = frozenset(
@@ -108,9 +114,10 @@ class LockTimeoutError(TimeoutError):
 
 
 def _env_timeout(name: str, default: float) -> float:
+    key = name if name.startswith("REMY_") else "REMY_" + name
     try:
-        return max(0.0, float(os.environ.get(name, default)))
-    except (TypeError, ValueError):
+        return max(0.0, remy_config.load_config(strict=True).get_float(key))
+    except (KeyError, TypeError, remy_config.ConfigError):
         return default
 
 

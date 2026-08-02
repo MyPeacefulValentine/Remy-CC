@@ -14,6 +14,13 @@ import os
 import subprocess
 import unicodedata
 
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "remy-src"))
+if not os.path.isdir(_REMY_SRC):
+    _REMY_SRC = os.path.join(os.path.expanduser("~"), ".claude", "remy-src")
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
+
 GENERATOR_SCRIPT = "generate_smart_tree.py"
 STRUCT_SCAN_SCRIPT = os.path.join(
     os.path.expanduser("~"), ".claude",
@@ -127,8 +134,8 @@ def _get_version():
         return "dev"
 
 
-def generate_language_md():
-    lang = os.environ.get("REMY_LANG", "en")
+def generate_language_md(cwd=None):
+    lang = str(remy_config.load_config(cwd, strict=False).get("REMY_LANG", "en"))
     directive = LANGUAGE_DIRECTIVES.get(lang, LANGUAGE_DIRECTIVES["en"])
     claude_home = os.path.join(os.path.expanduser("~"), ".claude")
     lang_path = os.path.join(claude_home, "language.md")
@@ -141,16 +148,13 @@ def generate_language_md():
 def run_struct_scan(cwd):
     if not os.path.exists(STRUCT_SCAN_SCRIPT):
         return None
-    db_file = os.path.join(cwd, ".claude", "logic_index.db")
+    config = remy_config.load_config(cwd, strict=False)
+    db_file = str(config.get("REMY_LOGIC_INDEX_DB_PATH"))
     json_file = os.path.join(cwd, ".claude", "logic_index.json")
     if not os.path.exists(db_file) and not os.path.exists(json_file):
         return None
-    try:
-        scan_timeout = int(os.environ.get("STRUCT_SCAN_TIMEOUT", "60"))
-        lock_timeout = float(os.environ.get("INDEX_SCAN_LOCK_TIMEOUT", "30"))
-    except ValueError:
-        scan_timeout = 60
-        lock_timeout = 30.0
+    scan_timeout = config.get_int("REMY_STRUCT_SCAN_TIMEOUT")
+    lock_timeout = config.get_float("REMY_INDEX_SCAN_LOCK_TIMEOUT")
     total_timeout = max(1.0, scan_timeout + lock_timeout + 5.0)
     try:
         completed = subprocess.run(
@@ -179,20 +183,21 @@ def maybe_launch_scope_ui(cwd, mcp_minimal=False):
     if not os.path.exists(SCOPE_UI_SCRIPT):
         return
 
-    inject_policy = os.environ.get("LOGIC_INDEX_AUTO_INJECT", "ALWAYS")
+    config = remy_config.load_config(cwd, strict=False)
+    inject_policy = config.get("REMY_LOGIC_INDEX_AUTO_INJECT", "ALWAYS")
     if inject_policy != "ALWAYS":
         return
 
-    db_file = os.path.join(cwd, ".claude", "logic_index.db")
+    db_file = str(config.get("REMY_LOGIC_INDEX_DB_PATH"))
     json_file = os.path.join(cwd, ".claude", "logic_index.json")
     if not os.path.exists(db_file) and not os.path.exists(json_file):
         return
 
-    interactive = os.environ.get("LOGIC_INDEX_INTERACTIVE", "true").lower()
+    interactive = config.get_bool("REMY_LOGIC_INDEX_INTERACTIVE")
     selection_file = os.path.join(cwd, ".claude", "logic_inject_selection.json")
     launch = False
 
-    if interactive == "true":
+    if interactive:
         launch = True
     elif os.path.exists(selection_file):
         injector_path = os.path.join(os.path.expanduser("~"), ".claude", "hooks", "doc_manager", "injector.py")
@@ -213,7 +218,7 @@ def maybe_launch_scope_ui(cwd, mcp_minimal=False):
         return
 
     try:
-        scope_timeout = int(os.environ.get("LOGIC_SCOPE_TIMEOUT", "300"))
+        scope_timeout = config.get_int("REMY_LOGIC_SCOPE_TIMEOUT")
         subprocess.run(
             [sys.executable, SCOPE_UI_SCRIPT, "--cwd", cwd, "--timeout", str(scope_timeout)],
             cwd=cwd,
@@ -283,9 +288,10 @@ def main():
             claude_home = os.path.join(os.path.expanduser("~"), ".claude")
             server_script = os.path.join(claude_home, "remy-src", "index_mcp_server.py")
             mcp_available = os.path.exists(server_script) and importlib.util.find_spec("mcp") is not None
+            config = remy_config.load_config(cwd, strict=False)
             mcp_minimal = (
                 mcp_available
-                and os.environ.get("NAV_MCP_MINIMAL_ENABLED", "true").lower() == "true"
+                and config.get_bool("REMY_NAV_MCP_MINIMAL_ENABLED")
             )
 
             if not resume_only:
@@ -295,24 +301,24 @@ def main():
             run_struct_scan(cwd)
 
             if not resume_only:
-                generate_language_md()
+                generate_language_md(cwd)
 
-                lang = os.environ.get("REMY_LANG", "en")
+                lang = str(config.get("REMY_LANG", "en"))
                 version = _get_version()
 
-                if os.environ.get("REMY_BANNER_ENABLED", "true").lower() != "false":
+                if config.get_bool("REMY_BANNER_ENABLED"):
                     if mcp_minimal:
                         inj_mode = "mcp_minimal"
                     else:
-                        db_path = os.path.join(cwd, ".claude", "logic_index.db")
+                        db_path = str(config.get("REMY_LOGIC_INDEX_DB_PATH"))
                         if os.path.exists(db_path):
                             import sqlite3 as _sql
                             try:
                                 _db = _sql.connect(db_path)
                                 fc = _db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
                                 _db.close()
-                                nav_full = int(os.environ.get("NAV_TIER_FULL_MAX", "200"))
-                                nav_cluster = int(os.environ.get("NAV_TIER_CLUSTER_MAX", "2000"))
+                                nav_full = config.get_int("REMY_NAV_TIER_FULL_MAX")
+                                nav_cluster = config.get_int("REMY_NAV_TIER_CLUSTER_MAX")
                                 if fc <= nav_full:
                                     inj_mode = "full"
                                 elif fc <= nav_cluster:
@@ -340,7 +346,7 @@ def main():
             mcp_min = (
                 os.path.exists(_server)
                 and importlib.util.find_spec("mcp") is not None
-                and os.environ.get("NAV_MCP_MINIMAL_ENABLED", "true").lower() == "true"
+                and remy_config.load_config(cwd, strict=False).get_bool("REMY_NAV_MCP_MINIMAL_ENABLED")
             )
             update_tree(cwd, max_depth=2 if mcp_min else None)
             run_struct_scan(cwd)

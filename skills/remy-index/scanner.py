@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import sys
 from datetime import datetime
 
 from index_state import (
@@ -29,29 +30,35 @@ from retrieval_projection import (
 from symbol_names import tokenize_symbol
 from symbol_selection import select_symbols
 
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "remy-src"))
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
+
 
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 CONFIG_FILE = os.path.join(".claude", "logic_index_config")
 
 
 def _env_int(name, default):
+    key = name if name.startswith("REMY_") else "REMY_" + name
     try:
-        value = os.environ.get(name)
-        return int(value if value is not None else default)
-    except (ValueError, TypeError):
+        return remy_config.load_config(strict=True).get_int(key)
+    except (KeyError, TypeError, remy_config.ConfigError):
         return default
 
 
 def _env_float(name, default):
+    key = name if name.startswith("REMY_") else "REMY_" + name
     try:
-        value = os.environ.get(name)
-        return float(value if value is not None else default)
-    except (ValueError, TypeError):
+        return remy_config.load_config(strict=True).get_float(key)
+    except (KeyError, TypeError, remy_config.ConfigError):
         return default
 
 def _compute_kind_hint(sym_count, intra_edges):
-    min_symbols = _env_int("FILE_KIND_MIN_SYMBOLS", 5)
-    low_cohesion_threshold = _env_float("FILE_KIND_LOW_COHESION_THRESHOLD", 0.25)
+    config = remy_config.load_config(strict=True)
+    min_symbols = config.get_int("REMY_FILE_KIND_MIN_SYMBOLS")
+    low_cohesion_threshold = config.get_float("REMY_FILE_KIND_LOW_COHESION_THRESHOLD")
     if sym_count < min_symbols:
         return "trivial"
     density = intra_edges / sym_count if sym_count else 0
@@ -101,16 +108,16 @@ class StructScanner:
         self.exclusions = []
         self.layers = []
         self._load_config()
+        self.config = remy_config.load_config(self.root_dir, strict=True)
 
-        self.filter_small = str(os.environ.get("LOGIC_INDEX_FILTER_SMALL", "false")).lower() == "true"
+        self.filter_small = self.config.get_bool("REMY_LOGIC_INDEX_FILTER_SMALL")
         self.parsers = [PythonParser(), CCppParser(), TSParser()]
         self._extension_map = {}
         for parser in self.parsers:
             for ext in parser.get_extensions():
                 self._extension_map[ext] = parser
 
-        db_rel = os.environ.get("LOGIC_INDEX_DB_PATH", DB_FILE_DEFAULT)
-        self.db_path = os.path.join(self.root_dir, db_rel)
+        self.db_path = str(self.config.get("REMY_LOGIC_INDEX_DB_PATH"))
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self.db = initialize_database(self.root_dir, self.db_path)
 

@@ -61,7 +61,9 @@ h1{font-size:22px;font-weight:700;margin-bottom:4px}
 .status{margin-top:16px;padding:12px 16px;border-radius:8px;font-size:13px;display:none;animation:fadeIn .2s}
 .status.success{display:block;background:var(--c-ok-bg);color:var(--c-ok-txt);border:1px solid var(--c-ok-bdr)}
 .status.error{display:block;background:var(--c-err-bg);color:var(--c-err-txt);border:1px solid var(--c-err-bdr)}
-.unknown-warn{margin-top:12px;padding:10px 14px;background:var(--c-warn-bg);border:1px solid var(--c-warn-bdr);border-radius:8px;font-size:12px;color:var(--c-warn-txt)}
+.unknown-warn,.diagnostic-warn,.acl-warn{margin-top:12px;padding:10px 14px;background:var(--c-warn-bg);border:1px solid var(--c-warn-bdr);border-radius:8px;font-size:12px;color:var(--c-warn-txt)}
+.source-tag{font-size:10px;color:var(--c-txt3);border:1px solid var(--c-bdr);border-radius:4px;padding:0 5px}
+.source-note{font-size:11px;color:var(--c-warn-txt);margin-top:4px}
 .modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.3);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;opacity:0;pointer-events:none;transition:opacity .2s}
 .modal-ov.show{opacity:1;pointer-events:auto}
 .modal{background:var(--c-srf);border-radius:12px;padding:24px;width:360px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.15);transform:scale(.95);transition:transform .2s}
@@ -108,16 +110,16 @@ h1{font-size:22px;font-weight:700;margin-bottom:4px}
 </div>
 <script>
 (function(){
-var config=null,lang="en",dirty=false,overrides={};
+var config=null,lang="en",dirty=false,overrides={},modifiedKeys={};
 
 var ICONS={llm_api:"🧠",impact:"📊",injection:"📥",timeline:"📅",post_verify:"✅",security_audit:"🔒",debug:"🐛",test_gen:"🧪",ci:"🏗️",system:"⚙️",claude_code:"🤖"};
 
 var TEXT={
   en:{title:"Remy Configuration",titleProject:"Remy Project Configuration",
-      subtitle:"Editing: ~/.claude/settings.json",
+      subtitle:"Editing: ~/.claude/remy-config.json",
       save:"✓ Save",reset:"↺ Reset to Defaults",exit:"✕ Exit",langBtn:"中文",
       modeGlobal:"Global",modeProject:"Project",
-      saved:"Settings saved. Backup written to .bak.",
+      saved:"Settings saved.",
       resetDone:"Form reset to defaults (not yet saved).",
       error:"Error: ",
       unknownWarn:function(n,keys){return n+" unregistered env key(s) preserved on save: "+keys},
@@ -134,12 +136,15 @@ var TEXT={
       modalExitTitle:"Unsaved Changes",
       modalExitMsg:"Current settings have unsaved changes. Save before exiting?",
       modalExitSave:"Save & Exit",modalExitDiscard:"Discard",modalExitCancel:"Cancel",
-      closed:"Server closed. You may close this tab."},
+      closed:"Server closed. You may close this tab.",
+      source:"Source",environmentNote:"A process environment value currently overrides file values.",
+      diagnostics:"Configuration errors detected. Editing is disabled until the file is corrected.",
+      aclWarning:"Windows file access depends on inherited user-directory ACLs."},
   "zh-CN":{title:"Remy 配置",titleProject:"Remy 项目配置",
-      subtitle:"编辑: ~/.claude/settings.json",
+      subtitle:"编辑: ~/.claude/remy-config.json",
       save:"✓ 保存",reset:"↺ 恢复默认",exit:"✕ 退出",langBtn:"English",
       modeGlobal:"全局",modeProject:"项目",
-      saved:"设置已保存。备份已写入 .bak。",
+      saved:"设置已保存。",
       resetDone:"表单已恢复默认值（尚未保存）。",
       error:"错误: ",
       unknownWarn:function(n,keys){return "发现 "+n+" 个未注册的 env 键（保存时保留）: "+keys},
@@ -156,7 +161,10 @@ var TEXT={
       modalExitTitle:"未保存的修改",
       modalExitMsg:"当前设置已修改但未保存。是否先保存再退出？",
       modalExitSave:"保存并退出",modalExitDiscard:"放弃修改",modalExitCancel:"取消",
-      closed:"服务已关闭，可关闭此标签页。"}
+      closed:"服务已关闭，可关闭此标签页。",
+      source:"来源",environmentNote:"进程环境值当前覆盖文件中的值。",
+      diagnostics:"检测到配置文件错误。修正文件前禁止编辑。",
+      aclWarning:"Windows文件访问权限取决于用户目录继承的ACL。"}
 };
 
 function t(key){return(TEXT[lang]||TEXT.en)[key]||(TEXT.en)[key]||key}
@@ -174,7 +182,7 @@ function init(){
     if(isProject()){
       document.body.classList.add("theme-project");
       overrides={};
-      var locals=config.env_local||{};
+      var locals=config.project_values||{};
       for(var k in locals){overrides[k]=true}
     }
     render();
@@ -204,11 +212,18 @@ function render(){
     document.getElementById("subtitle").textContent=t("subtitle");
   }
 
+  var saveBtn=document.getElementById("save-btn");
+  var resetBtn=document.getElementById("reset-btn");
+  saveBtn.disabled=!!config.read_only;
+  resetBtn.disabled=!!config.read_only;
+
   var container=document.getElementById("groups");
   container.innerHTML="";
 
   config.groups.forEach(function(group){
-    var params=config.registry.filter(function(p){return p.group===group.id});
+    var params=config.registry.filter(function(p){
+      return p.group===group.id&&(!proj||p.project_allowed!==false)
+    });
     if(!params.length)return;
     var section=document.createElement("div");
     section.className="group";
@@ -239,23 +254,36 @@ function render(){
     warn.textContent=typeof fn==="function"?fn(config.unknown_keys.length,config.unknown_keys.join(", ")):fn;
     unknownArea.appendChild(warn);
   }
+  if(config.diagnostics&&config.diagnostics.length){
+    var diag=document.createElement("div");
+    diag.className="diagnostic-warn";
+    diag.textContent=t("diagnostics")+" "+config.diagnostics.join("; ");
+    unknownArea.appendChild(diag);
+  }
+  if(config.windows_acl_warning){
+    var acl=document.createElement("div");
+    acl.className="acl-warn";
+    acl.textContent=t("aclWarning");
+    unknownArea.appendChild(acl);
+  }
 }
 
 function getCurrentValue(param){
+  if(param.type==="password")return "";
   if(isProject()){
-    var local=config.env_local||{};
+    var local=config.project_values||{};
     if(param.key in local)return local[param.key];
-    var global_env=config.env_global||{};
-    if(param.key in global_env)return global_env[param.key];
-    return param["default"];
   }
-  var env=config.env||{};
-  return env[param.key]!=null?env[param.key]:param["default"];
+  var values=config.values||{};
+  return values[param.key]!=null?values[param.key]:param["default"];
 }
 
 function getGlobalValue(param){
-  var g=config.env_global||{};
-  return g[param.key]!=null?g[param.key]:param["default"];
+  if(param.type==="password")return "";
+  var g=config.user_values||{};
+  if(param.key in g)return g[param.key];
+  var values=config.values||{};
+  return values[param.key]!=null?values[param.key]:param["default"];
 }
 
 function optionLabel(param,idx,optValue){
@@ -278,6 +306,10 @@ function createParam(param){
   lbl.className="param-label";
   lbl.innerHTML="<code>"+param.key+"</code>";
   top.appendChild(lbl);
+  var source=document.createElement("span");
+  source.className="source-tag";
+  source.textContent=t("source")+": "+((config.sources||{})[param.key]||"default");
+  top.appendChild(source);
 
   var toggleEl=null;
   if(proj){
@@ -294,6 +326,13 @@ function createParam(param){
   var desc=document.createElement("div");
   desc.className="param-desc";
   desc.textContent=lang==="zh-CN"?param.desc_zh:param.desc_en;
+  if((config.sources||{})[param.key]==="environment"){
+    var sourceNote=document.createElement("div");
+    sourceNote.className="source-note";
+    sourceNote.textContent=t("environmentNote");
+    desc.appendChild(document.createElement("br"));
+    desc.appendChild(sourceNote);
+  }
 
   var displayValue=isOverride?currentValue:(proj?globalValue:currentValue);
   var disabled=proj&&!isOverride;
@@ -316,19 +355,18 @@ function createParam(param){
   }else if(param.type==="password"){
     input=document.createElement("input");
     input.type="password";input.id="p-"+param.key;
-    input.value=displayValue;input.autocomplete="off";
+    input.value="";input.autocomplete="off";
+    input.placeholder=(config.secret_state&&config.secret_state[param.key]&&config.secret_state[param.key].has_value)?"••••••••":"";
     input.disabled=disabled;
-    var toggleBtn=document.createElement("button");
-    toggleBtn.type="button";toggleBtn.className="btn-toggle";
-    toggleBtn.textContent=t("show");
-    toggleBtn.addEventListener("click",function(){
-      if(input.type==="password"){input.type="text";toggleBtn.textContent=t("hide")}
-      else{input.type="password";toggleBtn.textContent=t("show")}
-    });
+    input.dataset.modified="false";
+    input.addEventListener("input",function(){input.dataset.modified="true";modifiedKeys[param.key]=true});
+    var clearBtn=document.createElement("button");
+    clearBtn.type="button";clearBtn.className="btn-toggle";clearBtn.textContent=lang==="zh-CN"?"清除":"Clear";
+    clearBtn.addEventListener("click",function(){input.value="";input.dataset.modified="false";input.dataset.clear="true";modifiedKeys[param.key]=true;dirty=true});
     var wrap=document.createElement("div");
     wrap.className="pw-wrap";
     wrap.appendChild(input);
-    wrap.appendChild(toggleBtn);
+    wrap.appendChild(clearBtn);
     div.appendChild(top);
     div.appendChild(desc);
     div.appendChild(wrap);
@@ -356,6 +394,7 @@ function createParam(param){
       tEl.addEventListener("click",function(){
         var active=tEl.classList.toggle("active");
         overrides[paramKey]=active;
+        modifiedKeys[paramKey]=true;
         inputEl.disabled=!active;
         tLabel.textContent=active?t("custom"):t("inherit");
         tEl.title=tLabel.textContent;
@@ -370,13 +409,41 @@ function createParam(param){
   return div;
 }
 
+function buildPayload(registry,states,modified,projectOverrides,projectMode){
+  var data={},clearSecrets=[];
+  registry.forEach(function(param){
+    var state=states[param.key];
+    if(!state||!modified[param.key])return;
+    if(projectMode&&!projectOverrides[param.key])return;
+    if(param.type==="password"){
+      if(state.clear)clearSecrets.push(param.key);
+      else if(state.modified&&state.value)data[param.key]=state.value;
+    }else data[param.key]=state.value;
+  });
+  return {values:data,clear_secrets:clearSecrets};
+}
+if(typeof globalThis!=="undefined")globalThis.remyBuildPayload=buildPayload;
+
 function collectFormData(){
-  var data={};
+  var states={};
   config.registry.forEach(function(param){
     var el=document.getElementById("p-"+param.key);
-    if(el)data[param.key]=el.value;
+    if(!el)return;
+    states[param.key]={
+      value:el.value,
+      clear:el.dataset.clear==="true",
+      modified:el.dataset.modified==="true"
+    };
   });
-  return data;
+  return buildPayload(config.registry,states,modifiedKeys,overrides,isProject());
+}
+
+function effectiveValidationValues(data){
+  var values={};
+  var current=config.values||{};
+  for(var key in current)values[key]=current[key];
+  for(var update in data)values[update]=data[update];
+  return values;
 }
 
 function validate(data){
@@ -396,24 +463,24 @@ function validate(data){
 }
 
 function validateConstraints(data){
-  var navFull=parseInt(data["NAV_TIER_FULL_MAX"]||"200",10);
-  var navCluster=parseInt(data["NAV_TIER_CLUSTER_MAX"]||"2000",10);
-  var eCap=parseInt(data["ENRICHMENT_CAP"]||"15",10);
-  var eCapLarge=parseInt(data["ENRICHMENT_CAP_LARGE"]||"10",10);
-  var eTierFull=parseInt(data["ENRICHMENT_TIER_FULL_MAX"]||"200",10);
-  var eTierMid=parseInt(data["ENRICHMENT_TIER_MID_MAX"]||"1000",10);
+  var navFull=parseInt(data["REMY_NAV_TIER_FULL_MAX"]||"200",10);
+  var navCluster=parseInt(data["REMY_NAV_TIER_CLUSTER_MAX"]||"2000",10);
+  var eCap=parseInt(data["REMY_ENRICHMENT_CAP"]||"15",10);
+  var eCapLarge=parseInt(data["REMY_ENRICHMENT_CAP_LARGE"]||"10",10);
+  var eTierFull=parseInt(data["REMY_ENRICHMENT_TIER_FULL_MAX"]||"200",10);
+  var eTierMid=parseInt(data["REMY_ENRICHMENT_TIER_MID_MAX"]||"1000",10);
   var errors=[];
   if(navFull>navCluster){
-    errors.push({key:"NAV_TIER_FULL_MAX",msg:"must be ≤ NAV_TIER_CLUSTER_MAX ("+navCluster+")"});
-    errors.push({key:"NAV_TIER_CLUSTER_MAX",msg:"must be ≥ NAV_TIER_FULL_MAX ("+navFull+")"});
+    errors.push({key:"REMY_NAV_TIER_FULL_MAX",msg:"must be ≤ REMY_NAV_TIER_CLUSTER_MAX ("+navCluster+")"});
+    errors.push({key:"REMY_NAV_TIER_CLUSTER_MAX",msg:"must be ≥ REMY_NAV_TIER_FULL_MAX ("+navFull+")"});
   }
   if(eCap<eCapLarge){
-    errors.push({key:"ENRICHMENT_CAP",msg:"must be ≥ CAP_LARGE ("+eCapLarge+")"});
-    errors.push({key:"ENRICHMENT_CAP_LARGE",msg:"must be ≤ CAP ("+eCap+")"});
+    errors.push({key:"REMY_ENRICHMENT_CAP",msg:"must be ≥ REMY_ENRICHMENT_CAP_LARGE ("+eCapLarge+")"});
+    errors.push({key:"REMY_ENRICHMENT_CAP_LARGE",msg:"must be ≤ REMY_ENRICHMENT_CAP ("+eCap+")"});
   }
   if(eTierFull>eTierMid){
-    errors.push({key:"ENRICHMENT_TIER_FULL_MAX",msg:"must be ≤ TIER_MID_MAX ("+eTierMid+")"});
-    errors.push({key:"ENRICHMENT_TIER_MID_MAX",msg:"must be ≥ TIER_FULL_MAX ("+eTierFull+")"});
+    errors.push({key:"REMY_ENRICHMENT_TIER_FULL_MAX",msg:"must be ≤ REMY_ENRICHMENT_TIER_MID_MAX ("+eTierMid+")"});
+    errors.push({key:"REMY_ENRICHMENT_TIER_MID_MAX",msg:"must be ≥ REMY_ENRICHMENT_TIER_FULL_MAX ("+eTierFull+")"});
   }
   return errors.length?errors:null;
 }
@@ -437,12 +504,14 @@ function showToast(key,msg){
   setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el)},3000);
 }
 
-function save(){
-  var data=collectFormData();
+function save(reset){
+  if(config.read_only){showStatus("error",t("diagnostics"));return}
+  var form=collectFormData(),data=form.values;
+  var validationValues=effectiveValidationValues(data);
   clearToasts();
   var err=validate(data);
   if(err){showStatus("error",err);return}
-  var constraintErrors=validateConstraints(data);
+  var constraintErrors=validateConstraints(validationValues);
   if(constraintErrors){
     for(var i=0;i<constraintErrors.length;i++)showToast(constraintErrors[i].key,constraintErrors[i].msg);
     return;
@@ -452,15 +521,15 @@ function save(){
   if(isProject()){
     var overrideList=[];
     for(var k in overrides){if(overrides[k])overrideList.push(k)}
-    body=JSON.stringify({env:data,overrides:overrideList});
+    body=JSON.stringify({values:data,overrides:overrideList,clear_secrets:form.clear_secrets,reset:!!reset});
   }else{
-    body=JSON.stringify({env:data});
+    body=JSON.stringify({values:data,clear_secrets:form.clear_secrets,reset:!!reset});
   }
 
   fetch("/api/save",{method:"POST",
     headers:{"Content-Type":"application/json"},body:body
   }).then(function(r){return r.json()}).then(function(result){
-    if(result.status==="ok"){dirty=false;showStatus("success",t("saved"))}
+    if(result.status==="ok"){dirty=false;modifiedKeys={};showStatus("success",t("saved"))}
     else{showStatus("error",t("error")+(result.message||""))}
   }).catch(function(e){showStatus("error",t("error")+e.message)});
 }
@@ -473,21 +542,20 @@ function confirmReset(){
 }
 
 function doReset(){
-  if(isProject()){
-    overrides={};
-    config.registry.forEach(function(param){
-      var el=document.getElementById("p-"+param.key);
-      if(el){el.value=getGlobalValue(param);el.disabled=true}
-    });
-    render();
-  }else{
-    config.registry.forEach(function(param){
-      var el=document.getElementById("p-"+param.key);
-      if(el)el.value=param["default"];
-    });
-  }
+  if(config.read_only){showStatus("error",t("diagnostics"));return}
+  overrides={};
+  modifiedKeys={};
+  config.registry.forEach(function(param){
+    var el=document.getElementById("p-"+param.key);
+    if(!el)return;
+    if(param.type==="password"){
+      el.value="";el.dataset.modified="false";el.dataset.clear="true";
+    }else if(isProject()){
+      el.value=getGlobalValue(param);el.disabled=true;
+    }else el.value=param["default"];
+  });
   dirty=true;
-  showStatus("success",t("resetDone"));
+  save(true);
 }
 
 function exitUI(){
@@ -556,8 +624,16 @@ document.getElementById("exit-btn").addEventListener("click",exitUI);
 document.getElementById("modal-ov").addEventListener("click",function(e){
   if(e.target===this)hideModal();
 });
-document.getElementById("groups").addEventListener("input",function(){dirty=true});
-document.getElementById("groups").addEventListener("change",function(){dirty=true});
+document.getElementById("groups").addEventListener("input",function(e){
+  var id=e.target&&e.target.id||"";
+  if(id.indexOf("p-")===0)modifiedKeys[id.slice(2)]=true;
+  dirty=true;
+});
+document.getElementById("groups").addEventListener("change",function(e){
+  var id=e.target&&e.target.id||"";
+  if(id.indexOf("p-")===0)modifiedKeys[id.slice(2)]=true;
+  dirty=true;
+});
 document.addEventListener("keydown",function(e){
   if((e.ctrlKey||e.metaKey)&&e.key==="s"){e.preventDefault();save()}
 });

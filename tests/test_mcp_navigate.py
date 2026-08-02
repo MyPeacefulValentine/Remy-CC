@@ -67,7 +67,7 @@ class TestNavigate:
         assert "Error" in out
 
     def test_heuristic_match(self, env, monkeypatch):
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("REMY_LLM_API_KEY", raising=False)
         out = env.query_navigate_impl("authentication login", top_k=3)
         assert "auth" in out.lower() or "security" in out.lower()
 
@@ -88,7 +88,7 @@ class TestNavigate:
         assert "0.9" in out or "0.90" in out
 
     def test_invalid_llm_response_falls_back(self, env, monkeypatch):
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("REMY_LLM_API_KEY", raising=False)
         out = env.query_navigate_impl("authentication", top_k=3,
                                       llm_call=lambda _p: "not valid json")
         assert "heuristic" in out or "auth" in out.lower()

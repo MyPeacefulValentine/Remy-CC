@@ -29,7 +29,7 @@ remy-changelog 生成结构化变更日志，记录修改内容、Q&A 决策和�
 
 ## 输出格式
 
-变更日志保存为 `.claude/temp_log/_temp_{task_id}_{timestamp}.md`。语言跟随 `REMY_LANG`。
+变更日志保存为 `.claude/temp_log/_temp_{task_id}_{timestamp}.md`。语言遵循已加载的`language.md`指令。
 
 ## 内容标准
 

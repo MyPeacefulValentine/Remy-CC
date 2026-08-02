@@ -9,6 +9,11 @@ import os
 import sys
 import sqlite3
 
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "remy-src"))
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
+
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 
 
@@ -29,8 +34,7 @@ def _auto_depth(file_count):
 
 
 def open_db(cwd):
-    db_rel = os.environ.get("LOGIC_INDEX_DB_PATH", DB_FILE_DEFAULT)
-    db_path = os.path.join(cwd, db_rel)
+    db_path = str(remy_config.load_config(cwd, strict=True).get("REMY_LOGIC_INDEX_DB_PATH"))
     if not os.path.exists(db_path):
         print(f"Error: Database not found at {db_path}", file=sys.stderr)
         sys.exit(2)

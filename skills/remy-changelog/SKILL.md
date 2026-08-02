@@ -9,7 +9,7 @@ disable-model-invocation: true
 # Change Log Generation Protocol
 
 You must generate a change log file at `.claude/temp_log/_temp_{task_id}_{timestamp}.md`.
-All content MUST be in the language specified by the `REMY_LANG` environment variable (`zh-CN` → Chinese, `en` → English).
+All content MUST follow the loaded `language.md` directive.
 
 ## External Files
 

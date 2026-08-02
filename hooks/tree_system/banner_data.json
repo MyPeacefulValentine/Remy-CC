@@ -60,7 +60,7 @@
         "color": "33"
       }
     },
-    "switch_hint_zh": "切换: remy-cc config <project> → NAV_MCP_MINIMAL_ENABLED",
-    "switch_hint_en": "Switch: remy-cc config <project> → NAV_MCP_MINIMAL_ENABLED"
+    "switch_hint_zh": "切换: remy-cc config <project> → REMY_NAV_MCP_MINIMAL_ENABLED",
+    "switch_hint_en": "Switch: remy-cc config <project> → REMY_NAV_MCP_MINIMAL_ENABLED"
   }
 }

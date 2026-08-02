@@ -7,8 +7,8 @@ Run from the Remy-CC repo root:
     python -m eval.cli --reps 3 --arms A-baseline B-remy --db <scoped.db>
     python -m eval.cli retrieval-baseline --save
 
-The endpoint is read from OPENAI_BASE_URL / OPENAI_API_KEY (same vars remy-index
-uses). B-remy requires a scoped logic_index.db via --db.
+The endpoint is read from REMY_LLM_BASE_URL / REMY_LLM_API_KEY, shared with
+remy-index. B-remy requires a scoped logic_index.db via --db.
 """
 from __future__ import annotations
 
@@ -22,17 +22,23 @@ from pathlib import Path
 from .runner import load_tasks, run_matrix
 from .report import render_terminal, render_markdown
 
+_REMY_SRC = Path(__file__).resolve().parent.parent / "remy-src"
+if str(_REMY_SRC) not in sys.path:
+    sys.path.insert(0, str(_REMY_SRC))
+import remy_config
+
 _EVAL_DIR = Path(__file__).resolve().parent
 _REMY_ROOT = _EVAL_DIR.parent
 _DEFAULT_TASKS = _EVAL_DIR / "tasks" / "python"
 
 
 def _endpoint(model: str) -> dict:
-    base = os.environ.get("OPENAI_BASE_URL")
+    config = remy_config.load_config(strict=True)
+    base = config.get("REMY_LLM_BASE_URL")
     if not base:
-        raise SystemExit("OPENAI_BASE_URL is not set (endpoint for the agent loop).")
+        raise SystemExit("REMY_LLM_BASE_URL is not set (endpoint for the agent loop).")
     return {"base_url": base,
-            "api_key": os.environ.get("OPENAI_API_KEY", ""),
+            "api_key": config.get("REMY_LLM_API_KEY", ""),
             "model": model}
 
 
@@ -41,7 +47,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--arms", nargs="+", default=["A-baseline", "B-remy"],
                     help="arms to run (A-baseline / B-remy)")
     ap.add_argument("--reps", type=int, default=1, help="repetitions per task x arm")
-    ap.add_argument("--model", default=os.environ.get("EVAL_MODEL", "deepseek-v4-flash"))
+    ap.add_argument("--model", default=remy_config.load_config(strict=True).get("REMY_EVAL_MODEL"))
     ap.add_argument("--target", type=Path, default=_REMY_ROOT,
                     help="source-tree root the baseline greps and B-remy queries (default: Remy-CC)")
     ap.add_argument("--db", type=Path, default=None,

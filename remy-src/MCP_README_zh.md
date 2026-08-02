@@ -10,7 +10,7 @@
 | `mcp` 包 | `pip install mcp`（FastMCP stdio 传输） |
 | `logic_index.db` | 由 `/remy-index` 或 `struct_scan.py` 生成 |
 
-若 `mcp` 未安装或 `MCP_SERVER_ENABLED=false`，服务器以 exit code 0 退出。
+若 `mcp` 未安装或 `REMY_MCP_SERVER_ENABLED=false`，服务器以 exit code 0 退出。
 
 ## 架构
 
@@ -66,7 +66,7 @@
 ### 启动流程
 
 1. 导入检查：若 `mcp` 包缺失，输出错误到 stderr 并 `sys.exit(0)`。
-2. 环境检查：若 `MCP_SERVER_ENABLED=false`，静默退出。
+2. 环境检查：若 `REMY_MCP_SERVER_ENABLED=false`，静默退出。
 3. **`_init_freshness()`**：通过 subprocess 探测索引新鲜度（git commit 比对或 hash 抽样）。必须在事件循环启动前执行（见[故障排查](#故障排查)）。
 4. **`mcp.run(transport="stdio")`**：进入 asyncio 事件循环，开始接收 JSON-RPC 请求。
 
@@ -138,7 +138,7 @@ summary for 'bfs_callers'
 | 参数 | 类型 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `symbol` | `str` | （必需） | 符号名或限定名 |
-| `depth` | `int` | `2` | 最大 BFS 深度（受 `MCP_BFS_MAX_DEPTH` 限制） |
+| `depth` | `int` | `2` | 最大 BFS 深度（受 `REMY_MCP_BFS_MAX_DEPTH` 限制） |
 | `include_ambiguous` | `bool` | `False` | 包含通过 `edge_candidates` 表解析的边 |
 | `static_only` | `bool` | `False` | 排除合成边（provenance: inferred/speculative） |
 
@@ -222,7 +222,7 @@ event/callback patterns (3 results)
 | 参数 | 类型 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `text` | `str` | （必需） | 查询文本；操作符和标点按分隔符处理 |
-| `limit` | `int` | `10` | 结果上限，范围为`1..MCP_RESULT_LIMIT` |
+| `limit` | `int` | `10` | 结果上限，范围为`1..REMY_MCP_RESULT_LIMIT` |
 | `file_hint` | `str` | `""` | `path_hint`的兼容别名 |
 | `match` | `str` | `"all"` | `all`、`any`或精确连续`phrase`语义 |
 | `language` | `str` | `""` | `python`、`c_cpp`或`typescript`解析器家族 |
@@ -320,25 +320,25 @@ search results for 'pars_fil' (2 results, matched via fuzzy)
 
 ## 配置
 
-所有参数通过 `settings.local.json`（或全局 `settings.json`）的 `env` 块设置。可通过 `remy-cc config` UI 的"MCP 服务器"分组编辑。
+Python运行时参数保存在`~/.claude/remy-config.json`，项目覆盖保存在
+`<project>/.claude/remy-config.json`。`remy-cc config`界面编辑这些文件。
+同名`REMY_*`进程环境变量只覆盖当前进程树中的文件值。
 
 | 变量 | 默认值 | 说明 |
 | :--- | :--- | :--- |
-| `MCP_SERVER_ENABLED` | `true` | 设为 `false` 禁用 MCP 服务器 |
-| `MCP_BFS_MAX_DEPTH` | `5` | BFS 深度硬上限（callers/callees/impact） |
-| `MCP_IMPACT_MAX_DEPTH_UP` | `3` | `query_impact` 默认上游深度 |
-| `MCP_IMPACT_MAX_DEPTH_DOWN` | `3` | `query_impact` 默认下游深度 |
-| `MCP_RESULT_LIMIT` | `50` | 共享结果上限：BFS每层最多保留的条目数，也是`query_search.limit`允许的最大值；可在`remy-cc config`中配置为10至500 |
-| `MCP_STATIC_ONLY_DEFAULT` | `false` | 未指定 `static_only` 时的默认值 |
-| `FLOW_MAX_DEPTH` | `15` | `query_flow` 默认最大 BFS 深度 |
-| `FLOW_MAX_VISITED` | `2000` | `query_flow` 默认最大访问节点数 |
-| `LOGIC_INDEX_DB_PATH` | `.claude/logic_index.db` | SQLite 数据库相对路径 |
+| `REMY_REMY_MCP_SERVER_ENABLED` | `true` | 下次启动时禁用MCP服务器 |
+| `REMY_REMY_MCP_BFS_MAX_DEPTH` | `5` | callers/callees/impact的BFS深度上限 |
+| `REMY_REMY_MCP_RESULT_LIMIT` | `50` | BFS层与query_search共享结果上限 |
+| `REMY_MCP_STATIC_ONLY_DEFAULT` | `false` | 查询实现收到`static_only=None`时使用的内部默认值；公开MCP工具保持`false` |
+| `REMY_FLOW_MAX_DEPTH` | `15` | query_flow深度硬上限 |
+| `REMY_FLOW_MAX_VISITED` | `2000` | query_flow访问节点硬上限 |
+| `REMY_REMY_LOGIC_INDEX_DB_PATH` | `.claude/logic_index.db` | 相对项目根的数据库路径 |
 
 相关变量（"上下文注入"分组）：
 
 | 变量 | 默认值 | 说明 |
 | :--- | :--- | :--- |
-| `NAV_MCP_MINIMAL_ENABLED` | `true` | MCP 可用时，仅注入集群概览（~1 KB）而非完整符号树（~40 KB） |
+| `REMY_NAV_MCP_MINIMAL_ENABLED` | `true` | MCP 可用时，仅注入集群概览（~1 KB）而非完整符号树（~40 KB） |
 
 ## 索引新鲜度检测
 
@@ -390,7 +390,7 @@ symbols matching 'parse_file' (1 results)
 - 集群概览表（集群名、文件数、入口文件）
 - MCP 工具使用指引（何时使用哪个工具）
 
-通过 `NAV_MCP_MINIMAL_ENABLED`（项目级设置）控制。
+通过 `REMY_NAV_MCP_MINIMAL_ENABLED`（项目级设置）控制。
 
 ## 故障排查
 
@@ -406,7 +406,7 @@ symbols matching 'parse_file' (1 results)
 
 ### "Error: logic_index.db not found"
 
-数据库不存在于预期路径。运行 `/remy-index` 生成，或检查 `LOGIC_INDEX_DB_PATH` 是否指向正确位置。
+数据库不存在于预期路径。运行 `/remy-index` 生成，或检查 `REMY_LOGIC_INDEX_DB_PATH` 是否指向正确位置。
 
 ### 修改代码后结果过时
 
@@ -420,7 +420,7 @@ symbols matching 'parse_file' (1 results)
 1. `python --version` >= 3.10
 2. `pip show mcp` 确认包已安装
 3. `~/.claude.json` 的 `mcpServers` 中包含 `remy-index` 条目
-4. `MCP_SERVER_ENABLED` 未设为 `false`
+4. `REMY_MCP_SERVER_ENABLED` 未设为 `false`
 
 诊断：手动运行并检查 stderr：
 ```bash

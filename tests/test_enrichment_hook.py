@@ -30,10 +30,10 @@ def hook_env(tmp_path):
     db.commit()
     db.close()
 
-    os.environ["LOGIC_INDEX_DB_PATH"] = ".claude/logic_index.db"
+    os.environ["REMY_LOGIC_INDEX_DB_PATH"] = ".claude/logic_index.db"
     yield tmp_path
-    if "LOGIC_INDEX_DB_PATH" in os.environ:
-        del os.environ["LOGIC_INDEX_DB_PATH"]
+    if "REMY_LOGIC_INDEX_DB_PATH" in os.environ:
+        del os.environ["REMY_LOGIC_INDEX_DB_PATH"]
 
 
 class TestOpenDb:
@@ -44,13 +44,13 @@ class TestOpenDb:
         db.close()
 
     def test_returns_none_when_missing(self, tmp_path):
-        os.environ["LOGIC_INDEX_DB_PATH"] = ".claude/logic_index.db"
+        os.environ["REMY_LOGIC_INDEX_DB_PATH"] = ".claude/logic_index.db"
         try:
             from logic_enrichment_hook import _open_db
             result = _open_db(str(tmp_path))
             assert result is None
         finally:
-            del os.environ["LOGIC_INDEX_DB_PATH"]
+            del os.environ["REMY_LOGIC_INDEX_DB_PATH"]
 
 
 class TestBuildEnrichment:

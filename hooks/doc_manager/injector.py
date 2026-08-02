@@ -27,6 +27,13 @@ for _skill_dir in (_SKILL_DIR, _REPO_SKILL_DIR):
         sys.path.insert(0, _skill_dir)
 from retrieval_projection import select_current_summary
 
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "remy-src"))
+if not os.path.isdir(_REMY_SRC):
+    _REMY_SRC = os.path.join(os.path.expanduser("~"), ".claude", "remy-src")
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
+
 CLAUDE_MD = "CLAUDE.md"
 SETTINGS_FILE = os.path.join(".claude", "settings.local.json")
 TIMELINE_FILE = os.path.join(".claude", "history", "timeline.md")
@@ -37,16 +44,9 @@ DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 
 
 def _load_nav_tier_config():
-    nav_full_max = 200
-    nav_cluster_max = 2000
-    try:
-        nav_full_max = int(os.environ.get("NAV_TIER_FULL_MAX", 200))
-    except (ValueError, TypeError):
-        pass
-    try:
-        nav_cluster_max = int(os.environ.get("NAV_TIER_CLUSTER_MAX", 2000))
-    except (ValueError, TypeError):
-        pass
+    config = remy_config.load_config(strict=False)
+    nav_full_max = config.get_int("REMY_NAV_TIER_FULL_MAX")
+    nav_cluster_max = config.get_int("REMY_NAV_TIER_CLUSTER_MAX")
     if nav_full_max < 0 or nav_cluster_max < 0:
         return 200, 2000
     if nav_full_max > nav_cluster_max:
@@ -64,8 +64,7 @@ def _get_injection_density(file_count):
 
 
 def _open_logic_db(cwd):
-    db_rel = os.environ.get("LOGIC_INDEX_DB_PATH", DB_FILE_DEFAULT)
-    db_path = os.path.join(cwd, db_rel)
+    db_path = str(remy_config.load_config(cwd, strict=False).get("REMY_LOGIC_INDEX_DB_PATH"))
     if not os.path.exists(db_path):
         return None
     try:
@@ -97,36 +96,21 @@ REGISTRY = {
 }
 
 TAG_POLICY_MAP = {
-    "project_structure": "PROJECT_TREE_AUTO_INJECT",
-    "history_timeline": "TIMELINE_AUTO_INJECT",
-    "logic_tree": "LOGIC_INDEX_AUTO_INJECT",
+    "project_structure": "REMY_PROJECT_TREE_AUTO_INJECT",
+    "history_timeline": "REMY_TIMELINE_AUTO_INJECT",
+    "logic_tree": "REMY_LOGIC_INDEX_AUTO_INJECT",
 }
 
 
 def load_policy(cwd, env_var_name):
-    """Loads injection policy for a given env var from environment or settings.local.json."""
-    env_policy = os.environ.get(env_var_name)
-    if env_policy:
-        return env_policy
-
-    settings_path = os.path.join(cwd, SETTINGS_FILE)
-    if os.path.exists(settings_path):
-        try:
-            with open(settings_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                value = data.get("env", {}).get(env_var_name)
-                if value is not None:
-                    return value
-        except Exception:
-            pass
-
-    return "ALWAYS"
+    """Load an injection policy from the effective Remy configuration."""
+    return str(remy_config.load_config(cwd, strict=False).get(env_var_name, "ALWAYS"))
 
 
 def _load_timeline_filter_config():
-    """Returns (mode, value) from TIMELINE_INJECT_MODE and TIMELINE_INJECT_VALUE env vars."""
-    mode = os.environ.get("TIMELINE_INJECT_MODE", "all").lower().strip()
-    value = os.environ.get("TIMELINE_INJECT_VALUE", "").strip()
+    config = remy_config.load_config(strict=False)
+    mode = str(config.get("REMY_TIMELINE_INJECT_MODE", "all")).lower().strip()
+    value = str(config.get("REMY_TIMELINE_INJECT_VALUE", "")).strip()
     return mode, value
 
 
@@ -167,7 +151,7 @@ def generate_timeline_view(cwd):
     falls back to mode='all' and prints a warning to stderr.
     """
     mode, value = _load_timeline_filter_config()
-    lang = os.environ.get("REMY_LANG", "en")
+    lang = str(remy_config.load_config(cwd, strict=False).get("REMY_LANG", "en"))
 
     timeline_path = os.path.join(cwd, TIMELINE_FILE)
     view_path = os.path.join(cwd, TIMELINE_VIEW_FILE)
@@ -287,9 +271,9 @@ def generate_logic_tree_view(cwd):
             db.close()
             return
 
-        lang = os.environ.get("REMY_LANG", "en")
+        lang = str(remy_config.load_config(cwd, strict=False).get("REMY_LANG", "en"))
         mcp_minimal = (
-            os.environ.get("NAV_MCP_MINIMAL_ENABLED", "true").lower() == "true"
+            remy_config.load_config(cwd, strict=False).get_bool("REMY_NAV_MCP_MINIMAL_ENABLED")
             and _detect_mcp_available()
         )
 

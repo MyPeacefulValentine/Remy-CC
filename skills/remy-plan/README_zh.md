@@ -41,7 +41,7 @@ AI 使用强制 5 类清单（接口契约、资源依赖、行为边界、执�
 
 ### Phase 4: 五表审计
 
-Phase 3 全部通过后，AI 按 `REMY_LANG` 加载语言匹配的模板（`audit_template_zh.md` 或 `audit_template_en.md`），生成五张表：
+Phase 3 全部通过后，AI 按 已加载的`language.md`指令 加载语言匹配的模板（`audit_template_zh.md` 或 `audit_template_en.md`），生成五张表：
 
 | 表格 | 用途 |
 | :--- | :--- |
@@ -94,6 +94,6 @@ remy-plan 是三 Skill 流水线的第一阶段：
 | 文件 | 用途 |
 | :--- | :--- |
 | `SKILL.md` | 完整协议定义（由 Claude Code 加载） |
-| `audit_template_zh.md` / `audit_template_en.md` | Markdown 表格模板，按 `REMY_LANG` 选择加载（审计过程中动态加载） |
+| `audit_template_zh.md` / `audit_template_en.md` | Markdown 表格模板，按 已加载的`language.md`指令 选择加载（审计过程中动态加载） |
 | `output_schema.json` | 验证深度的 JSON Schema |
 | `../remy-index/impact.py` | BFS 影响半径脚本（Phase 1.2 步骤 (1) 调用） |

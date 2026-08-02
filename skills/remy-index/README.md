@@ -171,11 +171,11 @@ On first run (no existing `.claude/logic_index.db`), a full codebase scan is per
 
 ### Phase 3: Hierarchical Bootstrap Confirmation (Conditional)
 
-If `run.py` stdout contains `BOOTSTRAP_PENDING_CONFIRMATION`, the skill asks whether to generate file/cluster summaries via `--bootstrap-only --mode auto`. Triggered only when `SUMMARY_BOOTSTRAP_MODE=ask` (explicit or downgraded from `auto`). Absent line → skipped.
+If `run.py` stdout contains `BOOTSTRAP_PENDING_CONFIRMATION`, the skill asks whether to generate file/cluster summaries via `--bootstrap-only --mode auto`. Triggered only when `REMY_SUMMARY_BOOTSTRAP_MODE=ask` (explicit or downgraded from `auto`). Absent line → skipped.
 
 ### Phase 4: Injection Strategy
 
-Based on the `LOGIC_INDEX_AUTO_INJECT` policy:
+Based on the `REMY_LOGIC_INDEX_AUTO_INJECT` policy:
 
 | Policy | Behavior |
 | :--- | :--- |
@@ -188,7 +188,7 @@ Based on the `LOGIC_INDEX_AUTO_INJECT` policy:
 For large projects where `logic_index.db` exceeds the context window budget, a scope selector filters which files are injected. The document injector generates `logic_tree_view.md` — a filtered subset of `logic_index.db` — based on user selection stored in `.claude/logic_inject_selection.json`.
 
 Configuration methods:
-- **SessionStart UI**: When `LOGIC_INDEX_INTERACTIVE` is `true`, a browser-based selector UI launches on session start (startup/clear/compact events). Users check/uncheck files and layers to control injection scope.
+- **SessionStart UI**: When `REMY_LOGIC_INDEX_INTERACTIVE` is `true`, a browser-based selector UI launches on session start (startup/clear/compact events). Users check/uncheck files and layers to control injection scope.
 - **CLI**: Run `remy-cc logic-scope [--path <dir>]` to open the selector at any time.
 - **Profiles**: The selector supports saving/loading named profiles (up to 20) for quick switching between scope configurations.
 
@@ -247,28 +247,31 @@ pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
 
 ## Configuration
 
-### Environment Variables (`settings.json`)
+### Remy configuration
 
-Configure in `settings.local.json` (project-level) or `~/.claude/settings.json` (global):
+Configure user defaults in `~/.claude/remy-config.json` and project overrides in
+`<project>/.claude/remy-config.json`. `remy-cc config` writes the user file;
+`remy-cc config --path <project>` writes the project file. Process environment
+variables with the same `REMY_*` names override both files for that process tree.
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `OPENAI_API_KEY` | — | API key |
-| `OPENAI_MODEL` | `deepseek-v4-flash` | Model name |
-| `OPENAI_BASE_URL` | `https://api.deepseek.com/v1/chat/completions` | API endpoint |
-| `OPENAI_MAX_WORKERS` | `3` | Concurrent threads |
-| `OPENAI_RETRY_LIMIT` | `3` | Retry count |
-| `OPENAI_TIMEOUT` | `300` | Timeout in seconds |
-| `OPENAI_MAX_TOKENS` | `8192` | Response token limit |
-| `LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
-| `LOGIC_INDEX_FILTER_SMALL` | `false` | Skip LLM summarization for small functions without docstrings |
-| `LOGIC_INDEX_INTERACTIVE` | `true` | Launch scope selector UI on SessionStart (`true` / `false`) |
-| `LOGIC_SCOPE_TIMEOUT` | `300` | Scope selector UI auto-close timeout in seconds (0 = no timeout) |
+| `REMY_LLM_API_KEY` | — | API key; user configuration or process environment only |
+| `REMY_LLM_MODEL` | `deepseek-v4-flash` | Model name |
+| `REMY_LLM_BASE_URL` | `https://api.deepseek.com/v1/chat/completions` | API endpoint |
+| `REMY_LLM_MAX_WORKERS` | `5` | Concurrent threads |
+| `REMY_LLM_RETRY_LIMIT` | `3` | Retry count |
+| `REMY_LLM_TIMEOUT` | `300` | Timeout in seconds |
+| `REMY_LLM_MAX_TOKENS` | `32768` | Response token limit |
+| `REMY_REMY_LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
+| `REMY_LOGIC_INDEX_FILTER_SMALL` | `false` | Skip LLM summarization for small functions without docstrings |
+| `REMY_REMY_LOGIC_INDEX_INTERACTIVE` | `true` | Launch scope selector UI on SessionStart |
+| `REMY_LOGIC_SCOPE_TIMEOUT` | `300` | Scope selector timeout in seconds |
 | `REMY_LANG` | `en` | Summary output language (`en` / `zh-CN`) |
-| `IMPACT_DEPTH_UP` | `2` | Default upstream (callers) BFS depth for `impact.py` |
-| `IMPACT_DEPTH_DOWN` | `2` | Default downstream (callees) BFS depth for `impact.py` |
-| `PRECISION_READ_THRESHOLD` | `500` | Line count threshold; files above this use offset-based `Read()` with `[L{start}-L{end}]` ranges |
-| `STRUCT_SCAN_TIMEOUT` | `60` | Timeout in seconds for full structural scan on SessionStart/PreCompact |
+| `REMY_STRUCT_SCAN_TIMEOUT` | `60` | Lifecycle structural scan timeout in seconds |
+
+`PRECISION_READ_THRESHOLD` remains a Claude skill-protocol setting in
+`settings.json`; it is not a Python runtime Remy setting.
 
 ### Configuration File (`.claude/logic_index_config`)
 
@@ -313,10 +316,10 @@ Two types of directives:
 ## Troubleshooting
 
 ### Q: `Fatal API Error 429: Rate limit exceeded`?
-Set `OPENAI_MAX_WORKERS` to `1` (serial mode), or request a higher quota.
+Set `REMY_LLM_MAX_WORKERS` to `1` (serial mode), or request a higher quota.
 
 ### Q: `Fatal API Error 403: Forbidden`?
-Check that `OPENAI_API_KEY` is correct and `OPENAI_MODEL` is available on the service.
+Check that `REMY_LLM_API_KEY` is correct and `REMY_LLM_MODEL` is available on the service.
 
 ### Q: Will progress be lost if interrupted?
 No. The `try...finally` protection mechanism ensures generated summaries are saved to `.claude/logic_index.db`.

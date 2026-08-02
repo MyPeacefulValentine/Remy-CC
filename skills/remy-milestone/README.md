@@ -40,7 +40,7 @@ The AI populates the report following the schema in `report_schema.json`. Requir
 | 6. Invariants & PBT Spec | Property-Based Testing invariants |
 | 7. Technical Debt & Future Plan | Remaining tasks and known risks |
 
-Language follows the `REMY_LANG` environment variable (`en` or `zh-CN`).
+Language follows the loaded `language.md` directive.
 
 ### Phase 4: Summary Sync
 

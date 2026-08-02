@@ -8,13 +8,16 @@ Covers three pattern families stored in the patterns table:
 """
 
 import os
+import sys
+
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "remy-src"))
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
 
 
 def synthesize_event_emitter_edges(db):
-    try:
-        fanout_cap = int(os.environ.get("SYNTH_EVENT_FANOUT_CAP", 20))
-    except (ValueError, TypeError):
-        fanout_cap = 20
+    fanout_cap = remy_config.load_config(strict=True).get_int("REMY_SYNTH_EVENT_FANOUT_CAP")
 
     inserted = 0
     inserted += _synthesize_signal_pattern(

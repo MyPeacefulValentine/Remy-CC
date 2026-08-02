@@ -92,8 +92,9 @@ silently read as a retrieval failure. Aggregation is median-over-reps per
 ## Usage
 
 Run from the Remy-CC repo root (or set `PYTHONPATH` to it). The endpoint is read
-from `OPENAI_BASE_URL` / `OPENAI_API_KEY` — the same variables remy-index uses.
-`B-remy` requires a scoped `logic_index.db` via `--db`.
+from `REMY_LLM_BASE_URL` / `REMY_LLM_API_KEY`, shared with remy-index.
+`REMY_EVAL_MODEL` selects the default evaluation model. `B-remy` requires a
+scoped `logic_index.db` via `--db`.
 
 ```bash
 # smoke test: single task, single rep

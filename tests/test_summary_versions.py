@@ -155,17 +155,17 @@ class TestLengthVerdict:
 class TestCharLimit:
     def test_en_default(self, monkeypatch):
         monkeypatch.setenv("REMY_LANG", "en")
-        monkeypatch.delenv("SUMMARY_CHAR_LIMIT_SYMBOL", raising=False)
+        monkeypatch.delenv("REMY_SUMMARY_CHAR_LIMIT_SYMBOL", raising=False)
         assert summarizer.get_char_limit("symbol") == 100
 
     def test_zh_factor(self, monkeypatch):
         monkeypatch.setenv("REMY_LANG", "zh-CN")
-        monkeypatch.setenv("SUMMARY_ZH_LENGTH_FACTOR", "0.5")
+        monkeypatch.setenv("REMY_SUMMARY_ZH_LENGTH_FACTOR", "0.5")
         assert summarizer.get_char_limit("symbol") == 50
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv("REMY_LANG", "en")
-        monkeypatch.setenv("SUMMARY_CHAR_LIMIT_CLUSTER", "300")
+        monkeypatch.setenv("REMY_SUMMARY_CHAR_LIMIT_CLUSTER", "300")
         assert summarizer.get_char_limit("cluster") == 300
 
 
@@ -497,11 +497,10 @@ class TestClusterTagsI18n:
         assert "[定位]" not in text
         assert "[依赖]" not in text
 
-    def test_unknown_lang_falls_back_to_english(self, monkeypatch):
+    def test_unknown_lang_is_rejected(self, monkeypatch):
         monkeypatch.setenv("REMY_LANG", "fr")
-        text = summarizer._render_template("summarize_cluster.md", self._PAYLOAD, 200)
-        assert "[Role]" in text
-        assert "[Inbound]" in text
+        with pytest.raises(ValueError, match="REMY_LANG"):
+            summarizer._render_template("summarize_cluster.md", self._PAYLOAD, 200)
 
 
 class TestShortFieldGuard:

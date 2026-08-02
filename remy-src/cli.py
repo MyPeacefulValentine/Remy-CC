@@ -9,6 +9,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import remy_config
+
 MANIFEST_FILE = ".installer_manifest.json"
 BACKUP_SUFFIX = ".bak"
 DEPLOY_DIRS = ["hooks", "skills", "output-styles", "remy-src", "remy-assets"]
@@ -127,6 +130,15 @@ def cmd_verify(_args):
         except json.JSONDecodeError as e:
             errors.append("settings.json format error: " + str(e))
 
+    config_path = claude_home / remy_config.CONFIG_FILE_NAME
+    if not config_path.exists():
+        errors.append("Remy configuration not found")
+    else:
+        try:
+            remy_config.validate_document(config_path, project=False)
+        except (OSError, remy_config.ConfigError) as exc:
+            errors.append("Remy configuration invalid: " + type(exc).__name__)
+
     manifest_path = claude_home / ".installer_manifest.json"
     if not manifest_path.exists():
         errors.append("Install manifest not found")
@@ -186,8 +198,8 @@ def _load_summary_modules():
 
 def _open_logic_db(cwd):
     import sqlite3
-    db_rel = os.environ.get("LOGIC_INDEX_DB_PATH", os.path.join(".claude", "logic_index.db"))
-    db_path = Path(cwd) / db_rel
+    snapshot = remy_config.load_config(cwd, strict=True)
+    db_path = Path(str(snapshot.get("REMY_LOGIC_INDEX_DB_PATH")))
     if not db_path.exists():
         print("Error: logic_index.db not found at {}. Run /remy-index first.".format(db_path), file=sys.stderr)
         sys.exit(1)
@@ -428,14 +440,7 @@ _UNINSTALL_MSG = {
 
 
 def _get_lang():
-    settings_path = get_claude_home() / "settings.json"
-    if settings_path.exists():
-        try:
-            with open(settings_path, "r", encoding="utf-8") as f:
-                return json.load(f).get("env", {}).get("REMY_LANG", "en")
-        except (json.JSONDecodeError, OSError):
-            pass
-    return "en"
+    return str(remy_config.load_config(strict=False).get("REMY_LANG", "en"))
 
 
 def _um(key, **kwargs):
@@ -619,7 +624,7 @@ def main():
     p_rebuild.add_argument("--path", default=None, help="Project root directory (default: current directory)")
     p_rebuild.add_argument("--node-kind", choices=["file", "cluster"], default=None, help="Restrict to a single node kind")
     p_rebuild.add_argument("--node-ref", default=None, help="Restrict to a single node_ref (file path or cluster name)")
-    p_rebuild.add_argument("--mode", choices=["auto", "ask", "never"], default=None, help="Override SUMMARY_BOOTSTRAP_MODE")
+    p_rebuild.add_argument("--mode", choices=["auto", "ask", "never"], default=None, help="Override REMY_SUMMARY_BOOTSTRAP_MODE")
 
     p_vacuum = sub.add_parser("summary-vacuum", help="Delete judge_cache entries older than --older-than days")
     p_vacuum.add_argument("--path", default=None, help="Project root directory (default: current directory)")

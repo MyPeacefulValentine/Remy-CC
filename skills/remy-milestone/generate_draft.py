@@ -13,6 +13,11 @@ import os
 import subprocess
 from datetime import datetime
 
+_REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "remy-src"))
+if _REMY_SRC not in sys.path:
+    sys.path.insert(0, _REMY_SRC)
+import remy_config
+
 # Relative paths from project root
 HISTORY_DIR = ".claude/history"
 REPORTS_DIR = os.path.join(HISTORY_DIR, "reports")
@@ -29,7 +34,7 @@ def ensure_structure():
     os.makedirs(REPORTS_DIR, exist_ok=True)
     if not os.path.exists(TIMELINE_FILE):
         os.makedirs(os.path.dirname(TIMELINE_FILE), exist_ok=True)
-        lang = os.environ.get("REMY_LANG", "en")
+        lang = str(remy_config.load_config(strict=False).get("REMY_LANG", "en"))
         preamble = TIMELINE_PREAMBLE.get(lang, TIMELINE_PREAMBLE["en"])
         with open(TIMELINE_FILE, "w", encoding="utf-8") as f:
             f.write(f"# Project Timeline\n\n{preamble}\n\n---\n")
@@ -70,7 +75,7 @@ def main():
     report_path = os.path.join(REPORTS_DIR, report_filename)
 
     # 1. Generate Report Template
-    lang = os.environ.get("REMY_LANG", "en")
+    lang = str(remy_config.load_config(cwd, strict=False).get("REMY_LANG", "en"))
     suffix = "zh" if lang == "zh-CN" else "en"
     template_path = os.path.join(os.path.dirname(__file__), f"report_template_{suffix}.md")
     if not os.path.exists(template_path):
