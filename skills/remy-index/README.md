@@ -259,10 +259,10 @@ variables with the same `REMY_*` names override both files for that process tree
 | `REMY_LLM_API_KEY` | — | API key; user configuration or process environment only |
 | `REMY_LLM_MODEL` | `deepseek-v4-flash` | Model name |
 | `REMY_LLM_BASE_URL` | `https://api.deepseek.com/v1/chat/completions` | API endpoint |
-| `REMY_LLM_MAX_WORKERS` | `5` | Concurrent threads |
-| `REMY_LLM_RETRY_LIMIT` | `3` | Retry count |
-| `REMY_LLM_TIMEOUT` | `300` | Timeout in seconds |
-| `REMY_LLM_MAX_TOKENS` | `32768` | Response token limit |
+| `REMY_LLM_MAX_WORKERS` | `8` | Concurrent threads (range: `1..64`) |
+| `REMY_LLM_RETRY_LIMIT` | `8` | Retry count (range: `0..32`; retry delay capped at 60 seconds) |
+| `REMY_LLM_TIMEOUT` | `300` | Timeout in seconds (range: `30..3600`) |
+| `REMY_LLM_MAX_TOKENS` | `32768` | Response token limit (range: `1024..1048576`) |
 | `REMY_REMY_LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
 | `REMY_LOGIC_INDEX_FILTER_SMALL` | `false` | Skip LLM summarization for small functions without docstrings |
 | `REMY_REMY_LOGIC_INDEX_INTERACTIVE` | `true` | Launch scope selector UI on SessionStart |

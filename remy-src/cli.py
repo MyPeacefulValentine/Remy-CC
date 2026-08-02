@@ -146,12 +146,26 @@ def cmd_verify(_args):
         try:
             with open(manifest_path, "r", encoding="utf-8") as f:
                 manifest = json.load(f)
-            missing = sum(
-                1 for e in manifest.get("files", [])
-                if not _resolve_record_path(e, claude_home).exists()
-            )
+            missing = 0
+            mismatched = 0
+            for entry in manifest.get("files", []):
+                target = _resolve_record_path(entry, claude_home)
+                if not target.exists():
+                    missing += 1
+                    continue
+                expected_hash = entry.get("sha256")
+                if expected_hash:
+                    try:
+                        actual_hash = hashlib.sha256(target.read_bytes()).hexdigest()
+                    except OSError:
+                        mismatched += 1
+                    else:
+                        if actual_hash != expected_hash:
+                            mismatched += 1
             if missing:
                 errors.append("{} files missing from manifest".format(missing))
+            if mismatched:
+                errors.append("{} files differ from manifest".format(mismatched))
         except (json.JSONDecodeError, OSError) as e:
             errors.append("Manifest read error: " + str(e))
 

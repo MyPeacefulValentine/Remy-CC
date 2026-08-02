@@ -58,6 +58,8 @@ MAX_CTX_CHARS = 200000
 DEFAULT_AUTO_INJECT = "ALWAYS"
 DEFAULT_FILTER_SMALL = False
 
+DEFAULT_RETRY_BACKOFF_CAP_SECONDS = 60.0
+
 
 class FatalError(Exception):
     """Triggers circuit breaker and halts execution."""
@@ -231,14 +233,14 @@ class LogicIndexer:
 
                 if e.code in (500, 502, 503, 504) and retries < self.retry_limit:
                     retries += 1
-                    wait = (2 ** retries) + (random.random() * 0.3)
+                    wait = min(DEFAULT_RETRY_BACKOFF_CAP_SECONDS, 2 ** retries) + (random.random() * 0.3)
                     time.sleep(wait)
                     continue
                 return f"Error: HTTP {e.code} - {e.reason}"
             except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
                 if retries < self.retry_limit:
                     retries += 1
-                    wait = (2 ** retries) + (random.random() * 0.3)
+                    wait = min(DEFAULT_RETRY_BACKOFF_CAP_SECONDS, 2 ** retries) + (random.random() * 0.3)
                     time.sleep(wait)
                     continue
                 return f"Error: Network error ({str(e)})"

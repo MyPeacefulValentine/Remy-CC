@@ -87,6 +87,21 @@ def test_verify_schema_v2_missing_detected(claude_home, capsys):
     assert "2 files missing from manifest" in out
 
 
+def test_verify_schema_v2_hash_mismatch_detected(claude_home, capsys):
+    file_path = claude_home / "skills" / "remy-plan" / "SKILL.md"
+    original_hash = _seed_file(file_path, "original")
+    _write_manifest(claude_home, [
+        {"path": "skills/remy-plan/SKILL.md", "sha256": original_hash},
+    ])
+    file_path.write_text("changed", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_verify(types.SimpleNamespace())
+
+    assert exc.value.code == 1
+    assert "1 files differ from manifest" in capsys.readouterr().out
+
+
 def test_verify_cwd_independent(claude_home, capsys, tmp_path, monkeypatch):
     h = _seed_file(claude_home / "language.md", "lang")
     _write_manifest(claude_home, [{"path": "language.md", "sha256": h}])

@@ -170,6 +170,38 @@ def test_copy_tree_preserves_third_party_in_dst(tmp_path, claude_home):
     assert (dst / "vendor-tool" / "SKILL.md").exists()
 
 
+def test_refresh_record_hashes_after_post_copy_patch(claude_home):
+    skill = claude_home / "skills" / "remy-plan" / "SKILL.md"
+    original_hash = _seed_file(skill, "description: English\n")
+    records = [{"path": "skills/remy-plan/SKILL.md", "sha256": original_hash}]
+    skill.write_text("description: 中文\n", encoding="utf-8")
+
+    install.refresh_record_hashes(records, claude_home)
+
+    assert records[0]["sha256"] == install.compute_sha256(skill)
+    assert records[0]["sha256"] != original_hash
+    install.cleanup_from_manifest({"files": records}, claude_home)
+    assert not skill.exists()
+    assert not skill.with_suffix(".md.bak").exists()
+
+
+def test_refresh_record_hashes_ignores_untracked_and_missing(claude_home):
+    tracked = claude_home / "skills" / "remy-plan" / "SKILL.md"
+    _seed_file(tracked, "tracked")
+    third_party = claude_home / "skills" / "vendor" / "SKILL.md"
+    _seed_file(third_party, "external")
+    records = [
+        {"path": "skills/remy-plan/SKILL.md", "sha256": "stale"},
+        {"path": "skills/missing/SKILL.md", "sha256": "missing"},
+    ]
+
+    install.refresh_record_hashes(records, claude_home)
+
+    assert records[0]["sha256"] == install.compute_sha256(tracked)
+    assert records[1]["sha256"] == "missing"
+    assert third_party.read_text(encoding="utf-8") == "external"
+
+
 def test_resolve_path_rejects_traversal(claude_home):
     rel_rec = {"path": "skills/../skills/remy-plan/SKILL.md"}
     f = claude_home / "skills" / "remy-plan" / "SKILL.md"

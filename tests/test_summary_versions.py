@@ -17,6 +17,18 @@ from struct_scan import (
 import summarizer
 
 
+@pytest.fixture(autouse=True)
+def isolated_remy_user_config(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(summarizer.remy_config.Path, "home", classmethod(lambda _cls: home))
+    with summarizer.remy_config._CACHE_LOCK:
+        summarizer.remy_config._FILE_CACHE.clear()
+    yield
+    with summarizer.remy_config._CACHE_LOCK:
+        summarizer.remy_config._FILE_CACHE.clear()
+
+
 @pytest.fixture
 def db(tmp_path):
     db_path = tmp_path / "logic_index.db"

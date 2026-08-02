@@ -34,10 +34,18 @@ def test_registry_owns_llm_defaults(config_home):
     snapshot = remy_config.load_config(strict=True)
     assert snapshot.get("REMY_LLM_MODEL") == "deepseek-v4-flash"
     assert snapshot.get("REMY_LLM_BASE_URL") == "https://api.deepseek.com/v1/chat/completions"
-    assert snapshot.get_int("REMY_LLM_MAX_WORKERS") == 5
+    assert snapshot.get_int("REMY_LLM_MAX_WORKERS") == 8
     assert snapshot.get_int("REMY_LLM_MAX_TOKENS") == 32768
-    assert snapshot.get_int("REMY_LLM_RETRY_LIMIT") == 3
+    assert snapshot.get_int("REMY_LLM_RETRY_LIMIT") == 8
     assert snapshot.get_int("REMY_LLM_TIMEOUT") == 300
+    assert remy_config.FIELD_SPECS["REMY_LLM_MAX_WORKERS"].minimum == 1
+    assert remy_config.FIELD_SPECS["REMY_LLM_MAX_WORKERS"].maximum == 64
+    assert remy_config.FIELD_SPECS["REMY_LLM_RETRY_LIMIT"].minimum == 0
+    assert remy_config.FIELD_SPECS["REMY_LLM_RETRY_LIMIT"].maximum == 32
+    assert remy_config.FIELD_SPECS["REMY_LLM_TIMEOUT"].minimum == 30
+    assert remy_config.FIELD_SPECS["REMY_LLM_TIMEOUT"].maximum == 3600
+    assert remy_config.FIELD_SPECS["REMY_LLM_MAX_TOKENS"].minimum == 1024
+    assert remy_config.FIELD_SPECS["REMY_LLM_MAX_TOKENS"].maximum == 1048576
 
 
 def test_precedence_environment_project_user_default(config_home, tmp_path, monkeypatch):

@@ -102,9 +102,9 @@ variables override files for the current process tree.
 
 - `REMY_LLM_API_KEY`: API key for an OpenAI-compatible service.
 - `REMY_LLM_MODEL`: model name (default: `deepseek-v4-flash`).
-- `REMY_LLM_MAX_WORKERS`: concurrency limit (default: `5`).
+- `REMY_LLM_MAX_WORKERS`: concurrency limit (default: `8`, range: `1..64`).
 - `REMY_LLM_BASE_URL`: endpoint (default: `https://api.deepseek.com/v1/chat/completions`).
-- `REMY_LLM_MAX_TOKENS`: response token limit (default: `32768`).
+- `REMY_LLM_MAX_TOKENS`: response token limit (default: `32768`, range: `1024..1048576`).
 
 ## Feature Flags
 

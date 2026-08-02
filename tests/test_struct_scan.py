@@ -6,6 +6,7 @@ import sqlite3
 import sys
 import tempfile
 import shutil
+import urllib.error
 
 import pytest
 
@@ -1648,6 +1649,37 @@ class TestDetectClustersCounters:
             "SELECT COUNT(*) FROM node_change_counters WHERE node_kind != 'cluster'"
         ).fetchone()
         assert rows[0] == 0
+
+
+class TestRunLlmRetryBackoff:
+    def test_retry_wait_is_capped_at_sixty_seconds(self, monkeypatch):
+        import run
+
+        instance = run.LogicIndexer.__new__(run.LogicIndexer)
+        instance.circuit_open = False
+        instance.base_url = "https://example.invalid"
+        instance.api_key = "fake-key"
+        instance.model = "fake-model"
+        instance.lang = "English"
+        instance.max_tokens = 32768
+        instance.retry_limit = 8
+        instance.timeout = 300
+        instance.stats = {"api_calls": 0}
+        instance.ssl_context = None
+        waits = []
+
+        def fail(*_args, **_kwargs):
+            raise urllib.error.URLError("offline")
+
+        monkeypatch.setattr(run.urllib.request, "urlopen", fail)
+        monkeypatch.setattr(run.random, "random", lambda: 0.0)
+        monkeypatch.setattr(run.time, "sleep", waits.append)
+
+        result = instance._call_llm("prompt")
+
+        assert result.startswith("Error: Network error")
+        assert waits == [2, 4, 8, 16, 32, 60.0, 60.0, 60.0]
+        assert max(waits) == run.DEFAULT_RETRY_BACKOFF_CAP_SECONDS
 
 
 class TestRunPyV8Compat:

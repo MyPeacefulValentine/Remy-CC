@@ -166,6 +166,7 @@ UI = {
         "verify_hook_missing": "Hook file not found: {path}",
         "verify_manifest_missing": "{name} not found",
         "verify_files_missing": "{count} files missing from manifest",
+        "verify_files_mismatch": "{count} files differ from manifest",
         "verify_header": "Remy v{ver} - Installation Verification\n",
         "verify_python": "  Python: {ver}",
         "verify_target": "  Target directory: {path}",
@@ -253,6 +254,7 @@ UI = {
         "verify_hook_missing": "hook 文件不存在: {path}",
         "verify_manifest_missing": "{name} 不存在",
         "verify_files_missing": "manifest 中 {count} 个文件缺失",
+        "verify_files_mismatch": "manifest 中 {count} 个文件内容不一致",
         "verify_header": "Remy v{ver} - 安装验证\n",
         "verify_python": "  Python: {ver}",
         "verify_target": "  目标目录: {path}",
@@ -337,6 +339,14 @@ def copy_file(src: Path, dst: Path, claude_home: Path) -> dict:
         "path": dst.relative_to(claude_home).as_posix(),
         "sha256": compute_sha256(dst),
     }
+
+
+def refresh_record_hashes(records: list, claude_home: Path) -> None:
+    """Refresh manifest hashes after post-copy transformations."""
+    for record in records:
+        target = _resolve_record_path(record, claude_home)
+        if target.is_file():
+            record["sha256"] = compute_sha256(target)
 
 
 def backup_file(path: Path) -> Optional[Path]:
@@ -1000,6 +1010,7 @@ def do_install() -> None:
         print(_t("settings_merged"))
         print()
         configure_api(remy_config_path)
+        refresh_record_hashes(records, claude_home)
     else:
         print(_t("settings_tpl_missing", name=SETTINGS_TEMPLATE))
         settings_backup = None
@@ -1210,11 +1221,25 @@ def do_verify() -> None:
         with open(manifest_path, "r", encoding="utf-8") as f:
             manifest = json.load(f)
         missing = 0
+        mismatched = 0
         for entry in manifest.get("files", []):
-            if not _resolve_record_path(entry, claude_home).exists():
+            target = _resolve_record_path(entry, claude_home)
+            if not target.exists():
                 missing += 1
+                continue
+            expected_hash = entry.get("sha256")
+            if expected_hash:
+                try:
+                    actual_hash = compute_sha256(target)
+                except OSError:
+                    mismatched += 1
+                else:
+                    if actual_hash != expected_hash:
+                        mismatched += 1
         if missing:
             errors.append(_t("verify_files_missing", count=missing))
+        if mismatched:
+            errors.append(_t("verify_files_mismatch", count=mismatched))
 
     ts_available = False
     try:

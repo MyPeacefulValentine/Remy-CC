@@ -264,10 +264,10 @@ pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
 | `REMY_LLM_API_KEY` | — | API密钥；只允许用户配置或进程环境 |
 | `REMY_LLM_MODEL` | `deepseek-v4-flash` | 模型名称 |
 | `REMY_LLM_BASE_URL` | `https://api.deepseek.com/v1/chat/completions` | API端点 |
-| `REMY_LLM_MAX_WORKERS` | `5` | 并发线程数 |
-| `REMY_LLM_RETRY_LIMIT` | `3` | 重试次数 |
-| `REMY_LLM_TIMEOUT` | `300` | 超时秒数 |
-| `REMY_LLM_MAX_TOKENS` | `32768` | 响应Token上限 |
+| `REMY_LLM_MAX_WORKERS` | `8` | 并发线程数（范围：`1..64`） |
+| `REMY_LLM_RETRY_LIMIT` | `8` | 重试次数（范围：`0..32`；单次重试等待不超过60秒） |
+| `REMY_LLM_TIMEOUT` | `300` | 超时秒数（范围：`30..3600`） |
+| `REMY_LLM_MAX_TOKENS` | `32768` | 响应Token上限（范围：`1024..1048576`） |
 | `REMY_REMY_LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
 | `REMY_LOGIC_INDEX_FILTER_SMALL` | `false` | 跳过无文档小函数的LLM摘要 |
 | `REMY_REMY_LOGIC_INDEX_INTERACTIVE` | `true` | SessionStart时启动范围选择器 |
