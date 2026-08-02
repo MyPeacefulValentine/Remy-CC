@@ -19,6 +19,7 @@ _migrate_v6_to_v7 = migrations._migrate_v6_to_v7
 _migrate_v7_to_v8 = migrations._migrate_v7_to_v8
 _migrate_v8_to_v9 = migrations._migrate_v8_to_v9
 _migrate_v9_to_v10 = migrations._migrate_v9_to_v10
+_migrate_v10_to_v11 = migrations._migrate_v10_to_v11
 _resolve_migration_path = migrations._resolve_migration_path
 SCHEMA_SQL = schema.SCHEMA_SQL
 VERSION = schema.VERSION
@@ -206,21 +207,22 @@ def test_migrate_rollback_on_failure(tmp_path):
 
 
 def test_resolve_migration_path_direct():
-    chain = _resolve_migration_path("9.0.0", "10.0.0")
+    chain = _resolve_migration_path("10.0.0", "11.0.0")
     assert chain is not None
     assert len(chain) == 1
-    assert chain[0][0] == "9.0.0"
-    assert chain[0][1] == "10.0.0"
+    assert chain[0][0] == "10.0.0"
+    assert chain[0][1] == "11.0.0"
 
 
 def test_resolve_migration_path_chained():
-    chain = _resolve_migration_path("6.0.0", "10.0.0")
+    chain = _resolve_migration_path("6.0.0", "11.0.0")
     assert chain is not None
     assert [(step[0], step[1]) for step in chain] == [
         ("6.0.0", "7.0.0"),
         ("7.0.0", "8.0.0"),
         ("8.0.0", "9.0.0"),
         ("9.0.0", "10.0.0"),
+        ("10.0.0", "11.0.0"),
     ]
 
 
@@ -230,18 +232,20 @@ def test_resolve_migration_path_missing_returns_none():
 
 
 def test_migration_handlers_registered():
-    assert ("6.0.0", "7.0.0") in MIGRATION_HANDLERS
-    assert ("7.0.0", "8.0.0") in MIGRATION_HANDLERS
-    assert ("8.0.0", "9.0.0") in MIGRATION_HANDLERS
-    assert ("9.0.0", "10.0.0") in MIGRATION_HANDLERS
-    assert callable(MIGRATION_HANDLERS[("6.0.0", "7.0.0")])
-    assert callable(MIGRATION_HANDLERS[("7.0.0", "8.0.0")])
-    assert callable(MIGRATION_HANDLERS[("8.0.0", "9.0.0")])
-    assert callable(MIGRATION_HANDLERS[("9.0.0", "10.0.0")])
+    expected = (
+        ("6.0.0", "7.0.0"),
+        ("7.0.0", "8.0.0"),
+        ("8.0.0", "9.0.0"),
+        ("9.0.0", "10.0.0"),
+        ("10.0.0", "11.0.0"),
+    )
+    for step in expected:
+        assert step in MIGRATION_HANDLERS
+        assert callable(MIGRATION_HANDLERS[step])
 
 
-def test_version_constant_is_v10():
-    assert VERSION == "10.0.0"
+def test_version_constant_is_v11():
+    assert VERSION == "11.0.0"
 
 
 def test_migration_modules_import_without_parsers():
@@ -277,6 +281,7 @@ def test_struct_scan_reexports_migration_contract():
     assert struct_scan.SCHEMA_SQL == SCHEMA_SQL
     assert struct_scan.MIGRATION_HANDLERS is MIGRATION_HANDLERS
     assert struct_scan._migrate_v6_to_v7 is _migrate_v6_to_v7
+    assert struct_scan._migrate_v10_to_v11 is _migrate_v10_to_v11
     assert struct_scan._resolve_migration_path is _resolve_migration_path
 
 
@@ -596,6 +601,68 @@ def test_v9_to_v10_rolls_back_on_failure(tmp_path):
     assert real_db.execute(
         "SELECT COUNT(*) FROM migration_log "
         "WHERE from_version='9.0.0' AND to_version='10.0.0'"
+    ).fetchone()[0] == 0
+    real_db.close()
+
+
+def _make_v10_db(path):
+    db = _make_v9_db(path)
+    _migrate_v9_to_v10(db)
+    db.execute("UPDATE meta SET value='10.0.0' WHERE key='version'")
+    db.commit()
+    return db
+
+
+def test_v10_to_v11_adds_empty_parser_identities_and_preserves_facts(tmp_path):
+    db = _make_v10_db(tmp_path / "logic_index.db")
+    before_hash = db.execute(
+        "SELECT struct_hash FROM files WHERE path='src/foo.py'"
+    ).fetchone()
+    before_symbols = db.execute(
+        "SELECT file_path,name,hash FROM symbols ORDER BY file_path,name"
+    ).fetchall()
+    _migrate_v10_to_v11(db)
+    columns = {column[1] for column in db.execute("PRAGMA table_info(files)")}
+    assert {
+        "parser_contract_version", "parser_backend", "parser_environment"
+    }.issubset(columns)
+    row = db.execute(
+        "SELECT parser_contract_version,parser_backend,parser_environment "
+        "FROM files WHERE path='src/foo.py'"
+    ).fetchone()
+    assert row == ("", "", "{}")
+    assert db.execute(
+        "SELECT struct_hash FROM files WHERE path='src/foo.py'"
+    ).fetchone() == before_hash
+    assert db.execute(
+        "SELECT file_path,name,hash FROM symbols ORDER BY file_path,name"
+    ).fetchall() == before_symbols
+    db.close()
+
+
+def test_v10_to_v11_reentry_is_idempotent(tmp_path):
+    db = _make_v10_db(tmp_path / "logic_index.db")
+    for _ in range(3):
+        _migrate_v10_to_v11(db)
+    assert db.execute(
+        "SELECT COUNT(*) FROM migration_log "
+        "WHERE from_version='10.0.0' AND to_version='11.0.0'"
+    ).fetchone()[0] == 1
+    db.close()
+
+
+def test_v10_to_v11_rolls_back_on_failure(tmp_path):
+    real_db = _make_v10_db(tmp_path / "logic_index.db")
+    wrapper = _FailOnMatch(real_db, "parser_backend")
+    with pytest.raises(sqlite3.IntegrityError):
+        _migrate_v10_to_v11(wrapper)
+    columns = {column[1] for column in real_db.execute("PRAGMA table_info(files)")}
+    assert "parser_contract_version" not in columns
+    assert "parser_backend" not in columns
+    assert "parser_environment" not in columns
+    assert real_db.execute(
+        "SELECT COUNT(*) FROM migration_log "
+        "WHERE from_version='10.0.0' AND to_version='11.0.0'"
     ).fetchone()[0] == 0
     real_db.close()
 

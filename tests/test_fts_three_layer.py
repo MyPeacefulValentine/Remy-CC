@@ -72,7 +72,7 @@ class TestProjectionCreation:
         ).fetchone()
         assert row == ("parse_input", "parse input", "raw", None)
 
-    def test_projection_exposes_p1_structure_fields_without_schema_change(self, db):
+    def test_projection_exposes_p1_structure_fields(self, db):
         columns = {
             row[1]
             for row in db.execute("PRAGMA table_info(retrieval_documents)").fetchall()
@@ -86,7 +86,7 @@ class TestProjectionCreation:
             for row in db.execute("PRAGMA index_list(retrieval_documents)").fetchall()
         }
         assert {"idx_retrieval_kind", "idx_retrieval_file"}.issubset(indexes)
-        assert VERSION == "10.0.0"
+        assert VERSION == "11.0.0"
 
     def test_shared_tokenizer_handles_supported_name_forms(self):
         from symbol_names import tokenize_symbol

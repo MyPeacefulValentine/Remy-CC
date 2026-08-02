@@ -14,6 +14,7 @@ from migrations import (
     _migrate_v7_to_v8,
     _migrate_v8_to_v9,
     _migrate_v9_to_v10,
+    _migrate_v10_to_v11,
     _resolve_migration_path,
 )
 from scanner import (

@@ -143,7 +143,8 @@ def parser_backend(requested: str) -> Generator[str, None, None]:
 def normalized_current_state(db: sqlite3.Connection) -> dict[str, list[tuple[Any, ...]]]:
     return {
         "files": db.execute(
-            "SELECT path,struct_hash,language,layer,imports,kind_hint,actual_kind "
+            "SELECT path,struct_hash,language,layer,imports,kind_hint,actual_kind,"
+            "parser_contract_version,parser_backend,parser_environment "
             "FROM files ORDER BY path"
         ).fetchall(),
         "symbols": db.execute(
@@ -283,8 +284,20 @@ def collect_report(
             "ORDER BY count DESC,file_path,pattern_type"
         ).fetchall()
     ]
+    parser_cache_identities = [
+        {
+            "contract_version": contract_version,
+            "backend": parser_backend,
+            "environment": json.loads(environment),
+        }
+        for contract_version, parser_backend, environment in db.execute(
+            "SELECT DISTINCT parser_contract_version,parser_backend,parser_environment "
+            "FROM files ORDER BY parser_contract_version,parser_backend,parser_environment"
+        ).fetchall()
+    ]
     return {
         "parser_backend": backend,
+        "parser_cache_identities": parser_cache_identities,
         "scope": scope,
         "source_commit": manifest["commit"],
         "revision_verified": revision_verified,

@@ -65,7 +65,26 @@ PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_
 The P1.2 record covers all/any/phrase matching, language/type/path SQL filters,
 input and channel errors, insertion-order-independent LIKE/fuzzy results, and
 the final fuzzy limit for same-name symbols. Both runs retain three warmups and
-thirty measured iterations. Schema remains 10.0.0 and no migration is applied.
+thirty measured iterations. The P1.2 fixture remains on schema 10.0.0.
+
+## P1.2.1 scan scope and parser cache identity
+
+Schema 11.0.0 adds `parser_contract_version`, `parser_backend`, and
+`parser_environment` to each `files` row. The 10.0.0 to 11.0.0 migration keeps
+source hashes and structure facts, writes empty parser identities for legacy
+rows, and lets the next scan replace each identity only after that file parses
+successfully.
+
+Incremental scan tests verify that configuration exclusions remove existing
+facts and retrieval documents, excluded dirty paths are acknowledged, parser
+contract or backend changes reparse only affected files, failed reparses keep
+old facts and identities, and normalized incremental state matches a fresh full
+scan. The TEE canary report includes the distinct parser cache identities stored
+in the database for both regex and tree-sitter runs.
+
+```bash
+python -m pytest tests/test_struct_scan.py tests/test_migration_ladder.py tests/test_tee_canary.py -q -p no:cacheprovider
+```
 
 ## Public TEE canary
 

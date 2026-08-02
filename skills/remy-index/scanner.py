@@ -152,6 +152,14 @@ class StructScanner:
         else:
             self.exclusions = [".git/", "__pycache__/", "venv/", "node_modules/", ".claude/", "dist/", "build/"]
 
+    @staticmethod
+    def _matches_exclusion(candidate, pattern):
+        if fnmatch.fnmatch(candidate, pattern):
+            return True
+        if pattern.startswith("**/"):
+            return fnmatch.fnmatch(candidate, pattern[3:])
+        return False
+
     def _is_excluded(self, path):
         rel_path = os.path.relpath(path, self.root_dir).replace(os.sep, "/")
         if rel_path == ".":
@@ -163,7 +171,10 @@ class StructScanner:
             clean_pattern = pattern.rstrip("/")
             if must_be_dir and not is_dir:
                 continue
-            if fnmatch.fnmatch(basename, clean_pattern) or fnmatch.fnmatch(rel_path, clean_pattern):
+            if (
+                self._matches_exclusion(basename, clean_pattern)
+                or self._matches_exclusion(rel_path, clean_pattern)
+            ):
                 return True
         return False
 
@@ -177,11 +188,16 @@ class StructScanner:
             if must_be_dir:
                 for i, segment in enumerate(parts[:-1]):
                     cumulative = "/".join(parts[:i + 1])
-                    if fnmatch.fnmatch(segment, clean_pattern) or fnmatch.fnmatch(cumulative, clean_pattern):
+                    if (
+                        self._matches_exclusion(segment, clean_pattern)
+                        or self._matches_exclusion(cumulative, clean_pattern)
+                    ):
                         return True
-            else:
-                if fnmatch.fnmatch(basename, clean_pattern) or fnmatch.fnmatch(rel_path, clean_pattern):
-                    return True
+            elif (
+                self._matches_exclusion(basename, clean_pattern)
+                or self._matches_exclusion(rel_path, clean_pattern)
+            ):
+                return True
         return False
 
     def _match_file_to_layer(self, rel_path):
@@ -215,6 +231,44 @@ class StructScanner:
     def _compute_struct_hash(source):
         return hashlib.md5(source.encode('utf-8')).hexdigest()
 
+    def _delete_file(self, rel_path):
+        symbol_refs = [
+            row[0]
+            for row in self.db.execute(
+                "SELECT file_path || '::' || name FROM symbols "
+                "WHERE file_path = ? ORDER BY name",
+                (rel_path,),
+            ).fetchall()
+        ]
+        delete_file_nodes(self.db, rel_path, symbol_refs)
+        cursor = self.db.execute("DELETE FROM files WHERE path = ?", (rel_path,))
+        return cursor.rowcount > 0
+
+    def _identity_invalid_paths(self):
+        invalid = set()
+        rows = self.db.execute(
+            "SELECT path, parser_contract_version, parser_backend, parser_environment "
+            "FROM files ORDER BY path"
+        ).fetchall()
+        for path, contract_version, backend, environment in rows:
+            if self._is_path_excluded(path):
+                continue
+            parser = self._get_parser_for_file(os.path.basename(path))
+            if parser is None:
+                continue
+            stored = (contract_version, backend, environment)
+            try:
+                candidates = {
+                    identity.as_db_tuple()
+                    for identity in parser.cache_identity_candidates(path)
+                }
+            except Exception:
+                invalid.add(path)
+                continue
+            if stored not in candidates:
+                invalid.add(path)
+        return invalid
+
     def scan_file(self, file_path, parser):
         try:
             rel_path = os.path.relpath(file_path, self.root_dir).replace(os.sep, '/')
@@ -228,11 +282,14 @@ class StructScanner:
             return None
 
         struct_hash = self._compute_struct_hash(source)
+        identity = parser.cache_identity(source, file_path)
 
         existing = self.db.execute(
-            "SELECT struct_hash FROM files WHERE path = ?", (rel_path,)
+            "SELECT struct_hash, parser_contract_version, parser_backend, "
+            "parser_environment FROM files WHERE path = ?",
+            (rel_path,),
         ).fetchone()
-        if existing and existing[0] == struct_hash:
+        if existing and existing == (struct_hash,) + identity.as_db_tuple():
             return rel_path
 
         imports = parser.resolve_imports(source, file_path, self.root_dir)
@@ -265,18 +322,23 @@ class StructScanner:
             parser.__class__.__name__,
             layer,
             json.dumps(list(imports.keys())),
+            identity.contract_version,
+            identity.backend,
+            identity.environment,
             rel_path,
         )
         if existing:
             self.db.execute(
-                "UPDATE files SET struct_hash=?, language=?, layer=?, imports=? "
+                "UPDATE files SET struct_hash=?, language=?, layer=?, imports=?, "
+                "parser_contract_version=?, parser_backend=?, parser_environment=? "
                 "WHERE path=?",
                 file_values,
             )
         else:
             self.db.execute(
-                "INSERT INTO files (path, struct_hash, language, layer, imports) "
-                "VALUES (?,?,?,?,?)",
+                "INSERT INTO files (path, struct_hash, language, layer, imports, "
+                "parser_contract_version, parser_backend, parser_environment) "
+                "VALUES (?,?,?,?,?,?,?,?)",
                 (rel_path,) + file_values[:-1],
             )
 
@@ -639,15 +701,7 @@ class StructScanner:
         deleted = db_paths - discovered_paths
         if deleted:
             for path in deleted:
-                symbol_refs = [
-                    row[0]
-                    for row in self.db.execute(
-                        "SELECT file_path || '::' || name FROM symbols WHERE file_path = ?",
-                        (path,),
-                    ).fetchall()
-                ]
-                delete_file_nodes(self.db, path, symbol_refs)
-            self.db.executemany("DELETE FROM files WHERE path = ?", [(p,) for p in deleted])
+                self._delete_file(path)
             self.db.commit()
 
         postprocess_complete = True
@@ -693,28 +747,46 @@ class StructScanner:
         transaction_targets = set()
         self.db.execute("BEGIN IMMEDIATE")
         try:
+            requested = []
             for file_path in file_paths:
                 if os.path.isabs(file_path):
                     full_path = file_path
                 else:
                     full_path = os.path.join(self.root_dir, file_path)
                 rel = os.path.relpath(full_path, self.root_dir).replace(os.sep, '/')
-                discovered_paths.add(rel)
+                requested.append((rel, full_path))
                 transaction_targets.add(rel)
 
-                if not os.path.exists(full_path):
-                    symbol_refs = [
-                        row[0]
-                        for row in self.db.execute(
-                            "SELECT file_path || '::' || name FROM symbols "
-                            "WHERE file_path = ? ORDER BY name",
-                            (rel,),
-                        ).fetchall()
-                    ]
-                    delete_file_nodes(self.db, rel, symbol_refs)
-                    self.db.execute("DELETE FROM files WHERE path = ?", (rel,))
-                    successful_paths.add(rel)
+            db_paths = [
+                row[0]
+                for row in self.db.execute("SELECT path FROM files ORDER BY path")
+            ]
+            for rel in db_paths:
+                if not self._is_path_excluded(rel):
+                    continue
+                if self._delete_file(rel):
                     deleted_paths.add(rel)
+
+            invalid_paths = self._identity_invalid_paths()
+            targets = {rel: full_path for rel, full_path in requested}
+            for rel in invalid_paths:
+                targets.setdefault(rel, os.path.join(self.root_dir, rel))
+                transaction_targets.add(rel)
+
+            for rel, full_path in requested:
+                if not self._is_path_excluded(rel):
+                    continue
+                successful_paths.add(rel)
+                targets.pop(rel, None)
+
+            for rel in sorted(targets):
+                full_path = targets[rel]
+                discovered_paths.add(rel)
+
+                if not os.path.exists(full_path):
+                    if self._delete_file(rel):
+                        deleted_paths.add(rel)
+                    successful_paths.add(rel)
                     continue
 
                 parser = self._get_parser_for_file(os.path.basename(full_path))

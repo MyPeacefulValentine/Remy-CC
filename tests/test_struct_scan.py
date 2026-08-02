@@ -12,7 +12,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skills", "remy-index"))
 from struct_scan import StructScanner, scan_all, scan_files, tokenize_symbol
 from index_state import DirtyQueue, StageError
-from parsers.base import SymbolInfo
+from parsers.base import ParserCacheIdentity, SymbolInfo
 from symbol_selection import (
     DUPLICATE_DEFINITION,
     SIGNATURE_VARIANT,
@@ -48,7 +48,8 @@ def scanner(temp_project):
 def _normalized_current_state(db):
     return {
         "files": db.execute(
-            "SELECT path,struct_hash,language,layer,imports,kind_hint,actual_kind "
+            "SELECT path,struct_hash,language,layer,imports,kind_hint,actual_kind,"
+            "parser_contract_version,parser_backend,parser_environment "
             "FROM files ORDER BY path"
         ).fetchall(),
         "symbols": db.execute(
@@ -103,7 +104,7 @@ class TestInitDb:
     def test_version_in_meta(self, scanner):
         row = scanner.db.execute("SELECT value FROM meta WHERE key='version'").fetchone()
         assert row is not None
-        assert row[0] == "10.0.0"
+        assert row[0] == "11.0.0"
 
     def test_wal_mode_enabled(self, scanner):
         mode = scanner.db.execute("PRAGMA journal_mode").fetchone()[0]
@@ -160,7 +161,7 @@ class TestInitDb:
 
         scanner = StructScanner(str(tmp_path))
         version = scanner.db.execute("SELECT value FROM meta WHERE key='version'").fetchone()[0]
-        assert version == "10.0.0"
+        assert version == "11.0.0"
         tables = {r[0] for r in scanner.db.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()}
@@ -783,6 +784,533 @@ class TestScanFiles:
             ).fetchone()[0] == 0
         finally:
             scanner.db.close()
+
+    def test_parser_cache_identity_is_persisted(self, scanner, temp_project):
+        scanner.scan_all()
+        row = scanner.db.execute(
+            "SELECT parser_contract_version,parser_backend,parser_environment "
+            "FROM files WHERE path='src/main.py'"
+        ).fetchone()
+        assert row is not None
+        assert row[0] == "1"
+        assert row[1] == "python-ast"
+        assert json.loads(row[2])["python"] == f"{sys.version_info.major}.{sys.version_info.minor}"
+
+    def test_contract_change_reparses_only_matching_parser_family(
+        self, scanner, temp_project, monkeypatch
+    ):
+        scanner.scan_all()
+        (temp_project / "entry.ts").write_text(
+            "export function entry() { return 1; }\n", encoding="utf-8"
+        )
+        scanner.scan_files(["entry.ts"])
+        python_parser = scanner._get_parser_for_file("main.py")
+        ts_parser = scanner._get_parser_for_file("entry.ts")
+        calls = []
+        original_python = python_parser.parse_symbols
+        original_ts = ts_parser.parse_symbols
+
+        monkeypatch.setattr(
+            python_parser,
+            "cache_identity_candidates",
+            lambda _path: (ParserCacheIdentity.create("2", "python-ast", {
+                "python": f"{sys.version_info.major}.{sys.version_info.minor}"
+            }),),
+        )
+        monkeypatch.setattr(
+            python_parser,
+            "cache_identity",
+            lambda _source, _path: ParserCacheIdentity.create("2", "python-ast", {
+                "python": f"{sys.version_info.major}.{sys.version_info.minor}"
+            }),
+        )
+        monkeypatch.setattr(
+            python_parser,
+            "parse_symbols",
+            lambda source, path: calls.append(path) or original_python(source, path),
+        )
+        monkeypatch.setattr(
+            ts_parser,
+            "parse_symbols",
+            lambda source, path: pytest.fail(f"unexpected TypeScript parse: {path}"),
+        )
+
+        result = scanner.scan_files(["src/main.py"])
+        assert result.status.value == "success"
+        assert {os.path.basename(path) for path in calls} == {"main.py", "utils.py"}
+        rows = scanner.db.execute(
+            "SELECT path,parser_contract_version FROM files ORDER BY path"
+        ).fetchall()
+        assert dict(rows)["entry.ts"] == "1"
+        assert dict(rows)["src/main.py"] == "2"
+        monkeypatch.setattr(ts_parser, "parse_symbols", original_ts)
+
+    def test_failed_contract_reparse_preserves_old_fact_and_identity(
+        self, scanner, temp_project, monkeypatch
+    ):
+        scanner.scan_all()
+        before_file = scanner.db.execute(
+            "SELECT struct_hash,parser_contract_version,parser_backend,parser_environment "
+            "FROM files WHERE path='src/main.py'"
+        ).fetchone()
+        before_symbols = scanner.db.execute(
+            "SELECT name,hash FROM symbols WHERE file_path='src/main.py' ORDER BY name"
+        ).fetchall()
+        parser = scanner._get_parser_for_file("main.py")
+        environment = json.loads(before_file[3])
+        monkeypatch.setattr(
+            parser,
+            "cache_identity_candidates",
+            lambda _path: (ParserCacheIdentity.create("2", "python-ast", environment),),
+        )
+        monkeypatch.setattr(
+            parser,
+            "cache_identity",
+            lambda _source, _path: ParserCacheIdentity.create("2", "python-ast", environment),
+        )
+        original_parse = parser.parse_symbols
+
+        def fail_main_only(source, path):
+            if path.replace("\\", "/").endswith("src/main.py"):
+                raise RuntimeError("parse failed")
+            return original_parse(source, path)
+
+        monkeypatch.setattr(parser, "parse_symbols", fail_main_only)
+
+        result = scanner.scan_files(["src/main.py"])
+        after_file = scanner.db.execute(
+            "SELECT struct_hash,parser_contract_version,parser_backend,parser_environment "
+            "FROM files WHERE path='src/main.py'"
+        ).fetchone()
+        after_symbols = scanner.db.execute(
+            "SELECT name,hash FROM symbols WHERE file_path='src/main.py' ORDER BY name"
+        ).fetchall()
+        assert result.status.value == "partial"
+        assert "src/main.py" in result.failed_paths
+        assert after_file == before_file
+        assert after_symbols == before_symbols
+
+    def test_incremental_exclusion_removes_existing_facts_and_acknowledges_dirty(
+        self, tmp_path
+    ):
+        (tmp_path / ".claude").mkdir()
+        config = tmp_path / ".claude" / "logic_index_config"
+        config.write_text("!.claude/\n", encoding="utf-8")
+        (tmp_path / "keep.py").write_text("def keep():\n    return 1\n", encoding="utf-8")
+        excluded = tmp_path / "excluded" / "drop.py"
+        excluded.parent.mkdir()
+        excluded.write_text("def drop():\n    return 1\n", encoding="utf-8")
+        scanner = StructScanner(str(tmp_path))
+        try:
+            scanner.scan_all()
+            assert scanner.db.execute(
+                "SELECT 1 FROM files WHERE path='excluded/drop.py'"
+            ).fetchone() == (1,)
+        finally:
+            scanner.db.close()
+
+        config.write_text("!.claude/\n!excluded/\n", encoding="utf-8")
+        queue = DirtyQueue(str(tmp_path))
+        queue.record("excluded/drop.py")
+        result = scan_files(
+            str(tmp_path), ["excluded/drop.py"], manage_dirty=True
+        )
+        assert result.status.value == "success"
+        assert result.successful_paths == ("excluded/drop.py",)
+        assert result.deleted_paths == ("excluded/drop.py",)
+        assert queue.peek() == set()
+        db = sqlite3.connect(str(tmp_path / ".claude" / "logic_index.db"))
+        try:
+            for table, column in (
+                ("files", "path"),
+                ("symbols", "file_path"),
+                ("symbol_occurrences", "file_path"),
+                ("edges", "source_file"),
+                ("patterns", "file_path"),
+                ("retrieval_documents", "file_path"),
+            ):
+                assert db.execute(
+                    f"SELECT 1 FROM {table} WHERE {column}='excluded/drop.py' LIMIT 1"
+                ).fetchone() is None
+        finally:
+            db.close()
+
+    def test_double_star_directory_rules_match_root_and_nested_directories(self, tmp_path):
+        (tmp_path / ".claude").mkdir()
+        config = tmp_path / ".claude" / "logic_index_config"
+        config.write_text(
+            "!**/.claude/\n!**/__pycache__/\n!**/dist/\n",
+            encoding="utf-8",
+        )
+        roots = (
+            tmp_path / ".claude" / "root_hidden.py",
+            tmp_path / "__pycache__" / "root_cache.py",
+            tmp_path / "dist" / "root_dist.py",
+            tmp_path / "pkg" / ".claude" / "nested_hidden.py",
+            tmp_path / "pkg" / "__pycache__" / "nested_cache.py",
+            tmp_path / "pkg" / "dist" / "nested_dist.py",
+        )
+        for path in roots:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("def excluded():\n    return 1\n", encoding="utf-8")
+        (tmp_path / "keep.py").write_text(
+            "def keep():\n    return 1\n", encoding="utf-8"
+        )
+
+        scanner = StructScanner(str(tmp_path))
+        try:
+            result = scanner.scan_all()
+            assert result.status.value == "success"
+            assert scanner.db.execute(
+                "SELECT path FROM files ORDER BY path"
+            ).fetchall() == [("keep.py",)]
+            for path in roots:
+                rel = path.relative_to(tmp_path).as_posix()
+                assert scanner._is_path_excluded(rel)
+        finally:
+            scanner.db.close()
+
+    def test_double_star_root_exclusion_removes_existing_unrequested_fact(
+        self, tmp_path
+    ):
+        (tmp_path / ".claude").mkdir()
+        config = tmp_path / ".claude" / "logic_index_config"
+        config.write_text(
+            "# initially include all source directories\n", encoding="utf-8"
+        )
+        hidden = tmp_path / ".claude" / "temp_log" / "probe.py"
+        hidden.parent.mkdir()
+        hidden.write_text("def probe():\n    return 1\n", encoding="utf-8")
+        (tmp_path / "keep.py").write_text(
+            "def keep():\n    return 1\n", encoding="utf-8"
+        )
+        scanner = StructScanner(str(tmp_path))
+        try:
+            assert scanner.scan_all().status.value == "success"
+            assert scanner.db.execute(
+                "SELECT path FROM files WHERE path='.claude/temp_log/probe.py'"
+            ).fetchone() == (".claude/temp_log/probe.py",)
+        finally:
+            scanner.db.close()
+
+        config.write_text("!**/.claude/\n", encoding="utf-8")
+        scanner = StructScanner(str(tmp_path))
+        try:
+            result = scanner.scan_files(["keep.py"])
+            assert result.status.value == "success"
+            assert result.deleted_paths == (".claude/temp_log/probe.py",)
+            assert scanner.db.execute(
+                "SELECT path FROM files ORDER BY path"
+            ).fetchall() == [("keep.py",)]
+        finally:
+            scanner.db.close()
+
+    def test_exclusion_globs_clean_unrequested_paths_and_match_fresh_scan(self, tmp_path):
+        incremental_root = tmp_path / "incremental_scope"
+        fresh_root = tmp_path / "fresh_scope"
+        sources = {
+            "keep.py": "def keep():\n    return 1\n",
+            "root_drop.py": "def root_drop():\n    return 2\n",
+            "nested/drop.py": "def nested_drop():\n    return 3\n",
+            "nested/keep.py": "def nested_keep():\n    return 4\n",
+        }
+        for root in (incremental_root, fresh_root):
+            (root / ".claude").mkdir(parents=True)
+            (root / "nested").mkdir()
+            for relative, source in sources.items():
+                (root / relative).write_text(source, encoding="utf-8")
+
+        incremental_config = incremental_root / ".claude" / "logic_index_config"
+        incremental_config.write_text("!.claude/\n", encoding="utf-8")
+        incremental = StructScanner(str(incremental_root))
+        try:
+            assert incremental.scan_all().status.value == "success"
+        finally:
+            incremental.db.close()
+
+        rules = "!.claude/\n!root_*.py\n!nested/drop.py\n"
+        incremental_config.write_text(rules, encoding="utf-8")
+        incremental = StructScanner(str(incremental_root))
+        try:
+            result = incremental.scan_files(["keep.py"])
+            incremental_state = _normalized_current_state(incremental.db)
+            assert result.deleted_paths == ("nested/drop.py", "root_drop.py")
+            assert result.successful_paths == ("keep.py",)
+        finally:
+            incremental.db.close()
+
+        (fresh_root / ".claude" / "logic_index_config").write_text(
+            rules, encoding="utf-8"
+        )
+        fresh = StructScanner(str(fresh_root))
+        try:
+            assert fresh.scan_all().status.value == "success"
+            fresh_state = _normalized_current_state(fresh.db)
+        finally:
+            fresh.db.close()
+        assert incremental_state == fresh_state
+
+    def test_mixed_dirty_batch_acknowledges_excluded_and_missing_only(
+        self, tmp_path, monkeypatch
+    ):
+        (tmp_path / ".claude").mkdir()
+        config = tmp_path / ".claude" / "logic_index_config"
+        config.write_text("!.claude/\n", encoding="utf-8")
+        for name in ("valid.py", "excluded.py", "failed.py"):
+            (tmp_path / name).write_text(
+                f"def {name[:-3]}():\n    return 1\n", encoding="utf-8"
+            )
+        scanner = StructScanner(str(tmp_path))
+        try:
+            scanner.scan_all()
+        finally:
+            scanner.db.close()
+
+        config.write_text("!.claude/\n!excluded.py\n", encoding="utf-8")
+        queue = DirtyQueue(str(tmp_path))
+        for name in ("valid.py", "excluded.py", "missing.py", "failed.py"):
+            queue.record(name)
+        original = StructScanner._scan_one_file
+
+        def fail_one(self, full_path, parser, rel_path):
+            if rel_path == "failed.py":
+                return None, StageError("file_scan", "simulated", rel_path)
+            return original(self, full_path, parser, rel_path)
+
+        monkeypatch.setattr(StructScanner, "_scan_one_file", fail_one)
+        result = scan_files(
+            str(tmp_path),
+            ["valid.py", "excluded.py", "missing.py", "failed.py"],
+            manage_dirty=True,
+        )
+        assert result.status.value == "partial"
+        assert result.successful_paths == ("excluded.py", "missing.py", "valid.py")
+        assert result.deleted_paths == ("excluded.py",)
+        assert result.failed_paths == ("failed.py",)
+        assert queue.peek() == {"failed.py"}
+
+    @pytest.mark.parametrize(
+        ("changed_file", "unchanged_file"),
+        (("unit.c", "entry.ts"), ("entry.ts", "unit.c")),
+    )
+    def test_contract_change_is_selective_for_c_and_typescript(
+        self, tmp_path, monkeypatch, changed_file, unchanged_file
+    ):
+        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude" / "logic_index_config").write_text(
+            "!.claude/\n", encoding="utf-8"
+        )
+        (tmp_path / "anchor.py").write_text(
+            "def anchor():\n    return 1\n", encoding="utf-8"
+        )
+        (tmp_path / "unit.c").write_text(
+            "int unit(void) { return 1; }\n", encoding="utf-8"
+        )
+        (tmp_path / "entry.ts").write_text(
+            "export function entry() { return 1; }\n", encoding="utf-8"
+        )
+        scanner = StructScanner(str(tmp_path))
+        try:
+            scanner.scan_all()
+            changed_parser = scanner._get_parser_for_file(changed_file)
+            unchanged_parser = scanner._get_parser_for_file(unchanged_file)
+            row = scanner.db.execute(
+                "SELECT parser_backend,parser_environment FROM files WHERE path=?",
+                (changed_file,),
+            ).fetchone()
+            next_identity = ParserCacheIdentity.create(
+                "2", row[0], json.loads(row[1])
+            )
+            calls = []
+            original_changed = changed_parser.parse_symbols
+            monkeypatch.setattr(
+                changed_parser,
+                "cache_identity_candidates",
+                lambda _path: (next_identity,),
+            )
+            monkeypatch.setattr(
+                changed_parser,
+                "cache_identity",
+                lambda _source, _path: next_identity,
+            )
+            monkeypatch.setattr(
+                changed_parser,
+                "parse_symbols",
+                lambda source, path: calls.append(path) or original_changed(source, path),
+            )
+            monkeypatch.setattr(
+                unchanged_parser,
+                "parse_symbols",
+                lambda _source, path: pytest.fail(f"unexpected parse: {path}"),
+            )
+
+            result = scanner.scan_files(["anchor.py"])
+            assert result.status.value == "success"
+            assert [os.path.basename(path) for path in calls] == [changed_file]
+            versions = dict(scanner.db.execute(
+                "SELECT path,parser_contract_version FROM files"
+            ).fetchall())
+            assert versions[changed_file] == "2"
+            assert versions[unchanged_file] == "1"
+        finally:
+            scanner.db.close()
+
+    def test_c_backend_switch_reparses_same_database(self, tmp_path, monkeypatch):
+        import parsers.c_cpp_parser as parser_module
+
+        if not parser_module.TREE_SITTER_AVAILABLE:
+            pytest.skip("tree-sitter packages are unavailable")
+        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude" / "logic_index_config").write_text(
+            "!.claude/\n", encoding="utf-8"
+        )
+        (tmp_path / "unit.c").write_text(
+            "int unit(void) { return 1; }\n", encoding="utf-8"
+        )
+        scanner = StructScanner(str(tmp_path))
+        try:
+            scanner.scan_all()
+            assert scanner.db.execute(
+                "SELECT parser_backend FROM files WHERE path='unit.c'"
+            ).fetchone() == ("c-tree-sitter",)
+
+            monkeypatch.setattr(parser_module, "TREE_SITTER_AVAILABLE", False)
+            assert scanner.scan_files(["unit.c"]).status.value == "success"
+            assert scanner.db.execute(
+                "SELECT parser_backend FROM files WHERE path='unit.c'"
+            ).fetchone() == ("c-cpp-regex",)
+
+            monkeypatch.setattr(parser_module, "TREE_SITTER_AVAILABLE", True)
+            assert scanner.scan_files(["unit.c"]).status.value == "success"
+            assert scanner.db.execute(
+                "SELECT parser_backend FROM files WHERE path='unit.c'"
+            ).fetchone() == ("c-tree-sitter",)
+        finally:
+            scanner.db.close()
+
+    def test_tree_sitter_metadata_failure_preserves_old_c_facts(
+        self, tmp_path, monkeypatch
+    ):
+        import parsers.c_cpp_parser as parser_module
+
+        if not parser_module.TREE_SITTER_AVAILABLE:
+            pytest.skip("tree-sitter packages are unavailable")
+        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude" / "logic_index_config").write_text(
+            "!.claude/\n", encoding="utf-8"
+        )
+        (tmp_path / "unit.c").write_text(
+            "int unit(void) { return 1; }\n", encoding="utf-8"
+        )
+        scanner = StructScanner(str(tmp_path))
+        try:
+            scanner.scan_all()
+            before_file = scanner.db.execute(
+                "SELECT struct_hash,parser_contract_version,parser_backend,parser_environment "
+                "FROM files WHERE path='unit.c'"
+            ).fetchone()
+            before_symbols = scanner.db.execute(
+                "SELECT name,hash FROM symbols WHERE file_path='unit.c' ORDER BY name"
+            ).fetchall()
+            monkeypatch.setattr(
+                parser_module,
+                "distribution_version",
+                lambda _name: (_ for _ in ()).throw(RuntimeError("metadata missing")),
+            )
+            result = scanner.scan_files(["unit.c"])
+            assert result.status.value == "failed"
+            assert result.failed_paths == ("unit.c",)
+            assert scanner.db.execute(
+                "SELECT struct_hash,parser_contract_version,parser_backend,parser_environment "
+                "FROM files WHERE path='unit.c'"
+            ).fetchone() == before_file
+            assert scanner.db.execute(
+                "SELECT name,hash FROM symbols WHERE file_path='unit.c' ORDER BY name"
+            ).fetchall() == before_symbols
+        finally:
+            scanner.db.close()
+
+    def test_c_header_identity_candidates_cover_actual_grammars(self):
+        import parsers.c_cpp_parser as parser_module
+
+        parser = parser_module.CCppParser()
+        candidates = parser.cache_identity_candidates("types.h")
+        if not parser_module.TREE_SITTER_AVAILABLE:
+            assert [identity.backend for identity in candidates] == ["c-cpp-regex"]
+            return
+        assert {identity.backend for identity in candidates} == {
+            "c-tree-sitter", "cpp-tree-sitter"
+        }
+        assert parser.cache_identity(
+            "struct item { int value; };", "types.h"
+        ).backend == "c-tree-sitter"
+        assert parser.cache_identity(
+            "class Item { public: int value; };", "types.h"
+        ).backend == "cpp-tree-sitter"
+
+    def test_identity_only_reparse_keeps_symbol_content_hash(
+        self, scanner, temp_project, monkeypatch
+    ):
+        scanner.scan_all()
+        node_ref = "src/main.py::main"
+        before = scanner.db.execute(
+            "SELECT content_hash FROM retrieval_documents "
+            "WHERE node_kind='symbol' AND node_ref=?",
+            (node_ref,),
+        ).fetchone()[0]
+        parser = scanner._get_parser_for_file("main.py")
+        row = scanner.db.execute(
+            "SELECT parser_backend,parser_environment FROM files "
+            "WHERE path='src/main.py'"
+        ).fetchone()
+        identity = ParserCacheIdentity.create("2", row[0], json.loads(row[1]))
+        monkeypatch.setattr(
+            parser, "cache_identity_candidates", lambda _path: (identity,)
+        )
+        monkeypatch.setattr(
+            parser, "cache_identity", lambda _source, _path: identity
+        )
+        assert scanner.scan_files(["src/main.py"]).status.value == "success"
+        after = scanner.db.execute(
+            "SELECT content_hash FROM retrieval_documents "
+            "WHERE node_kind='symbol' AND node_ref=?",
+            (node_ref,),
+        ).fetchone()[0]
+        assert after == before
+
+    def test_migrated_empty_identities_retry_failed_file_only(
+        self, scanner, temp_project, monkeypatch
+    ):
+        scanner.scan_all()
+        scanner.db.execute(
+            "UPDATE files SET parser_contract_version='',parser_backend='',"
+            "parser_environment='{}'"
+        )
+        scanner.db.commit()
+        before_main = scanner.db.execute(
+            "SELECT name,hash FROM symbols WHERE file_path='src/main.py' ORDER BY name"
+        ).fetchall()
+        parser = scanner._get_parser_for_file("main.py")
+        original_parse = parser.parse_symbols
+
+        def fail_main_only(source, path):
+            if path.replace("\\", "/").endswith("src/main.py"):
+                raise RuntimeError("parse failed")
+            return original_parse(source, path)
+
+        monkeypatch.setattr(parser, "parse_symbols", fail_main_only)
+        result = scanner.scan_all()
+        assert result.status.value == "partial"
+        assert result.failed_paths == ("src/main.py",)
+        assert scanner.db.execute(
+            "SELECT parser_contract_version FROM files WHERE path='src/main.py'"
+        ).fetchone() == ("",)
+        assert scanner.db.execute(
+            "SELECT parser_contract_version FROM files WHERE path='src/utils.py'"
+        ).fetchone() == ("1",)
+        assert scanner.db.execute(
+            "SELECT name,hash FROM symbols WHERE file_path='src/main.py' ORDER BY name"
+        ).fetchall() == before_main
 
     def test_incremental_matches_fresh_full_scan(self, tmp_path):
         incremental_root = tmp_path / "incremental"

@@ -282,11 +282,42 @@ def _migrate_v9_to_v10(db):
         raise
 
 
+def _migrate_v10_to_v11(db):
+    """Add per-file parser cache identities without invalidating source hashes."""
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        columns = {column[1] for column in db.execute("PRAGMA table_info(files)")}
+        additions = (
+            ("parser_contract_version", "TEXT NOT NULL DEFAULT ''"),
+            ("parser_backend", "TEXT NOT NULL DEFAULT ''"),
+            ("parser_environment", "TEXT NOT NULL DEFAULT '{}'"),
+        )
+        for name, declaration in additions:
+            if name not in columns:
+                db.execute(f"ALTER TABLE files ADD COLUMN {name} {declaration}")
+
+        already = db.execute(
+            "SELECT 1 FROM migration_log WHERE from_version=? AND to_version=?",
+            ("10.0.0", "11.0.0"),
+        ).fetchone()
+        if not already:
+            db.execute(
+                "INSERT INTO migration_log (from_version, to_version, applied_at) "
+                "VALUES (?,?,?)",
+                ("10.0.0", "11.0.0", datetime.now().isoformat(timespec="seconds")),
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
 MIGRATION_HANDLERS = {
     ('6.0.0', '7.0.0'): _migrate_v6_to_v7,
     ('7.0.0', '8.0.0'): _migrate_v7_to_v8,
     ('8.0.0', '9.0.0'): _migrate_v8_to_v9,
     ('9.0.0', '10.0.0'): _migrate_v9_to_v10,
+    ('10.0.0', '11.0.0'): _migrate_v10_to_v11,
 }
 
 def _resolve_migration_path(old_version, new_version):

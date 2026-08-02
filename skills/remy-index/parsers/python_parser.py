@@ -8,7 +8,7 @@ import hashlib
 import os
 import re
 import sys
-from .base import LanguageParser, SymbolInfo, EdgeInfo
+from .base import EdgeInfo, LanguageParser, ParserCacheIdentity, SymbolInfo
 
 
 class ImportVisitor(ast.NodeVisitor):
@@ -86,6 +86,8 @@ class UsageVisitor(ast.NodeVisitor):
 class PythonParser(LanguageParser):
     """Parser for Python source files using the standard library ast module."""
 
+    CACHE_CONTRACT_VERSION = "1"
+
     def __init__(self):
         self._cached_hash = None
         self._cached_tree = None
@@ -110,6 +112,16 @@ class PythonParser(LanguageParser):
 
     def get_prompt_template_path(self):
         return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts", "summarize_symbol_python.md")
+
+    def cache_identity(self, source, file_path):
+        return ParserCacheIdentity.create(
+            self.CACHE_CONTRACT_VERSION,
+            "python-ast",
+            {"python": f"{sys.version_info.major}.{sys.version_info.minor}"},
+        )
+
+    def cache_identity_candidates(self, file_path):
+        return (self.cache_identity("", file_path),)
 
     def resolve_imports(self, source, file_path, root_dir):
         try:

@@ -3,7 +3,7 @@
 from retrieval_projection import RETRIEVAL_SCHEMA_SQL
 
 
-VERSION = "10.0.0"
+VERSION = "11.0.0"
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS files (
     path TEXT PRIMARY KEY,
@@ -12,7 +12,10 @@ CREATE TABLE IF NOT EXISTS files (
     layer TEXT DEFAULT 'Core',
     imports TEXT,
     kind_hint TEXT,
-    actual_kind TEXT
+    actual_kind TEXT,
+    parser_contract_version TEXT NOT NULL DEFAULT '',
+    parser_backend TEXT NOT NULL DEFAULT '',
+    parser_environment TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS symbols (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

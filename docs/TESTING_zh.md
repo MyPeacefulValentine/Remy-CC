@@ -54,7 +54,22 @@ PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_
 
 P1.2记录all/any/phrase匹配、语言/类型/路径SQL过滤、输入和通道错误、
 与插入顺序无关的LIKE/fuzzy结果，以及同名符号fuzzy最终limit。两次运行仍执行
-3次预热和30次测量。schema保持10.0.0，不执行migration。
+3次预热和30次测量。P1.2 fixture继续使用schema 10.0.0。
+
+## P1.2.1扫描范围与解析器缓存身份
+
+schema 11.0.0为每个`files`行增加`parser_contract_version`、
+`parser_backend`和`parser_environment`。10.0.0到11.0.0 migration保留源码哈希
+和结构事实，为旧行写入空解析器身份。后续扫描只有在单文件解析成功后才替换该文件身份。
+
+增量扫描测试验证配置排除会删除既有事实和检索文档、被排除的脏路径会被确认、解析器
+契约或后端变化只重解析受影响文件、失败重解析保留旧事实和旧身份，并比较增量状态与
+新数据库全量状态。TEE canary报告记录regex和tree-sitter运行实际保存到数据库的去重
+解析器缓存身份。
+
+```bash
+python -m pytest tests/test_struct_scan.py tests/test_migration_ladder.py tests/test_tee_canary.py -q -p no:cacheprovider
+```
 
 ## 公开TEE canary
 

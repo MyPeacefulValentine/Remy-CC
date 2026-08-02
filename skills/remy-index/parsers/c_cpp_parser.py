@@ -6,7 +6,13 @@ Falls back to regex-based extraction otherwise.
 
 import os
 import re
-from .base import LanguageParser, SymbolInfo, EdgeInfo
+from .base import (
+    EdgeInfo,
+    LanguageParser,
+    ParserCacheIdentity,
+    SymbolInfo,
+    distribution_version,
+)
 
 TREE_SITTER_AVAILABLE = False
 _c_language = None
@@ -410,6 +416,56 @@ def _ts_declarator_name(node):
 class CCppParser(LanguageParser):
     """Parser for C and C++ source files. Uses tree-sitter when available, regex otherwise."""
 
+    CACHE_CONTRACT_VERSION = "1"
+    _CPP_EXTENSIONS = frozenset((".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx"))
+    _CPP_HEADER_INDICATORS = (
+        "class ", "namespace ", "template<", "template <",
+        "public:", "private:", "protected:", "::",
+    )
+
+    @classmethod
+    def _uses_cpp_grammar(cls, source, file_path):
+        if any(file_path.endswith(ext) for ext in cls._CPP_EXTENSIONS):
+            return True
+        return file_path.endswith(".h") and any(
+            indicator in source for indicator in cls._CPP_HEADER_INDICATORS
+        )
+
+    @staticmethod
+    def _tree_sitter_environment(grammar_distribution):
+        return {
+            "tree-sitter": distribution_version("tree-sitter"),
+            grammar_distribution: distribution_version(grammar_distribution),
+        }
+
+    def _tree_sitter_identity(self, use_cpp):
+        grammar = "tree-sitter-cpp" if use_cpp else "tree-sitter-c"
+        backend = "cpp-tree-sitter" if use_cpp else "c-tree-sitter"
+        return ParserCacheIdentity.create(
+            self.CACHE_CONTRACT_VERSION,
+            backend,
+            self._tree_sitter_environment(grammar),
+        )
+
+    def cache_identity(self, source, file_path):
+        if not TREE_SITTER_AVAILABLE:
+            return ParserCacheIdentity.create(
+                self.CACHE_CONTRACT_VERSION, "c-cpp-regex"
+            )
+        return self._tree_sitter_identity(self._uses_cpp_grammar(source, file_path))
+
+    def cache_identity_candidates(self, file_path):
+        if not TREE_SITTER_AVAILABLE:
+            return (self.cache_identity("", file_path),)
+        if file_path.endswith(".h"):
+            return (
+                self._tree_sitter_identity(False),
+                self._tree_sitter_identity(True),
+            )
+        return (self._tree_sitter_identity(
+            any(file_path.endswith(ext) for ext in self._CPP_EXTENSIONS)
+        ),)
+
     def get_extensions(self):
         return [".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx"]
 
@@ -468,12 +524,8 @@ class CCppParser(LanguageParser):
     # ========================================================================
 
     def _parse_with_tree_sitter(self, source, file_path):
-        is_cpp = any(file_path.endswith(ext) for ext in [".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx"])
-        if not is_cpp and file_path.endswith('.h'):
-            cpp_indicators = ['class ', 'namespace ', 'template<', 'template <',
-                              'public:', 'private:', 'protected:', '::']
-            is_cpp = any(ind in source for ind in cpp_indicators)
-        lang = _cpp_language if is_cpp else _c_language
+        use_cpp = self._uses_cpp_grammar(source, file_path)
+        lang = _cpp_language if use_cpp else _c_language
         parser = TSParser(lang)
 
         source_bytes = source.encode('utf-8')
@@ -864,12 +916,8 @@ class CCppParser(LanguageParser):
         if not TREE_SITTER_AVAILABLE:
             return []
 
-        is_cpp = any(file_path.endswith(ext) for ext in [".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx"])
-        if not is_cpp and file_path.endswith('.h'):
-            cpp_indicators = ['class ', 'namespace ', 'template<', 'template <',
-                              'public:', 'private:', 'protected:', '::']
-            is_cpp = any(ind in source for ind in cpp_indicators)
-        lang = _cpp_language if is_cpp else _c_language
+        use_cpp = self._uses_cpp_grammar(source, file_path)
+        lang = _cpp_language if use_cpp else _c_language
         parser = TSParser(lang)
 
         source_bytes = source.encode('utf-8')

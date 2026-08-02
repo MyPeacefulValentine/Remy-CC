@@ -6,7 +6,13 @@ Falls back to regex-based extraction otherwise.
 
 import os
 import re
-from .base import LanguageParser, SymbolInfo, EdgeInfo
+from .base import (
+    EdgeInfo,
+    LanguageParser,
+    ParserCacheIdentity,
+    SymbolInfo,
+    distribution_version,
+)
 
 TREE_SITTER_AVAILABLE = False
 _ts_language = None
@@ -212,6 +218,32 @@ def _ts_extract_jsdoc(source_bytes, node):
 
 class TSParser(LanguageParser):
     """Parser for TypeScript and TSX source files. Uses tree-sitter when available, regex otherwise."""
+
+    CACHE_CONTRACT_VERSION = "1"
+
+    @staticmethod
+    def _tree_sitter_environment():
+        return {
+            "tree-sitter": distribution_version("tree-sitter"),
+            "tree-sitter-typescript": distribution_version("tree-sitter-typescript"),
+        }
+
+    def _tree_sitter_identity(self, is_tsx):
+        return ParserCacheIdentity.create(
+            self.CACHE_CONTRACT_VERSION,
+            "tsx-tree-sitter" if is_tsx else "ts-tree-sitter",
+            self._tree_sitter_environment(),
+        )
+
+    def cache_identity(self, source, file_path):
+        if not TREE_SITTER_AVAILABLE:
+            return ParserCacheIdentity.create(
+                self.CACHE_CONTRACT_VERSION, "ts-regex"
+            )
+        return self._tree_sitter_identity(file_path.endswith(".tsx"))
+
+    def cache_identity_candidates(self, file_path):
+        return (self.cache_identity("", file_path),)
 
     def get_extensions(self):
         return [".ts", ".tsx"]

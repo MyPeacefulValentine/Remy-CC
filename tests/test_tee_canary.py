@@ -73,6 +73,10 @@ def test_fixture_tree_sitter_canary():
         canary.FIXTURE_ROOT, backend="tree-sitter", fixture=True
     )
     assert report["parser_backend"] == "tree-sitter"
+    assert {identity["backend"] for identity in report["parser_cache_identities"]} <= {
+        "c-tree-sitter", "cpp-tree-sitter"
+    }
+    assert all(identity["environment"].get("tree-sitter") for identity in report["parser_cache_identities"])
     assert report["direct_edge_count"] > 0
     assert report["c_fnptr_dispatch_edge_count"] > 0
     assert report["idempotent_full_scan"] is True
@@ -82,6 +86,11 @@ def test_fixture_tree_sitter_canary():
 def test_fixture_regex_canary():
     report = canary.run_canary(canary.FIXTURE_ROOT, backend="regex", fixture=True)
     assert report["parser_backend"] == "regex"
+    assert report["parser_cache_identities"] == [{
+        "contract_version": "1",
+        "backend": "c-cpp-regex",
+        "environment": {},
+    }]
     assert report["direct_edge_count"] == 0
     assert report["c_fnptr_dispatch_edge_count"] > 0
     assert report["idempotent_full_scan"] is True
@@ -232,6 +241,7 @@ def test_cli_writes_json_report(tmp_path: Path):
     report = json.loads(output.read_text(encoding="utf-8"))
     required = {
         "parser_backend",
+        "parser_cache_identities",
         "scope",
         "source_commit",
         "revision_verified",
