@@ -109,6 +109,24 @@ def test_secret_save_preserve_replace_clear(config_home):
     assert "REMY_LLM_API_KEY" not in remy_config.read_document(path)["values"]
 
 
+def test_named_resets_preserve_unknown_and_apply_secret_boundary(config_home):
+    path = remy_config.user_config_path()
+    original = {
+        "FUTURE_FIELD": "keep",
+        "REMY_LLM_API_KEY": "fake-secret",
+        "REMY_LANG": "zh-CN",
+        "REMY_LLM_MAX_WORKERS": "4",
+    }
+    _write(path, original)
+    first = remy_config.reset_non_secret_values(path)
+    assert first["values"] == {"FUTURE_FIELD": "keep", "REMY_LLM_API_KEY": "fake-secret"}
+    second = remy_config.reset_non_secret_values(path)
+    assert second == first
+    cleared = remy_config.reset_known_values(path)
+    assert cleared["values"] == {"FUTURE_FIELD": "keep"}
+    assert remy_config.reset_known_values(path) == cleared
+
+
 def test_migration_rejects_sentinel_and_only_fills_missing(config_home):
     settings = config_home / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)

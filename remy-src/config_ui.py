@@ -13,9 +13,10 @@ from typing import ClassVar, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import remy_config
 
-HEARTBEAT_INTERVAL = 1
-HEARTBEAT_TIMEOUT = 3
+HEARTBEAT_INTERVAL = 2
+HEARTBEAT_TIMEOUT = 30
 STARTUP_GRACE = 30
+RESET_MODES = frozenset({"none", "non_secret", "all"})
 LOCK_FILE = Path.home() / ".claude" / ".config_ui.lock"
 PARAM_REGISTRY = remy_config.registry_for_ui()
 GROUPS = list(remy_config.GROUPS)
@@ -96,6 +97,26 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
     target_path: ClassVar[Optional[Path]] = None
     project_root: ClassVar[Optional[Path]] = None
     last_heartbeat: ClassVar[float] = 0
+    last_activity_end: ClassVar[float] = 0
+    active_mutations: ClassVar[int] = 0
+    activity_lock: ClassVar[threading.Lock] = threading.Lock()
+
+    @classmethod
+    def _begin_mutation(cls):
+        with cls.activity_lock:
+            cls.active_mutations += 1
+
+    @classmethod
+    def _end_mutation(cls):
+        with cls.activity_lock:
+            cls.active_mutations = max(0, cls.active_mutations - 1)
+            if cls.active_mutations == 0:
+                cls.last_activity_end = time.monotonic()
+
+    @classmethod
+    def _activity_state(cls):
+        with cls.activity_lock:
+            return cls.active_mutations, cls.last_activity_end
 
     def log_message(self, format, *args):
         pass
@@ -192,22 +213,32 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
         clear_secrets = data.get("clear_secrets", [])
         if not isinstance(clear_secrets, list) or any(not isinstance(key, str) for key in clear_secrets):
             raise remy_config.ConfigError("clear_secrets must be a string list")
-        reset = bool(data.get("reset", False))
+        if "reset" in data:
+            raise remy_config.ConfigError("reset is unsupported; use reset_mode")
+        reset_mode = data.get("reset_mode", "none")
+        if not isinstance(reset_mode, str) or reset_mode not in RESET_MODES:
+            raise remy_config.ConfigError("reset_mode must be one of none, non_secret, all")
         project = self.mode == "project"
+        overrides = data.get("overrides", []) if project else []
+        if not isinstance(overrides, list) or any(not isinstance(key, str) for key in overrides):
+            raise remy_config.ConfigError("overrides must be a string list")
+        if reset_mode != "none" and (updates or clear_secrets or overrides):
+            raise remy_config.ConfigError("reset_mode cannot be combined with values, clear_secrets, or overrides")
+        if project and reset_mode == "non_secret":
+            raise remy_config.ConfigError("non_secret reset is unavailable for project configuration")
         target = self.target_path if project else remy_config.user_config_path()
         if target is None:
             raise remy_config.ConfigError("Project target is not configured")
         inspected = remy_config.inspect_document(target, project=project)
         if inspected["exists"] and not inspected["valid"]:
             raise remy_config.ConfigError("Configuration is read-only until file errors are corrected")
-        if reset:
+        if reset_mode == "non_secret":
+            remy_config.reset_non_secret_values(target, project=False)
+        elif reset_mode == "all":
             remy_config.reset_known_values(target, project=project)
         else:
-            overrides = data.get("overrides", []) if project else None
             remove_keys = []
             if project:
-                if not isinstance(overrides, list) or any(not isinstance(key, str) for key in overrides):
-                    raise remy_config.ConfigError("overrides must be a string list")
                 allowed = set(overrides)
                 updates = {key: value for key, value in updates.items() if key in allowed}
                 current, _, _ = _document_values(target, project=True)
@@ -236,6 +267,7 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == "/api/save":
+            ConfigHandler._begin_mutation()
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 self._save(json.loads(self.rfile.read(length)))
@@ -243,6 +275,8 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"status": "error", "message": str(exc)}, 400)
             except Exception as exc:
                 self._send_json({"status": "error", "message": type(exc).__name__}, 500)
+            finally:
+                ConfigHandler._end_mutation()
             return
         if self.path == "/api/shutdown":
             try:
@@ -256,15 +290,21 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
         self.send_error(404)
 
 
+def _watchdog_should_shutdown(now, start_time):
+    active_mutations, last_activity_end = ConfigHandler._activity_state()
+    if active_mutations > 0:
+        return False
+    reference = max(ConfigHandler.last_heartbeat, last_activity_end)
+    if reference > 0:
+        return now - reference > HEARTBEAT_TIMEOUT
+    return now - start_time > STARTUP_GRACE
+
+
 def _heartbeat_watchdog(server):
     start_time = time.monotonic()
     while True:
         time.sleep(HEARTBEAT_INTERVAL)
-        if ConfigHandler.last_heartbeat > 0:
-            if time.monotonic() - ConfigHandler.last_heartbeat > HEARTBEAT_TIMEOUT:
-                threading.Thread(target=server.shutdown, daemon=True).start()
-                break
-        elif time.monotonic() - start_time > STARTUP_GRACE:
+        if _watchdog_should_shutdown(time.monotonic(), start_time):
             threading.Thread(target=server.shutdown, daemon=True).start()
             break
 
@@ -292,6 +332,9 @@ def main(mode="global", target_path=None):
     port = server.server_address[1]
     ConfigHandler.server_ref = server
     ConfigHandler.last_heartbeat = 0
+    with ConfigHandler.activity_lock:
+        ConfigHandler.active_mutations = 0
+        ConfigHandler.last_activity_end = 0
     url = "http://127.0.0.1:{}".format(port)
     acquire_lock(url, mode, target_path)
 

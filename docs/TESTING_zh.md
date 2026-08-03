@@ -85,6 +85,25 @@ python -m pytest tests/test_remy_config.py tests/test_install_manifest.py tests/
 Windows CI同时运行`test_remy_config.py`和`test_index_state.py`。P1.2.1的
 schema 11、解析器身份、排除规则以及增量/全量状态比较继续由全量回归覆盖。
 
+## P1.2.3 Config UI行为
+
+UI-A阶段将后端配置与未保存草稿分离，并定义
+`reset_mode=none/non_secret/all`。测试覆盖稀疏更新、项目覆盖、密钥保留与显式
+清除、未知字段保留、非法与混合重置拒绝、保存后刷新结果、活动写请求期间的
+heartbeat保护、启动宽限和禁用控件保护。Node测试从`config_ui.html`提取并执行
+payload、实际差异和保存结果状态函数。
+
+```bash
+python -m pytest tests/test_remy_config.py tests/test_config_ui.py -q -p no:cacheprovider
+python -m pytest tests -q -p no:cacheprovider
+pyright -p pyrightconfig.json
+python -m compileall -q remy-src tests
+```
+
+UI-A验证基线为604项测试通过，Pyright没有错误或警告。本地Edge 151验证初始
+保存按钮处于禁用状态、禁用样式可辨识，并且无修改点击保存后退出不会出现未保存
+确认。浏览器自动化、API端点通信测试、响应式布局、动效和可访问性留在B1/B2阶段。
+
 ## 公开TEE canary
 
 已提交fixture来自`openharmony-sig/tee_tee_os_framework`的`b11ffb19d83da42047cc0b5cbfbbfb95ba3304f4`提交，许可证为MulanPSL-2.0。清单记录每个复制文件的Git blob SHA。fixture保留上游许可证和源码文件头。CI不访问网络。

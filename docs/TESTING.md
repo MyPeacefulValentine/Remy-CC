@@ -102,6 +102,30 @@ The Windows CI job runs both `test_remy_config.py` and `test_index_state.py`.
 P1.2.1 schema 11, parser identities, exclusions, and incremental/full-state
 comparisons remain in the full regression suite.
 
+## P1.2.3 Config UI behavior
+
+The UI-A stage separates server configuration from unsaved drafts and defines
+`reset_mode` as `none`, `non_secret`, or `all`. Tests verify sparse updates,
+project overrides, secret preservation and explicit removal, unknown-field
+preservation, invalid and mixed reset rejection, post-save refresh outcomes,
+active-write heartbeat protection, startup grace, and disabled-control guards.
+The Node tests execute the payload, actual-difference, and save-outcome state
+functions extracted from `config_ui.html`.
+
+```bash
+python -m pytest tests/test_remy_config.py tests/test_config_ui.py -q -p no:cacheprovider
+python -m pytest tests -q -p no:cacheprovider
+pyright -p pyrightconfig.json
+python -m compileall -q remy-src tests
+```
+
+The validated UI-A baseline is 604 passing tests with no Pyright errors or
+warnings. A local Edge 151 run also verified that the initial Save button is
+disabled, its disabled style is visible, and an unchanged Save attempt does not
+produce an unsaved-changes prompt on exit. Browser automation, API endpoint
+connectivity testing, responsive layout, motion, and accessibility remain in
+the B1/B2 stages.
+
 ## Public TEE canary
 
 The committed fixture comes from `openharmony-sig/tee_tee_os_framework` commit `b11ffb19d83da42047cc0b5cbfbbfb95ba3304f4` under MulanPSL-2.0. Its manifest records each copied file's Git blob SHA. The fixture retains the upstream license and source headers. CI does not access the network.

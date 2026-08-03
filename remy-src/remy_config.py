@@ -596,6 +596,14 @@ def save_config(
         return output
 
 
+def reset_non_secret_values(path: Path | str, *, project: bool = False) -> dict[str, Any]:
+    return save_config(
+        path,
+        remove_keys=(key for key in FIELD_SPECS if key not in SECRET_KEYS),
+        project=project,
+    )
+
+
 def reset_known_values(path: Path | str, *, project: bool = False) -> dict[str, Any]:
     return save_config(path, remove_keys=FIELD_SPECS.keys(), project=project)
 
