@@ -108,7 +108,7 @@ The UI-A stage separates server configuration from unsaved drafts and defines
 `reset_mode` as `none`, `non_secret`, or `all`. Tests verify sparse updates,
 project overrides, secret preservation and explicit removal, unknown-field
 preservation, invalid and mixed reset rejection, post-save refresh outcomes,
-active-write heartbeat protection, startup grace, and disabled-control guards.
+active-request cleanup, explicit shutdown, and disabled-control guards.
 The Node tests execute the payload, actual-difference, and save-outcome state
 functions extracted from `config_ui.html`.
 
@@ -117,7 +117,34 @@ python -m pytest tests/test_remy_config.py tests/test_config_ui.py -q -p no:cach
 python -m pytest tests -q -p no:cacheprovider
 pyright -p pyrightconfig.json
 python -m compileall -q remy-src tests
+# Optional browser verification:
+python -m pip install -r requirements-browser.txt
+python -m playwright install --with-deps chromium
+python -m pytest browser_tests -q -p no:cacheprovider --browser chromium --tracing off --video off --screenshot off
 ```
+
+UI-B1 adds an in-memory LLM endpoint test in global mode. The browser sends the
+current API-key action, endpoint, and model to the local Python server without
+saving them. The server issues one minimal chat-completions request with a
+15-second timeout, no retries, default TLS verification, a 64 KiB local request
+limit, and a 1 MiB upstream response limit. Redirects are not followed because
+urllib otherwise preserves Authorization on redirected requests.
+
+All POST routes require exact Host and Origin values, JSON content type, and a
+process-scoped 256-bit session token. Each HTML response gets an independent
+128-bit script nonce. Dynamic HTML and JSON responses use `no-store`,
+`no-referrer`, and `nosniff`; HTML also applies a nonce CSP that denies framing,
+forms, external scripts, and non-same-origin connections. Tests use unique fake
+secrets and local fake services, reject real external requests, and assert that
+secrets do not enter GET/test responses, errors, logs, or browser artifacts.
+Playwright runs in a separate Ubuntu Chromium job and does not produce traces,
+videos, or screenshots. The local server does not shut down when browser
+heartbeats stop because browsers may suspend background tabs. It remains active
+until the page Exit button calls `/api/shutdown` or the terminal receives
+`Ctrl+C`; closing or minimizing the browser alone does not end the process.
+JavaScript and Python strings cannot be proven erased
+from process memory; the implementation only avoids persistence, limits copies,
+and releases temporary payload references while preserving unsaved drafts.
 
 The validated UI-A baseline is 604 passing tests with no Pyright errors or
 warnings. A local Edge 151 run also verified that the initial Save button is

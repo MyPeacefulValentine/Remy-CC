@@ -66,6 +66,12 @@ h1{font-size:22px;font-weight:700;margin-bottom:4px}
 .unknown-warn,.diagnostic-warn,.acl-warn{margin-top:12px;padding:10px 14px;background:var(--c-warn-bg);border:1px solid var(--c-warn-bdr);border-radius:8px;font-size:12px;color:var(--c-warn-txt)}
 .source-tag{font-size:10px;color:var(--c-txt3);border:1px solid var(--c-bdr);border-radius:4px;padding:0 5px}
 .source-note{font-size:11px;color:var(--c-warn-txt);margin-top:4px}
+.llm-test{margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.llm-test-result{font-size:12px;min-height:20px;transition:opacity .18s}
+.llm-test-result.testing{color:var(--c-txt3)}
+.llm-test-result.success{color:var(--c-ok-txt)}
+.llm-test-result.error{color:var(--c-err-txt)}
+.llm-test-spinner{display:inline-block;margin-right:5px;animation:llmSpin .8s linear infinite}
 .modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.3);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;opacity:0;pointer-events:none;transition:opacity .2s}
 .modal-ov.show{opacity:1;pointer-events:auto}
 .modal{background:var(--c-srf);border-radius:12px;padding:24px;width:360px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.15);transform:scale(.95);transition:transform .2s}
@@ -79,6 +85,8 @@ h1{font-size:22px;font-weight:700;margin-bottom:4px}
 ::-webkit-scrollbar-thumb:hover{background:#94a3b8}
 .toast-constraint{position:fixed;background:var(--c-err-bg);color:var(--c-err-txt);border:1px solid var(--c-err-bdr);padding:4px 10px;border-radius:6px;font-size:11px;white-space:nowrap;z-index:200;animation:fadeIn .2s;pointer-events:none}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes llmSpin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.llm-test-result{transition:none}.llm-test-spinner{animation:none}}
 @media(max-width:600px){#app{padding:16px 12px 120px}.footer{flex-wrap:wrap;justify-content:center}header{flex-direction:column;gap:8px}}
 </style>
 </head>
@@ -86,12 +94,12 @@ h1{font-size:22px;font-weight:700;margin-bottom:4px}
 <div id="app">
   <header>
     <div class="header-left">
-      <img src="/logo.svg" alt="Remy" width="32" height="32" style="vertical-align:middle;margin-right:8px" onerror="this.style.display='none'"><h1 id="title" style="display:inline;vertical-align:middle">Remy Configuration</h1>
+      <img id="logo" src="/logo.svg" alt="Remy" width="32" height="32" style="vertical-align:middle;margin-right:8px"><h1 id="title" style="display:inline;vertical-align:middle">Remy Configuration</h1>
       <div class="subtitle" id="subtitle"></div>
     </div>
     <div class="header-actions">
       <span class="btn-mode-tag" id="mode-tag"></span>
-      <button class="btn-lang" id="lang-btn" onclick="toggleLang()">中文</button>
+      <button class="btn-lang" id="lang-btn">中文</button>
     </div>
   </header>
   <div id="groups"></div>
@@ -112,10 +120,12 @@ h1{font-size:22px;font-weight:700;margin-bottom:4px}
     <div class="modal-btns" id="modal-btns"></div>
   </div>
 </div>
-<script>
+<script nonce="__REMY_CSP_NONCE__">
 (function(){
+var sessionToken=__REMY_SESSION_TOKEN__;
 var config=null,lang="en",dirty=false,overrides={},modifiedKeys={};
 var draftValues={},pendingSecrets={},saveState="idle";
+var testState="idle",testResult=null;
 
 var ICONS={llm_api:"🧠",impact:"📊",injection:"📥",timeline:"📅",post_verify:"✅",security_audit:"🔒",debug:"🐛",test_gen:"🧪",ci:"🏗️",system:"⚙️",claude_code:"🤖"};
 
@@ -145,6 +155,8 @@ var TEXT={
       modalExitSave:"Save & Exit",modalExitDiscard:"Discard",modalExitCancel:"Cancel",
       closed:"Server closed. You may close this tab.",
       source:"Source",environmentNote:"A process environment value currently overrides file values.",
+      testConnection:"Test Connection",testingConnection:"Testing configured LLM endpoint",testSuccess:"Connection succeeded",testHttp:"HTTP",testMs:"ms",
+      test_missing_config:"API key or model is not configured.",test_invalid_url:"The endpoint URL is invalid.",test_connection:"Connection failed.",test_tls:"TLS verification failed.",test_timeout:"Connection timed out.",test_auth:"Authentication failed.",test_rate_limit:"The service rate limit was reached.",test_not_found:"The endpoint or model does not exist.",test_server:"The service returned a server error.",test_invalid_response:"The service returned an invalid response.",test_too_large:"The service response exceeded the size limit.",test_busy:"A connection test is already running.",test_redirect:"The endpoint returned a redirect.",test_request_rejected:"The service rejected the request.",
       diagnostics:"Configuration errors detected. Editing is disabled until the file is corrected.",
       aclWarning:"Windows file access depends on inherited user-directory ACLs."},
   "zh-CN":{title:"Remy 配置",titleProject:"Remy 项目配置",
@@ -172,12 +184,17 @@ var TEXT={
       modalExitSave:"保存并退出",modalExitDiscard:"放弃修改",modalExitCancel:"取消",
       closed:"服务已关闭，可关闭此标签页。",
       source:"来源",environmentNote:"进程环境值当前覆盖文件中的值。",
+      testConnection:"测试连接",testingConnection:"正在连接配置的LLM端点",testSuccess:"连接成功",testHttp:"HTTP",testMs:"毫秒",
+      test_missing_config:"API密钥或模型未配置。",test_invalid_url:"API端点格式无效。",test_connection:"连接失败。",test_tls:"TLS证书校验失败。",test_timeout:"连接超时。",test_auth:"鉴权失败。",test_rate_limit:"服务请求频率受限。",test_not_found:"端点或模型不存在。",test_server:"服务端返回错误。",test_invalid_response:"服务返回格式无效。",test_too_large:"服务响应超过大小限制。",test_busy:"已有连接测试正在执行。",test_redirect:"端点返回重定向。",test_request_rejected:"服务拒绝了请求。",
       diagnostics:"检测到配置文件错误。修正文件前禁止编辑。",
       aclWarning:"Windows文件访问权限取决于用户目录继承的ACL。"}
 };
 
 function t(key){return(TEXT[lang]||TEXT.en)[key]||(TEXT.en)[key]||key}
 function isProject(){return config&&config.mode==="project"}
+function postJson(path,payload){
+  return fetch(path,{method:"POST",headers:{"Content-Type":"application/json","X-Remy-Session":sessionToken},body:JSON.stringify(payload)})
+}
 
 window.toggleLang=function(){
   lang=(lang==="en")?"zh-CN":"en";
@@ -238,6 +255,79 @@ function updateDirtyState(){
   );
   dirty=Object.keys(modifiedKeys).length>0;
   updateControlState();
+}
+
+function renderTestState(){
+  var result=document.getElementById("llm-test-result");
+  var button=document.getElementById("llm-test-btn");
+  if(!result||!button)return;
+  button.textContent=testState==="testing"?t("testingConnection"):t("testConnection");
+  result.className="llm-test-result "+testState;
+  result.removeAttribute("role");
+  result.setAttribute("aria-live","polite");
+  if(testState==="idle"){result.textContent="";return}
+  if(testState==="testing"){
+    result.setAttribute("role","status");
+    result.innerHTML='<span class="llm-test-spinner" aria-hidden="true">◌</span>'+t("testingConnection");
+    return;
+  }
+  if(testState==="success"){
+    result.setAttribute("role","status");
+    result.textContent="✓ "+t("testSuccess")+" · "+testResult.latency_ms+" "+t("testMs");
+    return;
+  }
+  result.setAttribute("role","alert");
+  var message=t("test_"+(testResult&&testResult.category||"invalid_response"));
+  if(testResult&&testResult.http_status!=null)message+=" ("+t("testHttp")+" "+testResult.http_status+")";
+  result.textContent="! "+message;
+}
+
+function clearTestResult(){
+  if(testState==="testing")return;
+  testState="idle";testResult=null;renderTestState();
+}
+
+function buildTestPayload(secretAction,secretValue,baseUrl,model){
+  return {api_key_action:secretAction,api_key:secretAction==="replace"?secretValue:"",base_url:baseUrl,model:model};
+}
+if(typeof globalThis!=="undefined")globalThis.remyBuildTestPayload=buildTestPayload;
+
+function resolveTestState(result){return result&&result.category==="success"?"success":"error"}
+if(typeof globalThis!=="undefined")globalThis.remyResolveTestState=resolveTestState;
+
+function releaseTestPayload(payload){
+  if(payload&&Object.prototype.hasOwnProperty.call(payload,"api_key"))delete payload.api_key;
+  return payload;
+}
+if(typeof globalThis!=="undefined")globalThis.remyReleaseTestPayload=releaseTestPayload;
+
+function testConnection(){
+  if(isProject()||testState==="testing"||isSaveBusy())return Promise.resolve(false);
+  var secretAction=pendingSecrets.REMY_LLM_API_KEY||"preserve";
+  var secretValue=secretAction==="replace"?(draftValues.REMY_LLM_API_KEY||""):"";
+  var baseUrl=draftValues.REMY_LLM_BASE_URL||"";
+  var model=draftValues.REMY_LLM_MODEL||"";
+  var payload=buildTestPayload(secretAction,secretValue,baseUrl,model);
+  testState="testing";testResult=null;updateControlState();renderTestState();
+  return postJson("/api/test-llm",payload)
+    .then(function(response){return response.json().then(function(body){return {ok:response.ok,body:body}})})
+    .then(function(response){
+      testResult=response.body;
+      testState=response.ok?resolveTestState(testResult):"error";
+      return testState==="success";
+    }).catch(function(){
+      testResult={category:"connection",http_status:null,latency_ms:0};testState="error";return false;
+    }).finally(function(){
+      releaseTestPayload(payload);payload=null;secretValue=null;updateControlState();renderTestState();
+    });
+}
+
+function createTestControls(){
+  var wrap=document.createElement("div");wrap.className="llm-test";
+  var button=document.createElement("button");button.type="button";button.className="btn-toggle";button.id="llm-test-btn";
+  button.addEventListener("click",testConnection);
+  var result=document.createElement("span");result.id="llm-test-result";result.className="llm-test-result";
+  wrap.appendChild(button);wrap.appendChild(result);return wrap;
 }
 
 function render(){
@@ -412,18 +502,21 @@ function createParam(param){
       delete input.dataset.clear;
       if(input.value){input.dataset.modified="true";pendingSecrets[param.key]="replace";draftValues[param.key]=input.value}
       else{input.dataset.modified="false";delete pendingSecrets[param.key];delete draftValues[param.key]}
-      updateDirtyState();
+      clearTestResult();updateDirtyState();
     });
     var clearBtn=document.createElement("button");
     clearBtn.type="button";clearBtn.className="btn-toggle";clearBtn.textContent=lang==="zh-CN"?"清除":"Clear";
     clearBtn.addEventListener("click",function(){
       var hasValue=config.secret_state&&config.secret_state[param.key]&&config.secret_state[param.key].has_value;
-      if(!hasValue){delete pendingSecrets[param.key];updateDirtyState();return}
+      if(!hasValue){
+        input.value="";input.dataset.modified="false";delete input.dataset.clear;
+        delete pendingSecrets[param.key];delete draftValues[param.key];clearTestResult();updateDirtyState();return
+      }
       showModal(t("modalSecretTitle"),t("modalSecretMsg"),[
         {text:t("modalResetCancel"),cls:"btn",action:hideModal},
         {text:t("modalSecretConfirm"),cls:"btn btn-w",action:function(){
           hideModal();input.value="";input.dataset.modified="false";input.dataset.clear="true";
-          pendingSecrets[param.key]="clear";updateDirtyState();
+          pendingSecrets[param.key]="clear";clearTestResult();updateDirtyState();
         }}
       ]);
     });
@@ -434,6 +527,7 @@ function createParam(param){
     div.appendChild(top);
     div.appendChild(desc);
     div.appendChild(wrap);
+    if(!proj&&param.key==="REMY_LLM_API_KEY")div.appendChild(createTestControls());
   }else if(param.type==="int"){
     input=document.createElement("input");
     input.type="number";input.id="p-"+param.key;
@@ -605,7 +699,7 @@ if(typeof globalThis!=="undefined")globalThis.remyApplySaveOutcome=applySaveOutc
 
 function updateControlState(){
   if(!config)return;
-  var busy=isSaveBusy();
+  var busy=isSaveBusy()||testState==="testing";
   document.getElementById("save-btn").disabled=!!config.read_only||busy||!dirty;
   document.getElementById("reset-btn").disabled=!!config.read_only||busy;
   document.getElementById("clear-all-btn").disabled=!!config.read_only||busy;
@@ -622,6 +716,7 @@ function updateControlState(){
       else if(!isProject()||overrides[(controls[i].id||"").slice(2)]||controls[i].tagName==="BUTTON")controls[i].disabled=false;
     }
   }
+  renderTestState();
 }
 
 function setSaveState(next){
@@ -655,7 +750,7 @@ function save(resetMode){
     for(var k in overrides){if(overrides[k])payload.overrides.push(k)}
   }
   setSaveState("saving");
-  return fetch("/api/save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})
+  return postJson("/api/save",payload)
     .then(function(r){return r.json().then(function(body){return {ok:r.ok,body:body}})})
     .then(function(response){
       if(!response.ok||response.body.status!=="ok")throw new Error(response.body.message||("HTTP "+response.body.status));
@@ -707,7 +802,7 @@ function exitUI(){
 }
 
 function doShutdown(){
-  fetch("/api/shutdown",{method:"POST"}).catch(function(){});
+  postJson("/api/shutdown",{}).catch(function(){});
   dirty=false;
   var ov=document.getElementById("modal-ov");
   var box=document.getElementById("modal-box");
@@ -754,6 +849,8 @@ function showStatus(type,msg){
   el._timer=setTimeout(function(){el.style.display="none"},6000);
 }
 
+document.getElementById("logo").addEventListener("error",function(){this.style.display="none"});
+document.getElementById("lang-btn").addEventListener("click",toggleLang);
 document.getElementById("save-btn").addEventListener("click",function(){save("none")});
 document.getElementById("reset-btn").addEventListener("click",confirmReset);
 document.getElementById("clear-all-btn").addEventListener("click",confirmClearAll);
@@ -765,11 +862,13 @@ document.getElementById("modal-ov").addEventListener("click",function(e){
 document.getElementById("groups").addEventListener("input",function(e){
   var id=e.target&&e.target.id||"";
   if(id.indexOf("p-")===0&&e.target.type!=="password")draftValues[id.slice(2)]=e.target.value;
+  if(id==="p-REMY_LLM_BASE_URL"||id==="p-REMY_LLM_MODEL")clearTestResult();
   updateDirtyState();
 });
 document.getElementById("groups").addEventListener("change",function(e){
   var id=e.target&&e.target.id||"";
   if(id.indexOf("p-")===0&&e.target.type!=="password")draftValues[id.slice(2)]=e.target.value;
+  if(id==="p-REMY_LLM_BASE_URL"||id==="p-REMY_LLM_MODEL")clearTestResult();
   updateDirtyState();
 });
 document.addEventListener("keydown",function(e){
@@ -780,8 +879,6 @@ window.addEventListener("beforeunload",function(e){
 });
 function sendHeartbeat(){fetch("/api/heartbeat").catch(function(){})}
 setInterval(sendHeartbeat,2000);
-document.addEventListener("visibilitychange",function(){if(!document.hidden)sendHeartbeat()});
-window.addEventListener("focus",sendHeartbeat);
 init();
 })();
 </script>

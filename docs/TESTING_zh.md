@@ -90,7 +90,7 @@ schema 11、解析器身份、排除规则以及增量/全量状态比较继续�
 UI-A阶段将后端配置与未保存草稿分离，并定义
 `reset_mode=none/non_secret/all`。测试覆盖稀疏更新、项目覆盖、密钥保留与显式
 清除、未知字段保留、非法与混合重置拒绝、保存后刷新结果、活动写请求期间的
-heartbeat保护、启动宽限和禁用控件保护。Node测试从`config_ui.html`提取并执行
+显式关闭、活动请求清理和禁用控件保护。Node测试从`config_ui.html`提取并执行
 payload、实际差异和保存结果状态函数。
 
 ```bash
@@ -98,7 +98,26 @@ python -m pytest tests/test_remy_config.py tests/test_config_ui.py -q -p no:cach
 python -m pytest tests -q -p no:cacheprovider
 pyright -p pyrightconfig.json
 python -m compileall -q remy-src tests
+# 可选浏览器验证：
+python -m pip install -r requirements-browser.txt
+python -m playwright install --with-deps chromium
+python -m pytest browser_tests -q -p no:cacheprovider --browser chromium --tracing off --video off --screenshot off
 ```
+
+UI-B1在全局模式增加内存内LLM端点测试。浏览器将当前API密钥动作、端点和模型
+传给本地Python服务，不先保存配置。服务端发送一次最小chat-completions请求，使用
+15秒超时、零重试、系统默认TLS校验、64 KiB本地请求限制和1 MiB上游响应限制。
+连接测试不跟随重定向，因为urllib默认会在重定向请求中保留Authorization头。
+
+所有POST入口要求精确Host、精确Origin、JSON Content-Type和进程级256位会话令牌。
+每个HTML响应使用独立的128位脚本nonce。动态HTML和JSON响应发送`no-store`、
+`no-referrer`与`nosniff`；HTML还使用nonce CSP，禁止frame嵌入、表单、外部脚本
+和非同源连接。测试只使用唯一假密钥与本地假服务，拒绝真实外部请求，并断言密钥
+不进入GET/测试响应、错误、日志或浏览器制品。Playwright在独立Ubuntu Chromium
+作业运行，不生成trace、video或截图。浏览器可能暂停后台标签页，因此本地服务不再因
+heartbeat停止而自动关闭。服务只在页面“退出”按钮调用`/api/shutdown`或终端收到
+`Ctrl+C`时关闭；关闭或最小化浏览器本身不会结束进程。JavaScript与Python字符串不能被证明已从进程
+内存清零；实现只避免持久化、限制副本并释放临时payload引用，同时保留未保存草稿。
 
 UI-A验证基线为604项测试通过，Pyright没有错误或警告。本地Edge 151验证初始
 保存按钮处于禁用状态、禁用样式可辨识，并且无修改点击保存后退出不会出现未保存
