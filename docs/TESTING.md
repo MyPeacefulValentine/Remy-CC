@@ -153,6 +153,37 @@ produce an unsaved-changes prompt on exit. Browser automation, API endpoint
 connectivity testing, responsive layout, motion, and accessibility remain in
 the B1/B2 stages.
 
+UI-B2-A restructures the configuration information architecture. The registry
+declares bilingual labels, optional paired units, an `advanced` flag, and a
+four-value `restart_scope` (`immediate` / `next_index` / `next_session` /
+`next_mcp_launch`) for every field. The seven display groups are
+`llm_api / index_generation / injection / mcp / summary / timeline / system`
+with field counts 7/12/13/6/12/2/6 (58 total, unchanged keys, schema 1.0.0).
+The page separates the `#remy-host` header (title, mode, language, exit) from
+the `#config-page` content (search, group navigation, fields, sticky action
+bar). Desktop uses a group sidebar; below 900 px a native select replaces it.
+Only seven fields are common; the rest fold into per-group advanced sections,
+and modified or pending-restore fields stay pinned. Search runs locally with
+normalized Unicode-lowercase substring matching over keys, bilingual labels,
+descriptions, and group names, keeps registry order, locks matched groups
+expanded, and returns focus to the search box on Escape or clear. Global
+single-field restore uses the new strict `/api/save` `remove_keys` contract:
+a duplicate, unknown, secret, project-mode, or reset-mixed request returns
+HTTP 400 with unchanged file bytes. Project restore keeps the overrides-diff
+path. The B1 connection test moved to an LLM-group-level control with its
+request, security, and lifecycle contracts unchanged.
+
+The validated B2-A baseline is 648 passing tests in the full suite (six new:
+registry metadata and FieldSpec validation in `test_remy_config.py`;
+`remove_keys` acceptance/rejection, GET metadata, and the search/state/restore
+Node functions in `test_config_ui.py`) plus 8 Playwright Chromium tests (four
+new: desktop search/navigation/advanced folding at 1280×800, the group select
+at 390×844, the single-field restore round trip including edit-cancels-restore,
+and saving a modified field hidden by an active search). The registry test
+asserts the exact field-to-group assignment for all 58 fields and the
+documented `restart_scope` values of representative consumers. Both Pyright
+runs report zero errors and zero warnings.
+
 ## Public TEE canary
 
 The committed fixture comes from `openharmony-sig/tee_tee_os_framework` commit `b11ffb19d83da42047cc0b5cbfbbfb95ba3304f4` under MulanPSL-2.0. Its manifest records each copied file's Git blob SHA. The fixture retains the upstream license and source headers. CI does not access the network.

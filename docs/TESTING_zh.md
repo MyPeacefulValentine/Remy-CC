@@ -123,6 +123,27 @@ UI-A验证基线为604项测试通过，Pyright没有错误或警告。本地Edg
 保存按钮处于禁用状态、禁用样式可辨识，并且无修改点击保存后退出不会出现未保存
 确认。浏览器自动化、API端点通信测试、响应式布局、动效和可访问性留在B1/B2阶段。
 
+UI-B2-A重构配置信息结构。注册表为每个字段声明双语短名称、可选成对单位、
+`advanced`标记和四值`restart_scope`（`immediate` / `next_index` /
+`next_session` / `next_mcp_launch`）。7个显示组为
+`llm_api / index_generation / injection / mcp / summary / timeline / system`，
+字段计数7/12/13/6/12/2/6（共58项，配置键与schema 1.0.0不变）。页面分离
+`#remy-host`宿主区（标题、模式、语言、退出）与`#config-page`配置区（搜索、
+分组导航、字段、页内sticky操作区）。桌面使用分组侧栏，900px以下改为顶部原生
+select。常用字段仅7项，其余按组折叠为高级设置；已修改或待恢复字段固定显示。
+搜索在本地对键名、双语标签、双语说明和双语组名执行规范化Unicode小写子串匹配，
+保持注册表顺序，匹配组锁定展开，Escape或清除后焦点返回搜索框。全局单字段恢复
+使用新的严格`/api/save` `remove_keys`契约：重复、未知、密钥、项目模式或与重置
+混合的请求返回HTTP 400且文件字节不变。项目恢复继续使用overrides差集路径。
+B1连接测试移至LLM服务组级控件，请求、安全和生命周期契约不变。
+
+B2-A验证基线为全量648项测试通过（新增6项：`test_remy_config.py`的注册表元数据
+与FieldSpec校验；`test_config_ui.py`的remove_keys接受/拒绝、GET元数据和搜索/
+状态/恢复Node纯函数），另有8项Playwright Chromium测试（新增4项：1280×800桌面
+搜索/导航/高级折叠、390×844分组select、含“编辑取消恢复”的单字段恢复往返、
+被搜索隐藏的已修改字段仍被保存）。注册表测试断言全部58项字段到组的精确归属
+及代表性消费者的`restart_scope`取值。两次Pyright运行均为0错误0警告。
+
 ## 公开TEE canary
 
 已提交fixture来自`openharmony-sig/tee_tee_os_framework`的`b11ffb19d83da42047cc0b5cbfbbfb95ba3304f4`提交，许可证为MulanPSL-2.0。清单记录每个复制文件的Git blob SHA。fixture保留上游许可证和源码文件头。CI不访问网络。

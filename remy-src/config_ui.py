@@ -416,17 +416,29 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
         clear_secrets = data.get("clear_secrets", [])
         if not isinstance(clear_secrets, list) or any(not isinstance(key, str) for key in clear_secrets):
             raise remy_config.ConfigError("clear_secrets must be a string list")
+        remove_requested = data.get("remove_keys", [])
+        if not isinstance(remove_requested, list) or any(not isinstance(key, str) for key in remove_requested):
+            raise remy_config.ConfigError("remove_keys must be a string list")
+        if len(set(remove_requested)) != len(remove_requested):
+            raise remy_config.ConfigError("remove_keys must not contain duplicates")
+        for key in remove_requested:
+            if key not in remy_config.FIELD_SPECS:
+                raise remy_config.ConfigError("Unknown Remy configuration field in remove_keys: " + key)
+            if key in remy_config.SECRET_KEYS:
+                raise remy_config.ConfigError(key + " cannot be removed through remove_keys")
         if "reset" in data:
             raise remy_config.ConfigError("reset is unsupported; use reset_mode")
         reset_mode = data.get("reset_mode", "none")
         if not isinstance(reset_mode, str) or reset_mode not in RESET_MODES:
             raise remy_config.ConfigError("reset_mode must be one of none, non_secret, all")
         project = self.mode == "project"
+        if project and remove_requested:
+            raise remy_config.ConfigError("remove_keys is unavailable for project configuration")
         overrides = data.get("overrides", []) if project else []
         if not isinstance(overrides, list) or any(not isinstance(key, str) for key in overrides):
             raise remy_config.ConfigError("overrides must be a string list")
-        if reset_mode != "none" and (updates or clear_secrets or overrides):
-            raise remy_config.ConfigError("reset_mode cannot be combined with values, clear_secrets, or overrides")
+        if reset_mode != "none" and (updates or clear_secrets or overrides or remove_requested):
+            raise remy_config.ConfigError("reset_mode cannot be combined with values, clear_secrets, remove_keys, or overrides")
         if project and reset_mode == "non_secret":
             raise remy_config.ConfigError("non_secret reset is unavailable for project configuration")
         target = self.target_path if project else remy_config.user_config_path()
@@ -440,7 +452,7 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
         elif reset_mode == "all":
             remy_config.reset_known_values(target, project=project)
         else:
-            remove_keys = []
+            remove_keys = list(remove_requested)
             if project:
                 allowed = set(overrides)
                 updates = {key: value for key, value in updates.items() if key in allowed}

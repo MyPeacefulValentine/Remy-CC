@@ -213,6 +213,86 @@ def test_project_rejects_secret_and_removes_disabled_override(ui_home, tmp_path)
     assert remy_config.read_document(target, project=True)["values"] == {"REMY_LANG": "en"}
 
 
+def test_remove_keys_deletes_explicit_values_and_preserves_rest(ui_home):
+    path = ui_home / ".claude" / "remy-config.json"
+    _write(path, {
+        "REMY_LANG": "zh-CN",
+        "REMY_LLM_MAX_WORKERS": "4",
+        "FUTURE_FIELD": "keep",
+        "REMY_LLM_API_KEY": FAKE_SECRET,
+    })
+    with _server() as port:
+        status, payload, _ = _request(port, "POST", "/api/save", {
+            "values": {},
+            "clear_secrets": [],
+            "remove_keys": ["REMY_LANG", "REMY_LLM_MAX_WORKERS"],
+        })
+        combined_status, _, _ = _request(port, "POST", "/api/save", {
+            "values": {"REMY_BANNER_ENABLED": "false"},
+            "remove_keys": ["REMY_LLM_MAX_WORKERS"],
+        })
+    assert status == 200 and payload["status"] == "ok"
+    assert combined_status == 200
+    values = remy_config.read_document(path)["values"]
+    assert values == {
+        "FUTURE_FIELD": "keep",
+        "REMY_LLM_API_KEY": FAKE_SECRET,
+        "REMY_BANNER_ENABLED": "false",
+    }
+
+
+def test_remove_keys_rejections_leave_file_unchanged(ui_home, tmp_path):
+    path = ui_home / ".claude" / "remy-config.json"
+    _write(path, {"REMY_LANG": "zh-CN"})
+    before = path.read_bytes()
+    invalid_payloads = [
+        {"values": {}, "remove_keys": "REMY_LANG"},
+        {"values": {}, "remove_keys": [1]},
+        {"values": {}, "remove_keys": ["REMY_LANG", "REMY_LANG"]},
+        {"values": {}, "remove_keys": ["UNKNOWN_FIELD"]},
+        {"values": {}, "remove_keys": ["REMY_LLM_API_KEY"]},
+        {"values": {}, "remove_keys": ["REMY_LANG"], "reset_mode": "all"},
+        {"values": {}, "remove_keys": ["REMY_LANG"], "reset_mode": "non_secret"},
+    ]
+    with _server() as port:
+        for payload in invalid_payloads:
+            status, body, _ = _request(port, "POST", "/api/save", payload)
+            assert status == 400 and body["status"] == "error"
+            assert path.read_bytes() == before
+    project = tmp_path / "project"
+    target = project / ".claude" / "remy-config.json"
+    _write(target, {"REMY_LANG": "zh-CN"})
+    project_before = target.read_bytes()
+    config_ui.ConfigHandler.mode = "project"
+    config_ui.ConfigHandler.project_root = project
+    config_ui.ConfigHandler.target_path = target
+    with _server() as port:
+        status, _, _ = _request(port, "POST", "/api/save", {
+            "values": {},
+            "overrides": [],
+            "remove_keys": ["REMY_LANG"],
+        })
+    assert status == 400
+    assert target.read_bytes() == project_before
+
+
+def test_get_registry_exposes_ui_metadata(ui_home):
+    _ = ui_home
+    with _server() as port:
+        status, payload, _ = _request(port, "GET", "/api/config")
+    assert status == 200
+    registry = payload["registry"]
+    assert len(registry) == 58
+    assert [group["id"] for group in payload["groups"]] == [
+        "llm_api", "index_generation", "injection", "mcp", "summary", "timeline", "system",
+    ]
+    for row in registry:
+        assert row["label_en"] and row["label_zh"]
+        assert row["restart_scope"] in ("immediate", "next_index", "next_session", "next_mcp_launch")
+        assert isinstance(row["advanced"], bool)
+        assert ("unit_en" in row) == ("unit_zh" in row)
+
+
 def test_reset_modes_preserve_unknown_and_enforce_secret_boundary(ui_home):
     path = ui_home / ".claude" / "remy-config.json"
     _write(path, {"FUTURE_FIELD": "keep", "REMY_LLM_API_KEY": FAKE_SECRET, "REMY_LANG": "zh-CN"})
@@ -621,19 +701,27 @@ def test_node_executes_payload_diff_save_and_llm_functions():
     script = source + "\n" + r'''
 const registry=[{key:"A",type:"text"},{key:"B",type:"text"},{key:"S",type:"password"}];
 const states={A:{value:"changed"},B:{value:"inherited"},S:{value:"",clear:true,modified:false}};
-const payload=buildPayload(registry,states,{A:true,S:true},{A:true,S:true},false);
-const changed=calculateModifiedKeys(registry,{A:"base",B:"same"},{A:"changed",B:"same"},{},{},{S:"clear"},false);
-const reverted=calculateModifiedKeys(registry,{A:"base",B:"same"},{A:"base",B:"same"},{},{},{},false);
+const payload=buildPayload(registry,states,{A:true,S:true},{A:true,S:true},{},false);
+const removalPayload=buildPayload(registry,states,{A:true,B:true},{},{B:true},false);
+const projectPayload=buildPayload(registry,states,{A:true,B:true},{A:true},{B:true},true);
+const changed=calculateModifiedKeys(registry,{A:"base",B:"same"},{A:"changed",B:"same"},{},{},{S:"clear"},{},false);
+const reverted=calculateModifiedKeys(registry,{A:"base",B:"same"},{A:"base",B:"same"},{},{},{},{},false);
+const removalChanged=calculateModifiedKeys(registry,{A:"base",B:"same"},{A:"base",B:"same"},{},{},{},{B:true},false);
+const projectRemovalIgnored=calculateModifiedKeys(registry,{A:"base",B:"same"},{A:"base",B:"same"},{},{},{},{B:true},true);
 const outcomes=[resolveSaveOutcome(false,false),resolveSaveOutcome(true,false),resolveSaveOutcome(true,true)];
 const testPayload=buildTestPayload("replace","secret","https://example.invalid","model");
 const released=releaseTestPayload(testPayload);
-process.stdout.write(JSON.stringify({payload,changed,reverted,outcomes,released,testStates:[resolveTestState({category:"success"}),resolveTestState({category:"auth"})]}));
+process.stdout.write(JSON.stringify({payload,removalPayload,projectPayload,changed,reverted,removalChanged,projectRemovalIgnored,outcomes,released,testStates:[resolveTestState({category:"success"}),resolveTestState({category:"auth"})]}));
 '''
     completed = subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
     assert json.loads(completed.stdout) == {
         "payload": {"values": {"A": "changed"}, "clear_secrets": ["S"]},
+        "removalPayload": {"values": {"A": "changed"}, "clear_secrets": [], "remove_keys": ["B"]},
+        "projectPayload": {"values": {"A": "changed"}, "clear_secrets": []},
         "changed": {"A": True, "S": True},
         "reverted": {},
+        "removalChanged": {"B": True},
+        "projectRemovalIgnored": {},
         "outcomes": [
             {"state": "error", "canClose": False},
             {"state": "refresh_error", "canClose": False},
@@ -641,6 +729,57 @@ process.stdout.write(JSON.stringify({payload,changed,reverted,outcomes,released,
         ],
         "released": {"api_key_action": "replace", "base_url": "https://example.invalid", "model": "model"},
         "testStates": ["success", "error"],
+    }
+
+
+def test_node_executes_search_state_and_restore_functions():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is unavailable")
+    html_text = (REMY_SRC / "config_ui.html").read_text(encoding="utf-8")
+    source = "\n".join([
+        _extract_js_function(html_text, "normalizeQuery"),
+        _extract_js_function(html_text, "paramMatchesQuery"),
+        _extract_js_function(html_text, "resolveFieldState"),
+        _extract_js_function(html_text, "resolveRestoreAction"),
+    ])
+    script = source + "\n" + r'''
+const q=normalizeQuery("  Max\t\n  Workers  ");
+const param={key:"REMY_LLM_MAX_WORKERS",label_en:"Concurrent Requests",label_zh:"并发请求数",desc_en:"Concurrent LLM request workers",desc_zh:"LLM并发请求线程数"};
+const matches=[
+  paramMatchesQuery(param,"LLM Service","LLM服务",normalizeQuery("CONCURRENT")),
+  paramMatchesQuery(param,"LLM Service","LLM服务",normalizeQuery("并发请求")),
+  paramMatchesQuery(param,"LLM Service","LLM服务",normalizeQuery("llm service")),
+  paramMatchesQuery(param,"LLM Service","LLM服务",normalizeQuery("remy_llm_max")),
+  paramMatchesQuery(param,"LLM Service","LLM服务",normalizeQuery("nomatch")),
+  paramMatchesQuery(param,"LLM Service","LLM服务",""),
+  paramMatchesQuery(param,"LLM Service","LLM服务",normalizeQuery("  Concurrent \t Requests ")),
+];
+const states=[
+  resolveFieldState({unsaved:true,environment:true,projectOverride:true,explicit:true,differsFromDefault:true}),
+  resolveFieldState({unsaved:false,environment:true,projectOverride:true,explicit:true,differsFromDefault:true}),
+  resolveFieldState({unsaved:false,environment:false,projectOverride:true,explicit:true,differsFromDefault:false}),
+  resolveFieldState({unsaved:false,environment:false,projectOverride:false,explicit:true,differsFromDefault:false}),
+  resolveFieldState({unsaved:false,environment:false,projectOverride:false,explicit:true,differsFromDefault:true}),
+  resolveFieldState({unsaved:false,environment:false,projectOverride:false,explicit:false,differsFromDefault:false}),
+];
+const restores=[
+  resolveRestoreAction({secret:false},{projectMode:false,pendingRemoval:true,explicit:true,unsavedEdit:false}),
+  resolveRestoreAction({secret:false},{projectMode:false,pendingRemoval:false,explicit:true,unsavedEdit:false}),
+  resolveRestoreAction({secret:false},{projectMode:false,pendingRemoval:false,explicit:false,unsavedEdit:true}),
+  resolveRestoreAction({secret:false},{projectMode:false,pendingRemoval:false,explicit:false,unsavedEdit:false}),
+  resolveRestoreAction({secret:true},{projectMode:false,pendingRemoval:false,explicit:true,unsavedEdit:true}),
+  resolveRestoreAction({secret:false},{projectMode:true,override:true}),
+  resolveRestoreAction({secret:false},{projectMode:true,override:false}),
+];
+process.stdout.write(JSON.stringify({q,matches,states,restores}));
+'''
+    completed = subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+    assert json.loads(completed.stdout) == {
+        "q": "max workers",
+        "matches": [True, True, True, True, False, True, True],
+        "states": ["unsaved", "environment", "project", "explicit_default", "deviated", "default"],
+        "restores": ["undo_restore", "restore_default", "restore_default", None, None, "restore_inherit", None],
     }
 
 
@@ -658,3 +797,18 @@ def test_html_security_and_control_contract():
     assert 'save("none").then(function(ok){if(ok)doShutdown()})' in html_text
     assert '@media(prefers-reduced-motion:reduce)' in html_text
     assert 'postJson("/api/test-llm",payload)' in html_text
+    assert '<div id="remy-host">' in html_text
+    assert '<div id="config-page">' in html_text
+    assert html_text.index('id="exit-btn"') < html_text.index('<div id="config-page">')
+    assert 'id="search-input"' in html_text
+    assert 'id="group-nav"' in html_text
+    assert 'id="group-select"' in html_text
+    assert 'class="actionbar" id="actionbar"' in html_text
+    assert '.actionbar{position:sticky' in html_text
+    assert '@media(max-width:900px){.group-nav{display:none}#group-select{display:block}}' in html_text
+    assert 'header.setAttribute("aria-expanded"' in html_text
+    assert 'header.setAttribute("aria-controls",bodyId)' in html_text
+    assert 'lbl.htmlFor="p-"+param.key' in html_text
+    assert 'if(e.key==="Escape"&&searchRaw){e.preventDefault();clearSearch()}' in html_text
+    assert 'payload.remove_keys=removeKeys' in html_text
+    assert 'delete pendingRemovals[id.slice(2)]' in html_text

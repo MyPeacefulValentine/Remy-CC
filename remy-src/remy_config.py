@@ -22,6 +22,7 @@ CONFIG_LOCK_NAME = ".remy-config.lock"
 CONFIG_LOCK_TIMEOUT = 5.0
 SECRET_KEYS = frozenset({"REMY_LLM_API_KEY"})
 INVALID_SECRET_VALUES = frozenset({"", "YOUR_API_KEY_HERE", "PROXY_MANAGED"})
+RESTART_SCOPES = ("immediate", "next_index", "next_session", "next_mcp_launch")
 
 
 class ConfigError(ValueError):
@@ -49,6 +50,12 @@ class FieldSpec:
     ui_visible: bool = True
     allow_empty: bool = False
     path_base: Optional[str] = None
+    label_en: str = ""
+    label_zh: str = ""
+    unit_en: Optional[str] = None
+    unit_zh: Optional[str] = None
+    advanced: bool = True
+    restart_scope: str = "immediate"
 
 
 def _field(
@@ -60,6 +67,12 @@ def _field(
     description_en: str,
     description_zh: str,
     *,
+    label_en: str,
+    label_zh: str,
+    restart_scope: str,
+    unit_en: Optional[str] = None,
+    unit_zh: Optional[str] = None,
+    advanced: bool = True,
     minimum: Optional[float] = None,
     maximum: Optional[float] = None,
     options: Iterable[str] = (),
@@ -69,6 +82,12 @@ def _field(
     allow_empty: bool = False,
     path_base: Optional[str] = None,
 ) -> FieldSpec:
+    if restart_scope not in RESTART_SCOPES:
+        raise ValueError(f"{key} restart_scope must be one of {', '.join(RESTART_SCOPES)}")
+    if (unit_en is None) != (unit_zh is None):
+        raise ValueError(f"{key} must declare unit_en and unit_zh together")
+    if not label_en or not label_zh:
+        raise ValueError(f"{key} must declare bilingual labels")
     return FieldSpec(
         key=key,
         old_keys=(old_key,) if old_key else (),
@@ -85,70 +104,76 @@ def _field(
         ui_visible=ui_visible,
         allow_empty=allow_empty,
         path_base=path_base,
+        label_en=label_en,
+        label_zh=label_zh,
+        unit_en=unit_en,
+        unit_zh=unit_zh,
+        advanced=advanced,
+        restart_scope=restart_scope,
     )
 
 
 _FIELDS = (
-    _field("REMY_LLM_API_KEY", "OPENAI_API_KEY", "password", "", "llm_api", "API key for the OpenAI-compatible LLM service", "OpenAI兼容LLM服务的API密钥", secret=True, project_allowed=False, allow_empty=True),
-    _field("REMY_LLM_BASE_URL", "OPENAI_BASE_URL", "url", "https://api.deepseek.com/v1/chat/completions", "llm_api", "LLM API endpoint", "LLM API端点"),
-    _field("REMY_LLM_MODEL", "OPENAI_MODEL", "text", "deepseek-v4-flash", "llm_api", "LLM model name", "LLM模型名称"),
-    _field("REMY_LLM_MAX_WORKERS", "OPENAI_MAX_WORKERS", "int", "8", "llm_api", "Concurrent LLM request workers", "LLM并发请求线程数", minimum=1, maximum=64),
-    _field("REMY_LLM_RETRY_LIMIT", "OPENAI_RETRY_LIMIT", "int", "8", "llm_api", "LLM request retry limit", "LLM请求重试次数", minimum=0, maximum=32),
-    _field("REMY_LLM_TIMEOUT", "OPENAI_TIMEOUT", "int", "300", "llm_api", "LLM request timeout in seconds", "LLM请求超时秒数", minimum=30, maximum=3600),
-    _field("REMY_LLM_MAX_TOKENS", "OPENAI_MAX_TOKENS", "int", "32768", "llm_api", "Maximum tokens in an LLM response", "LLM响应最大Token数", minimum=1024, maximum=1048576),
-    _field("REMY_LOGIC_INDEX_FILTER_SMALL", "LOGIC_INDEX_FILTER_SMALL", "bool", "false", "llm_api", "Skip LLM summaries for small undocumented functions", "跳过无文档小函数的LLM摘要"),
-    _field("REMY_LOGIC_INDEX_AUTO_INJECT", "LOGIC_INDEX_AUTO_INJECT", "enum", "ALWAYS", "injection", "Logic index injection policy", "逻辑索引注入策略", options=("ALWAYS", "ASK", "NEVER")),
-    _field("REMY_LOGIC_INDEX_INTERACTIVE", "LOGIC_INDEX_INTERACTIVE", "bool", "true", "injection", "Show the logic scope selector at session start", "会话开始时显示逻辑范围选择器"),
-    _field("REMY_LOGIC_SCOPE_TIMEOUT", "LOGIC_SCOPE_TIMEOUT", "int", "300", "injection", "Logic scope selector timeout in seconds", "逻辑范围选择器超时秒数", minimum=0, maximum=3600),
-    _field("REMY_NAV_TIER_FULL_MAX", "NAV_TIER_FULL_MAX", "int", "200", "injection", "Maximum file count for full symbol injection", "完整符号注入的最大文件数", minimum=0, maximum=50000),
-    _field("REMY_NAV_MCP_MINIMAL_ENABLED", "NAV_MCP_MINIMAL_ENABLED", "bool", "true", "injection", "Use minimal injection when MCP is available", "MCP可用时使用最小注入"),
-    _field("REMY_NAV_TIER_CLUSTER_MAX", "NAV_TIER_CLUSTER_MAX", "int", "2000", "injection", "Maximum file count for cluster injection", "集群注入的最大文件数", minimum=0, maximum=100000),
-    _field("REMY_LOGIC_INDEX_DB_PATH", "LOGIC_INDEX_DB_PATH", "path", ".claude/logic_index.db", "injection", "Logic index database path relative to the project root", "相对项目根的逻辑索引数据库路径", path_base="project"),
-    _field("REMY_SCAN_COMMIT_BATCH_SIZE", "SCAN_COMMIT_BATCH_SIZE", "int", "100", "injection", "Files per full-scan transaction", "全量扫描每个事务的文件数", minimum=10, maximum=10000),
-    _field("REMY_CLUSTER_DENSITY_THRESHOLD", "CLUSTER_DENSITY_THRESHOLD", "float", "0.5", "injection", "Minimum cluster edge density", "集群最小边密度", minimum=0.0),
-    _field("REMY_CLUSTER_MAX_SIZE", "CLUSTER_MAX_SIZE", "int", "15", "injection", "Maximum files per cluster", "每个集群的最大文件数", minimum=2, maximum=200),
-    _field("REMY_CLUSTER_ENTRY_COUNT", "CLUSTER_ENTRY_COUNT", "int", "3", "injection", "Entry symbols selected per cluster", "每个集群选择的入口符号数", minimum=1, maximum=20),
-    _field("REMY_SYNTH_INTERFACE_FANOUT_CAP", "SYNTH_INTERFACE_FANOUT_CAP", "int", "10", "injection", "Interface dispatch synthetic edge cap", "接口分派合成边上限", minimum=1, maximum=100),
-    _field("REMY_SYNTH_EVENT_FANOUT_CAP", "SYNTH_EVENT_FANOUT_CAP", "int", "20", "injection", "Event emitter synthetic edge cap", "事件发射器合成边上限", minimum=1, maximum=200),
-    _field("REMY_RESOLVE_FANOUT_CAP", "RESOLVE_FANOUT_CAP", "int", "10", "injection", "Maximum ambiguous call resolution candidates", "歧义调用解析候选上限", minimum=1, maximum=100),
-    _field("REMY_RESOLVE_SCORE_SAME_FILE", "RESOLVE_SCORE_SAME_FILE", "int", "2", "injection", "Same-file call resolution score", "同文件调用解析分数", minimum=0, maximum=100),
-    _field("REMY_RESOLVE_SCORE_DIRECT_IMPORT", "RESOLVE_SCORE_DIRECT_IMPORT", "int", "1", "injection", "Direct-import call resolution score", "直接导入调用解析分数", minimum=0, maximum=100),
-    _field("REMY_RESOLVE_SCORE_GLOBAL", "RESOLVE_SCORE_GLOBAL", "int", "0", "injection", "Global call resolution score", "全局调用解析分数", minimum=0, maximum=100),
-    _field("REMY_ENRICHMENT_TIER_FULL_MAX", "ENRICHMENT_TIER_FULL_MAX", "int", "200", "impact", "Maximum file count for full enrichment", "完整富化的最大文件数", minimum=0, maximum=10000),
-    _field("REMY_ENRICHMENT_TIER_MID_MAX", "ENRICHMENT_TIER_MID_MAX", "int", "1000", "impact", "Maximum file count for mid enrichment", "中等富化的最大文件数", minimum=0, maximum=50000),
-    _field("REMY_ENRICHMENT_CAP", "ENRICHMENT_CAP", "int", "15", "impact", "Caller and callee cap for small and mid projects", "小中型项目的调用关系条目上限", minimum=1, maximum=100),
-    _field("REMY_ENRICHMENT_CAP_LARGE", "ENRICHMENT_CAP_LARGE", "int", "10", "impact", "Caller and callee cap for large projects", "大型项目的调用关系条目上限", minimum=1, maximum=100),
-    _field("REMY_ENRICHMENT_SIG_MAX_CHARS", "ENRICHMENT_SIG_MAX_CHARS", "int", "80", "impact", "Maximum signature characters in enrichment", "富化信息中的签名字符上限", minimum=0, maximum=500),
-    _field("REMY_PROJECT_TREE_AUTO_INJECT", "PROJECT_TREE_AUTO_INJECT", "enum", "ALWAYS", "injection", "Project tree injection policy", "项目树注入策略", options=("ALWAYS", "ASK", "NEVER")),
-    _field("REMY_TIMELINE_AUTO_INJECT", "TIMELINE_AUTO_INJECT", "enum", "ALWAYS", "injection", "Timeline injection policy", "时间线注入策略", options=("ALWAYS", "ASK", "NEVER")),
-    _field("REMY_TIMELINE_INJECT_MODE", "TIMELINE_INJECT_MODE", "enum", "all", "timeline", "Timeline filter mode", "时间线过滤模式", options=("all", "last_n", "since_date", "within_days")),
-    _field("REMY_TIMELINE_INJECT_VALUE", "TIMELINE_INJECT_VALUE", "text", "", "timeline", "Timeline filter value", "时间线过滤值", allow_empty=True),
-    _field("REMY_MCP_SERVER_ENABLED", "MCP_SERVER_ENABLED", "bool", "true", "mcp", "Enable the remy-index MCP server on next launch", "下次启动时启用remy-index MCP服务器"),
-    _field("REMY_MCP_BFS_MAX_DEPTH", "MCP_BFS_MAX_DEPTH", "int", "5", "mcp", "Maximum BFS query depth", "BFS查询最大深度", minimum=1, maximum=10),
-    _field("REMY_MCP_RESULT_LIMIT", "MCP_RESULT_LIMIT", "int", "50", "mcp", "Shared MCP result limit", "MCP共享结果上限", minimum=10, maximum=500),
-    _field("REMY_MCP_STATIC_ONLY_DEFAULT", "MCP_STATIC_ONLY_DEFAULT", "bool", "false", "mcp", "Default static-only graph query mode", "图查询默认仅使用静态边"),
-    _field("REMY_FLOW_MAX_DEPTH", "FLOW_MAX_DEPTH", "int", "15", "mcp", "Maximum query_flow depth", "query_flow最大深度", minimum=1, maximum=50),
-    _field("REMY_FLOW_MAX_VISITED", "FLOW_MAX_VISITED", "int", "2000", "mcp", "Maximum query_flow visited nodes", "query_flow最大访问节点数", minimum=100, maximum=50000),
-    _field("REMY_SUMMARY_CHAR_LIMIT_SYMBOL", "SUMMARY_CHAR_LIMIT_SYMBOL", "int", "100", "summary", "Symbol summary character limit", "符号摘要字符上限", minimum=20, maximum=500),
-    _field("REMY_SUMMARY_CHAR_LIMIT_FILE_COHESIVE", "SUMMARY_CHAR_LIMIT_FILE_COHESIVE", "int", "250", "summary", "Cohesive file summary character limit", "高内聚文件摘要字符上限", minimum=50, maximum=1000),
-    _field("REMY_SUMMARY_CHAR_LIMIT_FILE_UTILITY", "SUMMARY_CHAR_LIMIT_FILE_UTILITY", "int", "800", "summary", "Utility file summary character limit", "工具文件摘要字符上限", minimum=100, maximum=4000),
-    _field("REMY_SUMMARY_CHAR_LIMIT_CLUSTER", "SUMMARY_CHAR_LIMIT_CLUSTER", "int", "500", "summary", "Cluster summary character limit", "集群摘要字符上限", minimum=100, maximum=2000),
-    _field("REMY_SUMMARY_ZH_LENGTH_FACTOR", "SUMMARY_ZH_LENGTH_FACTOR", "float", "0.5", "summary", "Chinese summary length multiplier", "中文摘要长度系数", minimum=0.1, maximum=1.0),
-    _field("REMY_FILE_KIND_MIN_SYMBOLS", "FILE_KIND_MIN_SYMBOLS", "int", "5", "summary", "Minimum symbols for non-trivial file classification", "非简单文件分类所需的最小符号数", minimum=1, maximum=50),
-    _field("REMY_FILE_KIND_LOW_COHESION_THRESHOLD", "FILE_KIND_LOW_COHESION_THRESHOLD", "float", "0.25", "summary", "Low-cohesion file threshold", "低内聚文件阈值", minimum=0.0, maximum=1.0),
-    _field("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "int", "50", "summary", "Primary forced summary rewrite threshold", "摘要强制重写主阈值", minimum=1, maximum=10000),
-    _field("REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP", "FORCE_RECOMPUTE_THRESHOLD_BACKUP", "int", "-1", "summary", "Backup forced summary rewrite threshold", "摘要强制重写备用阈值", minimum=-1, maximum=100000),
-    _field("REMY_FORCE_RECOMPUTE_INTERVAL_DAYS", "FORCE_RECOMPUTE_INTERVAL_DAYS", "int", "30", "summary", "Forced summary rewrite interval in days", "摘要强制重写间隔天数", minimum=1, maximum=365),
-    _field("REMY_SUMMARY_BOOTSTRAP_MODE", "SUMMARY_BOOTSTRAP_MODE", "enum", "auto", "summary", "Hierarchical summary bootstrap mode", "层级摘要初始化模式", options=("auto", "ask", "never")),
-    _field("REMY_BOOTSTRAP_AUTO_SIZE_GUARD", "BOOTSTRAP_AUTO_SIZE_GUARD", "int", "500", "summary", "File-count guard for automatic bootstrap", "自动层级摘要的文件数限制", minimum=10, maximum=100000),
-    _field("REMY_LANG", "REMY_LANG", "enum", "en", "system", "Remy output language", "Remy输出语言", options=("en", "zh-CN")),
-    _field("REMY_BANNER_ENABLED", "REMY_BANNER_ENABLED", "bool", "true", "system", "Show the session-start banner", "显示会话启动横幅"),
-    _field("REMY_REPO_AUDIT_ROOT", "REPO_AUDIT_ROOT", "path", "~/claude_audit", "system", "Repository audit sandbox root", "仓库审计沙盒根目录", path_base="user"),
-    _field("REMY_STRUCT_SCAN_TIMEOUT", "STRUCT_SCAN_TIMEOUT", "int", "60", "system", "Lifecycle structural scan timeout in seconds", "生命周期结构扫描超时秒数", minimum=10, maximum=300),
-    _field("REMY_INDEX_SCAN_LOCK_TIMEOUT", "INDEX_SCAN_LOCK_TIMEOUT", "float", "30", "system", "Project scan lock timeout in seconds", "项目扫描锁超时秒数", minimum=0, maximum=300),
-    _field("REMY_INDEX_QUEUE_LOCK_TIMEOUT", "INDEX_QUEUE_LOCK_TIMEOUT", "float", "1", "system", "Dirty queue lock timeout in seconds", "脏路径队列锁超时秒数", minimum=0, maximum=30),
-    _field("REMY_MIGRATION_KEEP_JSON", "MIGRATION_KEEP_JSON", "bool", "false", "system", "Keep the legacy JSON index after migration", "迁移后保留旧JSON索引", ui_visible=False),
-    _field("REMY_EVAL_MODEL", "EVAL_MODEL", "text", "deepseek-v4-flash", "system", "Model used by the A/B evaluation agent", "A/B评估Agent使用的模型", ui_visible=False),
+    _field("REMY_LLM_API_KEY", "OPENAI_API_KEY", "password", "", "llm_api", "API key for the OpenAI-compatible LLM service", "OpenAI兼容LLM服务的API密钥", label_en="API Key", label_zh="API密钥", restart_scope="next_index", advanced=False, secret=True, project_allowed=False, allow_empty=True),
+    _field("REMY_LLM_BASE_URL", "OPENAI_BASE_URL", "url", "https://api.deepseek.com/v1/chat/completions", "llm_api", "LLM API endpoint", "LLM API端点", label_en="API Endpoint", label_zh="API端点", restart_scope="next_index", advanced=False),
+    _field("REMY_LLM_MODEL", "OPENAI_MODEL", "text", "deepseek-v4-flash", "llm_api", "LLM model name", "LLM模型名称", label_en="Model Name", label_zh="模型名称", restart_scope="next_index", advanced=False),
+    _field("REMY_LLM_MAX_WORKERS", "OPENAI_MAX_WORKERS", "int", "8", "llm_api", "Concurrent LLM request workers", "LLM并发请求线程数", label_en="Concurrent Requests", label_zh="并发请求数", unit_en="requests", unit_zh="请求", restart_scope="next_index", advanced=False, minimum=1, maximum=64),
+    _field("REMY_LLM_RETRY_LIMIT", "OPENAI_RETRY_LIMIT", "int", "8", "llm_api", "LLM request retry limit", "LLM请求重试次数", label_en="Retry Limit", label_zh="重试次数上限", unit_en="retries", unit_zh="次", restart_scope="next_index", minimum=0, maximum=32),
+    _field("REMY_LLM_TIMEOUT", "OPENAI_TIMEOUT", "int", "300", "llm_api", "LLM request timeout in seconds", "LLM请求超时秒数", label_en="Request Timeout", label_zh="请求超时", unit_en="seconds", unit_zh="秒", restart_scope="next_index", minimum=30, maximum=3600),
+    _field("REMY_LLM_MAX_TOKENS", "OPENAI_MAX_TOKENS", "int", "32768", "llm_api", "Maximum tokens in an LLM response", "LLM响应最大Token数", label_en="Response Token Limit", label_zh="响应Token上限", unit_en="tokens", unit_zh="Token", restart_scope="next_index", minimum=1024, maximum=1048576),
+    _field("REMY_LOGIC_INDEX_FILTER_SMALL", "LOGIC_INDEX_FILTER_SMALL", "bool", "false", "index_generation", "Skip LLM summaries for small undocumented functions", "跳过无文档小函数的LLM摘要", label_en="Small Function Filter", label_zh="小函数摘要过滤", restart_scope="next_index"),
+    _field("REMY_LOGIC_INDEX_DB_PATH", "LOGIC_INDEX_DB_PATH", "path", ".claude/logic_index.db", "index_generation", "Logic index database path relative to the project root", "相对项目根的逻辑索引数据库路径", label_en="Index Database Path", label_zh="索引数据库路径", restart_scope="next_index", path_base="project"),
+    _field("REMY_SCAN_COMMIT_BATCH_SIZE", "SCAN_COMMIT_BATCH_SIZE", "int", "100", "index_generation", "Files per full-scan transaction", "全量扫描每个事务的文件数", label_en="Scan Commit Batch", label_zh="扫描提交批量", unit_en="files", unit_zh="文件", restart_scope="next_index", minimum=10, maximum=10000),
+    _field("REMY_CLUSTER_DENSITY_THRESHOLD", "CLUSTER_DENSITY_THRESHOLD", "float", "0.5", "index_generation", "Minimum cluster edge density", "集群最小边密度", label_en="Cluster Density Threshold", label_zh="集群密度阈值", restart_scope="next_index", minimum=0.0),
+    _field("REMY_CLUSTER_MAX_SIZE", "CLUSTER_MAX_SIZE", "int", "15", "index_generation", "Maximum files per cluster", "每个集群的最大文件数", label_en="Cluster Size Limit", label_zh="集群大小上限", unit_en="files", unit_zh="文件", restart_scope="next_index", minimum=2, maximum=200),
+    _field("REMY_CLUSTER_ENTRY_COUNT", "CLUSTER_ENTRY_COUNT", "int", "3", "index_generation", "Entry symbols selected per cluster", "每个集群选择的入口符号数", label_en="Cluster Entry Symbols", label_zh="集群入口符号数", unit_en="symbols", unit_zh="符号", restart_scope="next_index", minimum=1, maximum=20),
+    _field("REMY_SYNTH_INTERFACE_FANOUT_CAP", "SYNTH_INTERFACE_FANOUT_CAP", "int", "10", "index_generation", "Interface dispatch synthetic edge cap", "接口分派合成边上限", label_en="Interface Edge Cap", label_zh="接口合成边上限", unit_en="edges", unit_zh="边", restart_scope="next_index", minimum=1, maximum=100),
+    _field("REMY_SYNTH_EVENT_FANOUT_CAP", "SYNTH_EVENT_FANOUT_CAP", "int", "20", "index_generation", "Event emitter synthetic edge cap", "事件发射器合成边上限", label_en="Event Edge Cap", label_zh="事件合成边上限", unit_en="edges", unit_zh="边", restart_scope="next_index", minimum=1, maximum=200),
+    _field("REMY_RESOLVE_FANOUT_CAP", "RESOLVE_FANOUT_CAP", "int", "10", "index_generation", "Maximum ambiguous call resolution candidates", "歧义调用解析候选上限", label_en="Resolution Candidate Cap", label_zh="调用解析候选上限", unit_en="candidates", unit_zh="候选", restart_scope="next_index", minimum=1, maximum=100),
+    _field("REMY_RESOLVE_SCORE_SAME_FILE", "RESOLVE_SCORE_SAME_FILE", "int", "2", "index_generation", "Same-file call resolution score", "同文件调用解析分数", label_en="Same-File Resolution Score", label_zh="同文件解析分数", restart_scope="next_index", minimum=0, maximum=100),
+    _field("REMY_RESOLVE_SCORE_DIRECT_IMPORT", "RESOLVE_SCORE_DIRECT_IMPORT", "int", "1", "index_generation", "Direct-import call resolution score", "直接导入调用解析分数", label_en="Direct-Import Resolution Score", label_zh="直接导入解析分数", restart_scope="next_index", minimum=0, maximum=100),
+    _field("REMY_RESOLVE_SCORE_GLOBAL", "RESOLVE_SCORE_GLOBAL", "int", "0", "index_generation", "Global call resolution score", "全局调用解析分数", label_en="Global Resolution Score", label_zh="全局解析分数", restart_scope="next_index", minimum=0, maximum=100),
+    _field("REMY_LOGIC_INDEX_AUTO_INJECT", "LOGIC_INDEX_AUTO_INJECT", "enum", "ALWAYS", "injection", "Logic index injection policy", "逻辑索引注入策略", label_en="Index Injection Policy", label_zh="索引注入策略", restart_scope="next_session", advanced=False, options=("ALWAYS", "ASK", "NEVER")),
+    _field("REMY_LOGIC_INDEX_INTERACTIVE", "LOGIC_INDEX_INTERACTIVE", "bool", "true", "injection", "Show the logic scope selector at session start", "会话开始时显示逻辑范围选择器", label_en="Scope Selector Prompt", label_zh="范围选择器弹窗", restart_scope="next_session"),
+    _field("REMY_LOGIC_SCOPE_TIMEOUT", "LOGIC_SCOPE_TIMEOUT", "int", "300", "injection", "Logic scope selector timeout in seconds", "逻辑范围选择器超时秒数", label_en="Scope Selector Timeout", label_zh="范围选择器超时", unit_en="seconds", unit_zh="秒", restart_scope="next_session", minimum=0, maximum=3600),
+    _field("REMY_NAV_TIER_FULL_MAX", "NAV_TIER_FULL_MAX", "int", "200", "injection", "Maximum file count for full symbol injection", "完整符号注入的最大文件数", label_en="Full Injection File Cap", label_zh="完整注入文件上限", unit_en="files", unit_zh="文件", restart_scope="next_session", minimum=0, maximum=50000),
+    _field("REMY_NAV_MCP_MINIMAL_ENABLED", "NAV_MCP_MINIMAL_ENABLED", "bool", "true", "injection", "Use minimal injection when MCP is available", "MCP可用时使用最小注入", label_en="MCP Minimal Injection", label_zh="MCP最小注入", restart_scope="next_session"),
+    _field("REMY_NAV_TIER_CLUSTER_MAX", "NAV_TIER_CLUSTER_MAX", "int", "2000", "injection", "Maximum file count for cluster injection", "集群注入的最大文件数", label_en="Cluster Injection File Cap", label_zh="集群注入文件上限", unit_en="files", unit_zh="文件", restart_scope="next_session", minimum=0, maximum=100000),
+    _field("REMY_PROJECT_TREE_AUTO_INJECT", "PROJECT_TREE_AUTO_INJECT", "enum", "ALWAYS", "injection", "Project tree injection policy", "项目树注入策略", label_en="Project Tree Injection Policy", label_zh="项目树注入策略", restart_scope="next_session", options=("ALWAYS", "ASK", "NEVER")),
+    _field("REMY_TIMELINE_AUTO_INJECT", "TIMELINE_AUTO_INJECT", "enum", "ALWAYS", "injection", "Timeline injection policy", "时间线注入策略", label_en="Timeline Injection Policy", label_zh="时间线注入策略", restart_scope="next_session", options=("ALWAYS", "ASK", "NEVER")),
+    _field("REMY_ENRICHMENT_TIER_FULL_MAX", "ENRICHMENT_TIER_FULL_MAX", "int", "200", "injection", "Maximum file count for full enrichment", "完整富化的最大文件数", label_en="Full Enrichment File Cap", label_zh="完整富化文件上限", unit_en="files", unit_zh="文件", restart_scope="immediate", minimum=0, maximum=10000),
+    _field("REMY_ENRICHMENT_TIER_MID_MAX", "ENRICHMENT_TIER_MID_MAX", "int", "1000", "injection", "Maximum file count for mid enrichment", "中等富化的最大文件数", label_en="Mid Enrichment File Cap", label_zh="中等富化文件上限", unit_en="files", unit_zh="文件", restart_scope="immediate", minimum=0, maximum=50000),
+    _field("REMY_ENRICHMENT_CAP", "ENRICHMENT_CAP", "int", "15", "injection", "Caller and callee cap for small and mid projects", "小中型项目的调用关系条目上限", label_en="Enrichment Entry Cap", label_zh="富化条目上限", unit_en="entries", unit_zh="条", restart_scope="immediate", minimum=1, maximum=100),
+    _field("REMY_ENRICHMENT_CAP_LARGE", "ENRICHMENT_CAP_LARGE", "int", "10", "injection", "Caller and callee cap for large projects", "大型项目的调用关系条目上限", label_en="Large-Project Enrichment Cap", label_zh="大型项目富化上限", unit_en="entries", unit_zh="条", restart_scope="immediate", minimum=1, maximum=100),
+    _field("REMY_ENRICHMENT_SIG_MAX_CHARS", "ENRICHMENT_SIG_MAX_CHARS", "int", "80", "injection", "Maximum signature characters in enrichment", "富化信息中的签名字符上限", label_en="Enrichment Signature Length", label_zh="富化签名长度上限", unit_en="characters", unit_zh="字符", restart_scope="immediate", minimum=0, maximum=500),
+    _field("REMY_MCP_SERVER_ENABLED", "MCP_SERVER_ENABLED", "bool", "true", "mcp", "Enable the remy-index MCP server on next launch", "下次启动时启用remy-index MCP服务器", label_en="MCP Server Switch", label_zh="MCP服务器开关", restart_scope="next_mcp_launch", advanced=False),
+    _field("REMY_MCP_BFS_MAX_DEPTH", "MCP_BFS_MAX_DEPTH", "int", "5", "mcp", "Maximum BFS query depth", "BFS查询最大深度", label_en="BFS Depth Limit", label_zh="BFS深度上限", unit_en="levels", unit_zh="层", restart_scope="immediate", minimum=1, maximum=10),
+    _field("REMY_MCP_RESULT_LIMIT", "MCP_RESULT_LIMIT", "int", "50", "mcp", "Shared MCP result limit", "MCP共享结果上限", label_en="Result Limit", label_zh="结果条数上限", unit_en="entries", unit_zh="条", restart_scope="immediate", minimum=10, maximum=500),
+    _field("REMY_MCP_STATIC_ONLY_DEFAULT", "MCP_STATIC_ONLY_DEFAULT", "bool", "false", "mcp", "Default static-only graph query mode", "图查询默认仅使用静态边", label_en="Static-Only Default", label_zh="默认仅静态边", restart_scope="immediate"),
+    _field("REMY_FLOW_MAX_DEPTH", "FLOW_MAX_DEPTH", "int", "15", "mcp", "Maximum query_flow depth", "query_flow最大深度", label_en="Flow Depth Limit", label_zh="调用路径深度上限", unit_en="levels", unit_zh="层", restart_scope="immediate", minimum=1, maximum=50),
+    _field("REMY_FLOW_MAX_VISITED", "FLOW_MAX_VISITED", "int", "2000", "mcp", "Maximum query_flow visited nodes", "query_flow最大访问节点数", label_en="Flow Node Limit", label_zh="调用路径节点上限", unit_en="nodes", unit_zh="节点", restart_scope="immediate", minimum=100, maximum=50000),
+    _field("REMY_SUMMARY_CHAR_LIMIT_SYMBOL", "SUMMARY_CHAR_LIMIT_SYMBOL", "int", "100", "summary", "Symbol summary character limit", "符号摘要字符上限", label_en="Symbol Summary Length", label_zh="符号摘要长度", unit_en="characters", unit_zh="字符", restart_scope="next_index", minimum=20, maximum=500),
+    _field("REMY_SUMMARY_CHAR_LIMIT_FILE_COHESIVE", "SUMMARY_CHAR_LIMIT_FILE_COHESIVE", "int", "250", "summary", "Cohesive file summary character limit", "高内聚文件摘要字符上限", label_en="Cohesive File Summary Length", label_zh="高内聚文件摘要长度", unit_en="characters", unit_zh="字符", restart_scope="next_index", minimum=50, maximum=1000),
+    _field("REMY_SUMMARY_CHAR_LIMIT_FILE_UTILITY", "SUMMARY_CHAR_LIMIT_FILE_UTILITY", "int", "800", "summary", "Utility file summary character limit", "工具文件摘要字符上限", label_en="Utility File Summary Length", label_zh="工具文件摘要长度", unit_en="characters", unit_zh="字符", restart_scope="next_index", minimum=100, maximum=4000),
+    _field("REMY_SUMMARY_CHAR_LIMIT_CLUSTER", "SUMMARY_CHAR_LIMIT_CLUSTER", "int", "500", "summary", "Cluster summary character limit", "集群摘要字符上限", label_en="Cluster Summary Length", label_zh="集群摘要长度", unit_en="characters", unit_zh="字符", restart_scope="next_index", minimum=100, maximum=2000),
+    _field("REMY_SUMMARY_ZH_LENGTH_FACTOR", "SUMMARY_ZH_LENGTH_FACTOR", "float", "0.5", "summary", "Chinese summary length multiplier", "中文摘要长度系数", label_en="Chinese Length Factor", label_zh="中文长度系数", restart_scope="next_index", minimum=0.1, maximum=1.0),
+    _field("REMY_FILE_KIND_MIN_SYMBOLS", "FILE_KIND_MIN_SYMBOLS", "int", "5", "summary", "Minimum symbols for non-trivial file classification", "非简单文件分类所需的最小符号数", label_en="File Classification Symbol Floor", label_zh="文件分类符号下限", unit_en="symbols", unit_zh="符号", restart_scope="next_index", minimum=1, maximum=50),
+    _field("REMY_FILE_KIND_LOW_COHESION_THRESHOLD", "FILE_KIND_LOW_COHESION_THRESHOLD", "float", "0.25", "summary", "Low-cohesion file threshold", "低内聚文件阈值", label_en="Low-Cohesion Threshold", label_zh="低内聚阈值", restart_scope="next_index", minimum=0.0, maximum=1.0),
+    _field("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "int", "50", "summary", "Primary forced summary rewrite threshold", "摘要强制重写主阈值", label_en="Forced Rewrite Threshold", label_zh="强制重写主阈值", unit_en="changes", unit_zh="次", restart_scope="next_index", minimum=1, maximum=10000),
+    _field("REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP", "FORCE_RECOMPUTE_THRESHOLD_BACKUP", "int", "-1", "summary", "Backup forced summary rewrite threshold", "摘要强制重写备用阈值", label_en="Backup Rewrite Threshold", label_zh="强制重写备用阈值", unit_en="changes", unit_zh="次", restart_scope="next_index", minimum=-1, maximum=100000),
+    _field("REMY_FORCE_RECOMPUTE_INTERVAL_DAYS", "FORCE_RECOMPUTE_INTERVAL_DAYS", "int", "30", "summary", "Forced summary rewrite interval in days", "摘要强制重写间隔天数", label_en="Forced Rewrite Interval", label_zh="强制重写间隔", unit_en="days", unit_zh="天", restart_scope="next_index", minimum=1, maximum=365),
+    _field("REMY_SUMMARY_BOOTSTRAP_MODE", "SUMMARY_BOOTSTRAP_MODE", "enum", "auto", "summary", "Hierarchical summary bootstrap mode", "层级摘要初始化模式", label_en="Summary Bootstrap Mode", label_zh="摘要初始化模式", restart_scope="next_index", options=("auto", "ask", "never")),
+    _field("REMY_BOOTSTRAP_AUTO_SIZE_GUARD", "BOOTSTRAP_AUTO_SIZE_GUARD", "int", "500", "summary", "File-count guard for automatic bootstrap", "自动层级摘要的文件数限制", label_en="Auto Bootstrap File Guard", label_zh="自动初始化文件上限", unit_en="files", unit_zh="文件", restart_scope="next_index", minimum=10, maximum=100000),
+    _field("REMY_TIMELINE_INJECT_MODE", "TIMELINE_INJECT_MODE", "enum", "all", "timeline", "Timeline filter mode", "时间线过滤模式", label_en="Timeline Filter Mode", label_zh="时间线过滤模式", restart_scope="next_session", options=("all", "last_n", "since_date", "within_days")),
+    _field("REMY_TIMELINE_INJECT_VALUE", "TIMELINE_INJECT_VALUE", "text", "", "timeline", "Timeline filter value", "时间线过滤值", label_en="Timeline Filter Value", label_zh="时间线过滤值", restart_scope="next_session", allow_empty=True),
+    _field("REMY_LANG", "REMY_LANG", "enum", "en", "system", "Remy output language", "Remy输出语言", label_en="Interface Language", label_zh="输出语言", restart_scope="next_session", advanced=False, options=("en", "zh-CN")),
+    _field("REMY_BANNER_ENABLED", "REMY_BANNER_ENABLED", "bool", "true", "system", "Show the session-start banner", "显示会话启动横幅", label_en="Startup Banner", label_zh="启动横幅", restart_scope="next_session"),
+    _field("REMY_REPO_AUDIT_ROOT", "REPO_AUDIT_ROOT", "path", "~/claude_audit", "system", "Repository audit sandbox root", "仓库审计沙盒根目录", label_en="Audit Sandbox Root", label_zh="审计沙盒根目录", restart_scope="immediate", path_base="user"),
+    _field("REMY_STRUCT_SCAN_TIMEOUT", "STRUCT_SCAN_TIMEOUT", "int", "60", "system", "Lifecycle structural scan timeout in seconds", "生命周期结构扫描超时秒数", label_en="Structural Scan Timeout", label_zh="结构扫描超时", unit_en="seconds", unit_zh="秒", restart_scope="next_session", minimum=10, maximum=300),
+    _field("REMY_INDEX_SCAN_LOCK_TIMEOUT", "INDEX_SCAN_LOCK_TIMEOUT", "float", "30", "system", "Project scan lock timeout in seconds", "项目扫描锁超时秒数", label_en="Scan Lock Timeout", label_zh="扫描锁超时", unit_en="seconds", unit_zh="秒", restart_scope="next_session", minimum=0, maximum=300),
+    _field("REMY_INDEX_QUEUE_LOCK_TIMEOUT", "INDEX_QUEUE_LOCK_TIMEOUT", "float", "1", "system", "Dirty queue lock timeout in seconds", "脏路径队列锁超时秒数", label_en="Queue Lock Timeout", label_zh="队列锁超时", unit_en="seconds", unit_zh="秒", restart_scope="immediate", minimum=0, maximum=30),
+    _field("REMY_MIGRATION_KEEP_JSON", "MIGRATION_KEEP_JSON", "bool", "false", "system", "Keep the legacy JSON index after migration", "迁移后保留旧JSON索引", label_en="Legacy JSON Retention", label_zh="旧JSON索引保留", restart_scope="immediate", ui_visible=False),
+    _field("REMY_EVAL_MODEL", "EVAL_MODEL", "text", "deepseek-v4-flash", "system", "Model used by the A/B evaluation agent", "A/B评估Agent使用的模型", label_en="Evaluation Model", label_zh="评估模型", restart_scope="immediate", ui_visible=False),
 )
 
 FIELD_SPECS: Mapping[str, FieldSpec] = MappingProxyType({field.key: field for field in _FIELDS})
@@ -163,12 +188,12 @@ UNUSED_OLD_KEYS = frozenset({
 LEGACY_KEYS = frozenset(OLD_TO_NEW) | UNUSED_OLD_KEYS
 
 GROUPS = (
-    {"id": "llm_api", "label_en": "Logic Index LLM", "label_zh": "语义索引LLM"},
-    {"id": "impact", "label_en": "Impact Analysis", "label_zh": "影响分析"},
+    {"id": "llm_api", "label_en": "LLM Service", "label_zh": "LLM服务"},
+    {"id": "index_generation", "label_en": "Index Generation", "label_zh": "索引生成"},
     {"id": "injection", "label_en": "Context Injection", "label_zh": "上下文注入"},
+    {"id": "mcp", "label_en": "MCP Queries", "label_zh": "MCP查询"},
+    {"id": "summary", "label_en": "Summary System", "label_zh": "摘要系统"},
     {"id": "timeline", "label_en": "Timeline", "label_zh": "时间线"},
-    {"id": "mcp", "label_en": "MCP Server", "label_zh": "MCP服务器"},
-    {"id": "summary", "label_en": "Summary Hierarchy", "label_zh": "层级摘要"},
     {"id": "system", "label_en": "System", "label_zh": "系统"},
 )
 
@@ -417,9 +442,16 @@ def registry_for_ui() -> list[dict[str, Any]]:
             "default": spec.default,
             "desc_en": spec.description_en,
             "desc_zh": spec.description_zh,
+            "label_en": spec.label_en,
+            "label_zh": spec.label_zh,
+            "advanced": spec.advanced,
+            "restart_scope": spec.restart_scope,
             "secret": spec.secret,
             "project_allowed": spec.project_allowed,
         }
+        if spec.unit_en is not None:
+            row["unit_en"] = spec.unit_en
+            row["unit_zh"] = spec.unit_zh
         if spec.minimum is not None:
             row["min"] = spec.minimum
         if spec.maximum is not None:

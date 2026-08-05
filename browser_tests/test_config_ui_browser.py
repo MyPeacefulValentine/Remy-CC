@@ -84,6 +84,7 @@ def app_servers(tmp_path, monkeypatch):
     yield {
         "app_url": f"http://127.0.0.1:{app_port}",
         "upstream_url": f"http://127.0.0.1:{upstream.server_address[1]}/v1/chat/completions",
+        "home": home,
     }
 
     app.shutdown()
@@ -178,3 +179,110 @@ def test_reduced_motion_disables_spinner_animation(page: Page, app_servers):
     release_response.set()
     page.locator("#llm-test-result.success").wait_for()
     _UpstreamHandler.release_response = None
+
+
+def test_desktop_search_navigation_and_advanced_folding(page: Page, app_servers):
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(app_servers["app_url"])
+
+    assert page.locator("#group-nav").is_visible()
+    assert not page.locator("#group-select").is_visible()
+    assert page.locator('button.group-header[data-group="llm_api"]').get_attribute("aria-expanded") == "true"
+    assert page.locator('button.group-header[data-group="system"]').get_attribute("aria-expanded") == "false"
+    assert page.locator("#p-REMY_LLM_API_KEY").count() == 1
+    assert page.locator("#p-REMY_LANG").count() == 0
+    assert page.locator("#p-REMY_LLM_RETRY_LIMIT").count() == 0
+
+    page.locator('.group[data-group="llm_api"] .btn-advanced').click()
+    assert page.locator("#p-REMY_LLM_RETRY_LIMIT").count() == 1
+    page.locator('.group[data-group="llm_api"] .btn-advanced').click()
+    assert page.locator("#p-REMY_LLM_RETRY_LIMIT").count() == 0
+
+    page.locator("#search-input").fill("Interface Language")
+    assert page.locator("#p-REMY_LANG").count() == 1
+    assert page.locator("#search-count").inner_text() != ""
+    assert page.locator('button.group-header[data-group="system"]').is_disabled()
+    assert page.locator("#expand-all-btn").is_disabled()
+
+    page.locator("#search-input").fill("zzz-no-match-query")
+    assert page.locator("#search-empty.show").count() == 1
+    assert "zzz-no-match-query" in page.locator("#search-empty-msg").inner_text()
+    page.locator("#search-clear-btn").click()
+    assert page.locator("#search-empty.show").count() == 0
+    assert page.evaluate("document.activeElement.id") == "search-input"
+    assert page.locator("#p-REMY_LANG").count() == 0
+
+    page.locator("#search-input").fill("timeline")
+    assert page.locator("#p-REMY_TIMELINE_INJECT_MODE").count() == 1
+    page.locator("#search-input").press("Escape")
+    assert page.locator("#search-input").input_value() == ""
+    assert page.evaluate("document.activeElement.id") == "search-input"
+
+    page.locator('#group-nav button[data-group="system"]').click()
+    assert page.locator('button.group-header[data-group="system"]').get_attribute("aria-expanded") == "true"
+    assert page.locator("#p-REMY_LANG").count() == 1
+    assert page.locator('button.group-header[data-group="llm_api"]').get_attribute("aria-expanded") == "true"
+
+
+def test_mobile_viewport_uses_group_select(page: Page, app_servers):
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(app_servers["app_url"])
+    assert not page.locator("#group-nav").is_visible()
+    assert page.locator("#group-select").is_visible()
+    page.locator("#group-select").select_option("system")
+    assert page.locator("#p-REMY_LANG").count() == 1
+    assert page.locator('button.group-header[data-group="system"]').get_attribute("aria-expanded") == "true"
+
+
+def test_single_field_restore_roundtrip(page: Page, app_servers):
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(app_servers["app_url"])
+    page.locator('#group-nav button[data-group="system"]').click()
+    config_path = app_servers["home"] / ".claude" / "remy-config.json"
+
+    field = page.locator('.param[data-key="REMY_LANG"]')
+    assert field.locator(".state-tag").inner_text() == "Explicit default"
+    restore = field.locator(".btn-restore")
+    assert restore.count() == 1
+    assert "Restore default" in restore.inner_text()
+    restore.click()
+
+    field = page.locator('.param[data-key="REMY_LANG"]')
+    assert "Undo restore" in field.locator(".btn-restore").inner_text()
+    assert field.locator(".state-tag").inner_text() == "Unsaved"
+    assert page.locator("#save-btn").is_enabled()
+
+    page.locator("#p-REMY_LANG").select_option("zh-CN")
+    page.locator("#save-btn").click()
+    page.locator("#status.success").wait_for()
+    assert remy_config.read_document(config_path)["values"]["REMY_LANG"] == "zh-CN"
+
+    field = page.locator('.param[data-key="REMY_LANG"]')
+    assert field.locator(".state-tag").inner_text() == "Custom value"
+    assert "Restore default" in field.locator(".btn-restore").inner_text()
+    field.locator(".btn-restore").click()
+    page.locator("#save-btn").click()
+    page.wait_for_function(
+        "() => !document.querySelector('.param[data-key=\"REMY_LANG\"] .btn-restore')"
+    )
+
+    assert "REMY_LANG" not in remy_config.read_document(config_path)["values"]
+    field = page.locator('.param[data-key="REMY_LANG"]')
+    assert field.locator(".btn-restore").count() == 0
+    assert field.locator(".state-tag").inner_text() == "Default"
+
+
+def test_hidden_modified_field_is_still_saved(page: Page, app_servers):
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(app_servers["app_url"])
+    page.locator('#group-nav button[data-group="system"]').click()
+    page.locator("#p-REMY_LANG").select_option("zh-CN")
+    page.locator("#search-input").fill("concurrent")
+    assert page.locator("#p-REMY_LANG").count() == 0
+    assert page.locator("#save-btn").is_enabled()
+    page.locator("#save-btn").click()
+    page.locator("#status.success").wait_for()
+    values = remy_config.read_document(
+        app_servers["home"] / ".claude" / "remy-config.json"
+    )["values"]
+    assert values["REMY_LANG"] == "zh-CN"

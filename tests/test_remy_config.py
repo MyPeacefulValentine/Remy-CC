@@ -48,6 +48,111 @@ def test_registry_owns_llm_defaults(config_home):
     assert remy_config.FIELD_SPECS["REMY_LLM_MAX_TOKENS"].maximum == 1048576
 
 
+def test_registry_ui_metadata_contract(config_home):
+    _ = config_home
+    registry = remy_config.registry_for_ui()
+    assert len(registry) == 58
+    group_ids = [group["id"] for group in remy_config.GROUPS]
+    assert group_ids == ["llm_api", "index_generation", "injection", "mcp", "summary", "timeline", "system"]
+    counts = {group_id: 0 for group_id in group_ids}
+    for row in registry:
+        counts[row["group"]] += 1
+    assert counts == {
+        "llm_api": 7,
+        "index_generation": 12,
+        "injection": 13,
+        "mcp": 6,
+        "summary": 12,
+        "timeline": 2,
+        "system": 6,
+    }
+    for row in registry:
+        assert row["label_en"] and row["label_zh"]
+        assert row["restart_scope"] in remy_config.RESTART_SCOPES
+        assert isinstance(row["advanced"], bool)
+        assert ("unit_en" in row) == ("unit_zh" in row)
+    common = sorted(row["key"] for row in registry if not row["advanced"])
+    assert common == [
+        "REMY_LANG",
+        "REMY_LLM_API_KEY",
+        "REMY_LLM_BASE_URL",
+        "REMY_LLM_MAX_WORKERS",
+        "REMY_LLM_MODEL",
+        "REMY_LOGIC_INDEX_AUTO_INJECT",
+        "REMY_MCP_SERVER_ENABLED",
+    ]
+    keys_by_group = {group_id: [] for group_id in group_ids}
+    for row in registry:
+        keys_by_group[row["group"]].append(row["key"])
+    assert keys_by_group == {
+        "llm_api": [
+            "REMY_LLM_API_KEY", "REMY_LLM_BASE_URL", "REMY_LLM_MODEL",
+            "REMY_LLM_MAX_WORKERS", "REMY_LLM_RETRY_LIMIT", "REMY_LLM_TIMEOUT",
+            "REMY_LLM_MAX_TOKENS",
+        ],
+        "index_generation": [
+            "REMY_LOGIC_INDEX_FILTER_SMALL", "REMY_LOGIC_INDEX_DB_PATH",
+            "REMY_SCAN_COMMIT_BATCH_SIZE", "REMY_CLUSTER_DENSITY_THRESHOLD",
+            "REMY_CLUSTER_MAX_SIZE", "REMY_CLUSTER_ENTRY_COUNT",
+            "REMY_SYNTH_INTERFACE_FANOUT_CAP", "REMY_SYNTH_EVENT_FANOUT_CAP",
+            "REMY_RESOLVE_FANOUT_CAP", "REMY_RESOLVE_SCORE_SAME_FILE",
+            "REMY_RESOLVE_SCORE_DIRECT_IMPORT", "REMY_RESOLVE_SCORE_GLOBAL",
+        ],
+        "injection": [
+            "REMY_LOGIC_INDEX_AUTO_INJECT", "REMY_LOGIC_INDEX_INTERACTIVE",
+            "REMY_LOGIC_SCOPE_TIMEOUT", "REMY_NAV_TIER_FULL_MAX",
+            "REMY_NAV_MCP_MINIMAL_ENABLED", "REMY_NAV_TIER_CLUSTER_MAX",
+            "REMY_PROJECT_TREE_AUTO_INJECT", "REMY_TIMELINE_AUTO_INJECT",
+            "REMY_ENRICHMENT_TIER_FULL_MAX", "REMY_ENRICHMENT_TIER_MID_MAX",
+            "REMY_ENRICHMENT_CAP", "REMY_ENRICHMENT_CAP_LARGE",
+            "REMY_ENRICHMENT_SIG_MAX_CHARS",
+        ],
+        "mcp": [
+            "REMY_MCP_SERVER_ENABLED", "REMY_MCP_BFS_MAX_DEPTH",
+            "REMY_MCP_RESULT_LIMIT", "REMY_MCP_STATIC_ONLY_DEFAULT",
+            "REMY_FLOW_MAX_DEPTH", "REMY_FLOW_MAX_VISITED",
+        ],
+        "summary": [
+            "REMY_SUMMARY_CHAR_LIMIT_SYMBOL", "REMY_SUMMARY_CHAR_LIMIT_FILE_COHESIVE",
+            "REMY_SUMMARY_CHAR_LIMIT_FILE_UTILITY", "REMY_SUMMARY_CHAR_LIMIT_CLUSTER",
+            "REMY_SUMMARY_ZH_LENGTH_FACTOR", "REMY_FILE_KIND_MIN_SYMBOLS",
+            "REMY_FILE_KIND_LOW_COHESION_THRESHOLD",
+            "REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY",
+            "REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP",
+            "REMY_FORCE_RECOMPUTE_INTERVAL_DAYS", "REMY_SUMMARY_BOOTSTRAP_MODE",
+            "REMY_BOOTSTRAP_AUTO_SIZE_GUARD",
+        ],
+        "timeline": ["REMY_TIMELINE_INJECT_MODE", "REMY_TIMELINE_INJECT_VALUE"],
+        "system": [
+            "REMY_LANG", "REMY_BANNER_ENABLED", "REMY_REPO_AUDIT_ROOT",
+            "REMY_STRUCT_SCAN_TIMEOUT", "REMY_INDEX_SCAN_LOCK_TIMEOUT",
+            "REMY_INDEX_QUEUE_LOCK_TIMEOUT",
+        ],
+    }
+    scopes = {row["key"]: row["restart_scope"] for row in registry}
+    assert scopes["REMY_MCP_SERVER_ENABLED"] == "next_mcp_launch"
+    assert scopes["REMY_MCP_RESULT_LIMIT"] == "immediate"
+    assert scopes["REMY_ENRICHMENT_CAP"] == "immediate"
+    assert scopes["REMY_LLM_MODEL"] == "next_index"
+    assert scopes["REMY_SUMMARY_BOOTSTRAP_MODE"] == "next_index"
+    assert scopes["REMY_LANG"] == "next_session"
+    assert scopes["REMY_LOGIC_INDEX_AUTO_INJECT"] == "next_session"
+
+
+def test_field_spec_metadata_validation(config_home):
+    _ = config_home
+    with pytest.raises(ValueError):
+        remy_config._field("X", None, "text", "", "system", "d", "d", label_en="X", label_zh="X", restart_scope="bogus")
+    with pytest.raises(ValueError):
+        remy_config._field("X", None, "text", "", "system", "d", "d", label_en="X", label_zh="X", restart_scope="immediate", unit_en="s")
+    with pytest.raises(ValueError):
+        remy_config._field("X", None, "text", "", "system", "d", "d", label_en="", label_zh="X", restart_scope="immediate")
+    for spec in remy_config.FIELD_SPECS.values():
+        assert spec.restart_scope in remy_config.RESTART_SCOPES
+        assert (spec.unit_en is None) == (spec.unit_zh is None)
+        assert spec.label_en and spec.label_zh
+
+
 def test_precedence_environment_project_user_default(config_home, tmp_path, monkeypatch):
     project = tmp_path / "project"
     user = config_home / ".claude" / "remy-config.json"

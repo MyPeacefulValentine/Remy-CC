@@ -9,64 +9,94 @@
 body.theme-project{--c-pri:#059669;--c-pri-h:#047857;--c-pri-a:#065f46;--c-pri-ring:rgba(5,150,105,.1);--c-pri-shadow:rgba(5,150,105,.3)}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--c-bg);color:var(--c-txt);line-height:1.6}
-#app{max-width:820px;margin:0 auto;padding:32px 20px 100px}
-header{margin-bottom:28px;display:flex;justify-content:space-between;align-items:flex-start}
+#app{max-width:1120px;margin:0 auto;padding:24px 20px 40px}
+#remy-host header{margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-start}
 .header-left{flex:1}
 h1{font-size:22px;font-weight:700;margin-bottom:4px}
 .subtitle{font-size:13px;color:var(--c-txt3);word-break:break-all}
 .header-actions{display:flex;gap:6px;margin-top:2px}
-.btn-lang,.btn-mode-tag{padding:6px 14px;border:1px solid var(--c-bdr-h);border-radius:6px;background:var(--c-srf);cursor:pointer;font-size:13px;color:var(--c-txt2);white-space:nowrap;transition:all .15s}
-.btn-lang:hover{background:#f3f4f6;transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.08)}
-.btn-lang:active{transform:translateY(0);box-shadow:none}
+.btn-lang,.btn-mode-tag,.btn-exit{padding:6px 14px;border:1px solid var(--c-bdr-h);border-radius:6px;background:var(--c-srf);cursor:pointer;font-size:13px;color:var(--c-txt2);white-space:nowrap;transition:all .15s}
+.btn-lang:hover,.btn-exit:hover{background:#f3f4f6;transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.btn-lang:active,.btn-exit:active{transform:translateY(0);box-shadow:none}
+.btn-exit{color:#dc2626;border-color:#fca5a5}
+.btn-exit:hover{background:#fef2f2}
 .btn-mode-tag{cursor:default;font-weight:600;color:var(--c-pri);border-color:var(--c-pri)}
+.config-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.search-wrap{flex:1;min-width:220px;display:flex;align-items:center;gap:8px}
+#search-input{flex:1;padding:8px 10px;border:1px solid var(--c-bdr-h);border-radius:6px;font-size:14px;font-family:inherit;background:var(--c-srf)}
+#search-input:focus{border-color:var(--c-pri);outline:none;box-shadow:0 0 0 3px var(--c-pri-ring)}
+#search-count{font-size:12px;color:var(--c-txt3);white-space:nowrap}
+.config-body{display:flex;gap:20px;align-items:flex-start}
+.group-nav{width:240px;flex-shrink:0;position:sticky;top:16px;background:var(--c-srf);border:1px solid var(--c-bdr);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:2px}
+.group-nav button{display:flex;justify-content:space-between;align-items:center;width:100%;padding:8px 10px;border:none;border-radius:6px;background:transparent;cursor:pointer;font-size:13px;color:var(--c-txt2);font-family:inherit;text-align:left}
+.group-nav button:hover{background:#f3f4f6}
+.group-nav button .nav-count{font-size:11px;color:var(--c-txt4)}
+#group-select{display:none;width:100%;padding:8px 10px;border:1px solid var(--c-bdr-h);border-radius:6px;font-size:14px;font-family:inherit;background:var(--c-srf);margin-bottom:12px}
+.config-main{flex:1;min-width:0}
 .group{background:var(--c-srf);border-radius:10px;margin-bottom:14px;border:1px solid var(--c-bdr);overflow:hidden}
-.group-header{padding:14px 18px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:600;user-select:none;transition:background .15s}
+.group-header{width:100%;padding:14px 18px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:600;user-select:none;transition:background .15s;border:none;background:transparent;font-family:inherit;color:var(--c-txt);text-align:left}
 .group-header:hover{background:#f9fafb}
 .group-header .arrow{font-size:12px;color:var(--c-txt4);transition:transform .2s}
 .group-header .arrow.collapsed{transform:rotate(-90deg)}
 .group-header .badge{font-size:11px;font-weight:400;color:var(--c-txt3);margin-left:8px}
+.group-header .group-unsaved{font-size:11px;font-weight:600;color:var(--c-warn-txt);background:var(--c-warn-bg);border:1px solid var(--c-warn-bdr);border-radius:4px;padding:0 6px;margin-left:8px}
 .group-header .gicon{margin-right:8px;font-size:16px}
 .group-body{padding:4px 18px 18px;display:block}
 .group-body.hidden{display:none}
 .param{margin-bottom:16px;position:relative}
 .param:last-child{margin-bottom:0}
 .param-top{display:flex;align-items:center;gap:8px;margin-bottom:2px}
-.param-label{font-size:13px;font-weight:600;color:var(--c-txt2)}
-.param-label code{font-family:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;font-size:12.5px;background:#f3f4f6;padding:1px 5px;border-radius:3px}
-.param-desc{font-size:12px;color:var(--c-txt3);margin-bottom:6px}
+.param-label{font-size:13.5px;font-weight:600;color:var(--c-txt)}
+.param-key{font-family:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;font-size:11.5px;color:var(--c-txt4);background:#f3f4f6;padding:1px 5px;border-radius:3px;margin-bottom:4px;display:inline-block}
+.param-desc{font-size:12px;color:var(--c-txt3);margin-bottom:4px}
+.param-meta{font-size:11px;color:var(--c-txt4);margin-top:4px}
+.state-tag{font-size:10.5px;border:1px solid var(--c-bdr);border-radius:4px;padding:0 6px;color:var(--c-txt3);white-space:nowrap}
+.state-tag.state-unsaved,.state-tag.state-secret_replace,.state-tag.state-secret_clear{color:var(--c-warn-txt);background:var(--c-warn-bg);border-color:var(--c-warn-bdr)}
+.state-tag.state-environment{color:var(--c-err-txt);background:var(--c-err-bg);border-color:var(--c-err-bdr)}
+.state-tag.state-project{color:var(--c-pri);border-color:var(--c-pri)}
+.state-tag.state-deviated,.state-tag.state-explicit_default,.state-tag.state-secret_configured{color:var(--c-ok-txt);background:var(--c-ok-bg);border-color:var(--c-ok-bdr)}
+.btn-restore{margin-left:auto;padding:2px 10px;border:1px solid var(--c-bdr-h);border-radius:6px;background:var(--c-srf);cursor:pointer;font-size:11.5px;white-space:nowrap;color:var(--c-txt2);font-family:inherit}
+.btn-restore:hover{background:#f3f4f6}
 .param input,.param select{width:100%;padding:8px 10px;border:1px solid var(--c-bdr-h);border-radius:6px;font-size:14px;font-family:inherit;background:var(--c-srf);transition:border-color .15s,box-shadow .15s}
 .param input:focus,.param select:focus{border-color:var(--c-pri);outline:none;box-shadow:0 0 0 3px var(--c-pri-ring)}
 .param input:disabled,.param select:disabled{background:#f3f4f6;color:var(--c-txt4);cursor:not-allowed}
 .param input[type=number]{appearance:textfield}
 .param input[type=number]::-webkit-inner-spin-button{opacity:1}
-.pw-wrap{display:flex;gap:6px}
+.input-row{display:flex;align-items:center;gap:8px}
+.input-row input,.input-row select{flex:1}
+.input-unit{font-size:12px;color:var(--c-txt3);white-space:nowrap}
+.pw-wrap{display:flex;gap:6px;flex:1}
 .pw-wrap input{flex:1}
-.btn-toggle{padding:8px 12px;border:1px solid var(--c-bdr-h);border-radius:6px;background:var(--c-srf);cursor:pointer;font-size:12px;white-space:nowrap;color:var(--c-txt2);transition:all .15s}
+.btn-toggle{padding:8px 12px;border:1px solid var(--c-bdr-h);border-radius:6px;background:var(--c-srf);cursor:pointer;font-size:12px;white-space:nowrap;color:var(--c-txt2);transition:all .15s;font-family:inherit}
 .btn-toggle:hover{background:#f3f4f6;transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.08)}
 .btn-toggle:active{transform:translateY(0);box-shadow:none}
+.btn-advanced{margin-top:4px}
 .toggle{position:relative;width:36px;height:20px;background:var(--c-bdr-h);border-radius:10px;cursor:pointer;transition:background .2s;flex-shrink:0}
 .toggle.active{background:var(--c-pri)}
 .toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .2s}
 .toggle.active::after{transform:translateX(16px)}
 .toggle-label{font-size:11px;color:var(--c-txt4);white-space:nowrap}
-.footer{position:fixed;bottom:0;left:0;right:0;background:var(--c-srf);border-top:1px solid var(--c-bdr);padding:12px 24px;display:flex;gap:10px;align-items:center;justify-content:center;box-shadow:0 -2px 8px rgba(0,0,0,.04);z-index:100}
-.btn{padding:9px 22px;border-radius:20px;cursor:pointer;font-size:13px;font-weight:500;border:1px solid var(--c-bdr-h);background:var(--c-srf);color:var(--c-txt2);transition:all .15s}
+.actionbar{position:sticky;bottom:0;background:var(--c-srf);border:1px solid var(--c-bdr);border-radius:10px;padding:12px 16px;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;box-shadow:0 -2px 8px rgba(0,0,0,.04);z-index:50;margin-top:16px}
+#dirty-count{font-size:12px;color:var(--c-txt3);margin-right:auto}
+.btn{padding:9px 22px;border-radius:20px;cursor:pointer;font-size:13px;font-weight:500;border:1px solid var(--c-bdr-h);background:var(--c-srf);color:var(--c-txt2);transition:all .15s;font-family:inherit}
 .btn:hover{background:#f3f4f6;transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.08)}
 .btn:active{transform:translateY(0);box-shadow:none}
-.btn:disabled,.btn-lang:disabled,.btn-toggle:disabled{opacity:.45;cursor:not-allowed;pointer-events:none;transform:none;box-shadow:none}
+.btn:disabled,.btn-lang:disabled,.btn-toggle:disabled,.btn-exit:disabled,.btn-restore:disabled,.group-header:disabled,.group-nav button:disabled{opacity:.45;cursor:not-allowed;pointer-events:none;transform:none;box-shadow:none}
 .btn:disabled:hover,.btn-lang:disabled:hover,.btn-toggle:disabled:hover{transform:none;box-shadow:none}
 .btn-p{background:var(--c-pri);color:#fff;border-color:var(--c-pri);box-shadow:0 2px 8px var(--c-pri-shadow)}
 .btn-p:hover{background:var(--c-pri-h);transform:translateY(-1px);box-shadow:0 4px 12px var(--c-pri-shadow)}
 .btn-p:active{background:var(--c-pri-a);transform:translateY(0);box-shadow:none}
 .btn-w{color:#dc2626;border-color:#fca5a5}
 .btn-w:hover{background:#fef2f2;transform:translateY(-1px);box-shadow:0 2px 6px rgba(220,38,38,.1)}
+.search-empty{background:var(--c-srf);border:1px solid var(--c-bdr);border-radius:10px;padding:24px;text-align:center;font-size:13px;color:var(--c-txt3);display:none}
+.search-empty.show{display:block}
+.search-empty .btn{margin-top:12px}
 .status{margin-top:16px;padding:12px 16px;border-radius:8px;font-size:13px;display:none;animation:fadeIn .2s}
 .status.success{display:block;background:var(--c-ok-bg);color:var(--c-ok-txt);border:1px solid var(--c-ok-bdr)}
 .status.error{display:block;background:var(--c-err-bg);color:var(--c-err-txt);border:1px solid var(--c-err-bdr)}
 .unknown-warn,.diagnostic-warn,.acl-warn{margin-top:12px;padding:10px 14px;background:var(--c-warn-bg);border:1px solid var(--c-warn-bdr);border-radius:8px;font-size:12px;color:var(--c-warn-txt)}
-.source-tag{font-size:10px;color:var(--c-txt3);border:1px solid var(--c-bdr);border-radius:4px;padding:0 5px}
 .source-note{font-size:11px;color:var(--c-warn-txt);margin-top:4px}
-.llm-test{margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.llm-test{margin:4px 0 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .llm-test-result{font-size:12px;min-height:20px;transition:opacity .18s}
 .llm-test-result.testing{color:var(--c-txt3)}
 .llm-test-result.success{color:var(--c-ok-txt)}
@@ -87,31 +117,56 @@ h1{font-size:22px;font-weight:700;margin-bottom:4px}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes llmSpin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.llm-test-result{transition:none}.llm-test-spinner{animation:none}}
-@media(max-width:600px){#app{padding:16px 12px 120px}.footer{flex-wrap:wrap;justify-content:center}header{flex-direction:column;gap:8px}}
+@media(max-width:900px){.group-nav{display:none}#group-select{display:block}}
+@media(max-width:600px){#app{padding:16px 12px 40px}.actionbar{flex-wrap:wrap;justify-content:center}#remy-host header{flex-direction:column;gap:8px}}
 </style>
 </head>
 <body>
 <div id="app">
-  <header>
-    <div class="header-left">
-      <img id="logo" src="/logo.svg" alt="Remy" width="32" height="32" style="vertical-align:middle;margin-right:8px"><h1 id="title" style="display:inline;vertical-align:middle">Remy Configuration</h1>
-      <div class="subtitle" id="subtitle"></div>
+  <div id="remy-host">
+    <header>
+      <div class="header-left">
+        <img id="logo" src="/logo.svg" alt="Remy" width="32" height="32" style="vertical-align:middle;margin-right:8px"><h1 id="title" style="display:inline;vertical-align:middle">Remy Configuration</h1>
+        <div class="subtitle" id="subtitle"></div>
+      </div>
+      <div class="header-actions">
+        <span class="btn-mode-tag" id="mode-tag"></span>
+        <button class="btn-lang" id="lang-btn">中文</button>
+        <button class="btn-exit" id="exit-btn" title="">Exit</button>
+      </div>
+    </header>
+  </div>
+  <div id="config-page">
+    <div class="config-toolbar">
+      <div class="search-wrap">
+        <label for="search-input" id="search-label" style="font-size:13px;color:var(--c-txt2)">Search</label>
+        <input type="search" id="search-input" autocomplete="off">
+        <span id="search-count" aria-live="polite"></span>
+      </div>
+      <button class="btn-toggle" id="expand-all-btn"></button>
+      <button class="btn-toggle" id="collapse-all-btn"></button>
     </div>
-    <div class="header-actions">
-      <span class="btn-mode-tag" id="mode-tag"></span>
-      <button class="btn-lang" id="lang-btn">中文</button>
+    <select id="group-select" aria-label="Groups"></select>
+    <div class="config-body">
+      <nav class="group-nav" id="group-nav" aria-label="Configuration groups"></nav>
+      <div class="config-main">
+        <div id="groups"></div>
+        <div class="search-empty" id="search-empty">
+          <div id="search-empty-msg"></div>
+          <button class="btn" id="search-clear-btn"></button>
+        </div>
+        <div id="unknown-area"></div>
+        <div class="status" id="status"></div>
+        <div class="actionbar" id="actionbar">
+          <span id="dirty-count"></span>
+          <button class="btn btn-p" id="save-btn" title="">Save</button>
+          <button class="btn" id="reset-btn" title="">Reset</button>
+          <button class="btn btn-w" id="clear-all-btn" title="">Clear All</button>
+          <button class="btn" id="retry-refresh-btn" style="display:none">Reload</button>
+        </div>
+      </div>
     </div>
-  </header>
-  <div id="groups"></div>
-  <div id="unknown-area"></div>
-  <div class="status" id="status"></div>
-</div>
-<div class="footer">
-  <button class="btn btn-p" id="save-btn" title="">Save</button>
-  <button class="btn" id="reset-btn" title="">Reset</button>
-  <button class="btn btn-w" id="clear-all-btn" title="">Clear All</button>
-  <button class="btn" id="retry-refresh-btn" style="display:none">Reload</button>
-  <button class="btn btn-w" id="exit-btn" title="">Exit</button>
+  </div>
 </div>
 <div class="modal-ov" id="modal-ov">
   <div class="modal" id="modal-box">
@@ -124,10 +179,12 @@ h1{font-size:22px;font-weight:700;margin-bottom:4px}
 (function(){
 var sessionToken=__REMY_SESSION_TOKEN__;
 var config=null,lang="en",dirty=false,overrides={},modifiedKeys={};
-var draftValues={},pendingSecrets={},saveState="idle";
+var draftValues={},pendingSecrets={},pendingRemovals={},saveState="idle";
 var testState="idle",testResult=null;
+var searchRaw="",searchQuery="";
+var collapsedGroups=null,advancedShown={};
 
-var ICONS={llm_api:"🧠",impact:"📊",injection:"📥",timeline:"📅",post_verify:"✅",security_audit:"🔒",debug:"🐛",test_gen:"🧪",ci:"🏗️",system:"⚙️",claude_code:"🤖"};
+var ICONS={llm_api:"🧠",index_generation:"🏗️",injection:"📥",mcp:"🔌",summary:"📝",timeline:"📅",system:"⚙️"};
 
 var TEXT={
   en:{title:"Remy Configuration",titleProject:"Remy Project Configuration",
@@ -154,11 +211,27 @@ var TEXT={
       modalExitMsg:"Current settings have unsaved changes. Save before exiting?",
       modalExitSave:"Save & Exit",modalExitDiscard:"Discard",modalExitCancel:"Cancel",
       closed:"Server closed. You may close this tab.",
-      source:"Source",environmentNote:"A process environment value currently overrides file values.",
+      environmentNote:"A process environment value currently overrides file values.",
       testConnection:"Test Connection",testingConnection:"Testing configured LLM endpoint",testSuccess:"Connection succeeded",testHttp:"HTTP",testMs:"ms",
       test_missing_config:"API key or model is not configured.",test_invalid_url:"The endpoint URL is invalid.",test_connection:"Connection failed.",test_tls:"TLS verification failed.",test_timeout:"Connection timed out.",test_auth:"Authentication failed.",test_rate_limit:"The service rate limit was reached.",test_not_found:"The endpoint or model does not exist.",test_server:"The service returned a server error.",test_invalid_response:"The service returned an invalid response.",test_too_large:"The service response exceeded the size limit.",test_busy:"A connection test is already running.",test_redirect:"The endpoint returned a redirect.",test_request_rejected:"The service rejected the request.",
       diagnostics:"Configuration errors detected. Editing is disabled until the file is corrected.",
-      aclWarning:"Windows file access depends on inherited user-directory ACLs."},
+      aclWarning:"Windows file access depends on inherited user-directory ACLs.",
+      searchLabel:"Search",searchPlaceholder:"Search settings",
+      expandAll:"Expand all",collapseAll:"Collapse all",
+      groupNav:"Groups",
+      resultCount:function(n){return n+" matching setting(s)"},
+      noResults:function(q){return "0 settings match \""+q+"\"."},
+      clearSearch:"Clear search",
+      advancedShow:function(n){return "Show advanced ("+n+")"},
+      advancedHide:"Hide advanced",
+      state_unsaved:"Unsaved",state_environment:"Env override",state_project:"Project override",
+      state_explicit_default:"Explicit default",state_deviated:"Custom value",state_default:"Default",
+      state_secret_configured:"Configured",state_secret_replace:"Pending replace",state_secret_clear:"Pending clear",
+      restoreDefault:"Restore default",restoreInherit:"Restore inherited",undoRestore:"Undo restore",
+      metaDefault:"Default",metaRange:"Range",metaEffect:"Takes effect",
+      scope_immediate:"on next read",scope_next_index:"on next index run",scope_next_session:"on next session",scope_next_mcp_launch:"on next MCP launch",
+      unsavedCount:function(n){return n+" unsaved change(s)"},
+      groupUnsaved:function(n){return n+" unsaved"}},
   "zh-CN":{title:"Remy 配置",titleProject:"Remy 项目配置",
       subtitle:"编辑: ~/.claude/remy-config.json",
       save:"✓ 保存",reset:"↺ 恢复非密钥默认值",clearAll:"清除全部",retryRefresh:"重新读取",exit:"✕ 退出",langBtn:"English",
@@ -183,11 +256,27 @@ var TEXT={
       modalExitMsg:"当前设置已修改但未保存。是否先保存再退出？",
       modalExitSave:"保存并退出",modalExitDiscard:"放弃修改",modalExitCancel:"取消",
       closed:"服务已关闭，可关闭此标签页。",
-      source:"来源",environmentNote:"进程环境值当前覆盖文件中的值。",
+      environmentNote:"进程环境值当前覆盖文件中的值。",
       testConnection:"测试连接",testingConnection:"正在连接配置的LLM端点",testSuccess:"连接成功",testHttp:"HTTP",testMs:"毫秒",
       test_missing_config:"API密钥或模型未配置。",test_invalid_url:"API端点格式无效。",test_connection:"连接失败。",test_tls:"TLS证书校验失败。",test_timeout:"连接超时。",test_auth:"鉴权失败。",test_rate_limit:"服务请求频率受限。",test_not_found:"端点或模型不存在。",test_server:"服务端返回错误。",test_invalid_response:"服务返回格式无效。",test_too_large:"服务响应超过大小限制。",test_busy:"已有连接测试正在执行。",test_redirect:"端点返回重定向。",test_request_rejected:"服务拒绝了请求。",
       diagnostics:"检测到配置文件错误。修正文件前禁止编辑。",
-      aclWarning:"Windows文件访问权限取决于用户目录继承的ACL。"}
+      aclWarning:"Windows文件访问权限取决于用户目录继承的ACL。",
+      searchLabel:"搜索",searchPlaceholder:"搜索设置",
+      expandAll:"全部展开",collapseAll:"全部收起",
+      groupNav:"分组",
+      resultCount:function(n){return "匹配 "+n+" 项设置"},
+      noResults:function(q){return "没有设置匹配\""+q+"\"。"},
+      clearSearch:"清除搜索",
+      advancedShow:function(n){return "显示高级设置 ("+n+")"},
+      advancedHide:"隐藏高级设置",
+      state_unsaved:"未保存",state_environment:"环境覆盖",state_project:"项目覆盖",
+      state_explicit_default:"显式默认值",state_deviated:"自定义值",state_default:"默认值",
+      state_secret_configured:"已配置",state_secret_replace:"待替换",state_secret_clear:"待清除",
+      restoreDefault:"恢复默认",restoreInherit:"恢复继承",undoRestore:"撤销恢复",
+      metaDefault:"默认",metaRange:"范围",metaEffect:"生效时机",
+      scope_immediate:"下次读取时",scope_next_index:"下次索引时",scope_next_session:"下次会话时",scope_next_mcp_launch:"下次MCP启动时",
+      unsavedCount:function(n){return n+" 项未保存"},
+      groupUnsaved:function(n){return n+" 项未保存"}}
 };
 
 function t(key){return(TEXT[lang]||TEXT.en)[key]||(TEXT.en)[key]||key}
@@ -210,6 +299,12 @@ function loadConfig(preserveLang,preserveDraft){
     if(!preserveLang)lang=config.lang==="zh-CN"?"zh-CN":"en";
     if(isProject())document.body.classList.add("theme-project");
     else document.body.classList.remove("theme-project");
+    if(collapsedGroups===null){
+      collapsedGroups={};
+      (config.groups||[]).forEach(function(group,index){
+        if(index>0)collapsedGroups[group.id]=true;
+      });
+    }
     if(!preserveDraft)initializeDraft();
     render();
     return true;
@@ -225,7 +320,7 @@ function init(){
 }
 
 function initializeDraft(){
-  draftValues={};pendingSecrets={};modifiedKeys={};overrides={};
+  draftValues={};pendingSecrets={};pendingRemovals={};modifiedKeys={};overrides={};
   var locals=config.project_values||{};
   config.registry.forEach(function(param){
     if(isProject()&&param.key in locals)overrides[param.key]=true;
@@ -251,7 +346,7 @@ function updateDirtyState(){
   var locals=config.project_values||{};
   for(var key in locals)serverOverrides[key]=true;
   modifiedKeys=calculateModifiedKeys(
-    config.registry,serverValues,draftValues,serverOverrides,overrides,pendingSecrets,isProject()
+    config.registry,serverValues,draftValues,serverOverrides,overrides,pendingSecrets,pendingRemovals,isProject()
   );
   dirty=Object.keys(modifiedKeys).length>0;
   updateControlState();
@@ -330,6 +425,72 @@ function createTestControls(){
   wrap.appendChild(button);wrap.appendChild(result);return wrap;
 }
 
+function normalizeQuery(query){
+  return String(query==null?"":query).replace(/\s+/g," ").replace(/^ | $/g,"").toLowerCase();
+}
+if(typeof globalThis!=="undefined")globalThis.remyNormalizeQuery=normalizeQuery;
+
+function paramMatchesQuery(param,groupLabelEn,groupLabelZh,query){
+  if(!query)return true;
+  var hay=[param.key,param.label_en||"",param.label_zh||"",param.desc_en||"",param.desc_zh||"",groupLabelEn||"",groupLabelZh||""];
+  for(var i=0;i<hay.length;i++){
+    if(String(hay[i]).toLowerCase().indexOf(query)>=0)return true;
+  }
+  return false;
+}
+if(typeof globalThis!=="undefined")globalThis.remyParamMatchesQuery=paramMatchesQuery;
+
+function resolveFieldState(flags){
+  if(flags.unsaved)return "unsaved";
+  if(flags.environment)return "environment";
+  if(flags.projectOverride)return "project";
+  if(flags.explicit)return flags.differsFromDefault?"deviated":"explicit_default";
+  return "default";
+}
+if(typeof globalThis!=="undefined")globalThis.remyResolveFieldState=resolveFieldState;
+
+function resolveRestoreAction(param,ctx){
+  if(ctx.projectMode){
+    return ctx.override?"restore_inherit":null;
+  }
+  if(param.secret)return null;
+  if(ctx.pendingRemoval)return "undo_restore";
+  if(ctx.explicit||ctx.unsavedEdit)return "restore_default";
+  return null;
+}
+if(typeof globalThis!=="undefined")globalThis.remyResolveRestoreAction=resolveRestoreAction;
+
+function fieldStateFor(param){
+  if(param.type==="password"){
+    if(pendingSecrets[param.key]==="replace")return "secret_replace";
+    if(pendingSecrets[param.key]==="clear")return "secret_clear";
+    var configured=config.secret_state&&config.secret_state[param.key]&&config.secret_state[param.key].has_value;
+    return configured?"secret_configured":"default";
+  }
+  var proj=isProject();
+  var fileValues=proj?(config.project_values||{}):(config.user_values||{});
+  var explicit=param.key in fileValues;
+  return resolveFieldState({
+    unsaved:!!modifiedKeys[param.key],
+    environment:((config.sources||{})[param.key])==="environment",
+    projectOverride:proj&&explicit,
+    explicit:explicit,
+    differsFromDefault:explicit&&String(fileValues[param.key])!==String(param["default"])
+  });
+}
+
+function groupUnsavedCount(groupId){
+  var count=0;
+  config.registry.forEach(function(param){
+    if(param.group===groupId&&modifiedKeys[param.key])count++;
+  });
+  return count;
+}
+
+function isParamPinned(param){
+  return !!modifiedKeys[param.key]||!!pendingRemovals[param.key];
+}
+
 function render(){
   var proj=isProject();
   document.title=proj?t("titleProject"):t("title");
@@ -344,6 +505,14 @@ function render(){
   document.getElementById("save-btn").title=t("tipSave");
   document.getElementById("reset-btn").title=t("tipReset");
   document.getElementById("exit-btn").title=t("tipExit");
+  document.getElementById("search-label").textContent=t("searchLabel");
+  document.getElementById("search-input").placeholder=t("searchPlaceholder");
+  document.getElementById("search-input").value=searchRaw;
+  document.getElementById("expand-all-btn").textContent=t("expandAll");
+  document.getElementById("collapse-all-btn").textContent=t("collapseAll");
+  document.getElementById("search-clear-btn").textContent=t("clearSearch");
+  document.getElementById("group-select").setAttribute("aria-label",t("groupNav"));
+  document.getElementById("group-nav").setAttribute("aria-label",t("groupNav"));
 
   if(proj){
     document.getElementById("subtitle").textContent=config.target||"";
@@ -351,40 +520,10 @@ function render(){
     document.getElementById("subtitle").textContent=t("subtitle");
   }
 
-  var saveBtn=document.getElementById("save-btn");
-  var resetBtn=document.getElementById("reset-btn");
-  var clearAllBtn=document.getElementById("clear-all-btn");
-  clearAllBtn.style.display=proj?"none":"inline-block";
-  updateControlState();
+  document.getElementById("clear-all-btn").style.display=proj?"none":"inline-block";
 
-  var container=document.getElementById("groups");
-  container.innerHTML="";
-
-  config.groups.forEach(function(group){
-    var params=config.registry.filter(function(p){
-      return p.group===group.id&&(!proj||p.project_allowed!==false)
-    });
-    if(!params.length)return;
-    var section=document.createElement("div");
-    section.className="group";
-    var header=document.createElement("div");
-    header.className="group-header";
-    var label=lang==="zh-CN"?group.label_zh:group.label_en;
-    var icon=ICONS[group.id]||"📋";
-    header.innerHTML='<span><span class="gicon">'+icon+'</span>'+label+'<span class="badge">'+params.length+'</span></span><span class="arrow">▾</span>';
-    var body=document.createElement("div");
-    body.className="group-body";
-    header.addEventListener("click",function(){
-      var arrow=header.querySelector(".arrow");
-      if(body.classList.contains("hidden")){body.classList.remove("hidden");arrow.classList.remove("collapsed")}
-      else{body.classList.add("hidden");arrow.classList.add("collapsed")}
-    });
-    params.forEach(function(param){body.appendChild(createParam(param))});
-    section.appendChild(header);
-    section.appendChild(body);
-    container.appendChild(section);
-  });
-  updateControlState();
+  renderGroupNav();
+  renderGroups();
 
   var unknownArea=document.getElementById("unknown-area");
   unknownArea.innerHTML="";
@@ -407,6 +546,167 @@ function render(){
     acl.textContent=t("aclWarning");
     unknownArea.appendChild(acl);
   }
+  updateControlState();
+}
+
+function visibleGroupParams(group){
+  var proj=isProject();
+  return config.registry.filter(function(p){
+    return p.group===group.id&&(!proj||p.project_allowed!==false)
+  });
+}
+
+function renderGroupNav(){
+  var nav=document.getElementById("group-nav");
+  var select=document.getElementById("group-select");
+  nav.innerHTML="";
+  select.innerHTML="";
+  config.groups.forEach(function(group){
+    var params=visibleGroupParams(group);
+    if(!params.length)return;
+    var label=lang==="zh-CN"?group.label_zh:group.label_en;
+    var button=document.createElement("button");
+    button.type="button";
+    button.dataset.group=group.id;
+    var name=document.createElement("span");
+    name.textContent=(ICONS[group.id]||"📋")+" "+label;
+    var count=document.createElement("span");
+    count.className="nav-count";
+    count.textContent=String(params.length);
+    button.appendChild(name);
+    button.appendChild(count);
+    button.addEventListener("click",function(){navigateToGroup(group.id)});
+    nav.appendChild(button);
+    var option=document.createElement("option");
+    option.value=group.id;
+    option.textContent=label+" ("+params.length+")";
+    select.appendChild(option);
+  });
+}
+
+function navigateToGroup(groupId){
+  delete collapsedGroups[groupId];
+  renderGroups();
+  var header=document.querySelector('.group-header[data-group="'+groupId+'"]');
+  if(header)header.scrollIntoView({block:"start"});
+}
+
+function renderGroups(){
+  var proj=isProject();
+  var container=document.getElementById("groups");
+  container.innerHTML="";
+  var searching=!!searchQuery;
+  var matchTotal=0;
+
+  config.groups.forEach(function(group){
+    var params=visibleGroupParams(group);
+    if(!params.length)return;
+    var shown=params;
+    if(searching){
+      shown=params.filter(function(p){
+        return paramMatchesQuery(p,group.label_en,group.label_zh,searchQuery)
+      });
+      if(!shown.length)return;
+      matchTotal+=shown.length;
+    }
+    var collapsed=!searching&&!!collapsedGroups[group.id];
+    if(collapsed){
+      var pinned=params.filter(isParamPinned);
+      if(!pinned.length){
+        container.appendChild(buildGroupSection(group,params,[],true,searching));
+        return;
+      }
+      shown=pinned;
+    }else if(!searching){
+      var expandedAdvanced=!!advancedShown[group.id];
+      shown=params.filter(function(p){
+        return !p.advanced||expandedAdvanced||isParamPinned(p)
+      });
+    }
+    container.appendChild(buildGroupSection(group,params,shown,collapsed,searching));
+  });
+
+  var empty=document.getElementById("search-empty");
+  if(searching&&matchTotal===0){
+    document.getElementById("search-empty-msg").textContent=(t("noResults"))(searchRaw.trim());
+    empty.className="search-empty show";
+  }else{
+    empty.className="search-empty";
+  }
+  var countEl=document.getElementById("search-count");
+  countEl.textContent=searching?(t("resultCount"))(matchTotal):"";
+  updateControlState();
+}
+
+function buildGroupSection(group,params,shown,collapsed,searching){
+  var proj=isProject();
+  var section=document.createElement("div");
+  section.className="group";
+  section.dataset.group=group.id;
+  var header=document.createElement("button");
+  header.type="button";
+  header.className="group-header";
+  header.dataset.group=group.id;
+  header.disabled=searching;
+  var bodyId="group-body-"+group.id;
+  header.setAttribute("aria-expanded",String(!collapsed||searching));
+  header.setAttribute("aria-controls",bodyId);
+  var label=lang==="zh-CN"?group.label_zh:group.label_en;
+  var icon=ICONS[group.id]||"📋";
+  var left=document.createElement("span");
+  var iconEl=document.createElement("span");
+  iconEl.className="gicon";
+  iconEl.textContent=icon;
+  left.appendChild(iconEl);
+  left.appendChild(document.createTextNode(label));
+  var badge=document.createElement("span");
+  badge.className="badge";
+  badge.textContent=String(params.length);
+  left.appendChild(badge);
+  var unsavedCount=groupUnsavedCount(group.id);
+  if(unsavedCount>0){
+    var unsavedBadge=document.createElement("span");
+    unsavedBadge.className="group-unsaved";
+    unsavedBadge.textContent=(t("groupUnsaved"))(unsavedCount);
+    left.appendChild(unsavedBadge);
+  }
+  var arrow=document.createElement("span");
+  arrow.className="arrow"+(collapsed&&!searching?" collapsed":"");
+  arrow.textContent="▾";
+  header.appendChild(left);
+  header.appendChild(arrow);
+  header.addEventListener("click",function(){
+    if(searchQuery)return;
+    if(collapsedGroups[group.id])delete collapsedGroups[group.id];
+    else collapsedGroups[group.id]=true;
+    renderGroups();
+  });
+  var body=document.createElement("div");
+  body.className="group-body"+(collapsed&&!shown.length?" hidden":"");
+  body.id=bodyId;
+  shown.forEach(function(param){
+    body.appendChild(createParam(param));
+    if(!proj&&group.id==="llm_api"&&param.key==="REMY_LLM_MODEL")body.appendChild(createTestControls());
+  });
+  if(!searching&&!collapsed){
+    var hiddenAdvanced=params.filter(function(p){return p.advanced&&!isParamPinned(p)});
+    if(hiddenAdvanced.length||advancedShown[group.id]){
+      var advBtn=document.createElement("button");
+      advBtn.type="button";
+      advBtn.className="btn-toggle btn-advanced";
+      advBtn.setAttribute("aria-expanded",String(!!advancedShown[group.id]));
+      advBtn.textContent=advancedShown[group.id]?t("advancedHide"):(t("advancedShow"))(hiddenAdvanced.length);
+      advBtn.addEventListener("click",function(){
+        if(advancedShown[group.id])delete advancedShown[group.id];
+        else advancedShown[group.id]=true;
+        renderGroups();
+      });
+      body.appendChild(advBtn);
+    }
+  }
+  section.appendChild(header);
+  section.appendChild(body);
+  return section;
 }
 
 function getCurrentValue(param){
@@ -429,24 +729,44 @@ function optionLabel(param,idx,optValue){
   return optValue;
 }
 
+function applyRestoreAction(param,action){
+  if(action==="restore_inherit"){
+    overrides[param.key]=false;
+    draftValues[param.key]=getGlobalValue(param);
+  }else if(action==="undo_restore"){
+    delete pendingRemovals[param.key];
+    draftValues[param.key]=getServerValue(param);
+  }else if(action==="restore_default"){
+    var fileValues=config.user_values||{};
+    if(param.key in fileValues)pendingRemovals[param.key]=true;
+    if(((config.sources||{})[param.key])!=="environment")draftValues[param.key]=param["default"];
+    if(param.key==="REMY_LLM_BASE_URL"||param.key==="REMY_LLM_MODEL")clearTestResult();
+  }
+  updateDirtyState();
+  renderGroups();
+}
+
 function createParam(param){
   var div=document.createElement("div");
   div.className="param";
+  div.dataset.key=param.key;
   var proj=isProject();
   var isOverride=proj&&overrides[param.key];
   var currentValue=getCurrentValue(param);
   var globalValue=proj?getGlobalValue(param):null;
+  var state=fieldStateFor(param);
 
   var top=document.createElement("div");
   top.className="param-top";
-  var lbl=document.createElement("span");
+  var lbl=document.createElement("label");
   lbl.className="param-label";
-  lbl.innerHTML="<code>"+param.key+"</code>";
+  lbl.htmlFor="p-"+param.key;
+  lbl.textContent=(lang==="zh-CN"?param.label_zh:param.label_en)||param.key;
   top.appendChild(lbl);
-  var source=document.createElement("span");
-  source.className="source-tag";
-  source.textContent=t("source")+": "+((config.sources||{})[param.key]||"default");
-  top.appendChild(source);
+  var stateTag=document.createElement("span");
+  stateTag.className="state-tag state-"+state;
+  stateTag.textContent=t("state_"+state);
+  top.appendChild(stateTag);
 
   var toggleEl=null;
   if(proj){
@@ -460,6 +780,25 @@ function createParam(param){
     top.appendChild(tLbl);
   }
 
+  var restoreAction=resolveRestoreAction(param,{
+    projectMode:proj,
+    override:!!isOverride,
+    pendingRemoval:!!pendingRemovals[param.key],
+    explicit:param.key in ((proj?config.project_values:config.user_values)||{}),
+    unsavedEdit:!!modifiedKeys[param.key]
+  });
+  if(restoreAction){
+    var restoreBtn=document.createElement("button");
+    restoreBtn.type="button";
+    restoreBtn.className="btn-restore";
+    restoreBtn.textContent=t(restoreAction==="restore_inherit"?"restoreInherit":restoreAction==="undo_restore"?"undoRestore":"restoreDefault");
+    restoreBtn.addEventListener("click",function(){
+      if(isSaveBusy())return;
+      applyRestoreAction(param,restoreAction);
+    });
+    top.appendChild(restoreBtn);
+  }
+
   var desc=document.createElement("div");
   desc.className="param-desc";
   desc.textContent=lang==="zh-CN"?param.desc_zh:param.desc_en;
@@ -471,9 +810,17 @@ function createParam(param){
     desc.appendChild(sourceNote);
   }
 
+  var keyLine=document.createElement("div");
+  var keyCode=document.createElement("span");
+  keyCode.className="param-key";
+  keyCode.textContent=param.key;
+  keyLine.appendChild(keyCode);
+
   var displayValue=isOverride?currentValue:(proj?globalValue:currentValue);
   var disabled=proj&&!isOverride;
   var input;
+  var inputRow=document.createElement("div");
+  inputRow.className="input-row";
 
   if(param.type==="enum"){
     input=document.createElement("select");
@@ -486,9 +833,7 @@ function createParam(param){
       if(opt===displayValue)o.selected=true;
       input.appendChild(o);
     });
-    div.appendChild(top);
-    div.appendChild(desc);
-    div.appendChild(input);
+    inputRow.appendChild(input);
   }else if(param.type==="password"){
     input=document.createElement("input");
     input.type="password";input.id="p-"+param.key;
@@ -524,28 +869,42 @@ function createParam(param){
     wrap.className="pw-wrap";
     wrap.appendChild(input);
     wrap.appendChild(clearBtn);
-    div.appendChild(top);
-    div.appendChild(desc);
-    div.appendChild(wrap);
-    if(!proj&&param.key==="REMY_LLM_API_KEY")div.appendChild(createTestControls());
+    inputRow.appendChild(wrap);
   }else if(param.type==="int"){
     input=document.createElement("input");
     input.type="number";input.id="p-"+param.key;
     input.value=displayValue;input.disabled=disabled;
     if(param.min!=null)input.min=param.min;
     if(param.max!=null)input.max=param.max;
-    div.appendChild(top);
-    div.appendChild(desc);
-    div.appendChild(input);
+    inputRow.appendChild(input);
   }else{
     input=document.createElement("input");
     input.type=param.type==="url"?"url":"text";
     input.id="p-"+param.key;
     input.value=displayValue;input.disabled=disabled;
-    div.appendChild(top);
-    div.appendChild(desc);
-    div.appendChild(input);
+    inputRow.appendChild(input);
   }
+  var unitText=lang==="zh-CN"?param.unit_zh:param.unit_en;
+  if(unitText){
+    var unitEl=document.createElement("span");
+    unitEl.className="input-unit";
+    unitEl.textContent=unitText;
+    inputRow.appendChild(unitEl);
+  }
+
+  var meta=document.createElement("div");
+  meta.className="param-meta";
+  var metaParts=[];
+  if(param.type!=="password")metaParts.push(t("metaDefault")+": "+(param["default"]===""?"—":param["default"]));
+  if(param.min!=null||param.max!=null)metaParts.push(t("metaRange")+": "+(param.min!=null?param.min:"")+"–"+(param.max!=null?param.max:""));
+  metaParts.push(t("metaEffect")+": "+t("scope_"+(param.restart_scope||"immediate")));
+  meta.textContent=metaParts.join(" · ");
+
+  div.appendChild(top);
+  div.appendChild(desc);
+  div.appendChild(keyLine);
+  div.appendChild(inputRow);
+  div.appendChild(meta);
 
   if(proj&&toggleEl){
     (function(paramKey,inputEl,tEl,tLabel){
@@ -568,9 +927,10 @@ function createParam(param){
   return div;
 }
 
-function buildPayload(registry,states,modified,projectOverrides,projectMode){
-  var data={},clearSecrets=[];
+function buildPayload(registry,states,modified,projectOverrides,removals,projectMode){
+  var data={},clearSecrets=[],removeKeys=[];
   registry.forEach(function(param){
+    if(!projectMode&&removals&&removals[param.key]){removeKeys.push(param.key);return}
     var state=states[param.key];
     if(!state||!modified[param.key])return;
     if(projectMode&&!projectOverrides[param.key])return;
@@ -579,17 +939,20 @@ function buildPayload(registry,states,modified,projectOverrides,projectMode){
       else if(state.modified&&state.value)data[param.key]=state.value;
     }else data[param.key]=state.value;
   });
-  return {values:data,clear_secrets:clearSecrets};
+  var payload={values:data,clear_secrets:clearSecrets};
+  if(!projectMode&&removeKeys.length)payload.remove_keys=removeKeys;
+  return payload;
 }
 if(typeof globalThis!=="undefined")globalThis.remyBuildPayload=buildPayload;
 
-function calculateModifiedKeys(registry,serverValues,drafts,serverOverrides,draftOverrides,secrets,projectMode){
+function calculateModifiedKeys(registry,serverValues,drafts,serverOverrides,draftOverrides,secrets,removals,projectMode){
   var result={};
   registry.forEach(function(param){
     if(param.type==="password"){
       if(secrets[param.key])result[param.key]=true;
       return;
     }
+    if(!projectMode&&removals&&removals[param.key])result[param.key]=true;
     if(String(drafts[param.key])!==String(serverValues[param.key]))result[param.key]=true;
     if(projectMode&&!!draftOverrides[param.key]!==!!serverOverrides[param.key])result[param.key]=true;
   });
@@ -601,16 +964,15 @@ function collectFormData(){
   var states={};
   config.registry.forEach(function(param){
     var el=document.getElementById("p-"+param.key);
-    if(!el)return;
-    if(param.type!=="password")draftValues[param.key]=el.value;
+    if(el&&param.type!=="password")draftValues[param.key]=el.value;
     states[param.key]={
-      value:el.value,
+      value:param.type==="password"?(draftValues[param.key]||""):(param.key in draftValues?draftValues[param.key]:getServerValue(param)),
       clear:pendingSecrets[param.key]==="clear",
       modified:pendingSecrets[param.key]==="replace"
     };
   });
   updateDirtyState();
-  return buildPayload(config.registry,states,modifiedKeys,overrides,isProject());
+  return buildPayload(config.registry,states,modifiedKeys,overrides,pendingRemovals,isProject());
 }
 
 function effectiveValidationValues(data){
@@ -697,6 +1059,36 @@ function applySaveOutcome(postSucceeded,refreshSucceeded){
 }
 if(typeof globalThis!=="undefined")globalThis.remyApplySaveOutcome=applySaveOutcome;
 
+function updateFieldDecorations(){
+  var registryByKey={};
+  config.registry.forEach(function(p){registryByKey[p.key]=p});
+  var params=document.querySelectorAll("#groups .param");
+  for(var i=0;i<params.length;i++){
+    var param=registryByKey[params[i].dataset.key];
+    var tag=params[i].querySelector(".state-tag");
+    if(!param||!tag)continue;
+    var state=fieldStateFor(param);
+    tag.className="state-tag state-"+state;
+    tag.textContent=t("state_"+state);
+  }
+  var sections=document.querySelectorAll("#groups .group");
+  for(var s=0;s<sections.length;s++){
+    var count=groupUnsavedCount(sections[s].dataset.group);
+    var badge=sections[s].querySelector(".group-unsaved");
+    var headerLeft=sections[s].querySelector(".group-header > span");
+    if(count>0&&headerLeft){
+      if(!badge){
+        badge=document.createElement("span");
+        badge.className="group-unsaved";
+        headerLeft.appendChild(badge);
+      }
+      badge.textContent=(t("groupUnsaved"))(count);
+    }else if(badge&&badge.parentNode){
+      badge.parentNode.removeChild(badge);
+    }
+  }
+}
+
 function updateControlState(){
   if(!config)return;
   var busy=isSaveBusy()||testState==="testing";
@@ -705,7 +1097,15 @@ function updateControlState(){
   document.getElementById("clear-all-btn").disabled=!!config.read_only||busy;
   document.getElementById("lang-btn").disabled=busy;
   document.getElementById("exit-btn").disabled=busy;
+  document.getElementById("search-input").disabled=busy;
+  document.getElementById("expand-all-btn").disabled=busy||!!searchQuery;
+  document.getElementById("collapse-all-btn").disabled=busy||!!searchQuery;
+  document.getElementById("group-select").disabled=busy;
   document.getElementById("retry-refresh-btn").style.display=saveState==="refresh_error"?"inline-block":"none";
+  var dirtyCount=Object.keys(modifiedKeys).length;
+  document.getElementById("dirty-count").textContent=dirtyCount>0?(t("unsavedCount"))(dirtyCount):"";
+  var navButtons=document.querySelectorAll("#group-nav button");
+  for(var n=0;n<navButtons.length;n++)navButtons[n].disabled=busy;
   var controls=document.querySelectorAll("#groups input,#groups select,#groups button,#groups .toggle");
   for(var i=0;i<controls.length;i++){
     if(busy)controls[i].setAttribute("data-save-disabled","true");
@@ -716,6 +1116,7 @@ function updateControlState(){
       else if(!isProject()||overrides[(controls[i].id||"").slice(2)]||controls[i].tagName==="BUTTON")controls[i].disabled=false;
     }
   }
+  updateFieldDecorations();
   renderTestState();
 }
 
@@ -745,6 +1146,7 @@ function save(resetMode){
   }
 
   var payload={values:data,clear_secrets:form.clear_secrets,reset_mode:resetMode};
+  if(resetMode==="none"&&form.remove_keys)payload.remove_keys=form.remove_keys;
   if(isProject()&&resetMode==="none"){
     payload.overrides=[];
     for(var k in overrides){if(overrides[k])payload.overrides.push(k)}
@@ -849,6 +1251,19 @@ function showStatus(type,msg){
   el._timer=setTimeout(function(){el.style.display="none"},6000);
 }
 
+function applySearch(rawValue){
+  searchRaw=String(rawValue==null?"":rawValue);
+  searchQuery=normalizeQuery(searchRaw);
+  renderGroups();
+}
+
+function clearSearch(){
+  applySearch("");
+  var input=document.getElementById("search-input");
+  input.value="";
+  input.focus();
+}
+
 document.getElementById("logo").addEventListener("error",function(){this.style.display="none"});
 document.getElementById("lang-btn").addEventListener("click",toggleLang);
 document.getElementById("save-btn").addEventListener("click",function(){save("none")});
@@ -856,18 +1271,42 @@ document.getElementById("reset-btn").addEventListener("click",confirmReset);
 document.getElementById("clear-all-btn").addEventListener("click",confirmClearAll);
 document.getElementById("retry-refresh-btn").addEventListener("click",retryRefresh);
 document.getElementById("exit-btn").addEventListener("click",exitUI);
+document.getElementById("search-input").addEventListener("input",function(e){applySearch(e.target.value)});
+document.getElementById("search-input").addEventListener("keydown",function(e){
+  if(e.key==="Escape"&&searchRaw){e.preventDefault();clearSearch()}
+});
+document.getElementById("search-clear-btn").addEventListener("click",clearSearch);
+document.getElementById("expand-all-btn").addEventListener("click",function(){
+  if(searchQuery)return;
+  collapsedGroups={};
+  renderGroups();
+});
+document.getElementById("collapse-all-btn").addEventListener("click",function(){
+  if(searchQuery)return;
+  config.groups.forEach(function(group){collapsedGroups[group.id]=true});
+  renderGroups();
+});
+document.getElementById("group-select").addEventListener("change",function(e){
+  if(e.target.value)navigateToGroup(e.target.value);
+});
 document.getElementById("modal-ov").addEventListener("click",function(e){
   if(e.target===this)hideModal();
 });
 document.getElementById("groups").addEventListener("input",function(e){
   var id=e.target&&e.target.id||"";
-  if(id.indexOf("p-")===0&&e.target.type!=="password")draftValues[id.slice(2)]=e.target.value;
+  if(id.indexOf("p-")===0&&e.target.type!=="password"){
+    draftValues[id.slice(2)]=e.target.value;
+    delete pendingRemovals[id.slice(2)];
+  }
   if(id==="p-REMY_LLM_BASE_URL"||id==="p-REMY_LLM_MODEL")clearTestResult();
   updateDirtyState();
 });
 document.getElementById("groups").addEventListener("change",function(e){
   var id=e.target&&e.target.id||"";
-  if(id.indexOf("p-")===0&&e.target.type!=="password")draftValues[id.slice(2)]=e.target.value;
+  if(id.indexOf("p-")===0&&e.target.type!=="password"){
+    draftValues[id.slice(2)]=e.target.value;
+    delete pendingRemovals[id.slice(2)];
+  }
   if(id==="p-REMY_LLM_BASE_URL"||id==="p-REMY_LLM_MODEL")clearTestResult();
   updateDirtyState();
 });
