@@ -57,6 +57,38 @@ def db_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
+def _write_union_db(tmp_path, symbols):
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    db = sqlite3.connect(str(claude_dir / "logic_index.db"))
+    db.executescript(SCHEMA_SQL)
+    now = "2025-01-01T00:00:00"
+    seen_files = set()
+    for index, (path, name, tokens, summary) in enumerate(symbols, 1):
+        if path not in seen_files:
+            db.execute(
+                "INSERT INTO files (path, struct_hash, language) VALUES (?,?,?)",
+                (path, f"h{len(seen_files)}", "python"),
+            )
+            seen_files.add(path)
+        db.execute(
+            "INSERT INTO symbols (file_path,name,short_name,type,lineno,name_tokens) "
+            "VALUES (?,?,?,?,?,?)",
+            (path, name, name, "function", index * 10, tokens),
+        )
+        if summary:
+            db.execute(
+                "INSERT INTO summary_versions "
+                "(node_kind,node_ref,version,summary,status,created_at) "
+                "VALUES ('symbol',?,1,?,'ok',?)",
+                (f"{path}::{name}",
+                 json.dumps({"short": summary, "full": None}), now),
+            )
+    retrieval_projection.rebuild_projection(db)
+    db.commit()
+    db.close()
+
+
 class TestOpenDb:
     def test_returns_connection_when_db_exists(self, db_dir, monkeypatch):
         from index_mcp_queries import _open_db
@@ -361,11 +393,11 @@ class TestBfsChunking:
 
 
 class TestQuerySearch:
-    def test_fts_prefix_match(self, db_dir):
+    def test_union_prefix_match(self, db_dir):
         from index_mcp_queries import query_search_impl
         result = query_search_impl("proc", limit=5)
         assert "process" in result
-        assert "FTS5" in result
+        assert "matched via union" in result
 
     def test_fts_exact_name_ranked_first(self, db_dir):
         from index_mcp_queries import query_search_impl
@@ -373,17 +405,25 @@ class TestQuerySearch:
         lines = [l for l in result.splitlines() if "a.py::main" in l]
         assert len(lines) == 1
 
-    def test_like_fallback_on_prefix(self, db_dir):
+    def test_union_reports_sources_priority_and_detail(self, db_dir):
+        from index_mcp_queries import query_search_impl
+        result = query_search_impl("main", limit=5)
+        assert "sources: exact#1, prefix#1 | priority=0" in result
+        assert "sig: (args) | summary: entry point" in result
+
+    def test_prefix_only_query_matches_via_union(self, db_dir):
         from index_mcp_queries import query_search_impl
         result = query_search_impl("hel", limit=5)
         assert "helper" in result
-        assert "LIKE" in result
+        assert "matched via union" in result
+        assert "sources: prefix#1 | priority=1" in result
 
     def test_fuzzy_fallback_on_typo(self, db_dir):
         from index_mcp_queries import query_search_impl
         result = query_search_impl("processs", limit=5)
         assert "process" in result
-        assert "fuzzy" in result
+        assert "matched via fuzzy" in result
+        assert "sources: fuzzy#1 | priority=3" in result
 
     def test_file_hint_filters(self, db_dir):
         from index_mcp_queries import query_search_impl
@@ -438,6 +478,8 @@ class TestQuerySearch:
         from index_mcp_queries import query_search_impl
         result = query_search_impl("get User", limit=5)
         assert "getUserById" in result
+        assert "sig:" not in result
+        assert "summary:" not in result
 
     def test_empty_string_input(self, db_dir):
         from index_mcp_queries import query_search_impl
@@ -449,6 +491,101 @@ class TestQuerySearch:
         result = query_search_impl("proc*", limit=5)
         assert isinstance(result, str)
         assert "error" not in result.lower() or "No symbols" in result
+
+    def test_exact_channel_respects_language_and_type_filters(self, db_dir):
+        from index_mcp_queries import query_search_impl
+        assert query_search_impl("main", language="c_cpp").startswith(
+            "No symbols found"
+        )
+        assert query_search_impl("main", symbol_type="class").startswith(
+            "No symbols found"
+        )
+        result = query_search_impl(
+            "main", language="python", symbol_type="function"
+        )
+        assert "a.py::main" in result
+
+    def test_merge_candidates_keeps_first_seen_priority_and_all_sources(self):
+        from index_mcp_queries import _merge_candidates
+
+        exact_rows = [("beta", "a.py", 1, "function", 0.0),
+                      ("alpha", "a.py", 2, "function", 0.0)]
+        prefix_rows = [("alpha", "a.py", 2, "function", 0.0)]
+        merged = _merge_candidates(
+            [("exact", exact_rows), ("prefix", prefix_rows)], 10
+        )
+        alpha = next(item for item in merged if item["name"] == "alpha")
+        assert alpha["priority"] == 0
+        assert alpha["best_rank"] == 2
+        assert alpha["sources"] == [("exact", 2), ("prefix", 1)]
+        assert [item["name"] for item in merged] == ["beta", "alpha"]
+        assert _merge_candidates([("exact", exact_rows)], 1)[0]["name"] == "beta"
+
+    def test_fuzzy_not_called_when_deterministic_candidates_exist(
+            self, db_dir, monkeypatch):
+        import index_mcp_queries
+
+        def forbidden(_db, _query):
+            raise AssertionError("fuzzy must not run with deterministic candidates")
+
+        monkeypatch.setattr(index_mcp_queries, "_search_fuzzy", forbidden)
+        result = index_mcp_queries.query_search_impl("helper", limit=5)
+        assert "matched via union" in result
+
+    def test_exact_ignores_match_mode(self, tmp_path, monkeypatch):
+        _write_union_db(tmp_path, [
+            ("m.py", "AlphaBeta", "Alpha Beta", None),
+        ])
+        monkeypatch.chdir(tmp_path)
+        from index_mcp_queries import query_search_impl
+        result = query_search_impl("alphabeta", limit=5, match="phrase")
+        assert "m.py::AlphaBeta" in result
+        assert "sources: exact#1 | priority=0" in result
+
+    def test_exact_uses_unicode_casefold(self, tmp_path, monkeypatch):
+        _write_union_db(tmp_path, [
+            ("m.py", "Straße", "Straße", None),
+        ])
+        monkeypatch.chdir(tmp_path)
+        from index_mcp_queries import query_search_impl
+        result = query_search_impl("STRASSE", limit=5)
+        assert "m.py::Straße" in result
+        assert "exact#1" in result
+
+    def test_exact_name_survives_summary_hits(self, tmp_path, monkeypatch):
+        _write_union_db(tmp_path, [
+            ("m.py", "process", "process", "other work"),
+            ("m.py", "alpha", "alpha", "process everything nightly"),
+        ])
+        monkeypatch.chdir(tmp_path)
+        from index_mcp_queries import query_search_impl
+        result = query_search_impl("process", limit=5)
+        assert "m.py::process" in result
+        assert "m.py::alpha" in result
+        sources_line_at = result.index("sources: exact#1, prefix#1 | priority=0")
+        assert result.index("m.py::process") < sources_line_at
+        assert sources_line_at < result.index("m.py::alpha")
+
+    def test_priority_prefers_prefix_over_bm25(self, tmp_path, monkeypatch):
+        _write_union_db(tmp_path, [
+            ("p.py", "proc_one", "proc one", "unrelated"),
+            ("p.py", "beta", "beta", "proc handling core"),
+        ])
+        monkeypatch.chdir(tmp_path)
+        from index_mcp_queries import query_search_impl
+        result = query_search_impl("proc", limit=5)
+        assert result.index("p.py::proc_one") < result.index("p.py::beta")
+
+    def test_truncation_applies_after_merge(self, tmp_path, monkeypatch):
+        _write_union_db(tmp_path, [
+            ("m.py", "process", "process", "other work"),
+            ("m.py", "alpha", "alpha", "process everything nightly"),
+        ])
+        monkeypatch.chdir(tmp_path)
+        from index_mcp_queries import query_search_impl
+        result = query_search_impl("process", limit=1)
+        assert "m.py::process" in result
+        assert "m.py::alpha" not in result
 
 
 class TestRetrievalBaseline:
@@ -511,7 +648,7 @@ class TestRetrievalBaseline:
         assert len(result["tasks"]) == 16
         assert all("channel_status" in task for task in result["tasks"])
         assert all(
-            set(task["channels"]) == {"fts", "like", "fuzzy"}
+            set(task["channels"]) == {"exact", "prefix", "bm25", "fuzzy"}
             for task in result["tasks"]
         )
         assert all("public_output" in task for task in result["tasks"])
@@ -528,8 +665,36 @@ class TestRetrievalBaseline:
         assert result["metrics"]["expected_error_accuracy"] == 1.0
         assert all(task["error_matches_expectation"] for task in result["tasks"])
         any_task = next(task for task in result["tasks"] if task["id"] == "summary_bm25_any")
-        assert any_task["channel_diagnostics"]["fts"]["candidate_cap"] == 50
-        assert "per_term" in any_task["channel_diagnostics"]["fts"]
+        assert any_task["channel_diagnostics"]["bm25"]["candidate_cap"] == 50
+        assert "per_term" in any_task["channel_diagnostics"]["bm25"]
+
+    def test_p1_3_union_spec_and_name_conflict_acceptance(self):
+        baseline = self._module()
+        root = (Path(__file__).resolve().parents[1] / "eval" / "tasks" /
+                "retrieval_baseline")
+        p1_1 = baseline.load_spec(root / "p1_1.json")
+        p1_3 = baseline.load_spec(root / "p1_3.json")
+        assert p1_3["format_version"] == "1.1.0"
+        assert ({task["id"] for task in p1_3["tasks"]}
+                == {task["id"] for task in p1_1["tasks"]})
+        assert all(task.get("expected_channel") in ("union", "fuzzy", None)
+                   for task in p1_3["tasks"])
+
+        result = baseline.run_baseline(p1_3, warmups=0, iterations=1)
+        assert result["metrics"]["expected_error_accuracy"] == 1.0
+        assert result["metrics"]["recall_at_5"] == 1.0
+        assert result["metrics"]["mrr"] == 1.0
+        assert all(task["channel_matches_expectation"] for task in result["tasks"])
+
+        conflict = next(task for task in result["tasks"]
+                        if task["id"] == "summary_name_conflict")
+        assert conflict["actual_channel"] == "union"
+        refs = [row["node_ref"] for row in conflict["selected_candidates"]]
+        assert refs[0] == "src/summary.py::encrypt_session_tokens"
+        assert "src/summary.py::persist_blob" in refs
+        top = conflict["selected_candidates"][0]
+        assert {"channel": "prefix", "rank": 1} in top["sources"]
+        assert top["priority"] == 1
 
     def test_compare_results_classifies_empty_query_contract_change(self):
         baseline = self._module()
@@ -692,7 +857,7 @@ class TestRetrievalBaseline:
         assert len(lines) == 1
         assert "a.py::duplicateHandler" in lines[0]
 
-    @pytest.mark.parametrize("failing_channel", ["fts", "like", "fuzzy"])
+    @pytest.mark.parametrize("failing_channel", ["exact", "like", "fts", "fuzzy"])
     def test_channel_sqlite_error_stops_fallback(self, db_dir, monkeypatch,
                                                  failing_channel):
         import index_mcp_queries
@@ -707,24 +872,23 @@ class TestRetrievalBaseline:
             calls.append(failing_channel)
             raise sqlite3.OperationalError("private database detail")
 
-        monkeypatch.setattr(index_mcp_queries, "_search_fts", no_match)
-        monkeypatch.setattr(index_mcp_queries, "_search_like", no_match)
-        monkeypatch.setattr(index_mcp_queries, "_search_fuzzy", no_match)
+        for channel in ("exact", "like", "fts", "fuzzy"):
+            monkeypatch.setattr(index_mcp_queries, f"_search_{channel}", no_match)
         monkeypatch.setattr(index_mcp_queries, f"_search_{failing_channel}", fail)
 
+        labels = {"exact": "EXACT", "like": "LIKE", "fts": "FTS", "fuzzy": "fuzzy"}
         result = index_mcp_queries.query_search_impl("missing")
         assert result == (
-            f"Error: {failing_channel.upper() if failing_channel != 'fuzzy' else 'fuzzy'} "
-            "search failed (OperationalError)."
+            f"Error: {labels[failing_channel]} search failed (OperationalError)."
         )
         assert "private database detail" not in result
         assert calls[-1] == failing_channel
-        expected_calls = {"fts": 1, "like": 2, "fuzzy": 3}[failing_channel]
+        expected_calls = {"exact": 1, "like": 2, "fts": 3, "fuzzy": 4}[failing_channel]
         assert len(calls) == expected_calls
 
     def test_like_and_fuzzy_order_ignore_insertion_order(self):
         from index_mcp_queries import (
-            _make_search_query, _search_fuzzy, _search_like,
+            _make_search_query, _search_exact, _search_fuzzy, _search_like,
         )
 
         def search(order):
@@ -744,10 +908,12 @@ class TestRetrievalBaseline:
                 )
             query = _make_search_query("stableHan", 10)
             like = [(row[0], row[1]) for row in _search_like(db, query)]
+            exact_query = _make_search_query("stableHandler", 10)
+            exact = [(row[0], row[1]) for row in _search_exact(db, exact_query)]
             fuzzy_query = _make_search_query("stableHandlr", 10)
             fuzzy = [(row[0], row[1]) for row in _search_fuzzy(db, fuzzy_query)]
             db.close()
-            return like, fuzzy
+            return like, exact, fuzzy
 
         assert search(("b.py", "a.py")) == search(("a.py", "b.py"))
 

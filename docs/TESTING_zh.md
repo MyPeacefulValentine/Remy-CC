@@ -56,6 +56,31 @@ P1.2记录all/any/phrase匹配、语言/类型/路径SQL过滤、输入和通道
 与插入顺序无关的LIKE/fuzzy结果，以及同名符号fuzzy最终limit。两次运行仍执行
 3次预热和30次测量。P1.2 fixture继续使用schema 10.0.0。
 
+## P1.3候选并集
+
+`query_search`独立生成exact、prefix和BM25三类候选，按`node_ref`合并去重并
+保留每个节点的全部匹配来源与来源内名次，按确定性优先级（exact、prefix、
+BM25、来源内名次、名称、文件、行号）排序，截断只在合并之后执行。fuzzy仅在
+三类确定性候选均为空时执行。任一通道的SQLite错误仍整体返回`Error:`结果，
+不做部分降级。每个结果保留原有定位行不变，并追加缩进的`sources`/`priority`
+与`sig`/`summary`行。精确等值使用注册的Python `casefold` SQL函数实现，因为
+SQLite的`NOCASE`和`lower()`只处理ASCII。schema保持11.0.0，无需migration。
+
+运行并集任务集和兼容比较：
+
+```bash
+PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_baseline/p1_3.json --update-snapshot eval/baselines/p1_3.json
+PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_baseline/p1_1.json --compare-baseline eval/baselines/p1_1.json --comparison-output eval/baselines/p1_3_compat.json
+PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_baseline/p1_2.json --compare-baseline eval/baselines/p1_2.json
+```
+
+`p1_3.json`复用P1.1 fixture和16个查询原文，期望值在实现前按新排序规则人工
+推导。`summary_name_conflict`任务断言名称候选`encrypt_session_tokens`经
+prefix通道进入公共结果并排第1，摘要候选`persist_blob`保留在并集中。运行记录
+保存四通道候选列表、带来源与优先级的合并结果、Recall@1/5/10、MRR、延迟样本
+和数据库大小。`p1_1.json`与`p1_2.json`中的`expected_channel`记录旧通道语义，
+与其失配属于预期中的通道重组，不是缺陷。
+
 ## P1.2.1扫描范围与解析器缓存身份
 
 schema 11.0.0为每个`files`行增加`parser_contract_version`、

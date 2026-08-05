@@ -216,8 +216,10 @@ event/callback patterns (3 results)
 
 ### query_search
 
-通过FTS5、词前缀LIKE匹配和编辑距离回退搜索符号。无效输入或通道执行错误返回
-`Error:`结果，并且不继续执行后续通道。
+通过确定性候选并集搜索符号：精确名称、词前缀和BM25摘要三个通道独立执行，按
+节点身份合并去重，每个结果保留全部匹配来源与来源内名次。编辑距离fuzzy回退仅
+在三个确定性通道均为空时执行。无效输入或通道执行错误返回`Error:`结果，并且
+不继续执行后续通道。
 
 | 参数 | 类型 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
@@ -230,14 +232,19 @@ event/callback patterns (3 results)
 | `path_hint` | `str` | `""` | 不区分大小写的字面路径子串过滤 |
 
 只有当`file_hint`和`path_hint`规范化后相同时，才可同时提供。路径分隔符会被统一。
-`%`和`_`是普通字符，不是通配符。结果中的符号类型、文件、名称和行号字段保持不变。
+`%`和`_`是普通字符，不是通配符。符号类型、文件、名称和行号所在的定位行保持不变；
+每个结果追加缩进的`sources`/`priority`行与可选的`sig`/`summary`行。精确通道按
+Unicode casefold比较完整查询文本，忽略`match`模式。
 
 **输出示例：**
 ```
-search results for 'pars_fil' (2 results, matched via fuzzy)
+search results for 'parse_file' (2 results, matched via union)
 
   [function] src/parser.py::parse_file  src/parser.py:L42 (Core)
+        sources: exact#1, prefix#1 | priority=0
+        sig: (path) | summary: parses one source file
   [method] src/loader.py::Loader.parse_file  src/loader.py:L120 (IO)
+        sources: prefix#2 | priority=1
 ```
 
 ---

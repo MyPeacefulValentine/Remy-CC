@@ -1,0 +1,284 @@
+{
+  "format_version": "1.1.0",
+  "id": "p1_3_candidate_union",
+  "fixture": {
+    "files": [
+      {"path": "src/exact.py", "language": "python", "layer": "Core"},
+      {"path": "src/other.py", "language": "python", "layer": "Core"},
+      {"path": "src/names.py", "language": "python", "layer": "Core"},
+      {"path": "src/cpp.cc", "language": "cpp", "layer": "Core"},
+      {"path": "src/summary.py", "language": "python", "layer": "Core"},
+      {"path": "tests/test_exact.py", "language": "python", "layer": "Test"}
+    ],
+    "symbols": [
+      {
+        "file_path": "src/exact.py",
+        "name": "ExactTarget",
+        "type": "class",
+        "args": "",
+        "lineno": 10,
+        "summary_short": "canonical precision lookup target"
+      },
+      {
+        "file_path": "src/other.py",
+        "name": "ExactTargetHelper",
+        "type": "function",
+        "args": "value",
+        "lineno": 20,
+        "summary_short": "canonical precision lookup helper"
+      },
+      {
+        "file_path": "src/names.py",
+        "name": "parse_input_record",
+        "type": "function",
+        "args": "raw",
+        "lineno": 30,
+        "summary_short": "normalizes source records"
+      },
+      {
+        "file_path": "src/names.py",
+        "name": "getUserById",
+        "type": "function",
+        "args": "user_id",
+        "lineno": 40,
+        "summary_short": "loads one account identity"
+      },
+      {
+        "file_path": "src/cpp.cc",
+        "name": "Auth::TokenParser",
+        "short_name": "TokenParser",
+        "type": "class",
+        "args": "",
+        "lineno": 50,
+        "summary_short": "validates namespace credentials"
+      },
+      {
+        "file_path": "src/summary.py",
+        "name": "persist_blob",
+        "type": "function",
+        "args": "payload",
+        "lineno": 60,
+        "summary_short": "encrypts session tokens before storage"
+      },
+      {
+        "file_path": "src/summary.py",
+        "name": "encrypt_session_tokens",
+        "type": "function",
+        "args": "payload",
+        "lineno": 70,
+        "summary_short": "writes opaque data"
+      },
+      {
+        "file_path": "src/summary.py",
+        "name": "helper_function",
+        "type": "function",
+        "args": "value",
+        "lineno": 80,
+        "summary_short": "generic utility"
+      },
+      {
+        "file_path": "src/summary.py",
+        "name": "processData",
+        "type": "function",
+        "args": "data",
+        "lineno": 90,
+        "summary_short": "transforms one payload"
+      },
+      {
+        "file_path": "tests/test_exact.py",
+        "name": "ExactTarget",
+        "type": "function",
+        "args": "",
+        "lineno": 15,
+        "summary_short": "test fixture canonical precision lookup target"
+      }
+    ],
+    "file_summaries": {
+      "src/exact.py": "Exact target definitions",
+      "src/cpp.cc": "C++ authentication symbols"
+    },
+    "clusters": [
+      {
+        "name": "src",
+        "label": "Source",
+        "members": ["src/exact.py", "src/other.py", "src/names.py", "src/cpp.cc", "src/summary.py"],
+        "entry_symbols": ["src/exact.py::ExactTarget"],
+        "summary_short": "Application source modules"
+      },
+      {
+        "name": "tests",
+        "label": "Tests",
+        "members": ["tests/test_exact.py"],
+        "entry_symbols": ["tests/test_exact.py::ExactTarget"],
+        "summary_short": "Test modules"
+      }
+    ]
+  },
+  "navigation": {
+    "intent": "locate authentication token parser",
+    "top_k": 5
+  },
+  "tasks": [
+    {
+      "id": "exact_qualified_name",
+      "scenario": "exact qualified name",
+      "query": "Auth::TokenParser",
+      "limit": 10,
+      "file_hint": "",
+      "expected_nodes": ["src/cpp.cc::Auth::TokenParser"],
+      "expected_empty": false,
+      "expected_channel": "union"
+    },
+    {
+      "id": "exact_short_name",
+      "scenario": "exact short name",
+      "query": "ExactTarget",
+      "limit": 10,
+      "file_hint": "src/exact.py",
+      "expected_nodes": ["src/exact.py::ExactTarget"],
+      "expected_empty": false,
+      "expected_channel": "union"
+    },
+    {
+      "id": "name_prefix",
+      "scenario": "name prefix",
+      "query": "ExactTar",
+      "limit": 10,
+      "file_hint": "",
+      "expected_nodes": ["src/exact.py::ExactTarget", "tests/test_exact.py::ExactTarget"],
+      "expected_empty": false,
+      "expected_channel": "union"
+    },
+    {
+      "id": "snake_case_tokens",
+      "scenario": "snake_case tokenization",
+      "query": "parse input",
+      "limit": 10,
+      "file_hint": "",
+      "expected_nodes": ["src/names.py::parse_input_record"],
+      "expected_empty": false,
+      "expected_channel": "union"
+    },
+    {
+      "id": "camel_case_tokens",
+      "scenario": "camelCase tokenization",
+      "query": "get User",
+      "limit": 10,
+      "file_hint": "",
+      "expected_nodes": ["src/names.py::getUserById"],
+      "expected_empty": false,
+      "expected_channel": "union"
+    },
+    {
+      "id": "cpp_namespace_tokens",
+      "scenario": "C++ namespace tokenization",
+      "query": "Auth Token",
+      "limit": 10,
+      "file_hint": "",
+      "expected_nodes": ["src/cpp.cc::Auth::TokenParser"],
+      "expected_empty": false,
+      "expected_channel": "union"
+    },
+    {
+      "id": "summary_bm25",
+      "scenario": "summary BM25",
+      "query": "canonical precision",
+      "limit": 10,
+      "file_hint": "src/exact.py",
+      "expected_nodes": ["src/exact.py::ExactTarget"],
+      "expected_empty": false,
+      "expected_channel": "union"
+    },
+    {
+      "id": "summary_name_conflict",
+      "scenario": "summary versus name conflict",
+      "query": "encrypt session tokens",
+      "limit": 10,
+      "file_hint": "",
+      "expected_nodes": ["src/summary.py::encrypt_session_tokens", "src/summary.py::persist_blob"],
+      "expected_empty": false,
+      "expected_channel": "union"
+    },
+    {
+      "id": "multiterm_and",
+      "scenario": "multi-term implicit AND",
+      "query": "session storage",
+      "limit": 10,
+      "file_hint": "",
+      "expected_nodes": ["src/summary.py::persist_blob"],
+      "expected_empty": false,
+      "expected_channel": "union"
+    },
+    {
+      "id": "like_substring",
+      "scenario": "mid-word substring falls back to fuzzy",
+      "query": "elper_funct",
+      "limit": 10,
+      "file_hint": "",
+      "expected_nodes": ["src/summary.py::helper_function"],
+      "expected_empty": false,
+      "expected_channel": "fuzzy"
+    },
+    {
+      "id": "fuzzy_typo",
+      "scenario": "fuzzy typo fallback",
+      "query": "processDta",
+      "limit": 10,
+      "file_hint": "",
+      "expected_nodes": ["src/summary.py::processData"],
+      "expected_empty": false,
+      "expected_channel": "fuzzy"
+    },
+    {
+      "id": "file_hint_positive",
+      "scenario": "file_hint positive filter",
+      "query": "ExactTarget",
+      "limit": 10,
+      "file_hint": "tests/",
+      "expected_nodes": ["tests/test_exact.py::ExactTarget"],
+      "expected_empty": false,
+      "expected_channel": "union"
+    },
+    {
+      "id": "file_hint_empty",
+      "scenario": "file_hint removes all candidates",
+      "query": "ExactTarget",
+      "limit": 10,
+      "file_hint": "missing/",
+      "expected_nodes": [],
+      "expected_empty": true,
+      "expected_channel": null
+    },
+    {
+      "id": "empty_query",
+      "scenario": "empty query error",
+      "query": "",
+      "limit": 10,
+      "file_hint": "",
+      "expected_nodes": [],
+      "expected_empty": true,
+      "expected_error": true,
+      "expected_channel": null
+    },
+    {
+      "id": "special_characters",
+      "scenario": "special characters become separators",
+      "query": "token* (parser) \"",
+      "limit": 10,
+      "file_hint": "",
+      "expected_nodes": ["src/cpp.cc::Auth::TokenParser"],
+      "expected_empty": false,
+      "expected_channel": "union"
+    },
+    {
+      "id": "no_result",
+      "scenario": "no result",
+      "query": "zzzz_nonexistent_symbol_987",
+      "limit": 10,
+      "file_hint": "",
+      "expected_nodes": [],
+      "expected_empty": true,
+      "expected_channel": null
+    }
+  ]
+}

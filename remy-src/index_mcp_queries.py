@@ -602,12 +602,17 @@ def _contains_phrase(value, phrase):
                    for index in range(len(words) - width + 1)))
 
 
+def _casefold_text(value):
+    return (value or "").casefold()
+
+
 def _register_search_functions(db):
     db.create_function("remy_norm_path", 1, _normalize_path, deterministic=True)
     db.create_function(
         "remy_word_prefix_count", -1, _word_prefix_count, deterministic=True
     )
     db.create_function("remy_contains_phrase", 2, _contains_phrase, deterministic=True)
+    db.create_function("remy_casefold", 1, _casefold_text, deterministic=True)
 
 
 def _append_search_filters(sql, params, query, *, projection_alias=None,
@@ -699,18 +704,34 @@ def _search_fts(db, query_or_text, limit=None, file_hint="", diagnostics=None):
         diagnostics["truncated"] = len(rows) > cap
     results = []
     seen = set()
-    for name, fpath, lineno, stype, short, rank in rows[:cap]:
+    for name, fpath, lineno, stype, _short, rank in rows[:cap]:
         key = (fpath, name)
         if key in seen:
             continue
         seen.add(key)
-        bonus = -100 if (
-            name.casefold() == query.text.casefold()
-            or (short and short.casefold() == query.text.casefold())
-        ) else 0
-        results.append((name, fpath, lineno, stype, rank + bonus))
+        results.append((name, fpath, lineno, stype, rank))
     results.sort(key=lambda row: (
         row[4], row[0].casefold(), row[0], row[1], row[2] or 0
+    ))
+    return results[:query.limit]
+
+
+def _search_exact(db, query_or_text, limit=None, file_hint=""):
+    query = _coerce_search_query(query_or_text, limit, file_hint)
+    _register_search_functions(db)
+    folded = query.text.casefold()
+    sql = (
+        "SELECT s.name, s.file_path, s.lineno, s.type FROM symbols s "
+        "JOIN files f ON f.path = s.file_path "
+        "WHERE (remy_casefold(s.name) = ? OR remy_casefold(s.short_name) = ?) "
+    )
+    params = [folded, folded]
+    sql = _append_search_filters(sql, params, query)
+    rows = db.execute(sql, params).fetchall()
+    results = [(name, fpath, lineno, stype, 0.0)
+               for name, fpath, lineno, stype in rows]
+    results.sort(key=lambda row: (
+        row[0].casefold(), row[0], row[1], row[2] or 0
     ))
     return results[:query.limit]
 
@@ -800,6 +821,50 @@ def _channel_error(channel, error):
     return f"Error: {channel} search failed ({type(error).__name__})."
 
 
+_CHANNEL_PRIORITY = {"exact": 0, "prefix": 1, "bm25": 2, "fuzzy": 3}
+
+
+def _merge_candidates(channel_results, limit):
+    merged = {}
+    items = []
+    for channel, rows in channel_results:
+        priority = _CHANNEL_PRIORITY[channel]
+        for rank, (name, fpath, lineno, stype, _score) in enumerate(rows, 1):
+            key = (fpath, name)
+            item = merged.get(key)
+            if item is None:
+                item = {
+                    "name": name, "file_path": fpath, "lineno": lineno,
+                    "symbol_type": stype, "sources": [],
+                    "priority": priority, "best_rank": rank,
+                }
+                merged[key] = item
+                items.append(item)
+            item["sources"].append((channel, rank))
+    items.sort(key=lambda item: (
+        item["priority"], item["best_rank"], item["name"].casefold(),
+        item["name"], item["file_path"], item["lineno"] or 0,
+    ))
+    return items[:limit]
+
+
+def _result_detail(db, file_path, name):
+    row = db.execute(
+        "SELECT signature, summary_short FROM retrieval_documents "
+        "WHERE node_kind = 'symbol' AND node_ref = ?",
+        (f"{file_path}::{name}",),
+    ).fetchone()
+    if not row:
+        return ""
+    signature, summary = row
+    parts = []
+    if signature:
+        parts.append(f"sig: ({signature})")
+    if summary:
+        parts.append(f"summary: {summary}")
+    return " | ".join(parts)
+
+
 @_query_scoped
 def query_search_impl(text, limit=10, file_hint="", *, match="all",
                       language="", symbol_type="", path_hint=""):
@@ -818,23 +883,28 @@ def query_search_impl(text, limit=10, file_hint="", *, match="all",
         try:
             if not _fts_available(db):
                 return "Error: FTS index not available. Run struct_scan to rebuild the index."
-            results = _search_fts(db, query)
         except sqlite3.Error as error:
             return _channel_error("FTS", error)
-        search_level = "FTS5"
 
-        if not results:
+        deterministic = []
+        for channel, label, search in (
+            ("exact", "EXACT", _search_exact),
+            ("prefix", "LIKE", _search_like),
+            ("bm25", "FTS", _search_fts),
+        ):
             try:
-                results = _search_like(db, query)
+                deterministic.append((channel, search(db, query)))
             except sqlite3.Error as error:
-                return _channel_error("LIKE", error)
-            search_level = "LIKE"
+                return _channel_error(label, error)
+        results = _merge_candidates(deterministic, query.limit)
+        search_level = "union"
 
         if not results:
             try:
-                results = _search_fuzzy(db, query)
+                fuzzy_rows = _search_fuzzy(db, query)
             except sqlite3.Error as error:
                 return _channel_error("fuzzy", error)
+            results = _merge_candidates([("fuzzy", fuzzy_rows)], query.limit)
             search_level = "fuzzy"
 
         if not results:
@@ -844,10 +914,22 @@ def query_search_impl(text, limit=10, file_hint="", *, match="all",
             f"search results for '{query.text}' "
             f"({len(results)} results, matched via {search_level})\n"
         ]
-        for name, fpath, lineno, stype, _score in results:
+        for item in results:
+            fpath = item["file_path"]
+            name = item["name"]
+            lineno = item["lineno"]
             layer = get_layer(db, fpath)
             loc = f"L{lineno}" if lineno else ""
-            lines.append(f"  [{stype}] {fpath}::{name}  {fpath}:{loc} ({layer})")
+            lines.append(
+                f"  [{item['symbol_type']}] {fpath}::{name}  {fpath}:{loc} ({layer})"
+            )
+            sources = ", ".join(
+                f"{channel}#{rank}" for channel, rank in item["sources"]
+            )
+            lines.append(f"        sources: {sources} | priority={item['priority']}")
+            detail = _result_detail(db, fpath, name)
+            if detail:
+                lines.append(f"        {detail}")
         return "\n".join(lines)
     finally:
         db.close()

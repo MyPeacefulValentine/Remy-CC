@@ -67,6 +67,39 @@ input and channel errors, insertion-order-independent LIKE/fuzzy results, and
 the final fuzzy limit for same-name symbols. Both runs retain three warmups and
 thirty measured iterations. The P1.2 fixture remains on schema 10.0.0.
 
+## P1.3 candidate union
+
+`query_search` builds exact, prefix, and BM25 candidates independently, merges
+them by `node_ref` while keeping every matching source with its per-source
+rank, orders the union by the deterministic priority (exact, then prefix, then
+BM25, then per-source rank, name, file, and line), and truncates only after
+the merge. Fuzzy runs when all three deterministic channels are empty. A
+SQLite error in any channel still returns an `Error:` result without partial
+degradation. Each result keeps the previous location line unchanged and adds
+indented `sources` / `priority` and `sig` / `summary` lines. Exact matching
+uses a registered Python `casefold` SQL function because SQLite `NOCASE` and
+`lower()` fold ASCII only. The schema stays at 11.0.0; no migration is
+required.
+
+Run the union task set and the compatibility comparisons:
+
+```bash
+PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_baseline/p1_3.json --update-snapshot eval/baselines/p1_3.json
+PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_baseline/p1_1.json --compare-baseline eval/baselines/p1_1.json --comparison-output eval/baselines/p1_3_compat.json
+PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_baseline/p1_2.json --compare-baseline eval/baselines/p1_2.json
+```
+
+`p1_3.json` reuses the P1.1 fixture and its sixteen query strings with
+union-semantics expectations derived by hand before implementation. The
+`summary_name_conflict` task asserts that the name candidate
+`encrypt_session_tokens` enters the public result at rank one through the
+prefix channel while the summary candidate `persist_blob` remains in the
+union. Recorded runs keep the four channel candidate lists, the merged result
+with sources and priority, Recall@1/5/10, MRR, latency samples, and database
+sizes. The `expected_channel` values in `p1_1.json` and `p1_2.json` record the
+previous channel semantics; mismatches against them are the intended channel
+reorganization, not defects.
+
 ## P1.2.1 scan scope and parser cache identity
 
 Schema 11.0.0 adds `parser_contract_version`, `parser_backend`, and

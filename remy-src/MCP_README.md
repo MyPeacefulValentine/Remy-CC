@@ -225,9 +225,12 @@ event/callback patterns (3 results)
 
 ### query_search
 
-Search symbols through FTS5, token-prefix LIKE matching, and edit-distance fallback.
-Invalid input or a channel execution failure returns an `Error:` result and does
-not continue to later channels.
+Search symbols through a deterministic candidate union: an exact-name channel,
+a token-prefix channel, and a BM25 summary channel run independently, merge by
+node identity, and keep every matching source with its per-source rank. The
+edit-distance fuzzy fallback runs only when all three deterministic channels
+are empty. Invalid input or a channel execution failure returns an `Error:`
+result and does not continue to later channels.
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
@@ -241,15 +244,20 @@ not continue to later channels.
 
 `file_hint` and `path_hint` may both be supplied only when they normalize to the
 same value. Path separators are normalized. `%` and `_` are literal characters,
-not wildcards. The result fields for symbol type, file, name, and line remain
-unchanged.
+not wildcards. The location line for symbol type, file, name, and line remains
+unchanged; each result adds indented `sources` / `priority` and optional
+`sig` / `summary` lines. The exact channel compares the whole query text with
+Unicode casefolding and ignores `match`.
 
 **Output example:**
 ```
-search results for 'pars_fil' (2 results, matched via fuzzy)
+search results for 'parse_file' (2 results, matched via union)
 
   [function] src/parser.py::parse_file  src/parser.py:L42 (Core)
+        sources: exact#1, prefix#1 | priority=0
+        sig: (path) | summary: parses one source file
   [method] src/loader.py::Loader.parse_file  src/loader.py:L120 (IO)
+        sources: prefix#2 | priority=1
 ```
 
 ---

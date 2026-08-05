@@ -1,0 +1,4897 @@
+{
+  "format_version": "1.1.0",
+  "result": {
+    "format_version": "1.0.0",
+    "meta": {
+      "suite_version": "1.6.1",
+      "git_commit": "261d43c7a87c963c2aa1d2531b56f551733b1341",
+      "schema_version": "11.0.0",
+      "python_version": "3.12.9",
+      "platform": "Windows-11-10.0.26200-SP0",
+      "parser_backend": "synthetic-fixture",
+      "parser_configuration": "not-applicable",
+      "warmups": 3,
+      "iterations": 30,
+      "generated_at": "2026-08-05T15:55:43.637408+00:00",
+      "spec_id": "p1_1_current_retrieval"
+    },
+    "database": {
+      "database_bytes": 208896,
+      "wal_bytes": 0,
+      "version_before": "11.0.0",
+      "version_after": "11.0.0",
+      "migration_count_before": 0,
+      "migration_count_after": 0
+    },
+    "navigation": {
+      "measured": false,
+      "reason": "navigate database not provided"
+    },
+    "tasks": [
+      {
+        "id": "exact_qualified_name",
+        "scenario": "exact qualified name",
+        "query": "Auth::TokenParser",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/cpp.cc::Auth::TokenParser"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "union",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "exact": {
+            "status": "ok"
+          },
+          "prefix": {
+            "status": "ok"
+          },
+          "bm25": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "ok"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [
+            {
+              "channel": "exact",
+              "rank": 1,
+              "node_ref": "src/cpp.cc::Auth::TokenParser",
+              "name": "Auth::TokenParser",
+              "file_path": "src/cpp.cc",
+              "line": 50,
+              "symbol_type": "class",
+              "score": 0.0
+            }
+          ],
+          "prefix": [
+            {
+              "channel": "prefix",
+              "rank": 1,
+              "node_ref": "src/cpp.cc::Auth::TokenParser",
+              "name": "Auth::TokenParser",
+              "file_path": "src/cpp.cc",
+              "line": 50,
+              "symbol_type": "class",
+              "score": 0.0
+            }
+          ],
+          "bm25": [],
+          "fuzzy": [
+            {
+              "channel": "fuzzy",
+              "rank": 1,
+              "node_ref": "src/cpp.cc::Auth::TokenParser",
+              "name": "Auth::TokenParser",
+              "file_path": "src/cpp.cc",
+              "line": 50,
+              "symbol_type": "class",
+              "score": 1.0
+            }
+          ]
+        },
+        "selected_candidates": [
+          {
+            "rank": 1,
+            "node_ref": "src/cpp.cc::Auth::TokenParser",
+            "name": "Auth::TokenParser",
+            "file_path": "src/cpp.cc",
+            "line": 50,
+            "symbol_type": "class",
+            "priority": 0,
+            "sources": [
+              {
+                "channel": "exact",
+                "rank": 1
+              },
+              {
+                "channel": "prefix",
+                "rank": 1
+              }
+            ]
+          }
+        ],
+        "public_output": "search results for 'Auth::TokenParser' (1 results, matched via union)\n\n  [class] src/cpp.cc::Auth::TokenParser  src/cpp.cc:L50 (Core)\n        sources: exact#1, prefix#1 | priority=0\n        summary: validates namespace credentials",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              21500,
+              20400,
+              19000,
+              19500,
+              18400,
+              18500,
+              18500,
+              18300,
+              18500,
+              18400,
+              18400,
+              18400,
+              24800,
+              18700,
+              18400,
+              18500,
+              18400,
+              18200,
+              18400,
+              18500,
+              18300,
+              18200,
+              18300,
+              18200,
+              18300,
+              18400,
+              18300,
+              18900,
+              18300,
+              18300
+            ],
+            "min": 18200,
+            "p50": 18400,
+            "p95": 21500,
+            "max": 24800
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              77800,
+              77300,
+              76800,
+              76500,
+              76600,
+              76800,
+              77400,
+              78400,
+              77100,
+              76800,
+              77100,
+              76500,
+              77000,
+              76500,
+              76900,
+              76700,
+              76900,
+              76600,
+              80900,
+              77000,
+              76900,
+              77000,
+              79800,
+              76500,
+              76600,
+              76700,
+              76800,
+              76500,
+              77000,
+              76400
+            ],
+            "min": 76400,
+            "p50": 76800,
+            "p95": 79800,
+            "max": 80900
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              49300,
+              47200,
+              46300,
+              46200,
+              46800,
+              46200,
+              45100,
+              45000,
+              45200,
+              44900,
+              45900,
+              45500,
+              45000,
+              44900,
+              44900,
+              44800,
+              45100,
+              44800,
+              51500,
+              45500,
+              44400,
+              44900,
+              45400,
+              47500,
+              45200,
+              44700,
+              45100,
+              45000,
+              45300,
+              45900
+            ],
+            "min": 44400,
+            "p50": 45200,
+            "p95": 49300,
+            "max": 51500
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              167500,
+              152200,
+              149800,
+              149000,
+              148200,
+              148300,
+              152800,
+              148200,
+              148700,
+              147900,
+              148000,
+              147800,
+              147000,
+              147400,
+              146900,
+              147600,
+              146900,
+              147900,
+              147500,
+              149300,
+              147400,
+              146900,
+              147200,
+              147300,
+              147700,
+              147500,
+              147900,
+              147900,
+              147600,
+              147600
+            ],
+            "min": 146900,
+            "p50": 147800,
+            "p95": 152800,
+            "max": 167500
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1425400,
+              1437200,
+              1393300,
+              1367800,
+              1402600,
+              1397200,
+              1397200,
+              1377900,
+              1378000,
+              1373300,
+              1348000,
+              1554700,
+              1369700,
+              1385000,
+              1449900,
+              1420600,
+              1433000,
+              1426700,
+              1421700,
+              1417300,
+              1383100,
+              1443200,
+              1813500,
+              1753300,
+              1589700,
+              1549800,
+              1533900,
+              1591700,
+              1633500,
+              1487700
+            ],
+            "min": 1348000,
+            "p50": 1421700,
+            "p95": 1753300,
+            "max": 1813500
+          }
+        }
+      },
+      {
+        "id": "exact_short_name",
+        "scenario": "exact short name",
+        "query": "ExactTarget",
+        "limit": 10,
+        "file_hint": "src/exact.py",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/exact.py::ExactTarget"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "union",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "exact": {
+            "status": "ok"
+          },
+          "prefix": {
+            "status": "ok"
+          },
+          "bm25": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "ok"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [
+            {
+              "channel": "exact",
+              "rank": 1,
+              "node_ref": "src/exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "src/exact.py",
+              "line": 10,
+              "symbol_type": "class",
+              "score": 0.0
+            }
+          ],
+          "prefix": [
+            {
+              "channel": "prefix",
+              "rank": 1,
+              "node_ref": "src/exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "src/exact.py",
+              "line": 10,
+              "symbol_type": "class",
+              "score": 0.0
+            }
+          ],
+          "bm25": [],
+          "fuzzy": [
+            {
+              "channel": "fuzzy",
+              "rank": 1,
+              "node_ref": "src/exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "src/exact.py",
+              "line": 10,
+              "symbol_type": "class",
+              "score": 1.0
+            }
+          ]
+        },
+        "selected_candidates": [
+          {
+            "rank": 1,
+            "node_ref": "src/exact.py::ExactTarget",
+            "name": "ExactTarget",
+            "file_path": "src/exact.py",
+            "line": 10,
+            "symbol_type": "class",
+            "priority": 0,
+            "sources": [
+              {
+                "channel": "exact",
+                "rank": 1
+              },
+              {
+                "channel": "prefix",
+                "rank": 1
+              }
+            ]
+          }
+        ],
+        "public_output": "search results for 'ExactTarget' (1 results, matched via union)\n\n  [class] src/exact.py::ExactTarget  src/exact.py:L10 (Core)\n        sources: exact#1, prefix#1 | priority=0\n        summary: canonical precision lookup target",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              21700,
+              21100,
+              20600,
+              20500,
+              20400,
+              27800,
+              21300,
+              20800,
+              20800,
+              20600,
+              20600,
+              21500,
+              20600,
+              20500,
+              20800,
+              20500,
+              20700,
+              20500,
+              20600,
+              21000,
+              20500,
+              20400,
+              20400,
+              20500,
+              20500,
+              23000,
+              40500,
+              20900,
+              20700,
+              20600
+            ],
+            "min": 20400,
+            "p50": 20600,
+            "p95": 27800,
+            "max": 40500
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              83100,
+              81200,
+              80100,
+              80000,
+              80200,
+              79700,
+              79600,
+              79800,
+              79700,
+              85500,
+              80700,
+              79800,
+              80000,
+              80100,
+              80200,
+              80300,
+              80300,
+              79800,
+              79800,
+              80500,
+              79900,
+              80100,
+              79800,
+              79800,
+              79900,
+              80300,
+              83000,
+              82200,
+              82700,
+              82100
+            ],
+            "min": 79600,
+            "p50": 80100,
+            "p95": 83100,
+            "max": 85500
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              47800,
+              45500,
+              45100,
+              67500,
+              47100,
+              44400,
+              44500,
+              43700,
+              43000,
+              43600,
+              43600,
+              43300,
+              43400,
+              43300,
+              43600,
+              43200,
+              43500,
+              43500,
+              43100,
+              43400,
+              43000,
+              43000,
+              43600,
+              43300,
+              43500,
+              43500,
+              43100,
+              43500,
+              42800,
+              43000
+            ],
+            "min": 42800,
+            "p50": 43500,
+            "p95": 47800,
+            "max": 67500
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              28300,
+              27300,
+              26900,
+              26100,
+              25600,
+              25800,
+              25600,
+              25500,
+              25300,
+              25100,
+              25200,
+              25100,
+              25000,
+              25000,
+              25100,
+              25100,
+              25100,
+              25200,
+              25100,
+              25200,
+              25700,
+              27900,
+              25100,
+              25100,
+              25000,
+              25100,
+              24900,
+              30300,
+              25500,
+              25100
+            ],
+            "min": 24900,
+            "p50": 25200,
+            "p95": 28300,
+            "max": 30300
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1713500,
+              1967700,
+              1922800,
+              1832800,
+              1915600,
+              1850200,
+              1580200,
+              1687100,
+              1696400,
+              1525000,
+              1872900,
+              1905500,
+              1629100,
+              1545800,
+              1669700,
+              1542600,
+              1528900,
+              1443200,
+              1511300,
+              1459100,
+              1392500,
+              1415000,
+              1388900,
+              1387900,
+              1385400,
+              1380000,
+              1376200,
+              1399500,
+              1423800,
+              1394600
+            ],
+            "min": 1376200,
+            "p50": 1528900,
+            "p95": 1922800,
+            "max": 1967700
+          }
+        }
+      },
+      {
+        "id": "name_prefix",
+        "scenario": "name prefix",
+        "query": "ExactTar",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/exact.py::ExactTarget",
+          "tests/test_exact.py::ExactTarget"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "union",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "exact": {
+            "status": "no_match"
+          },
+          "prefix": {
+            "status": "ok"
+          },
+          "bm25": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "ok"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [],
+          "prefix": [
+            {
+              "channel": "prefix",
+              "rank": 1,
+              "node_ref": "src/exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "src/exact.py",
+              "line": 10,
+              "symbol_type": "class",
+              "score": 0.0
+            },
+            {
+              "channel": "prefix",
+              "rank": 2,
+              "node_ref": "tests/test_exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "tests/test_exact.py",
+              "line": 15,
+              "symbol_type": "function",
+              "score": 0.0
+            },
+            {
+              "channel": "prefix",
+              "rank": 3,
+              "node_ref": "src/other.py::ExactTargetHelper",
+              "name": "ExactTargetHelper",
+              "file_path": "src/other.py",
+              "line": 20,
+              "symbol_type": "function",
+              "score": 0.0
+            }
+          ],
+          "bm25": [],
+          "fuzzy": [
+            {
+              "channel": "fuzzy",
+              "rank": 1,
+              "node_ref": "src/exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "src/exact.py",
+              "line": 10,
+              "symbol_type": "class",
+              "score": 0.8421052631578947
+            },
+            {
+              "channel": "fuzzy",
+              "rank": 2,
+              "node_ref": "tests/test_exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "tests/test_exact.py",
+              "line": 15,
+              "symbol_type": "function",
+              "score": 0.8421052631578947
+            },
+            {
+              "channel": "fuzzy",
+              "rank": 3,
+              "node_ref": "src/other.py::ExactTargetHelper",
+              "name": "ExactTargetHelper",
+              "file_path": "src/other.py",
+              "line": 20,
+              "symbol_type": "function",
+              "score": 0.64
+            }
+          ]
+        },
+        "selected_candidates": [
+          {
+            "rank": 1,
+            "node_ref": "src/exact.py::ExactTarget",
+            "name": "ExactTarget",
+            "file_path": "src/exact.py",
+            "line": 10,
+            "symbol_type": "class",
+            "priority": 1,
+            "sources": [
+              {
+                "channel": "prefix",
+                "rank": 1
+              }
+            ]
+          },
+          {
+            "rank": 2,
+            "node_ref": "tests/test_exact.py::ExactTarget",
+            "name": "ExactTarget",
+            "file_path": "tests/test_exact.py",
+            "line": 15,
+            "symbol_type": "function",
+            "priority": 1,
+            "sources": [
+              {
+                "channel": "prefix",
+                "rank": 2
+              }
+            ]
+          },
+          {
+            "rank": 3,
+            "node_ref": "src/other.py::ExactTargetHelper",
+            "name": "ExactTargetHelper",
+            "file_path": "src/other.py",
+            "line": 20,
+            "symbol_type": "function",
+            "priority": 1,
+            "sources": [
+              {
+                "channel": "prefix",
+                "rank": 3
+              }
+            ]
+          }
+        ],
+        "public_output": "search results for 'ExactTar' (3 results, matched via union)\n\n  [class] src/exact.py::ExactTarget  src/exact.py:L10 (Core)\n        sources: prefix#1 | priority=1\n        summary: canonical precision lookup target\n  [function] tests/test_exact.py::ExactTarget  tests/test_exact.py:L15 (Test)\n        sources: prefix#2 | priority=1\n        summary: test fixture canonical precision lookup target\n  [function] src/other.py::ExactTargetHelper  src/other.py:L20 (Core)\n        sources: prefix#3 | priority=1\n        sig: (value) | summary: canonical precision lookup helper",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 0.5,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              18300,
+              17600,
+              17700,
+              17300,
+              17400,
+              17600,
+              17600,
+              17500,
+              17700,
+              17500,
+              17500,
+              17300,
+              17400,
+              17400,
+              17400,
+              17300,
+              17800,
+              17500,
+              17300,
+              17700,
+              17500,
+              17400,
+              18000,
+              17600,
+              17400,
+              17500,
+              17400,
+              17400,
+              17400,
+              17300
+            ],
+            "min": 17300,
+            "p50": 17500,
+            "p95": 18000,
+            "max": 18300
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              105200,
+              99400,
+              96800,
+              101400,
+              97000,
+              96000,
+              96400,
+              107900,
+              98300,
+              96300,
+              96400,
+              96300,
+              96200,
+              96000,
+              96000,
+              96400,
+              96100,
+              96100,
+              96200,
+              96100,
+              96100,
+              96000,
+              96300,
+              99400,
+              96300,
+              95900,
+              96200,
+              96400,
+              95800,
+              96100
+            ],
+            "min": 95800,
+            "p50": 96300,
+            "p95": 105200,
+            "max": 107900
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              87600,
+              53400,
+              44800,
+              42100,
+              41300,
+              41500,
+              41100,
+              41600,
+              42200,
+              40900,
+              41700,
+              40800,
+              40600,
+              40500,
+              40500,
+              40400,
+              40700,
+              40800,
+              40900,
+              49300,
+              42400,
+              40700,
+              40700,
+              40900,
+              40500,
+              40700,
+              40500,
+              40900,
+              41400,
+              40800
+            ],
+            "min": 40400,
+            "p50": 40900,
+            "p95": 53400,
+            "max": 87600
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              102400,
+              101500,
+              100700,
+              100600,
+              99900,
+              99300,
+              99600,
+              99700,
+              99900,
+              99500,
+              100100,
+              103600,
+              99500,
+              99400,
+              99200,
+              99500,
+              99400,
+              99100,
+              104100,
+              99700,
+              99200,
+              99100,
+              99000,
+              99500,
+              98900,
+              99300,
+              99000,
+              99400,
+              98900,
+              99000
+            ],
+            "min": 98900,
+            "p50": 99500,
+            "p95": 103600,
+            "max": 104100
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1424900,
+              1430200,
+              1426400,
+              2010800,
+              1499700,
+              1460500,
+              1497200,
+              1449600,
+              1444700,
+              1440500,
+              1459800,
+              1430000,
+              1443100,
+              1541100,
+              1486100,
+              1426100,
+              1426200,
+              1498100,
+              1486900,
+              1421600,
+              1415600,
+              1419500,
+              1410200,
+              1439400,
+              1499100,
+              1415800,
+              1430600,
+              1406400,
+              1415900,
+              1438200
+            ],
+            "min": 1406400,
+            "p50": 1438200,
+            "p95": 1541100,
+            "max": 2010800
+          }
+        }
+      },
+      {
+        "id": "snake_case_tokens",
+        "scenario": "snake_case tokenization",
+        "query": "parse input",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/names.py::parse_input_record"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "union",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "exact": {
+            "status": "no_match"
+          },
+          "prefix": {
+            "status": "ok"
+          },
+          "bm25": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [],
+          "prefix": [
+            {
+              "channel": "prefix",
+              "rank": 1,
+              "node_ref": "src/names.py::parse_input_record",
+              "name": "parse_input_record",
+              "file_path": "src/names.py",
+              "line": 30,
+              "symbol_type": "function",
+              "score": 0.0
+            }
+          ],
+          "bm25": [],
+          "fuzzy": []
+        },
+        "selected_candidates": [
+          {
+            "rank": 1,
+            "node_ref": "src/names.py::parse_input_record",
+            "name": "parse_input_record",
+            "file_path": "src/names.py",
+            "line": 30,
+            "symbol_type": "function",
+            "priority": 1,
+            "sources": [
+              {
+                "channel": "prefix",
+                "rank": 1
+              }
+            ]
+          }
+        ],
+        "public_output": "search results for 'parse input' (1 results, matched via union)\n\n  [function] src/names.py::parse_input_record  src/names.py:L30 (Core)\n        sources: prefix#1 | priority=1\n        sig: (raw) | summary: normalizes source records",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              18400,
+              18100,
+              17700,
+              17800,
+              17800,
+              17900,
+              17600,
+              17600,
+              17600,
+              17800,
+              24100,
+              17800,
+              17600,
+              17600,
+              18000,
+              17700,
+              17900,
+              17600,
+              17600,
+              17700,
+              17600,
+              18000,
+              17500,
+              17600,
+              17500,
+              17600,
+              17500,
+              17600,
+              17600,
+              17600
+            ],
+            "min": 17500,
+            "p50": 17600,
+            "p95": 18400,
+            "max": 24100
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              76000,
+              76000,
+              76000,
+              75900,
+              75600,
+              75400,
+              130500,
+              78600,
+              76000,
+              76200,
+              75300,
+              75400,
+              75100,
+              75300,
+              75600,
+              75200,
+              75800,
+              81000,
+              75700,
+              75100,
+              75200,
+              75400,
+              75500,
+              75500,
+              75300,
+              75600,
+              75000,
+              75300,
+              75200,
+              75500
+            ],
+            "min": 75000,
+            "p50": 75500,
+            "p95": 81000,
+            "max": 130500
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              45600,
+              42300,
+              41800,
+              40800,
+              41000,
+              40700,
+              40900,
+              40100,
+              40600,
+              40100,
+              40000,
+              39700,
+              39800,
+              39900,
+              40100,
+              40600,
+              40300,
+              40200,
+              40000,
+              44400,
+              41700,
+              40300,
+              40000,
+              40300,
+              40300,
+              39700,
+              40200,
+              39800,
+              39700,
+              40100
+            ],
+            "min": 39700,
+            "p50": 40200,
+            "p95": 44400,
+            "max": 45600
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              900,
+              1000,
+              800,
+              900,
+              800,
+              800,
+              900,
+              800,
+              900,
+              800,
+              800,
+              800,
+              800,
+              900,
+              800,
+              800,
+              800,
+              900,
+              900,
+              800,
+              800,
+              800,
+              800,
+              800,
+              900,
+              800,
+              800,
+              800,
+              900,
+              900
+            ],
+            "min": 800,
+            "p50": 800,
+            "p95": 900,
+            "max": 1000
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1384100,
+              1377000,
+              1410900,
+              1377200,
+              1394600,
+              1373800,
+              1392400,
+              1375400,
+              1451200,
+              1492500,
+              1379600,
+              1355800,
+              1362200,
+              1391600,
+              1415400,
+              1356300,
+              1359500,
+              1372200,
+              1348200,
+              1353700,
+              1427600,
+              1362000,
+              1353900,
+              1357900,
+              1372300,
+              1351100,
+              1349500,
+              1358200,
+              1405300,
+              1356200
+            ],
+            "min": 1348200,
+            "p50": 1372300,
+            "p95": 1451200,
+            "max": 1492500
+          }
+        }
+      },
+      {
+        "id": "camel_case_tokens",
+        "scenario": "camelCase tokenization",
+        "query": "get User",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/names.py::getUserById"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "union",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "exact": {
+            "status": "no_match"
+          },
+          "prefix": {
+            "status": "ok"
+          },
+          "bm25": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [],
+          "prefix": [
+            {
+              "channel": "prefix",
+              "rank": 1,
+              "node_ref": "src/names.py::getUserById",
+              "name": "getUserById",
+              "file_path": "src/names.py",
+              "line": 40,
+              "symbol_type": "function",
+              "score": 0.0
+            }
+          ],
+          "bm25": [],
+          "fuzzy": []
+        },
+        "selected_candidates": [
+          {
+            "rank": 1,
+            "node_ref": "src/names.py::getUserById",
+            "name": "getUserById",
+            "file_path": "src/names.py",
+            "line": 40,
+            "symbol_type": "function",
+            "priority": 1,
+            "sources": [
+              {
+                "channel": "prefix",
+                "rank": 1
+              }
+            ]
+          }
+        ],
+        "public_output": "search results for 'get User' (1 results, matched via union)\n\n  [function] src/names.py::getUserById  src/names.py:L40 (Core)\n        sources: prefix#1 | priority=1\n        sig: (user_id) | summary: loads one account identity",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              18500,
+              18200,
+              17800,
+              17700,
+              27900,
+              28800,
+              18900,
+              17700,
+              17600,
+              17700,
+              17700,
+              17600,
+              17700,
+              17600,
+              17600,
+              17500,
+              17600,
+              17800,
+              17600,
+              17600,
+              17600,
+              17600,
+              17400,
+              17400,
+              17800,
+              17400,
+              17900,
+              17500,
+              17500,
+              17500
+            ],
+            "min": 17400,
+            "p50": 17600,
+            "p95": 27900,
+            "max": 28800
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              71700,
+              71200,
+              70800,
+              70600,
+              75100,
+              71300,
+              70600,
+              71000,
+              70600,
+              70000,
+              70400,
+              70700,
+              70500,
+              70300,
+              70400,
+              69900,
+              70100,
+              70100,
+              70000,
+              70200,
+              70500,
+              70400,
+              70100,
+              70400,
+              70200,
+              70400,
+              70700,
+              70200,
+              70000,
+              70100
+            ],
+            "min": 69900,
+            "p50": 70400,
+            "p95": 71700,
+            "max": 75100
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              48200,
+              42400,
+              40800,
+              40900,
+              41000,
+              40500,
+              40300,
+              40600,
+              40500,
+              40000,
+              40400,
+              39900,
+              39900,
+              40000,
+              39700,
+              39900,
+              39900,
+              40000,
+              39900,
+              39800,
+              39600,
+              39600,
+              39500,
+              39400,
+              39400,
+              39400,
+              39300,
+              39700,
+              39600,
+              39400
+            ],
+            "min": 39300,
+            "p50": 39900,
+            "p95": 42400,
+            "max": 48200
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              800,
+              800,
+              800,
+              800,
+              800,
+              800,
+              800,
+              700,
+              800,
+              800,
+              1000,
+              900,
+              900,
+              800,
+              800,
+              700,
+              800,
+              800,
+              700,
+              800,
+              800,
+              800,
+              800,
+              700,
+              800,
+              800,
+              800,
+              700,
+              800,
+              700
+            ],
+            "min": 700,
+            "p50": 800,
+            "p95": 900,
+            "max": 1000
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1380200,
+              1403700,
+              1357100,
+              1365500,
+              1447000,
+              1441800,
+              1362100,
+              1359500,
+              1362400,
+              1365600,
+              1353700,
+              1356700,
+              1381700,
+              1350100,
+              1353100,
+              1358700,
+              1403900,
+              1379600,
+              1347000,
+              1390000,
+              1371100,
+              1357300,
+              1390800,
+              1356700,
+              1340300,
+              1346900,
+              1355200,
+              1399800,
+              1376100,
+              1348000
+            ],
+            "min": 1340300,
+            "p50": 1362100,
+            "p95": 1441800,
+            "max": 1447000
+          }
+        }
+      },
+      {
+        "id": "cpp_namespace_tokens",
+        "scenario": "C++ namespace tokenization",
+        "query": "Auth Token",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/cpp.cc::Auth::TokenParser"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "union",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "exact": {
+            "status": "no_match"
+          },
+          "prefix": {
+            "status": "ok"
+          },
+          "bm25": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [],
+          "prefix": [
+            {
+              "channel": "prefix",
+              "rank": 1,
+              "node_ref": "src/cpp.cc::Auth::TokenParser",
+              "name": "Auth::TokenParser",
+              "file_path": "src/cpp.cc",
+              "line": 50,
+              "symbol_type": "class",
+              "score": 0.0
+            }
+          ],
+          "bm25": [],
+          "fuzzy": []
+        },
+        "selected_candidates": [
+          {
+            "rank": 1,
+            "node_ref": "src/cpp.cc::Auth::TokenParser",
+            "name": "Auth::TokenParser",
+            "file_path": "src/cpp.cc",
+            "line": 50,
+            "symbol_type": "class",
+            "priority": 1,
+            "sources": [
+              {
+                "channel": "prefix",
+                "rank": 1
+              }
+            ]
+          }
+        ],
+        "public_output": "search results for 'Auth Token' (1 results, matched via union)\n\n  [class] src/cpp.cc::Auth::TokenParser  src/cpp.cc:L50 (Core)\n        sources: prefix#1 | priority=1\n        summary: validates namespace credentials",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              18100,
+              18000,
+              17400,
+              17700,
+              17500,
+              17400,
+              17500,
+              17500,
+              17400,
+              17300,
+              17500,
+              17400,
+              17500,
+              17500,
+              17400,
+              17600,
+              17500,
+              17500,
+              18200,
+              17400,
+              17300,
+              17300,
+              17400,
+              17300,
+              17300,
+              17400,
+              17400,
+              17500,
+              17200,
+              17400
+            ],
+            "min": 17200,
+            "p50": 17400,
+            "p95": 18100,
+            "max": 18200
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              71400,
+              71000,
+              70700,
+              70500,
+              70800,
+              79300,
+              71800,
+              70900,
+              71100,
+              71000,
+              70900,
+              70800,
+              70300,
+              71600,
+              73000,
+              70900,
+              70800,
+              70600,
+              70800,
+              70900,
+              70900,
+              70800,
+              70800,
+              70600,
+              70700,
+              70900,
+              70500,
+              70500,
+              70600,
+              70500
+            ],
+            "min": 70300,
+            "p50": 70800,
+            "p95": 73000,
+            "max": 79300
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              43100,
+              47000,
+              42500,
+              41300,
+              67500,
+              56100,
+              43300,
+              42000,
+              41200,
+              40800,
+              41400,
+              40300,
+              40600,
+              40400,
+              40300,
+              40100,
+              40300,
+              40400,
+              40300,
+              40200,
+              55200,
+              42700,
+              40500,
+              40100,
+              39900,
+              40100,
+              40200,
+              40500,
+              40100,
+              43600
+            ],
+            "min": 39900,
+            "p50": 40500,
+            "p95": 56100,
+            "max": 67500
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              900,
+              800,
+              900,
+              800,
+              900,
+              800,
+              800,
+              800,
+              800,
+              800,
+              800,
+              800,
+              900,
+              900,
+              800,
+              800,
+              800,
+              800,
+              800,
+              800,
+              900,
+              800,
+              800,
+              800,
+              800,
+              800,
+              800,
+              800,
+              800,
+              800
+            ],
+            "min": 800,
+            "p50": 800,
+            "p95": 900,
+            "max": 900
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1409600,
+              1585500,
+              1396400,
+              1389000,
+              1363900,
+              1351300,
+              1376300,
+              1367200,
+              1347900,
+              1358500,
+              1388500,
+              1380900,
+              1398800,
+              1367900,
+              1361200,
+              1361600,
+              1382500,
+              1425100,
+              1376100,
+              1370500,
+              1349500,
+              1371300,
+              1572300,
+              1417800,
+              1559600,
+              1372300,
+              1409900,
+              1425000,
+              1357600,
+              1454300
+            ],
+            "min": 1347900,
+            "p50": 1376300,
+            "p95": 1572300,
+            "max": 1585500
+          }
+        }
+      },
+      {
+        "id": "summary_bm25",
+        "scenario": "summary BM25",
+        "query": "canonical precision",
+        "limit": 10,
+        "file_hint": "src/exact.py",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/exact.py::ExactTarget"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "fts",
+        "actual_channel": "union",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "exact": {
+            "status": "no_match"
+          },
+          "prefix": {
+            "status": "no_match"
+          },
+          "bm25": {
+            "status": "ok"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [],
+          "prefix": [],
+          "bm25": [
+            {
+              "channel": "bm25",
+              "rank": 1,
+              "node_ref": "src/exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "src/exact.py",
+              "line": 10,
+              "symbol_type": "class",
+              "score": -5.301070998336473
+            }
+          ],
+          "fuzzy": []
+        },
+        "selected_candidates": [
+          {
+            "rank": 1,
+            "node_ref": "src/exact.py::ExactTarget",
+            "name": "ExactTarget",
+            "file_path": "src/exact.py",
+            "line": 10,
+            "symbol_type": "class",
+            "priority": 2,
+            "sources": [
+              {
+                "channel": "bm25",
+                "rank": 1
+              }
+            ]
+          }
+        ],
+        "public_output": "search results for 'canonical precision' (1 results, matched via union)\n\n  [class] src/exact.py::ExactTarget  src/exact.py:L10 (Core)\n        sources: bm25#1 | priority=2\n        summary: canonical precision lookup target",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              20200,
+              19700,
+              19500,
+              19300,
+              19200,
+              19500,
+              19100,
+              19100,
+              19100,
+              19400,
+              19100,
+              19000,
+              19100,
+              19100,
+              19100,
+              19200,
+              19100,
+              19000,
+              19600,
+              19100,
+              19200,
+              19600,
+              19100,
+              19200,
+              19200,
+              19100,
+              19100,
+              19000,
+              19000,
+              19200
+            ],
+            "min": 19000,
+            "p50": 19100,
+            "p95": 19700,
+            "max": 20200
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              65100,
+              58400,
+              57600,
+              57100,
+              57700,
+              57200,
+              66500,
+              60100,
+              59300,
+              57300,
+              57300,
+              57100,
+              56900,
+              57100,
+              56900,
+              56900,
+              57000,
+              56900,
+              57000,
+              57000,
+              60400,
+              57400,
+              57200,
+              57300,
+              56900,
+              57200,
+              57000,
+              57200,
+              57000,
+              56800
+            ],
+            "min": 56800,
+            "p50": 57200,
+            "p95": 65100,
+            "max": 66500
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              64000,
+              62400,
+              62700,
+              61500,
+              61200,
+              60400,
+              60200,
+              60300,
+              60000,
+              59600,
+              59300,
+              59300,
+              59100,
+              59300,
+              59600,
+              59700,
+              59800,
+              59700,
+              59200,
+              64700,
+              61900,
+              65100,
+              59400,
+              58900,
+              59300,
+              59300,
+              60100,
+              60100,
+              59900,
+              58400
+            ],
+            "min": 58400,
+            "p50": 59800,
+            "p95": 64700,
+            "max": 65100
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1000,
+              1000,
+              1000,
+              1000,
+              900,
+              900,
+              1000,
+              1000,
+              1000,
+              900,
+              900,
+              1000,
+              900,
+              900,
+              1000,
+              1000,
+              1000,
+              1000,
+              1000,
+              1000,
+              1000,
+              900,
+              900,
+              1000,
+              900,
+              1000,
+              1000,
+              900,
+              900,
+              1000
+            ],
+            "min": 900,
+            "p50": 1000,
+            "p95": 1000,
+            "max": 1000
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1446100,
+              1391500,
+              1395300,
+              1381900,
+              1379100,
+              1374100,
+              1385500,
+              1396900,
+              1375400,
+              1367500,
+              1370300,
+              1369200,
+              1381600,
+              1376900,
+              1374400,
+              1400400,
+              1357700,
+              1355100,
+              1412900,
+              1358300,
+              1351500,
+              1363200,
+              1382600,
+              1377700,
+              1366900,
+              1358900,
+              1350800,
+              1358400,
+              1359200,
+              1350300
+            ],
+            "min": 1350300,
+            "p50": 1374100,
+            "p95": 1412900,
+            "max": 1446100
+          }
+        }
+      },
+      {
+        "id": "summary_name_conflict",
+        "scenario": "summary versus name conflict",
+        "query": "encrypt session tokens",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/summary.py::persist_blob"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "fts",
+        "actual_channel": "union",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "exact": {
+            "status": "no_match"
+          },
+          "prefix": {
+            "status": "ok"
+          },
+          "bm25": {
+            "status": "ok"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [],
+          "prefix": [
+            {
+              "channel": "prefix",
+              "rank": 1,
+              "node_ref": "src/summary.py::encrypt_session_tokens",
+              "name": "encrypt_session_tokens",
+              "file_path": "src/summary.py",
+              "line": 70,
+              "symbol_type": "function",
+              "score": 0.0
+            }
+          ],
+          "bm25": [
+            {
+              "channel": "bm25",
+              "rank": 1,
+              "node_ref": "src/summary.py::persist_blob",
+              "name": "persist_blob",
+              "file_path": "src/summary.py",
+              "line": 60,
+              "symbol_type": "function",
+              "score": -12.592034164280129
+            }
+          ],
+          "fuzzy": []
+        },
+        "selected_candidates": [
+          {
+            "rank": 1,
+            "node_ref": "src/summary.py::encrypt_session_tokens",
+            "name": "encrypt_session_tokens",
+            "file_path": "src/summary.py",
+            "line": 70,
+            "symbol_type": "function",
+            "priority": 1,
+            "sources": [
+              {
+                "channel": "prefix",
+                "rank": 1
+              }
+            ]
+          },
+          {
+            "rank": 2,
+            "node_ref": "src/summary.py::persist_blob",
+            "name": "persist_blob",
+            "file_path": "src/summary.py",
+            "line": 60,
+            "symbol_type": "function",
+            "priority": 2,
+            "sources": [
+              {
+                "channel": "bm25",
+                "rank": 1
+              }
+            ]
+          }
+        ],
+        "public_output": "search results for 'encrypt session tokens' (2 results, matched via union)\n\n  [function] src/summary.py::encrypt_session_tokens  src/summary.py:L70 (Core)\n        sources: prefix#1 | priority=1\n        sig: (payload) | summary: writes opaque data\n  [function] src/summary.py::persist_blob  src/summary.py:L60 (Core)\n        sources: bm25#1 | priority=2\n        sig: (payload) | summary: encrypts session tokens before storage",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 0.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 0.5
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              18700,
+              17900,
+              17900,
+              17500,
+              17500,
+              18000,
+              17500,
+              17400,
+              17600,
+              17500,
+              17600,
+              17800,
+              17500,
+              17500,
+              17400,
+              18000,
+              17600,
+              17600,
+              17500,
+              17400,
+              17500,
+              17600,
+              17400,
+              32800,
+              17600,
+              17400,
+              17500,
+              17400,
+              17400,
+              17500
+            ],
+            "min": 17400,
+            "p50": 17500,
+            "p95": 18700,
+            "max": 32800
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              80600,
+              80500,
+              80300,
+              79500,
+              79600,
+              79800,
+              79600,
+              79500,
+              79600,
+              84600,
+              80300,
+              81800,
+              79600,
+              79300,
+              79500,
+              79500,
+              78900,
+              79200,
+              79000,
+              79100,
+              79000,
+              79400,
+              79200,
+              78800,
+              78800,
+              79100,
+              78800,
+              78700,
+              78900,
+              78600
+            ],
+            "min": 78600,
+            "p50": 79400,
+            "p95": 81800,
+            "max": 84600
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              65200,
+              63900,
+              77000,
+              64800,
+              63300,
+              62600,
+              67100,
+              63200,
+              62400,
+              62500,
+              62100,
+              62000,
+              61900,
+              61500,
+              61200,
+              61400,
+              61500,
+              62200,
+              61500,
+              61500,
+              61700,
+              62400,
+              72900,
+              68000,
+              62900,
+              62000,
+              62000,
+              62200,
+              61600,
+              61300
+            ],
+            "min": 61200,
+            "p50": 62200,
+            "p95": 72900,
+            "max": 77000
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1000,
+              1000,
+              900,
+              900,
+              900,
+              1000,
+              900,
+              800,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              1000,
+              900,
+              900,
+              800,
+              900
+            ],
+            "min": 800,
+            "p50": 900,
+            "p95": 1000,
+            "max": 1000
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1490600,
+              1462500,
+              1650900,
+              1550100,
+              1776100,
+              1664100,
+              1673200,
+              1612400,
+              1621600,
+              1567500,
+              1548500,
+              1524000,
+              1942800,
+              1597200,
+              1662300,
+              1696500,
+              1735200,
+              1514000,
+              1842300,
+              1721100,
+              1591400,
+              1804300,
+              1734800,
+              1811600,
+              1738200,
+              1712400,
+              1584900,
+              1503400,
+              1466000,
+              1481800
+            ],
+            "min": 1462500,
+            "p50": 1621600,
+            "p95": 1842300,
+            "max": 1942800
+          }
+        }
+      },
+      {
+        "id": "multiterm_and",
+        "scenario": "multi-term implicit AND",
+        "query": "session storage",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/summary.py::persist_blob"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "fts",
+        "actual_channel": "union",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "exact": {
+            "status": "no_match"
+          },
+          "prefix": {
+            "status": "no_match"
+          },
+          "bm25": {
+            "status": "ok"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [],
+          "prefix": [],
+          "bm25": [
+            {
+              "channel": "bm25",
+              "rank": 1,
+              "node_ref": "src/summary.py::persist_blob",
+              "name": "persist_blob",
+              "file_path": "src/summary.py",
+              "line": 60,
+              "symbol_type": "function",
+              "score": -8.39468944285342
+            }
+          ],
+          "fuzzy": []
+        },
+        "selected_candidates": [
+          {
+            "rank": 1,
+            "node_ref": "src/summary.py::persist_blob",
+            "name": "persist_blob",
+            "file_path": "src/summary.py",
+            "line": 60,
+            "symbol_type": "function",
+            "priority": 2,
+            "sources": [
+              {
+                "channel": "bm25",
+                "rank": 1
+              }
+            ]
+          }
+        ],
+        "public_output": "search results for 'session storage' (1 results, matched via union)\n\n  [function] src/summary.py::persist_blob  src/summary.py:L60 (Core)\n        sources: bm25#1 | priority=2\n        sig: (payload) | summary: encrypts session tokens before storage",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              18400,
+              18300,
+              17400,
+              17200,
+              17200,
+              17200,
+              17400,
+              17400,
+              17400,
+              17300,
+              17400,
+              17200,
+              17100,
+              17100,
+              23500,
+              17500,
+              17400,
+              17600,
+              18000,
+              17200,
+              17200,
+              17200,
+              17100,
+              17100,
+              17000,
+              17100,
+              17100,
+              17100,
+              17000,
+              17000
+            ],
+            "min": 17000,
+            "p50": 17200,
+            "p95": 18400,
+            "max": 23500
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              61300,
+              61300,
+              60400,
+              60400,
+              60600,
+              60300,
+              60300,
+              60100,
+              60600,
+              60200,
+              60300,
+              60200,
+              70300,
+              62800,
+              60800,
+              60600,
+              60300,
+              60500,
+              60500,
+              60300,
+              60600,
+              60300,
+              60400,
+              60300,
+              60400,
+              63800,
+              60000,
+              60200,
+              60100,
+              60000
+            ],
+            "min": 60000,
+            "p50": 60400,
+            "p95": 63800,
+            "max": 70300
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              57200,
+              56000,
+              55400,
+              56300,
+              55200,
+              54700,
+              54300,
+              54200,
+              54800,
+              55600,
+              54500,
+              54300,
+              54100,
+              53800,
+              54600,
+              55000,
+              53900,
+              54300,
+              54100,
+              54500,
+              54600,
+              54000,
+              54100,
+              54200,
+              54300,
+              54200,
+              59600,
+              55700,
+              54400,
+              54300
+            ],
+            "min": 53800,
+            "p50": 54400,
+            "p95": 57200,
+            "max": 59600
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1000,
+              1000,
+              1000,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              900,
+              1000,
+              900,
+              1000,
+              900,
+              900,
+              800,
+              900,
+              900,
+              900,
+              800,
+              900,
+              900
+            ],
+            "min": 800,
+            "p50": 900,
+            "p95": 1000,
+            "max": 1000
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1385700,
+              1372300,
+              1363100,
+              1351000,
+              1412800,
+              1351600,
+              1942600,
+              1519000,
+              1408200,
+              1378300,
+              1378000,
+              1408700,
+              1382800,
+              1361800,
+              1424400,
+              1546000,
+              1375200,
+              1373100,
+              1374800,
+              1360500,
+              1364900,
+              1350900,
+              1380100,
+              1368600,
+              1350600,
+              1380300,
+              1408500,
+              1382900,
+              1346700,
+              1353900
+            ],
+            "min": 1346700,
+            "p50": 1375200,
+            "p95": 1546000,
+            "max": 1942600
+          }
+        }
+      },
+      {
+        "id": "like_substring",
+        "scenario": "LIKE substring fallback",
+        "query": "elper_funct",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/summary.py::helper_function"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "fuzzy",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "exact": {
+            "status": "no_match"
+          },
+          "prefix": {
+            "status": "no_match"
+          },
+          "bm25": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "ok"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [],
+          "prefix": [],
+          "bm25": [],
+          "fuzzy": [
+            {
+              "channel": "fuzzy",
+              "rank": 1,
+              "node_ref": "src/summary.py::helper_function",
+              "name": "helper_function",
+              "file_path": "src/summary.py",
+              "line": 80,
+              "symbol_type": "function",
+              "score": 0.8461538461538461
+            }
+          ]
+        },
+        "selected_candidates": [
+          {
+            "rank": 1,
+            "node_ref": "src/summary.py::helper_function",
+            "name": "helper_function",
+            "file_path": "src/summary.py",
+            "line": 80,
+            "symbol_type": "function",
+            "priority": 3,
+            "sources": [
+              {
+                "channel": "fuzzy",
+                "rank": 1
+              }
+            ]
+          }
+        ],
+        "public_output": "search results for 'elper_funct' (1 results, matched via fuzzy)\n\n  [function] src/summary.py::helper_function  src/summary.py:L80 (Core)\n        sources: fuzzy#1 | priority=3\n        sig: (value) | summary: generic utility",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              18300,
+              17500,
+              17700,
+              17300,
+              17300,
+              17400,
+              17300,
+              17200,
+              17400,
+              17400,
+              17300,
+              17700,
+              17200,
+              17200,
+              17300,
+              17400,
+              17300,
+              17400,
+              17400,
+              20100,
+              17300,
+              17200,
+              17200,
+              17300,
+              17300,
+              17100,
+              17200,
+              17400,
+              17000,
+              17200
+            ],
+            "min": 17000,
+            "p50": 17300,
+            "p95": 18300,
+            "max": 20100
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              56400,
+              56600,
+              56000,
+              56000,
+              56300,
+              55800,
+              58800,
+              58300,
+              70400,
+              57500,
+              56300,
+              56100,
+              56000,
+              56100,
+              56000,
+              56100,
+              56200,
+              64300,
+              56500,
+              55900,
+              56000,
+              55800,
+              55800,
+              73900,
+              56400,
+              56200,
+              55900,
+              55900,
+              56000,
+              55800
+            ],
+            "min": 55800,
+            "p50": 56100,
+            "p95": 70400,
+            "max": 73900
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              42400,
+              40500,
+              39800,
+              40500,
+              39700,
+              39500,
+              39900,
+              40000,
+              40100,
+              39600,
+              39300,
+              39700,
+              39500,
+              39600,
+              39300,
+              39400,
+              39600,
+              39400,
+              39300,
+              39100,
+              39000,
+              39400,
+              39200,
+              39200,
+              39100,
+              39100,
+              39200,
+              39400,
+              46200,
+              39700
+            ],
+            "min": 39000,
+            "p50": 39500,
+            "p95": 42400,
+            "max": 46200
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              111400,
+              110200,
+              109700,
+              109700,
+              109500,
+              109200,
+              108600,
+              108700,
+              108300,
+              108700,
+              108500,
+              108300,
+              108000,
+              108600,
+              132800,
+              112200,
+              109500,
+              109600,
+              108800,
+              108400,
+              108300,
+              108400,
+              108200,
+              108400,
+              108400,
+              108700,
+              108400,
+              108500,
+              108200,
+              108200
+            ],
+            "min": 108000,
+            "p50": 108600,
+            "p95": 112200,
+            "max": 132800
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1537800,
+              1465200,
+              1478800,
+              1485100,
+              1476000,
+              1529700,
+              1649600,
+              1478200,
+              1604700,
+              1488400,
+              1469400,
+              1474100,
+              1489600,
+              1495900,
+              1477000,
+              1489800,
+              1541200,
+              1488200,
+              1580800,
+              1526500,
+              1479100,
+              1464200,
+              1475600,
+              1465700,
+              1481900,
+              1501000,
+              1492500,
+              1526900,
+              1469200,
+              1521200
+            ],
+            "min": 1464200,
+            "p50": 1488200,
+            "p95": 1604700,
+            "max": 1649600
+          }
+        }
+      },
+      {
+        "id": "fuzzy_typo",
+        "scenario": "fuzzy typo fallback",
+        "query": "processDta",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/summary.py::processData"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "fuzzy",
+        "actual_channel": "fuzzy",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "exact": {
+            "status": "no_match"
+          },
+          "prefix": {
+            "status": "no_match"
+          },
+          "bm25": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "ok"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [],
+          "prefix": [],
+          "bm25": [],
+          "fuzzy": [
+            {
+              "channel": "fuzzy",
+              "rank": 1,
+              "node_ref": "src/summary.py::processData",
+              "name": "processData",
+              "file_path": "src/summary.py",
+              "line": 90,
+              "symbol_type": "function",
+              "score": 0.9523809523809523
+            }
+          ]
+        },
+        "selected_candidates": [
+          {
+            "rank": 1,
+            "node_ref": "src/summary.py::processData",
+            "name": "processData",
+            "file_path": "src/summary.py",
+            "line": 90,
+            "symbol_type": "function",
+            "priority": 3,
+            "sources": [
+              {
+                "channel": "fuzzy",
+                "rank": 1
+              }
+            ]
+          }
+        ],
+        "public_output": "search results for 'processDta' (1 results, matched via fuzzy)\n\n  [function] src/summary.py::processData  src/summary.py:L90 (Core)\n        sources: fuzzy#1 | priority=3\n        sig: (data) | summary: transforms one payload",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              18100,
+              17600,
+              17400,
+              17300,
+              17400,
+              17300,
+              17200,
+              17200,
+              17500,
+              17500,
+              17300,
+              17300,
+              17600,
+              17400,
+              17300,
+              17100,
+              17400,
+              17400,
+              17300,
+              17200,
+              17200,
+              17300,
+              17000,
+              17400,
+              17300,
+              17200,
+              17200,
+              17200,
+              17300,
+              17300
+            ],
+            "min": 17000,
+            "p50": 17300,
+            "p95": 17600,
+            "max": 18100
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              60700,
+              60300,
+              60100,
+              60100,
+              59900,
+              60000,
+              66100,
+              63600,
+              61900,
+              62000,
+              60100,
+              59700,
+              59900,
+              60100,
+              59700,
+              60000,
+              60000,
+              59600,
+              59900,
+              60000,
+              59800,
+              60000,
+              60100,
+              60300,
+              77600,
+              60300,
+              59800,
+              60200,
+              60000,
+              60100
+            ],
+            "min": 59600,
+            "p50": 60100,
+            "p95": 66100,
+            "max": 77600
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              42300,
+              41300,
+              40400,
+              43100,
+              40400,
+              39700,
+              39800,
+              39400,
+              39200,
+              39200,
+              45400,
+              40000,
+              39200,
+              39200,
+              39100,
+              39000,
+              39200,
+              39400,
+              39300,
+              38800,
+              39100,
+              39000,
+              38900,
+              39000,
+              38900,
+              39000,
+              39000,
+              42300,
+              39200,
+              38800
+            ],
+            "min": 38800,
+            "p50": 39200,
+            "p95": 43100,
+            "max": 45400
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              127900,
+              127200,
+              125800,
+              125900,
+              125500,
+              125800,
+              155200,
+              129600,
+              125700,
+              124800,
+              125200,
+              124600,
+              124700,
+              124500,
+              124800,
+              124500,
+              124400,
+              124300,
+              123900,
+              124000,
+              123900,
+              124400,
+              126800,
+              124300,
+              124300,
+              124600,
+              124100,
+              124600,
+              124300,
+              124200
+            ],
+            "min": 123900,
+            "p50": 124600,
+            "p95": 129600,
+            "max": 155200
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1533900,
+              1506600,
+              1516700,
+              1505400,
+              1494000,
+              1550100,
+              1538500,
+              1495600,
+              1502500,
+              1510100,
+              1558700,
+              1493700,
+              1544100,
+              1502000,
+              1516200,
+              1495300,
+              1496500,
+              1493200,
+              1506900,
+              1518300,
+              1519800,
+              1652300,
+              1517000,
+              1504100,
+              1491400,
+              1554100,
+              1517100,
+              1500400,
+              1491700,
+              1500500
+            ],
+            "min": 1491400,
+            "p50": 1506600,
+            "p95": 1558700,
+            "max": 1652300
+          }
+        }
+      },
+      {
+        "id": "file_hint_positive",
+        "scenario": "file_hint positive filter",
+        "query": "ExactTarget",
+        "limit": 10,
+        "file_hint": "tests/",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "tests/test_exact.py::ExactTarget"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": "union",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "exact": {
+            "status": "ok"
+          },
+          "prefix": {
+            "status": "ok"
+          },
+          "bm25": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "ok"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [
+            {
+              "channel": "exact",
+              "rank": 1,
+              "node_ref": "tests/test_exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "tests/test_exact.py",
+              "line": 15,
+              "symbol_type": "function",
+              "score": 0.0
+            }
+          ],
+          "prefix": [
+            {
+              "channel": "prefix",
+              "rank": 1,
+              "node_ref": "tests/test_exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "tests/test_exact.py",
+              "line": 15,
+              "symbol_type": "function",
+              "score": 0.0
+            }
+          ],
+          "bm25": [],
+          "fuzzy": [
+            {
+              "channel": "fuzzy",
+              "rank": 1,
+              "node_ref": "tests/test_exact.py::ExactTarget",
+              "name": "ExactTarget",
+              "file_path": "tests/test_exact.py",
+              "line": 15,
+              "symbol_type": "function",
+              "score": 1.0
+            }
+          ]
+        },
+        "selected_candidates": [
+          {
+            "rank": 1,
+            "node_ref": "tests/test_exact.py::ExactTarget",
+            "name": "ExactTarget",
+            "file_path": "tests/test_exact.py",
+            "line": 15,
+            "symbol_type": "function",
+            "priority": 0,
+            "sources": [
+              {
+                "channel": "exact",
+                "rank": 1
+              },
+              {
+                "channel": "prefix",
+                "rank": 1
+              }
+            ]
+          }
+        ],
+        "public_output": "search results for 'ExactTarget' (1 results, matched via union)\n\n  [function] tests/test_exact.py::ExactTarget  tests/test_exact.py:L15 (Test)\n        sources: exact#1, prefix#1 | priority=0\n        summary: test fixture canonical precision lookup target",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "reciprocal_rank": 1.0
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              21500,
+              21000,
+              20900,
+              20400,
+              20500,
+              20500,
+              20500,
+              20500,
+              20700,
+              20600,
+              20600,
+              20700,
+              20500,
+              21000,
+              20600,
+              20500,
+              20500,
+              20700,
+              20600,
+              20600,
+              20500,
+              20500,
+              20500,
+              23300,
+              20400,
+              20500,
+              20600,
+              59000,
+              34800,
+              31600
+            ],
+            "min": 20400,
+            "p50": 20600,
+            "p95": 34800,
+            "max": 59000
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              88000,
+              88900,
+              102500,
+              83900,
+              80100,
+              79900,
+              79600,
+              80100,
+              79600,
+              79800,
+              79700,
+              79800,
+              80000,
+              79700,
+              93100,
+              81000,
+              79500,
+              79500,
+              79800,
+              79200,
+              78900,
+              79300,
+              79500,
+              79600,
+              79100,
+              79100,
+              79000,
+              88600,
+              79700,
+              79300
+            ],
+            "min": 78900,
+            "p50": 79700,
+            "p95": 93100,
+            "max": 102500
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              46600,
+              44000,
+              43200,
+              42600,
+              43300,
+              42600,
+              42600,
+              42000,
+              42000,
+              41800,
+              41700,
+              42200,
+              42300,
+              73000,
+              51300,
+              43200,
+              42300,
+              41300,
+              42100,
+              41500,
+              41500,
+              41400,
+              41600,
+              41300,
+              41500,
+              41300,
+              41200,
+              41100,
+              78000,
+              45800
+            ],
+            "min": 41100,
+            "p50": 42100,
+            "p95": 73000,
+            "max": 78000
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              27200,
+              26300,
+              26000,
+              25500,
+              25400,
+              35100,
+              28200,
+              25100,
+              25000,
+              25100,
+              25100,
+              24700,
+              24900,
+              24800,
+              24800,
+              24700,
+              24900,
+              24900,
+              24900,
+              24600,
+              24700,
+              24500,
+              24400,
+              24500,
+              24600,
+              24700,
+              24600,
+              24400,
+              24500,
+              24600
+            ],
+            "min": 24400,
+            "p50": 24800,
+            "p95": 28200,
+            "max": 35100
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1423100,
+              1394200,
+              1396900,
+              1409700,
+              1565500,
+              1497100,
+              1404100,
+              1393700,
+              1376200,
+              1393000,
+              1372400,
+              1373100,
+              1387700,
+              1362300,
+              1409300,
+              1547100,
+              1387600,
+              1369400,
+              1393100,
+              1373100,
+              1375800,
+              1402300,
+              1377700,
+              1380600,
+              1364200,
+              1377000,
+              1414300,
+              1403700,
+              1429700,
+              1401600
+            ],
+            "min": 1362300,
+            "p50": 1393100,
+            "p95": 1547100,
+            "max": 1565500
+          }
+        }
+      },
+      {
+        "id": "file_hint_empty",
+        "scenario": "file_hint removes all candidates",
+        "query": "ExactTarget",
+        "limit": 10,
+        "file_hint": "missing/",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [],
+        "expected_empty": true,
+        "expected_error": false,
+        "expected_channel": null,
+        "actual_channel": null,
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "exact": {
+            "status": "no_match"
+          },
+          "prefix": {
+            "status": "no_match"
+          },
+          "bm25": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [],
+          "prefix": [],
+          "bm25": [],
+          "fuzzy": []
+        },
+        "selected_candidates": [],
+        "public_output": "No symbols found matching 'ExactTarget'",
+        "score": {
+          "eligible": false,
+          "recall_at_1": null,
+          "recall_at_5": null,
+          "recall_at_10": null,
+          "reciprocal_rank": null
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              20400,
+              20100,
+              19700,
+              19500,
+              19500,
+              19900,
+              19500,
+              19700,
+              19500,
+              19500,
+              19300,
+              19400,
+              19400,
+              19400,
+              19400,
+              19400,
+              19600,
+              19400,
+              19500,
+              19500,
+              19400,
+              19300,
+              19300,
+              19400,
+              19400,
+              19600,
+              19300,
+              19400,
+              19500,
+              19300
+            ],
+            "min": 19300,
+            "p50": 19400,
+            "p95": 20100,
+            "max": 20400
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              72300,
+              74000,
+              71500,
+              71600,
+              71500,
+              71400,
+              71400,
+              71400,
+              71300,
+              77700,
+              71800,
+              71600,
+              71300,
+              71400,
+              72100,
+              71600,
+              71600,
+              71500,
+              71400,
+              71100,
+              71600,
+              71500,
+              71200,
+              71300,
+              71500,
+              71300,
+              71500,
+              71400,
+              71300,
+              71200
+            ],
+            "min": 71100,
+            "p50": 71500,
+            "p95": 74000,
+            "max": 77700
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              45100,
+              44300,
+              43800,
+              43000,
+              43400,
+              43200,
+              43000,
+              48900,
+              43700,
+              42100,
+              42100,
+              41900,
+              42900,
+              42100,
+              42600,
+              42300,
+              42500,
+              41700,
+              42300,
+              41900,
+              42600,
+              42500,
+              42500,
+              42600,
+              42200,
+              41900,
+              42400,
+              42600,
+              42800,
+              42200
+            ],
+            "min": 41700,
+            "p50": 42500,
+            "p95": 45100,
+            "max": 48900
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              18400,
+              18200,
+              18300,
+              17900,
+              17800,
+              17900,
+              17900,
+              17900,
+              17900,
+              17700,
+              17700,
+              18000,
+              17700,
+              17800,
+              17800,
+              17900,
+              17800,
+              17800,
+              17900,
+              17900,
+              17900,
+              17800,
+              20200,
+              17800,
+              17900,
+              17800,
+              17800,
+              17900,
+              17800,
+              17800
+            ],
+            "min": 17700,
+            "p50": 17900,
+            "p95": 18400,
+            "max": 20200
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1422900,
+              1449600,
+              1362100,
+              1358200,
+              1405400,
+              1377200,
+              1350400,
+              1360600,
+              1349000,
+              1341100,
+              1349700,
+              1587600,
+              1386200,
+              1367000,
+              1356800,
+              1354000,
+              1352200,
+              1355200,
+              1359500,
+              1376700,
+              1351800,
+              1370500,
+              1342700,
+              1425700,
+              1353100,
+              1360900,
+              1386100,
+              1354300,
+              1356100,
+              1355000
+            ],
+            "min": 1341100,
+            "p50": 1358200,
+            "p95": 1449600,
+            "max": 1587600
+          }
+        }
+      },
+      {
+        "id": "empty_query",
+        "scenario": "empty query records current LIKE wildcard behavior",
+        "query": "",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [
+          "src/exact.py::ExactTarget"
+        ],
+        "expected_empty": false,
+        "expected_error": false,
+        "expected_channel": "like",
+        "actual_channel": null,
+        "actual_error": true,
+        "error_matches_expectation": false,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "exact": {
+            "status": "not_applicable"
+          },
+          "prefix": {
+            "status": "not_applicable"
+          },
+          "bm25": {
+            "status": "not_applicable"
+          },
+          "fuzzy": {
+            "status": "not_applicable"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {}
+        },
+        "channels": {
+          "exact": [],
+          "prefix": [],
+          "bm25": [],
+          "fuzzy": []
+        },
+        "selected_candidates": [],
+        "public_output": "Error: text must not be empty.",
+        "score": {
+          "eligible": true,
+          "recall_at_1": 0.0,
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "reciprocal_rank": 0.0
+        },
+        "timings": {
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              492500,
+              490200,
+              478300,
+              478900,
+              475900,
+              516100,
+              497100,
+              512300,
+              541100,
+              532600,
+              500000,
+              485800,
+              485400,
+              482600,
+              474000,
+              469400,
+              528000,
+              490200,
+              477500,
+              478800,
+              501000,
+              476700,
+              474300,
+              481000,
+              482500,
+              496000,
+              473700,
+              498700,
+              482000,
+              479400
+            ],
+            "min": 469400,
+            "p50": 482600,
+            "p95": 532600,
+            "max": 541100
+          }
+        }
+      },
+      {
+        "id": "special_characters",
+        "scenario": "special characters and FTS escaping",
+        "query": "token* (parser) \"",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [],
+        "expected_empty": true,
+        "expected_error": false,
+        "expected_channel": null,
+        "actual_channel": "union",
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": false,
+        "channel_status": {
+          "exact": {
+            "status": "no_match"
+          },
+          "prefix": {
+            "status": "ok"
+          },
+          "bm25": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [],
+          "prefix": [
+            {
+              "channel": "prefix",
+              "rank": 1,
+              "node_ref": "src/cpp.cc::Auth::TokenParser",
+              "name": "Auth::TokenParser",
+              "file_path": "src/cpp.cc",
+              "line": 50,
+              "symbol_type": "class",
+              "score": 0.0
+            }
+          ],
+          "bm25": [],
+          "fuzzy": []
+        },
+        "selected_candidates": [
+          {
+            "rank": 1,
+            "node_ref": "src/cpp.cc::Auth::TokenParser",
+            "name": "Auth::TokenParser",
+            "file_path": "src/cpp.cc",
+            "line": 50,
+            "symbol_type": "class",
+            "priority": 1,
+            "sources": [
+              {
+                "channel": "prefix",
+                "rank": 1
+              }
+            ]
+          }
+        ],
+        "public_output": "search results for 'token* (parser) \"' (1 results, matched via union)\n\n  [class] src/cpp.cc::Auth::TokenParser  src/cpp.cc:L50 (Core)\n        sources: prefix#1 | priority=1\n        summary: validates namespace credentials",
+        "score": {
+          "eligible": false,
+          "recall_at_1": null,
+          "recall_at_5": null,
+          "recall_at_10": null,
+          "reciprocal_rank": null
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              18000,
+              17500,
+              17300,
+              17300,
+              17300,
+              17300,
+              17200,
+              17400,
+              17300,
+              17400,
+              17300,
+              17100,
+              17200,
+              17400,
+              17300,
+              17200,
+              17400,
+              17200,
+              17300,
+              17200,
+              17400,
+              17200,
+              17200,
+              17100,
+              17300,
+              17300,
+              17300,
+              17400,
+              17200,
+              17200
+            ],
+            "min": 17100,
+            "p50": 17300,
+            "p95": 17500,
+            "max": 18000
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              76900,
+              76200,
+              76300,
+              76400,
+              76000,
+              76400,
+              75900,
+              76000,
+              98800,
+              78700,
+              76400,
+              75900,
+              75700,
+              75800,
+              76300,
+              75700,
+              75900,
+              75600,
+              75700,
+              76200,
+              79100,
+              75700,
+              75700,
+              75900,
+              75700,
+              75900,
+              75800,
+              75800,
+              75600,
+              76400
+            ],
+            "min": 75600,
+            "p50": 75900,
+            "p95": 79100,
+            "max": 98800
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              101100,
+              89800,
+              82800,
+              74700,
+              72400,
+              70500,
+              70000,
+              67700,
+              69400,
+              66200,
+              66800,
+              66800,
+              68400,
+              67500,
+              67700,
+              68000,
+              68200,
+              67700,
+              67500,
+              68100,
+              70400,
+              70900,
+              72300,
+              79300,
+              51100,
+              42000,
+              40300,
+              39800,
+              39600,
+              39100
+            ],
+            "min": 39100,
+            "p50": 68000,
+            "p95": 89800,
+            "max": 101100
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1000,
+              900,
+              900,
+              900,
+              800,
+              800,
+              900,
+              900,
+              800,
+              900,
+              900,
+              900,
+              900,
+              800,
+              800,
+              900,
+              800,
+              900,
+              900,
+              900,
+              800,
+              800,
+              900,
+              800,
+              900,
+              900,
+              900,
+              900,
+              800,
+              900
+            ],
+            "min": 800,
+            "p50": 900,
+            "p95": 900,
+            "max": 1000
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1593900,
+              1705200,
+              1529800,
+              1674700,
+              1613700,
+              1725100,
+              1668700,
+              1593100,
+              1571200,
+              1611600,
+              1540100,
+              1638500,
+              1591200,
+              1684100,
+              1542400,
+              1880500,
+              2132500,
+              2015000,
+              1859100,
+              1644500,
+              1691800,
+              1665500,
+              1681500,
+              1694000,
+              1709700,
+              1570300,
+              1482700,
+              1550500,
+              1476200,
+              1590000
+            ],
+            "min": 1476200,
+            "p50": 1638500,
+            "p95": 2015000,
+            "max": 2132500
+          }
+        }
+      },
+      {
+        "id": "no_result",
+        "scenario": "no result",
+        "query": "zzzz_nonexistent_symbol_987",
+        "limit": 10,
+        "file_hint": "",
+        "match": "all",
+        "language": "",
+        "symbol_type": "",
+        "path_hint": "",
+        "expected_nodes": [],
+        "expected_empty": true,
+        "expected_error": false,
+        "expected_channel": null,
+        "actual_channel": null,
+        "actual_error": false,
+        "error_matches_expectation": true,
+        "channel_matches_expectation": true,
+        "channel_status": {
+          "exact": {
+            "status": "no_match"
+          },
+          "prefix": {
+            "status": "no_match"
+          },
+          "bm25": {
+            "status": "no_match"
+          },
+          "fuzzy": {
+            "status": "no_match"
+          }
+        },
+        "channel_diagnostics": {
+          "bm25": {
+            "candidate_cap": 50,
+            "per_term": [],
+            "truncated": false
+          }
+        },
+        "channels": {
+          "exact": [],
+          "prefix": [],
+          "bm25": [],
+          "fuzzy": []
+        },
+        "selected_candidates": [],
+        "public_output": "No symbols found matching 'zzzz_nonexistent_symbol_987'",
+        "score": {
+          "eligible": false,
+          "recall_at_1": null,
+          "recall_at_5": null,
+          "recall_at_10": null,
+          "reciprocal_rank": null
+        },
+        "timings": {
+          "exact": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              18100,
+              18000,
+              17700,
+              17600,
+              17500,
+              17600,
+              17600,
+              17400,
+              17400,
+              17700,
+              17600,
+              17500,
+              17400,
+              17400,
+              17400,
+              17400,
+              17600,
+              17400,
+              17300,
+              17300,
+              35000,
+              18800,
+              17900,
+              17300,
+              17500,
+              17600,
+              17400,
+              17400,
+              17500,
+              17400
+            ],
+            "min": 17300,
+            "p50": 17500,
+            "p95": 18800,
+            "max": 35000
+          },
+          "prefix": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              59700,
+              59700,
+              59800,
+              59600,
+              59300,
+              59600,
+              59100,
+              58900,
+              58700,
+              59300,
+              58900,
+              58900,
+              59100,
+              59500,
+              58900,
+              58800,
+              58800,
+              58800,
+              58700,
+              58700,
+              58800,
+              58800,
+              58700,
+              58800,
+              58800,
+              58600,
+              58800,
+              78900,
+              61100,
+              60800
+            ],
+            "min": 58600,
+            "p50": 58900,
+            "p95": 61100,
+            "max": 78900
+          },
+          "bm25": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              49500,
+              48300,
+              48600,
+              47000,
+              46600,
+              46600,
+              46700,
+              47300,
+              67500,
+              48100,
+              46300,
+              46400,
+              46800,
+              46500,
+              46700,
+              46400,
+              46500,
+              47800,
+              46700,
+              46000,
+              46200,
+              46000,
+              46300,
+              45900,
+              46100,
+              45900,
+              46100,
+              46400,
+              46100,
+              46000
+            ],
+            "min": 45900,
+            "p50": 46500,
+            "p95": 49500,
+            "max": 67500
+          },
+          "fuzzy": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              199000,
+              196700,
+              197100,
+              197700,
+              197500,
+              196800,
+              196500,
+              198600,
+              197100,
+              195700,
+              195400,
+              194800,
+              195600,
+              196000,
+              196000,
+              196000,
+              196000,
+              195500,
+              198500,
+              195300,
+              196000,
+              195700,
+              195800,
+              196000,
+              195900,
+              195500,
+              196000,
+              195700,
+              198700,
+              195800
+            ],
+            "min": 194800,
+            "p50": 196000,
+            "p95": 198700,
+            "max": 199000
+          },
+          "public": {
+            "unit": "ns",
+            "warmups": 3,
+            "iterations": 30,
+            "samples": [
+              1559700,
+              1997300,
+              2279700,
+              1615800,
+              1592300,
+              1573100,
+              1578100,
+              1665000,
+              1560100,
+              1547900,
+              1545200,
+              1609800,
+              1554500,
+              1542300,
+              1565400,
+              1547900,
+              1579000,
+              1541100,
+              1528900,
+              1532600,
+              1539700,
+              1566600,
+              1580300,
+              1528900,
+              1543200,
+              1576900,
+              1575400,
+              1540100,
+              1552600,
+              1539900
+            ],
+            "min": 1528900,
+            "p50": 1559700,
+            "p95": 1997300,
+            "max": 2279700
+          }
+        }
+      }
+    ],
+    "metrics": {
+      "eligible_task_count": 13,
+      "recall_at_1": 0.8076923076923077,
+      "recall_at_5": 0.9230769230769231,
+      "recall_at_10": 0.9230769230769231,
+      "mrr": 0.8846153846153846,
+      "actual_no_result_rate": 0.13333333333333333,
+      "expected_empty_task_count": 3,
+      "expected_empty_accuracy": 0.6666666666666666,
+      "expected_error_task_count": 0,
+      "expected_error_accuracy": null
+    }
+  },
+  "comparison": {
+    "baseline_spec_id": "p1_1_current_retrieval",
+    "baseline_git_commit": "a5eebd51b518f65c02d7f9328102ff5b4b644abe",
+    "metrics_before_raw": {
+      "eligible_task_count": 13,
+      "recall_at_1": 0.9615384615384616,
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "mrr": 1.0,
+      "actual_no_result_rate": 0.1875,
+      "expected_empty_task_count": 3,
+      "expected_empty_accuracy": 1.0
+    },
+    "metrics_after_raw": {
+      "eligible_task_count": 13,
+      "recall_at_1": 0.8076923076923077,
+      "recall_at_5": 0.9230769230769231,
+      "recall_at_10": 0.9230769230769231,
+      "mrr": 0.8846153846153846,
+      "actual_no_result_rate": 0.13333333333333333,
+      "expected_empty_task_count": 3,
+      "expected_empty_accuracy": 0.6666666666666666,
+      "expected_error_task_count": 0,
+      "expected_error_accuracy": null
+    },
+    "metrics_before": {
+      "eligible_task_count": 12,
+      "recall_at_1": 0.9583333333333334,
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "mrr": 1.0,
+      "actual_no_result_rate": 0.2,
+      "expected_empty_task_count": 3,
+      "expected_empty_accuracy": 1.0,
+      "expected_error_task_count": 0,
+      "expected_error_accuracy": null
+    },
+    "metrics_after": {
+      "eligible_task_count": 12,
+      "recall_at_1": 0.875,
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "mrr": 0.9583333333333334,
+      "actual_no_result_rate": 0.13333333333333333,
+      "expected_empty_task_count": 3,
+      "expected_empty_accuracy": 0.6666666666666666,
+      "expected_error_task_count": 0,
+      "expected_error_accuracy": null
+    },
+    "excluded_contract_change_ids": [
+      "empty_query"
+    ],
+    "database_before": {
+      "database_bytes": 208896,
+      "wal_bytes": 0,
+      "version_before": "10.0.0",
+      "version_after": "10.0.0",
+      "migration_count_before": 0,
+      "migration_count_after": 0
+    },
+    "database_after": {
+      "database_bytes": 208896,
+      "wal_bytes": 0,
+      "version_before": "11.0.0",
+      "version_after": "11.0.0",
+      "migration_count_before": 0,
+      "migration_count_after": 0
+    },
+    "tasks": [
+      {
+        "id": "exact_qualified_name",
+        "classification": "behavior_change",
+        "before_channel": "like",
+        "after_channel": "union",
+        "before_candidates": [
+          "src/cpp.cc::Auth::TokenParser"
+        ],
+        "after_candidates": [
+          "src/cpp.cc::Auth::TokenParser"
+        ]
+      },
+      {
+        "id": "exact_short_name",
+        "classification": "behavior_change",
+        "before_channel": "like",
+        "after_channel": "union",
+        "before_candidates": [
+          "src/exact.py::ExactTarget"
+        ],
+        "after_candidates": [
+          "src/exact.py::ExactTarget"
+        ]
+      },
+      {
+        "id": "name_prefix",
+        "classification": "behavior_change",
+        "before_channel": "like",
+        "after_channel": "union",
+        "before_candidates": [
+          "src/exact.py::ExactTarget",
+          "src/other.py::ExactTargetHelper",
+          "tests/test_exact.py::ExactTarget"
+        ],
+        "after_candidates": [
+          "src/exact.py::ExactTarget",
+          "tests/test_exact.py::ExactTarget",
+          "src/other.py::ExactTargetHelper"
+        ]
+      },
+      {
+        "id": "snake_case_tokens",
+        "classification": "behavior_change",
+        "before_channel": "like",
+        "after_channel": "union",
+        "before_candidates": [
+          "src/names.py::parse_input_record"
+        ],
+        "after_candidates": [
+          "src/names.py::parse_input_record"
+        ]
+      },
+      {
+        "id": "camel_case_tokens",
+        "classification": "behavior_change",
+        "before_channel": "like",
+        "after_channel": "union",
+        "before_candidates": [
+          "src/names.py::getUserById"
+        ],
+        "after_candidates": [
+          "src/names.py::getUserById"
+        ]
+      },
+      {
+        "id": "cpp_namespace_tokens",
+        "classification": "behavior_change",
+        "before_channel": "like",
+        "after_channel": "union",
+        "before_candidates": [
+          "src/cpp.cc::Auth::TokenParser"
+        ],
+        "after_candidates": [
+          "src/cpp.cc::Auth::TokenParser"
+        ]
+      },
+      {
+        "id": "summary_bm25",
+        "classification": "behavior_change",
+        "before_channel": "fts",
+        "after_channel": "union",
+        "before_candidates": [
+          "src/exact.py::ExactTarget"
+        ],
+        "after_candidates": [
+          "src/exact.py::ExactTarget"
+        ]
+      },
+      {
+        "id": "summary_name_conflict",
+        "classification": "behavior_change",
+        "before_channel": "fts",
+        "after_channel": "union",
+        "before_candidates": [
+          "src/summary.py::persist_blob"
+        ],
+        "after_candidates": [
+          "src/summary.py::encrypt_session_tokens",
+          "src/summary.py::persist_blob"
+        ]
+      },
+      {
+        "id": "multiterm_and",
+        "classification": "behavior_change",
+        "before_channel": "fts",
+        "after_channel": "union",
+        "before_candidates": [
+          "src/summary.py::persist_blob"
+        ],
+        "after_candidates": [
+          "src/summary.py::persist_blob"
+        ]
+      },
+      {
+        "id": "like_substring",
+        "classification": "behavior_change",
+        "before_channel": "like",
+        "after_channel": "fuzzy",
+        "before_candidates": [
+          "src/summary.py::helper_function"
+        ],
+        "after_candidates": [
+          "src/summary.py::helper_function"
+        ]
+      },
+      {
+        "id": "fuzzy_typo",
+        "classification": "behavior_change",
+        "before_channel": "fuzzy",
+        "after_channel": "fuzzy",
+        "before_candidates": [
+          "src/summary.py::processData"
+        ],
+        "after_candidates": [
+          "src/summary.py::processData"
+        ]
+      },
+      {
+        "id": "file_hint_positive",
+        "classification": "behavior_change",
+        "before_channel": "like",
+        "after_channel": "union",
+        "before_candidates": [
+          "tests/test_exact.py::ExactTarget"
+        ],
+        "after_candidates": [
+          "tests/test_exact.py::ExactTarget"
+        ]
+      },
+      {
+        "id": "file_hint_empty",
+        "classification": "unchanged",
+        "before_channel": null,
+        "after_channel": null,
+        "before_candidates": [],
+        "after_candidates": []
+      },
+      {
+        "id": "empty_query",
+        "classification": "intentional_contract_change",
+        "before_channel": "like",
+        "after_channel": null,
+        "before_candidates": [
+          "src/exact.py::ExactTarget",
+          "src/other.py::ExactTargetHelper",
+          "src/names.py::parse_input_record",
+          "src/names.py::getUserById",
+          "src/cpp.cc::Auth::TokenParser",
+          "src/summary.py::persist_blob",
+          "src/summary.py::encrypt_session_tokens",
+          "src/summary.py::helper_function",
+          "src/summary.py::processData",
+          "tests/test_exact.py::ExactTarget"
+        ],
+        "after_candidates": []
+      },
+      {
+        "id": "special_characters",
+        "classification": "behavior_change",
+        "before_channel": null,
+        "after_channel": "union",
+        "before_candidates": [],
+        "after_candidates": [
+          "src/cpp.cc::Auth::TokenParser"
+        ]
+      },
+      {
+        "id": "no_result",
+        "classification": "unchanged",
+        "before_channel": null,
+        "after_channel": null,
+        "before_candidates": [],
+        "after_candidates": []
+      }
+    ]
+  }
+}

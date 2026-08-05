@@ -21,7 +21,8 @@ _REMY_ROOT = _EVAL_DIR.parent
 _DEFAULT_TASKS = _EVAL_DIR / "tasks" / "retrieval_baseline" / "p1_1.json"
 _DEFAULT_RESULTS = _EVAL_DIR / "results"
 _SUPPORTED_FORMATS = frozenset(("1.0.0", "1.1.0"))
-_CHANNELS: tuple[str, ...] = ("fts", "like", "fuzzy")
+_CHANNELS: tuple[str, ...] = ("exact", "prefix", "bm25", "fuzzy")
+_DETERMINISTIC_CHANNELS: tuple[str, ...] = ("exact", "prefix", "bm25")
 
 
 def _load_index_modules():
@@ -203,13 +204,6 @@ def _candidate_rows(rows: list[tuple], channel: str) -> list[dict]:
     return candidates
 
 
-def _selected_channel(channels: dict[str, list[dict]]) -> str | None:
-    for channel in _CHANNELS:
-        if channels[channel]:
-            return channel
-    return None
-
-
 def _nearest_rank(samples: list[int], percentile: float) -> int:
     if not samples:
         raise ValueError("cannot calculate a percentile from no samples")
@@ -327,10 +321,11 @@ def _channel_calls(queries: Any, db: sqlite3.Connection,
         text, limit, file_hint, **arguments
     )
     channels: dict[str, ChannelCall] = {
-        "fts": lambda: cast(list[CandidateRow], queries._search_fts(
+        "exact": lambda: cast(list[CandidateRow], queries._search_exact(db, query)),
+        "prefix": lambda: cast(list[CandidateRow], queries._search_like(db, query)),
+        "bm25": lambda: cast(list[CandidateRow], queries._search_fts(
             db, query, diagnostics=diagnostics
         )),
-        "like": lambda: cast(list[CandidateRow], queries._search_like(db, query)),
         "fuzzy": lambda: cast(list[CandidateRow], queries._search_fuzzy(db, query)),
     }
     public = lambda: cast(str, queries.query_search_impl(
@@ -371,6 +366,7 @@ def evaluate_task(queries, db, db_path: Path, task: dict,
     ))
     diagnostics: dict = {}
     channels: dict[str, list[dict]] = {name: [] for name in _CHANNELS}
+    raw_rows: dict[str, list[CandidateRow]] = {name: [] for name in _CHANNELS}
     channel_status = {
         name: {"status": "not_applicable"} for name in _CHANNELS
     }
@@ -385,11 +381,36 @@ def evaluate_task(queries, db, db_path: Path, task: dict,
     else:
         for channel in _CHANNELS:
             rows, status = _capture_channel(channel_calls[channel])
+            raw_rows[channel] = rows
             channels[channel] = _candidate_rows(rows, channel)
             channel_status[channel] = status
 
-    selected = _selected_channel(channels)
-    selected_candidates = channels[selected] if selected else []
+    merged = queries._merge_candidates(
+        [(name, raw_rows[name]) for name in _DETERMINISTIC_CHANNELS], limit
+    )
+    if merged:
+        selected = "union"
+    elif raw_rows["fuzzy"]:
+        merged = queries._merge_candidates([("fuzzy", raw_rows["fuzzy"])], limit)
+        selected = "fuzzy"
+    else:
+        selected = None
+    selected_candidates = [
+        {
+            "rank": rank,
+            "node_ref": f"{item['file_path']}::{item['name']}",
+            "name": item["name"],
+            "file_path": item["file_path"],
+            "line": item["lineno"],
+            "symbol_type": item["symbol_type"],
+            "priority": item["priority"],
+            "sources": [
+                {"channel": channel, "rank": source_rank}
+                for channel, source_rank in item["sources"]
+            ],
+        }
+        for rank, item in enumerate(merged, 1)
+    ]
     with queries.database_override(db_path):
         public_output = public_call()
         timed_calls: dict[str, Callable[[], object]] = {
@@ -429,7 +450,7 @@ def evaluate_task(queries, db, db_path: Path, task: dict,
         "error_matches_expectation": expected_error == actual_error,
         "channel_matches_expectation": expected_channel == selected,
         "channel_status": channel_status,
-        "channel_diagnostics": {"fts": diagnostics},
+        "channel_diagnostics": {"bm25": diagnostics},
         "channels": channels,
         "selected_candidates": selected_candidates,
         "public_output": public_output,
