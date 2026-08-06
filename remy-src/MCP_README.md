@@ -398,12 +398,6 @@ variables override file values for that process tree.
 | `REMY_NAVIGATE_CANDIDATE_SYMBOLS` | `10` | Symbol candidate cap per query_navigate intent |
 | `REMY_REMY_LOGIC_INDEX_DB_PATH` | `.claude/logic_index.db` | Database path relative to the project root |
 
-Related variable (in "Context Injection" group):
-
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `REMY_NAV_MCP_MINIMAL_ENABLED` | `true` | When MCP is available, inject only cluster overview (~1 KB) instead of full symbol tree (~40 KB) |
-
 ## Index Staleness Detection
 
 On startup, `_init_freshness()` checks whether the index is current:
@@ -454,7 +448,7 @@ When the MCP server is running, the context injection system (`injector.py`) swi
 - Cluster overview table (cluster name, file count, entry files)
 - MCP tool usage hints (when to use which tool)
 
-This reduces the baseline context consumption while maintaining full query capability on demand. Control with `REMY_NAV_MCP_MINIMAL_ENABLED` (project-level setting).
+This reduces the baseline context consumption while maintaining full query capability on demand.
 
 ## Troubleshooting
 

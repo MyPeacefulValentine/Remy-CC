@@ -78,29 +78,6 @@ def cmd_config(args):
         _load_config_ui().main()
 
 
-def _load_logic_scope_ui():
-    script = Path(__file__).resolve().parent / "logic_scope_ui.py"
-    if not script.exists():
-        print("Error: logic_scope_ui.py not found at " + str(script), file=sys.stderr)
-        sys.exit(1)
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("logic_scope_ui", str(script))
-    if spec is None or spec.loader is None:
-        print("Error: unable to load logic_scope_ui.py at " + str(script), file=sys.stderr)
-        sys.exit(1)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-def cmd_logic_scope(args):
-    project_dir = Path(args.path).resolve() if args.path else Path.cwd()
-    if not project_dir.is_dir():
-        print("Error: directory not found: " + str(project_dir), file=sys.stderr)
-        sys.exit(1)
-    _load_logic_scope_ui().main(cwd=str(project_dir))
-
-
 def cmd_verify(_args):
     claude_home = get_claude_home()
     errors = []
@@ -229,11 +206,10 @@ def _default_llm_call():
         skill_dir = Path(__file__).resolve().parent.parent / "skills" / "remy-index"
     sys.path.insert(0, str(skill_dir))
     import importlib
-    run_mod = importlib.import_module("run")
+    llm_mod = importlib.import_module("llm_client")
 
     def _call(prompt):
-        indexer = run_mod.LogicIndexer(os.getcwd())
-        return indexer._call_llm(prompt)
+        return llm_mod.LlmClient().call(prompt)
 
     return _call
 
@@ -631,8 +607,6 @@ def main():
     p_config = sub.add_parser("config", help="Open configuration UI (global by default, or --path for project)")
     p_config.add_argument("--path", default=None, help="Project root directory (opens project-level config)")
     p_config.add_argument("--global", dest="global_flag", action="store_true", help="Explicitly open global config")
-    p_scope = sub.add_parser("logic-scope", help="Configure logic index injection scope")
-    p_scope.add_argument("--path", default=None, help="Project root directory (default: current directory)")
 
     p_rebuild = sub.add_parser("summary-rebuild", help="Rebuild file/cluster summaries (full bootstrap or targeted node)")
     p_rebuild.add_argument("--path", default=None, help="Project root directory (default: current directory)")
@@ -659,7 +633,6 @@ def main():
 
     commands = {
         "config": cmd_config,
-        "logic-scope": cmd_logic_scope,
         "summary-rebuild": cmd_summary_rebuild,
         "summary-vacuum": cmd_summary_vacuum,
         "summary-audit": cmd_summary_audit,

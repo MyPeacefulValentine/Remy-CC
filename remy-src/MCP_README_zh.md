@@ -377,12 +377,6 @@ Python运行时参数保存在`~/.claude/remy-config.json`，项目覆盖保存�
 | `REMY_NAVIGATE_CANDIDATE_SYMBOLS` | `10` | query_navigate每次意图查询的symbol候选上限 |
 | `REMY_REMY_LOGIC_INDEX_DB_PATH` | `.claude/logic_index.db` | 相对项目根的数据库路径 |
 
-相关变量（"上下文注入"分组）：
-
-| 变量 | 默认值 | 说明 |
-| :--- | :--- | :--- |
-| `REMY_NAV_MCP_MINIMAL_ENABLED` | `true` | MCP 可用时，仅注入集群概览（~1 KB）而非完整符号树（~40 KB） |
-
 ## 索引新鲜度检测
 
 启动时，`_init_freshness()` 检查索引是否最新：
@@ -432,8 +426,6 @@ symbols matching 'parse_file' (1 results)
 当 MCP 服务器运行时，上下文注入系统（`injector.py`）从注入完整逻辑树（~40 KB 的符号签名和摘要）切换为最小载荷（~1 KB）：
 - 集群概览表（集群名、文件数、入口文件）
 - MCP 工具使用指引（何时使用哪个工具）
-
-通过 `REMY_NAV_MCP_MINIMAL_ENABLED`（项目级设置）控制。
 
 ## 故障排查
 

@@ -39,28 +39,7 @@ SETTINGS_FILE = os.path.join(".claude", "settings.local.json")
 TIMELINE_FILE = os.path.join(".claude", "history", "timeline.md")
 TIMELINE_VIEW_FILE = os.path.join(".claude", "history", "timeline_view.md")
 LOGIC_TREE_VIEW_FILE = os.path.join(".claude", "logic_tree_view.md")
-SELECTION_FILE = os.path.join(".claude", "logic_inject_selection.json")
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
-
-
-def _load_nav_tier_config():
-    config = remy_config.load_config(strict=False)
-    nav_full_max = config.get_int("REMY_NAV_TIER_FULL_MAX")
-    nav_cluster_max = config.get_int("REMY_NAV_TIER_CLUSTER_MAX")
-    if nav_full_max < 0 or nav_cluster_max < 0:
-        return 200, 2000
-    if nav_full_max > nav_cluster_max:
-        return 200, 2000
-    return nav_full_max, nav_cluster_max
-
-
-def _get_injection_density(file_count):
-    nav_full_max, nav_cluster_max = _load_nav_tier_config()
-    if file_count <= nav_full_max:
-        return "full"
-    if file_count <= nav_cluster_max:
-        return "cluster"
-    return "cluster_summary"
 
 
 def _open_logic_db(cwd):
@@ -74,14 +53,6 @@ def _open_logic_db(cwd):
     except Exception:
         return None
 
-
-def _detect_mcp_available():
-    import importlib.util
-    claude_home = os.path.join(os.path.expanduser("~"), ".claude")
-    server_script = os.path.join(claude_home, "remy-src", "index_mcp_server.py")
-    if not os.path.exists(server_script):
-        return False
-    return importlib.util.find_spec("mcp") is not None
 
 # Registry of content to be injected.
 # Format: { "tag_name": "relative_file_path" }
@@ -255,9 +226,8 @@ def generate_timeline_view(cwd):
 
 
 def generate_logic_tree_view(cwd):
-    """Generates logic_tree_view.md directly from SQLite, with cluster-based navigation."""
+    """Generates logic_tree_view.md directly from SQLite (MCP minimal view)."""
     view_path = os.path.join(cwd, LOGIC_TREE_VIEW_FILE)
-    selection_path = os.path.join(cwd, SELECTION_FILE)
 
     db = _open_logic_db(cwd)
     if not db:
@@ -272,10 +242,6 @@ def generate_logic_tree_view(cwd):
             return
 
         lang = str(remy_config.load_config(cwd, strict=False).get("REMY_LANG", "en"))
-        mcp_minimal = (
-            remy_config.load_config(cwd, strict=False).get_bool("REMY_NAV_MCP_MINIMAL_ENABLED")
-            and _detect_mcp_available()
-        )
 
         output = []
         output.append("# \U0001f9e0 逻辑索引 (Logic Index)\n")
@@ -284,183 +250,13 @@ def generate_logic_tree_view(cwd):
         updated = meta_row[0] if meta_row else "Unknown"
         output.append(f"> Last Updated: {updated}\n")
 
-        if mcp_minimal:
-            _render_mcp_minimal(db, output, lang)
-        else:
-            selected_files = None
-            if os.path.exists(selection_path):
-                try:
-                    with open(selection_path, "r", encoding="utf-8") as f:
-                        selection = json.load(f)
-                    selected_files = set(
-                        p.replace("\\", "/") for p in selection.get("selected_files", [])
-                    )
-                except (json.JSONDecodeError, OSError):
-                    pass
-
-            density = _get_injection_density(file_count)
-
-            output.append("> **Symbol Types**: `[C]` Class | `[f]` Function | `[S]` Struct | `[E]` Enum | `[T]` Typedef/TypeAlias | `[M]` Macro | `[N]` Namespace | `[I]` Interface")
-            output.append("> **Tags**: `[Doc]` From Docstring/Doxygen | `[Source]` Data Source | `[Sink]` Data Sink | `[Util]` Utility | `[Test]` Test\n")
-
-            icon_map = {
-                "class": "C", "function": "f", "struct": "S", "enum": "E",
-                "typedef": "T", "type_alias": "T", "macro": "M",
-                "namespace": "N", "interface": "I",
-            }
-
-            if density == "full":
-                _render_full(db, output, selected_files, file_count, lang, icon_map)
-            elif density == "cluster":
-                _render_cluster(db, output, selected_files, file_count, lang, icon_map)
-            else:
-                _render_cluster_summary(db, output, lang)
+        _render_mcp_minimal(db, output, lang)
 
         os.makedirs(os.path.dirname(view_path), exist_ok=True)
         with open(view_path, "w", encoding="utf-8") as f:
             f.write("\n".join(output))
     finally:
         db.close()
-
-
-def _render_full(db, output, selected_files, file_count, lang, icon_map):
-    query = "SELECT path, layer, imports FROM files ORDER BY layer, path"
-    files = db.execute(query).fetchall()
-
-    if selected_files is not None:
-        total = len(files)
-        files = [(p, l, i) for p, l, i in files if p in selected_files]
-        if len(files) < total:
-            output.insert(4, _meta_line(lang, len(files), total))
-
-    current_layer = None
-    for path, layer, imports_json in files:
-        if layer != current_layer:
-            current_layer = layer
-            output.append(f"## \U0001f3d7️ {layer}")
-
-        output.append(f"### \U0001f4c4 `{path}`")
-        if imports_json:
-            try:
-                imports = json.loads(imports_json)
-                if imports:
-                    output.append(f"> Imports: {', '.join(imports)}")
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        symbols = db.execute(
-            "SELECT name, type, args FROM symbols WHERE file_path = ? ORDER BY lineno",
-            (path,),
-        ).fetchall()
-        for name, sym_type, args in symbols:
-            current = select_current_summary(db, "symbol", f"{path}::{name}")
-            summary = current.get("short")
-            icon = icon_map.get(sym_type, "?")
-            display_name = f"{name}{args}" if args else name
-            desc = summary or "No summary"
-            output.append(f"- **[{icon}]** `{display_name}`: {desc}")
-        output.append("")
-
-
-def _render_cluster(db, output, selected_files, file_count, lang, icon_map):
-    clusters = db.execute(
-        "SELECT id, name, label, entry_symbols, file_count "
-        "FROM clusters ORDER BY name"
-    ).fetchall()
-
-    if not clusters:
-        _render_full(db, output, selected_files, file_count, lang, icon_map)
-        return
-
-    if selected_files is not None:
-        total_files = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
-        shown = len(selected_files)
-        if shown < total_files:
-            output.insert(4, _meta_line(lang, shown, total_files))
-
-    output.append("## 项目功能拓扑\n")
-    for cluster_id, name, label, entry_json, fc in clusters:
-        current = select_current_summary(db, "cluster", name)
-        short_summary = current.get("short")
-        try:
-            entries = json.loads(entry_json)
-        except (json.JSONDecodeError, TypeError):
-            entries = []
-
-        display_label = label or short_summary or name
-        output.append(f"### {display_label} ({fc} files)")
-        if short_summary and short_summary != display_label:
-            output.append(f"> {short_summary}")
-
-        entry_lines = []
-        for qualified in entries[:5]:
-            if "::" in qualified:
-                fpath, sym_name = qualified.split("::", 1)
-                row = db.execute(
-                    "SELECT args FROM symbols WHERE file_path = ? AND name = ?",
-                    (fpath, sym_name)
-                ).fetchone()
-                sig = row[0] if row and row[0] else "()"
-                entry_lines.append(f"`{sym_name}{sig}`")
-            else:
-                entry_lines.append(f"`{qualified}`")
-        if entry_lines:
-            output.append(f"入口: {', '.join(entry_lines)}")
-
-        member_files = db.execute(
-            "SELECT file_path FROM cluster_members WHERE cluster_id = ? ORDER BY file_path",
-            (cluster_id,)
-        ).fetchall()
-        if selected_files is not None:
-            member_files = [(fp,) for (fp,) in member_files if fp in selected_files]
-
-        for (fp,) in member_files:
-            symbols = db.execute(
-                "SELECT name, type, args FROM symbols "
-                "WHERE file_path = ? ORDER BY lineno",
-                (fp,),
-            ).fetchall()
-            if symbols:
-                output.append(f"#### `{fp}`")
-                for sym_name, sym_type, args in symbols:
-                    current = select_current_summary(
-                        db, "symbol", f"{fp}::{sym_name}"
-                    )
-                    summary = current.get("short")
-                    icon = icon_map.get(sym_type, "?")
-                    display_name = f"{sym_name}{args}" if args else sym_name
-                    desc = summary or ""
-                    if desc:
-                        output.append(f"- **[{icon}]** `{display_name}`: {desc}")
-                    else:
-                        output.append(f"- **[{icon}]** `{display_name}`")
-
-        output.append("")
-
-    output.append("> 查询任意符号签名: query_symbol(\"函数名\") | 影响分析: query_impact([\"文件\"])")
-
-
-def _render_cluster_summary(db, output, lang):
-    clusters = db.execute(
-        "SELECT name, label, file_count FROM clusters ORDER BY file_count DESC"
-    ).fetchall()
-
-    if not clusters:
-        output.append("(No clusters detected)")
-        return
-
-    output.append("## 项目功能拓扑 (摘要)\n")
-    for name, label, fc in clusters:
-        current = select_current_summary(db, "cluster", name)
-        short_summary = current.get("short")
-        locator = f"{label} ({name})" if label else name
-        line = f"- **{locator}** ({fc} files)"
-        if short_summary:
-            line += f" — {short_summary}"
-        output.append(line)
-
-    output.append("")
-    output.append("> 查询任意符号签名: query_symbol(\"函数名\") | 影响分析: query_impact([\"文件\"])")
 
 
 def _render_mcp_minimal(db, output, lang):
@@ -510,40 +306,6 @@ def _render_mcp_minimal(db, output, lang):
             output.append(f"| {locator} | {fc} | {description} |")
 
         output.append("")
-
-
-def _meta_line(lang, shown, total):
-    if lang == "zh-CN":
-        return "> 注：逻辑索引已过滤，当前显示 {}/{} 个文件。使用 `remy-cc logic-scope` 调整范围。\n\n".format(shown, total)
-    return "> Note: Logic index filtered, showing {}/{} files. Use `remy-cc logic-scope` to adjust.\n\n".format(shown, total)
-
-
-def detect_new_logic_files(cwd):
-    """Returns file paths present in logic_index.db but absent from selection.json known_files."""
-    selection_path = os.path.join(cwd, SELECTION_FILE)
-
-    if not os.path.exists(selection_path):
-        return []
-
-    db = _open_logic_db(cwd)
-    if not db:
-        return []
-
-    try:
-        with open(selection_path, "r", encoding="utf-8") as f:
-            selection = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        db.close()
-        return []
-
-    known = set(selection.get("known_files", []))
-    if not known:
-        db.close()
-        return []
-
-    db_files = {r[0] for r in db.execute("SELECT path FROM files")}
-    db.close()
-    return sorted(db_files - known)
 
 
 def remove_block(content, tag):

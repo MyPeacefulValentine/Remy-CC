@@ -26,10 +26,6 @@ STRUCT_SCAN_SCRIPT = os.path.join(
     os.path.expanduser("~"), ".claude",
     "skills", "remy-index", "struct_scan.py"
 )
-SCOPE_UI_SCRIPT = os.path.join(
-    os.path.expanduser("~"), ".claude",
-    "remy-src", "logic_scope_ui.py"
-)
 
 LANGUAGE_DIRECTIVES = {
     "zh-CN": "Always respond in Chinese-simplified",
@@ -50,7 +46,7 @@ def _pad(s, target):
     return s + ' ' * max(0, target - _display_width(s))
 
 
-def _generate_banner(version, lang, injection_mode=None):
+def _generate_banner(version, lang):
     hook_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(hook_dir, BANNER_DATA_FILE)
     try:
@@ -92,29 +88,6 @@ def _generate_banner(version, lang, injection_mode=None):
 
     lines.append("")
     lines.append("─" * (box_width + 2))
-
-    if injection_mode:
-        im = data.get("injection_mode", {})
-        lk = "zh" if lang == "zh-CN" else "en"
-        lbl = im.get(f"label_{lk}", "📊 Injection")
-        modes = im.get("modes", {})
-        mode_info = modes.get(injection_mode, {})
-        mode_str = mode_info.get(f"name_{lk}", injection_mode)
-        color_code = mode_info.get("color", "0")
-        hint = im.get(f"switch_hint_{lk}", "")
-        COLOR = f'\033[{color_code}m'
-        lines.append("")
-        top_dashes = max(0, box_width - _display_width(lbl) - 3)
-        lines.append("┌─ " + lbl + " " + "─" * top_dashes + "┐")
-        mode_display = f"▶  {mode_str}"
-        mode_content = f"▶  {COLOR}{mode_str}{RESET}"
-        pad_mode = max(0, box_width - _display_width(mode_display) - 2)
-        lines.append("│  " + mode_content + " " * pad_mode + "│")
-        hint_content = f"↳ {hint}"
-        pad_hint = max(0, box_width - _display_width(hint_content) - 2)
-        lines.append("│  " + hint_content + " " * pad_hint + "│")
-        lines.append("└" + "─" * box_width + "┘")
-        lines.append("")
 
     cli_hint = data.get("cli_hint", {}).get(lang, "")
     if cli_hint:
@@ -176,62 +149,6 @@ def run_struct_scan(cwd):
         return 1
 
 
-def maybe_launch_scope_ui(cwd, mcp_minimal=False):
-    if mcp_minimal:
-        return
-
-    if not os.path.exists(SCOPE_UI_SCRIPT):
-        return
-
-    config = remy_config.load_config(cwd, strict=False)
-    inject_policy = config.get("REMY_LOGIC_INDEX_AUTO_INJECT", "ALWAYS")
-    if inject_policy != "ALWAYS":
-        return
-
-    db_file = str(config.get("REMY_LOGIC_INDEX_DB_PATH"))
-    json_file = os.path.join(cwd, ".claude", "logic_index.json")
-    if not os.path.exists(db_file) and not os.path.exists(json_file):
-        return
-
-    interactive = config.get_bool("REMY_LOGIC_INDEX_INTERACTIVE")
-    selection_file = os.path.join(cwd, ".claude", "logic_inject_selection.json")
-    launch = False
-
-    if interactive:
-        launch = True
-    elif os.path.exists(selection_file):
-        injector_path = os.path.join(os.path.expanduser("~"), ".claude", "hooks", "doc_manager", "injector.py")
-        try:
-            import importlib.util
-            spec = importlib.util.spec_from_file_location("injector", injector_path)
-            if spec is None or spec.loader is None:
-                return
-            _inj = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(_inj)
-            new_files = _inj.detect_new_logic_files(cwd)
-            if new_files:
-                launch = True
-        except Exception:
-            pass
-
-    if not launch:
-        return
-
-    try:
-        scope_timeout = config.get_int("REMY_LOGIC_SCOPE_TIMEOUT")
-        subprocess.run(
-            [sys.executable, SCOPE_UI_SCRIPT, "--cwd", cwd, "--timeout", str(scope_timeout)],
-            cwd=cwd,
-            check=False,
-            stdout=subprocess.DEVNULL,
-            timeout=scope_timeout,
-        )
-    except subprocess.TimeoutExpired:
-        print("[ScopeUI] Timed out, using existing selection", file=sys.stderr)
-    except Exception as e:
-        print(f"[ScopeUI] Error: {e}", file=sys.stderr)
-
-
 def update_tree(cwd, max_depth=None):
     """
     Executes the tree generation script.
@@ -284,20 +201,9 @@ def main():
         if event_name == "SessionStart":
             resume_only = "--resume-only" in sys.argv
 
-            import importlib.util
-            claude_home = os.path.join(os.path.expanduser("~"), ".claude")
-            server_script = os.path.join(claude_home, "remy-src", "index_mcp_server.py")
-            mcp_available = os.path.exists(server_script) and importlib.util.find_spec("mcp") is not None
             config = remy_config.load_config(cwd, strict=False)
-            mcp_minimal = (
-                mcp_available
-                and config.get_bool("REMY_NAV_MCP_MINIMAL_ENABLED")
-            )
 
-            if not resume_only:
-                maybe_launch_scope_ui(cwd, mcp_minimal=mcp_minimal)
-
-            update_tree(cwd, max_depth=2 if mcp_minimal else None)
+            update_tree(cwd, max_depth=2)
             run_struct_scan(cwd)
 
             if not resume_only:
@@ -307,29 +213,7 @@ def main():
                 version = _get_version()
 
                 if config.get_bool("REMY_BANNER_ENABLED"):
-                    if mcp_minimal:
-                        inj_mode = "mcp_minimal"
-                    else:
-                        db_path = str(config.get("REMY_LOGIC_INDEX_DB_PATH"))
-                        if os.path.exists(db_path):
-                            import sqlite3 as _sql
-                            try:
-                                _db = _sql.connect(db_path)
-                                fc = _db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
-                                _db.close()
-                                nav_full = config.get_int("REMY_NAV_TIER_FULL_MAX")
-                                nav_cluster = config.get_int("REMY_NAV_TIER_CLUSTER_MAX")
-                                if fc <= nav_full:
-                                    inj_mode = "full"
-                                elif fc <= nav_cluster:
-                                    inj_mode = "cluster"
-                                else:
-                                    inj_mode = "cluster_summary"
-                            except Exception:
-                                inj_mode = None
-                        else:
-                            inj_mode = None
-                    advice = _generate_banner(version, lang, injection_mode=inj_mode)
+                    advice = _generate_banner(version, lang)
                     print(json.dumps({
                         "systemMessage": advice
                     }))
@@ -341,14 +225,7 @@ def main():
             sys.exit(0)
 
         if event_name == "PreCompact":
-            import importlib.util
-            _server = os.path.join(os.path.expanduser("~"), ".claude", "remy-src", "index_mcp_server.py")
-            mcp_min = (
-                os.path.exists(_server)
-                and importlib.util.find_spec("mcp") is not None
-                and remy_config.load_config(cwd, strict=False).get_bool("REMY_NAV_MCP_MINIMAL_ENABLED")
-            )
-            update_tree(cwd, max_depth=2 if mcp_min else None)
+            update_tree(cwd, max_depth=2)
             run_struct_scan(cwd)
             print(json.dumps({}))
             sys.exit(0)

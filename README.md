@@ -52,7 +52,7 @@ The system is built on four coordinated layers:
 
 - **System prompts** (`CLAUDE.md`, `style.md`, output styles) define engineering principles, communication constraints, and prohibited behaviors. They form the static behavioral baseline, loaded at session start.
 - **Runtime hooks** fire automatically on Claude Code events — before every tool call, on every user message, and at session lifecycle boundaries. They re-inject behavioral rules to counteract instruction decay, normalize paths and shell environments, enrich file reads with caller/callee context from the logic index, and keep the project tree snapshot current. Hooks are the continuous enforcement layer: they run without user intervention.
-- **MCP server** (`remy-src/index_mcp_server.py`) is a stdio-based Model Context Protocol server launched automatically at session start. It exposes 12 code intelligence query tools (`query_symbol`, `query_symbol_summary`, `query_file_summary`, `query_callers`, `query_callees`, `query_impact`, `query_patterns`, `query_search`, `query_flow`, `query_cluster_summary`, `query_cluster_files`, `query_navigate`), giving Claude direct access to the semantic code graph without subprocess overhead. When available, the injection system switches to MCP Minimal mode (~1 KB) instead of injecting the full symbol tree (~40 KB).
+- **MCP server** (`remy-src/index_mcp_server.py`) is a stdio-based Model Context Protocol server launched automatically at session start. It exposes 12 code intelligence query tools (`query_symbol`, `query_symbol_summary`, `query_file_summary`, `query_callers`, `query_callees`, `query_impact`, `query_patterns`, `query_search`, `query_flow`, `query_cluster_summary`, `query_cluster_files`, `query_navigate`), giving Claude direct access to the semantic code graph without subprocess overhead. The injection system uses the MCP Minimal view: a cluster overview plus MCP tool usage hints, with details queried on demand.
 - **Skills** are slash commands (`/remy-plan`, `/remy-patch`, `/remy-audit`, etc.) that you invoke manually to execute structured, multi-step development tasks. Each skill defines its own workflow with explicit inputs, outputs, and stop conditions.
 
 These layers are coupled by design. Hooks maintain the context that skills depend on — file tree, semantic code index, and session history are all updated automatically through lifecycle events. The MCP server and hooks share the SQLite database (`logic_index.db`) with WAL-mode concurrency. Skills produce artifacts (task packets, changelogs, audit reports) that hooks validate at tool-call time. For example, `/remy-plan` writes a task packet that constrains which files `/remy-patch` is allowed to edit, and `pre_tool_guard` enforces that boundary on every `Edit` call.
@@ -74,8 +74,8 @@ These layers are coupled by design. Hooks maintain the context that skills depen
 | Pre-Tool Guard | Before each tool use | Converts absolute paths to relative; injects Conda/Mamba activation and UTF-8 encoding into shell commands; enforces snake_case file naming |
 | Logic Enrichment | Before Read/Grep/Glob | Consumes dirty file entries for incremental re-parsing; appends caller/callee relationships and architecture layer for the target file (requires logic index) |
 | Dirty File Tracker | After Edit/Write | Records modified file paths for incremental logic index updates on the next Read |
-| Lifecycle Manager | Session start/end, pre-compaction | Regenerates the project tree snapshot and language directive; triggers full structural scan to refresh symbol line numbers and call graph; optionally launches scope selector UI for logic index injection filtering |
-| Document Injector | On demand | Injects project tree, logic index (filtered by scope selection), and timeline references into `CLAUDE.md` |
+| Lifecycle Manager | Session start/end, pre-compaction | Regenerates the project tree snapshot and language directive; triggers full structural scan to refresh symbol line numbers and call graph |
+| Document Injector | On demand | Injects project tree, logic index, and timeline references into `CLAUDE.md` |
 
 ### MCP Server [📖](remy-src/MCP_README.md)
 
@@ -100,7 +100,7 @@ The server includes **index staleness detection**: on the first tool call each s
 
 The server is registered in `~/.claude.json` during installation and launched automatically by Claude Code at session start. It reads from the SQLite logic index (`logic_index.db`) in read-only mode. Configure via the "MCP Server" group in `remy-cc config`.
 
-When the MCP server is available, the context injection system automatically switches to **MCP Minimal mode** — injecting only a cluster overview and MCP tool usage hints (~1 KB) instead of the full symbol tree (~40 KB). Claude uses `query_symbol` / `query_callers` / `query_impact` on demand for detailed analysis. Control this behavior with `REMY_NAV_MCP_MINIMAL_ENABLED` (project-level, "Context Injection" group).
+The context injection system always uses **MCP Minimal mode** — injecting only a cluster overview and MCP tool usage hints (~1 KB). Claude uses `query_symbol` / `query_callers` / `query_impact` on demand for detailed analysis.
 
 ### Skills (User-Invoked)
 
@@ -206,7 +206,7 @@ For small, low-risk changes, steps 3–6 can be skipped.
 | Conda or Mamba (optional) | Auto-injected into shell environment when present |
 | `gh` CLI (optional) | Required by `/remy-reposcout` and `/remy-ci` GitHub Actions mode |
 | tree-sitter Python packages (optional) | Higher-precision C/C++/TypeScript parsing and call graph extraction |
-| `mcp` Python package (optional) | Required for the remy-index MCP server (`pip install mcp`) |
+| `mcp` Python package | Required for the remy-index MCP server; the installer installs it automatically and aborts on failure |
 
 Language is configured through `REMY_LANG` in `~/.claude/remy-config.json` or through `remy-cc config`.
 
@@ -249,7 +249,6 @@ After installation, the `remy-cc` command is available system-wide:
 | :--- | :--- |
 | `remy-cc ui` | Open the user Remy settings editor for `~/.claude/remy-config.json` |
 | `remy-cc project <path>` | Open the project Remy settings editor for `<path>/.claude/remy-config.json` |
-| `remy-cc logic-scope [--path <dir>]` | Configure which logic index files are injected at session start |
 | `remy-cc update` | Fetch and install the latest version |
 | `remy-cc uninstall` | Remove all Remy files and settings |
 | `remy-cc verify` | Check installation integrity |

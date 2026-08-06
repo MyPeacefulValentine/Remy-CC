@@ -50,8 +50,6 @@ DEPLOY_FILES_MAP = {
     "remy-src/cli.py": "remy-src/cli.py",
     "remy-src/config_ui.py": "remy-src/config_ui.py",
     "remy-src/config_ui.html": "remy-src/config_ui.html",
-    "remy-src/logic_scope_ui.py": "remy-src/logic_scope_ui.py",
-    "remy-src/logic_scope_ui.html": "remy-src/logic_scope_ui.html",
     "remy-assets/logo.svg": "remy-assets/logo.svg",
     "remy-src/patch_descriptions.py": "remy-src/patch_descriptions.py",
     "remy-src/index_mcp_server.py": "remy-src/index_mcp_server.py",
@@ -131,9 +129,8 @@ UI = {
         "j2_prompt": "Install Jinja2 (remy-inspect template rendering)? [Y/n] ",
         "j2_installing": "  Installing Jinja2 ...",
         "mcp_installed": "  [i] MCP SDK (mcp) already installed",
-        "mcp_prompt": "  Install MCP SDK for remy-index MCP server? (requires Python 3.10+) [Y/n] ",
-        "mcp_installing": "  Installing MCP SDK ...",
-        "mcp_skipped": "  [i] MCP SDK skipped. MCP server will not start until 'pip install mcp' is run.",
+        "mcp_installing": "  Installing MCP SDK (required by the remy-index MCP server) ...",
+        "mcp_install_failed": "  [x] MCP SDK installation failed. The MCP server is a required component; resolve the pip failure and re-run install.py.",
         "gh_installed": "  [i] GitHub CLI (gh) already installed, skipping",
         "gh_not_found": "  [i] gh not found. Install from https://cli.github.com for /remy-ci GitHub Actions mode.\n      /remy-ci will still work with paste (--paste) or file input modes.",
         "verify_gh": "  GitHub CLI (gh): {status}",
@@ -219,9 +216,8 @@ UI = {
         "j2_prompt": "是否安装 Jinja2（post-verify 模板渲染增强）？[Y/n] ",
         "j2_installing": "  正在安装 Jinja2 ...",
         "mcp_installed": "  [i] MCP SDK (mcp) 已安装",
-        "mcp_prompt": "  是否安装 MCP SDK 以启用 remy-index MCP 服务器？（需要 Python 3.10+）[Y/n] ",
-        "mcp_installing": "  正在安装 MCP SDK ...",
-        "mcp_skipped": "  [i] 已跳过 MCP SDK 安装。MCP 服务器将在执行 'pip install mcp' 后可用。",
+        "mcp_installing": "  正在安装 MCP SDK（remy-index MCP 服务器的必需组件）...",
+        "mcp_install_failed": "  [x] MCP SDK 安装失败。MCP 服务器为必需组件；请解决 pip 失败后重新运行 install.py。",
         "gh_installed": "  [i] GitHub CLI (gh) 已安装，跳过",
         "gh_not_found": "  [i] 未找到 gh。请从 https://cli.github.com 安装以使用 /remy-ci 的 GitHub Actions 模式。\n      /remy-ci 仍可通过粘贴 (--paste) 或文件输入模式使用。",
         "verify_gh": "  GitHub CLI (gh): {status}",
@@ -921,6 +917,10 @@ def register_path(bin_dir: Path) -> None:
 
 
 def do_install() -> None:
+    if sys.version_info < (3, 10):
+        print(_t("verify_python_old", ver=sys.version), file=sys.stderr)
+        sys.exit(1)
+
     claude_home = get_claude_home()
 
     sudo_user = os.environ.get("SUDO_USER")
@@ -1081,18 +1081,14 @@ def do_install() -> None:
     if mcp_installed:
         print(_t("mcp_installed"))
     else:
-        try:
-            answer = input(_t("mcp_prompt")).strip().lower()
-        except EOFError:
-            answer = ""
-        if answer != "n":
-            print(_t("mcp_installing"))
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--user", "mcp"],
-                check=False,
-            )
-        else:
-            print(_t("mcp_skipped"))
+        print(_t("mcp_installing"))
+        mcp_proc = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--user", "mcp"],
+            check=False,
+        )
+        if mcp_proc.returncode != 0:
+            print(_t("mcp_install_failed"), file=sys.stderr)
+            sys.exit(1)
 
     register_mcp_server(claude_home)
 

@@ -15,13 +15,8 @@ import os
 import sys
 import subprocess
 import time
-import random
 import concurrent.futures
-import urllib.request
-import urllib.error
-import ssl
 import fnmatch
-from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 _REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "remy-src"))
@@ -32,6 +27,8 @@ import remy_config
 from parsers.python_parser import PythonParser
 from parsers.c_cpp_parser import CCppParser
 from parsers.ts_parser import TSParser
+from llm_client import LlmClient, FatalError, TruncatedResponseError
+import propagation
 from struct_scan import StructScanner
 from symbol_selection import select_symbols
 from index_state import (
@@ -43,7 +40,6 @@ from index_state import (
     project_scan_lock,
 )
 from retrieval_projection import (
-    AVAILABLE_SUMMARY_STATUSES,
     has_current_summary,
     select_current_summary,
 )
@@ -57,34 +53,15 @@ MAX_CTX_CHARS = 200000
 DEFAULT_AUTO_INJECT = "ALWAYS"
 DEFAULT_FILTER_SMALL = False
 
-DEFAULT_RETRY_BACKOFF_CAP_SECONDS = 60.0
-
-
-class FatalError(Exception):
-    """Triggers circuit breaker and halts execution."""
-    pass
-
-
-class TruncatedResponseError(Exception):
-    """Raised when API response is incomplete/truncated."""
-    pass
-
 
 class LogicIndexer:
     def __init__(self, root_dir):
         self.root_dir = os.path.abspath(root_dir)
         self.config = remy_config.load_config(self.root_dir, strict=True)
 
-        self.api_key = self.config.get("REMY_LLM_API_KEY")
-        self.model = self.config.get("REMY_LLM_MODEL")
-        self.base_url = self.config.get("REMY_LLM_BASE_URL")
-        self.circuit_open = False
+        self.llm_client = LlmClient(self.config)
         self.max_workers = self.config.get_int("REMY_LLM_MAX_WORKERS")
-        self.max_tokens = self.config.get_int("REMY_LLM_MAX_TOKENS")
-        self.retry_limit = self.config.get_int("REMY_LLM_RETRY_LIMIT")
-        self.timeout = self.config.get_int("REMY_LLM_TIMEOUT")
         self.filter_small = self.config.get_bool("REMY_LOGIC_INDEX_FILTER_SMALL")
-        self.lang = "English"
 
         self.exclusions = []
         self.layers = []
@@ -103,15 +80,10 @@ class LogicIndexer:
             "start_time": time.time(),
             "total_files": 0,
             "processed_files": 0,
-            "api_calls": 0,
             "failed_files": 0,
             "token_usage_estimate": 0,
             "languages": {},
         }
-
-        self.ssl_context = ssl.create_default_context()
-        self.ssl_context.check_hostname = False
-        self.ssl_context.verify_mode = ssl.CERT_NONE
 
     def _get_parser_for_file(self, filename):
         """Return the appropriate parser for a file, or None."""
@@ -171,86 +143,6 @@ class LogicIndexer:
                 if fnmatch.fnmatch(basename, clean_pattern) or fnmatch.fnmatch(rel_path, clean_pattern):
                     return True
         return False
-
-    def _call_llm(self, prompt):
-        if not self.api_key:
-            return "Error: REMY_LLM_API_KEY not set."
-
-        if self.circuit_open:
-            return "Error: Circuit breaker open."
-
-        url = self.base_url
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        data = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": f"You are a code analysis assistant. Respond in {self.lang}. Respond with valid JSON only."},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.2,
-            "max_tokens": self.max_tokens,
-            "response_format": {"type": "json_object"}
-        }
-
-        self.stats["api_calls"] += 1
-        retries = 0
-        while retries <= self.retry_limit:
-            try:
-                req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers)
-                with urllib.request.urlopen(req, context=self.ssl_context, timeout=self.timeout) as response:
-                    raw_data = response.read().decode('utf-8')
-                    result = json.loads(raw_data)
-                    try:
-                        text_content = result['choices'][0]['message']['content'].strip()
-
-                        if "```json" in text_content:
-                            text_content = text_content.split("```json")[1].split("```")[0].strip()
-                        elif "```" in text_content:
-                            text_content = text_content.split("```")[1].split("```")[0].strip()
-
-                        if not text_content.strip().endswith(('}', ']')):
-                            raise TruncatedResponseError("Response truncated (incomplete JSON)")
-
-                        try:
-                            json.loads(text_content)
-                            return text_content
-                        except json.JSONDecodeError:
-                            pass
-                        return text_content
-                    except (KeyError, IndexError):
-                        print(f"API Debug - Response Structure: {json.dumps(result)[:500]}")
-                        return "Error: Unexpected API response format."
-            except urllib.error.HTTPError as e:
-                if e.code in (401, 403, 429):
-                    self.circuit_open = True
-                    raise FatalError(f"Fatal API Error {e.code}: {e.reason}")
-
-                if e.code in (500, 502, 503, 504) and retries < self.retry_limit:
-                    retries += 1
-                    wait = min(DEFAULT_RETRY_BACKOFF_CAP_SECONDS, 2 ** retries) + (random.random() * 0.3)
-                    time.sleep(wait)
-                    continue
-                return f"Error: HTTP {e.code} - {e.reason}"
-            except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
-                if retries < self.retry_limit:
-                    retries += 1
-                    wait = min(DEFAULT_RETRY_BACKOFF_CAP_SECONDS, 2 ** retries) + (random.random() * 0.3)
-                    time.sleep(wait)
-                    continue
-                return f"Error: Network error ({str(e)})"
-            except TruncatedResponseError:
-                if retries < self.retry_limit:
-                    print(f"Warning: Response truncated. Retrying ({retries+1}/{self.retry_limit})...")
-                    retries += 1
-                    continue
-                raise
-            except Exception as e:
-                return f"Error: {str(e)}"
-        return "Error: Maximum retries exceeded."
 
     def _load_prompt_template(self, parser):
         """Loads the prompt template for the given parser's language."""
@@ -334,9 +226,9 @@ class LogicIndexer:
         BOOTSTRAP_PENDING_CONFIRMATION when ask-mode requires user input.
         Returns the result dict from bootstrap_summaries, or None when skipped.
         """
-        if not self.db or self.circuit_open:
+        if not self.db or self.llm_client.circuit_open:
             return None
-        if not self.api_key:
+        if not self.llm_client.api_key:
             print("Warning: REMY_LLM_API_KEY not configured; skipping file/cluster bootstrap.")
             return None
         try:
@@ -347,7 +239,7 @@ class LogicIndexer:
 
         print("\n[run] entering hierarchical bootstrap...", flush=True)
         try:
-            result = bootstrap_summaries(self.db, self._call_llm, mode=mode_override)
+            result = bootstrap_summaries(self.db, self.llm_client.call, mode=mode_override)
         except Exception as exc:
             print(f"Error during hierarchical bootstrap: {exc}")
             return None
@@ -366,248 +258,9 @@ class LogicIndexer:
         print("=" * 38)
         return result
 
-    @staticmethod
-    def _env_int(name, default):
-        key = name if name.startswith("REMY_") else "REMY_" + name
-        try:
-            return remy_config.load_config(strict=True).get_int(key)
-        except (KeyError, TypeError, remy_config.ConfigError):
-            return default
-
-    def _force_recompute_check(self, parent_kind, parent_ref):
-        """Return True when THRESHOLD_PRIMARY / THRESHOLD_BACKUP / INTERVAL_DAYS fires."""
-        if not self.db:
-            return False
-        row = self.db.execute(
-            "SELECT child_change_count, leaf_descendant_count, last_force_recompute_at "
-            "FROM node_change_counters WHERE node_kind = ? AND node_ref = ?",
-            (parent_kind, parent_ref),
-        ).fetchone()
-        if not row:
-            return False
-        child_cnt, leaf_cnt, last_force = row
-        threshold_primary = self._env_int("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", 50)
-        threshold_backup = self._env_int("REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP", -1)
-        interval_days = self._env_int("REMY_FORCE_RECOMPUTE_INTERVAL_DAYS", 30)
-        if threshold_primary > 0 and child_cnt >= threshold_primary:
-            return True
-        if threshold_backup >= 0 and leaf_cnt >= threshold_backup:
-            return True
-        if last_force and interval_days > 0:
-            try:
-                from datetime import timedelta
-                elapsed = datetime.now() - datetime.fromisoformat(last_force)
-                if elapsed >= timedelta(days=interval_days):
-                    return True
-            except (ValueError, TypeError):
-                pass
-        return False
-
-    def _zero_counter(self, parent_kind, parent_ref, mark_force=False):
-        """Reset child_change_count and leaf_descendant_count for a node."""
-        if not self.db:
-            return
-        if mark_force:
-            self.db.execute(
-                "UPDATE node_change_counters SET child_change_count = 0, "
-                "leaf_descendant_count = 0, last_force_recompute_at = ? "
-                "WHERE node_kind = ? AND node_ref = ?",
-                (datetime.now().isoformat(timespec='seconds'), parent_kind, parent_ref),
-            )
-        else:
-            self.db.execute(
-                "UPDATE node_change_counters SET child_change_count = 0, "
-                "leaf_descendant_count = 0 "
-                "WHERE node_kind = ? AND node_ref = ?",
-                (parent_kind, parent_ref),
-            )
-        self.db.commit()
-
-    def _collect_propagation_candidates(self, parent_kind):
-        """Return parents with a current summary and child_change_count > 0."""
-        if not self.db:
-            return []
-        rows = self.db.execute(
-            "SELECT node_ref, child_change_count FROM node_change_counters "
-            "WHERE node_kind = ? AND child_change_count > 0",
-            (parent_kind,),
-        ).fetchall()
-        return [
-            (node_ref, count)
-            for node_ref, count in rows
-            if has_current_summary(self.db, parent_kind, node_ref)
-        ]
-
-    def _get_latest_ok_summary(self, node_kind, node_ref):
-        """Return the current usable summary payload, or None."""
-        if not self.db:
-            return None
-        current = select_current_summary(self.db, node_kind, node_ref)
-        if current.get("id") is None:
-            return None
-        return {"short": current.get("short"), "full": current.get("full")}
-
-    def _build_child_changes_payload(self, parent_kind, parent_ref):
-        """Assemble {child_ref, old_summary, new_summary} list for judge_propagation.
-
-        Children are determined structurally:
-            parent_kind='file'    -> children = symbols in that file
-            parent_kind='cluster' -> children = files in that cluster
-        old_summary uses the second-most-recent ok version when present.
-        """
-        if not self.db:
-            return []
-        if parent_kind == "file":
-            rows = self.db.execute(
-                "SELECT name FROM symbols WHERE file_path = ?", (parent_ref,)
-            ).fetchall()
-            child_kind = "symbol"
-            child_refs = [f"{parent_ref}::{r[0]}" for r in rows]
-        elif parent_kind == "cluster":
-            rows = self.db.execute(
-                """SELECT cm.file_path FROM cluster_members cm
-                   JOIN clusters c ON cm.cluster_id = c.id
-                   WHERE c.name = ?""",
-                (parent_ref,),
-            ).fetchall()
-            child_kind = "file"
-            child_refs = [r[0] for r in rows]
-        else:
-            return []
-
-        changes = []
-        for child_ref in child_refs:
-            current = select_current_summary(self.db, child_kind, child_ref)
-            if current.get("id") is None:
-                continue
-            new_summary = {
-                "short": current.get("short"),
-                "full": current.get("full"),
-            }
-            previous_rows = self.db.execute(
-                "SELECT summary FROM summary_versions "
-                "WHERE node_kind = ? AND node_ref = ? "
-                "AND status IN ('ok', 'oversized_warn') AND version < ? "
-                "ORDER BY version DESC LIMIT 1",
-                (child_kind, child_ref, current["version"]),
-            ).fetchall()
-            old_summary = None
-            if previous_rows and previous_rows[0][0]:
-                try:
-                    old_summary = json.loads(previous_rows[0][0])
-                except (json.JSONDecodeError, TypeError):
-                    old_summary = None
-            if new_summary == old_summary:
-                continue
-            changes.append({
-                "child_ref": child_ref,
-                "old_summary": old_summary,
-                "new_summary": new_summary,
-            })
-        return changes
-
-    def _rewrite_parent_summary(self, parent_kind, parent_ref):
-        """Regenerate a parent summary and return whether an ok version was written."""
-        if not self.db:
-            return False
-        try:
-            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-            import summarizer
-        except ImportError as exc:
-            print(f"Warning: summarizer unavailable ({exc}); cannot rewrite {parent_kind} {parent_ref}.")
-            return False
-        if parent_kind == "file":
-            row = self.db.execute(
-                "SELECT kind_hint FROM files WHERE path = ?", (parent_ref,)
-            ).fetchone()
-            hint = row[0] if row else None
-            payload, status = summarizer.summarize_file(self.db, parent_ref, hint, self._call_llm)
-        elif parent_kind == "cluster":
-            payload, status = summarizer.summarize_cluster(self.db, parent_ref, self._call_llm)
-        else:
-            return False
-        if payload is None or status not in AVAILABLE_SUMMARY_STATUSES:
-            return False
-        summarizer.write_summary_version(
-            self.db, parent_kind, parent_ref, payload, status
-        )
-        return True
-
-    def _run_propagation_pass(self):
-        """Run propagation judgment for file then cluster level.
-
-        For each candidate (parent with ok summary AND child_change_count > 0):
-        - If force-recompute fires: rewrite parent + zero counter + stamp last_force.
-        - Else: call judge_propagation; propagate=true → rewrite + zero counter,
-          propagate=false → keep counter (accumulates toward THRESHOLD_PRIMARY).
-        """
-        if not self.db or self.circuit_open or not self.api_key:
-            return None
-        print("\n[run] entering propagation pass...", flush=True)
-        try:
-            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-            from llm_judge import judge_propagation
-        except ImportError as exc:
-            print(f"Warning: llm_judge unavailable ({exc}); skipping propagation pass.")
-            return None
-
-        stats = {
-            "file_force": 0, "file_propagate": 0, "file_skip": 0,
-            "cluster_force": 0, "cluster_propagate": 0, "cluster_skip": 0,
-            "errors": 0,
-        }
-        for parent_kind in ("file", "cluster"):
-            candidates = self._collect_propagation_candidates(parent_kind)
-            for parent_ref, _child_cnt in candidates:
-                if self.circuit_open:
-                    break
-                if self._force_recompute_check(parent_kind, parent_ref):
-                    if self._rewrite_parent_summary(parent_kind, parent_ref):
-                        self._zero_counter(parent_kind, parent_ref, mark_force=True)
-                        stats[f"{parent_kind}_force"] += 1
-                    else:
-                        stats[f"{parent_kind}_skip"] += 1
-                        stats["errors"] += 1
-                    continue
-                parent_prev = self._get_latest_ok_summary(parent_kind, parent_ref)
-                child_changes = self._build_child_changes_payload(parent_kind, parent_ref)
-                if not child_changes:
-                    stats[f"{parent_kind}_skip"] += 1
-                    continue
-                try:
-                    verdict = judge_propagation(
-                        self.db, parent_kind, parent_ref, parent_prev,
-                        child_changes, self._call_llm,
-                    )
-                except Exception as exc:
-                    print(f"Error judging {parent_kind} {parent_ref}: {exc}")
-                    stats[f"{parent_kind}_skip"] += 1
-                    stats["errors"] += 1
-                    continue
-                if verdict.get("propagate"):
-                    if self._rewrite_parent_summary(parent_kind, parent_ref):
-                        self._zero_counter(parent_kind, parent_ref)
-                        stats[f"{parent_kind}_propagate"] += 1
-                    else:
-                        stats[f"{parent_kind}_skip"] += 1
-                        stats["errors"] += 1
-                else:
-                    stats[f"{parent_kind}_skip"] += 1
-
-        print("\n=== Propagation Pass ===")
-        print(
-            "PROPAGATION_RESULT "
-            f"file_propagate={stats['file_propagate']} file_skip={stats['file_skip']} "
-            f"file_force={stats['file_force']} "
-            f"cluster_propagate={stats['cluster_propagate']} cluster_skip={stats['cluster_skip']} "
-            f"cluster_force={stats['cluster_force']}"
-        )
-        print("=" * 25)
-        return stats
-
     def _worker_task(self, file_path, items, context_summaries, parser):
         """Processes multiple symbols for a single file."""
-        if self.circuit_open:
+        if self.llm_client.circuit_open:
             return
 
         try:
@@ -629,11 +282,11 @@ class LogicIndexer:
             source_code=source_code,
             target_symbols=", ".join(target_names),
             context_summaries=context_summaries,
-            lang=self.lang
+            lang=self.llm_client.lang
         )
 
         try:
-            res = self._call_llm(prompt)
+            res = self.llm_client.call(prompt)
             if isinstance(res, str) and res.startswith("Error:"):
                 message = f"API Error for {file_path}: {res}"
                 print(message)
@@ -664,10 +317,10 @@ class LogicIndexer:
             source_code=segment,
             target_symbols=symbol['name'],
             context_summaries=context_summaries,
-            lang=self.lang
+            lang=self.llm_client.lang
         )
         try:
-            res = self._call_llm(prompt)
+            res = self.llm_client.call(prompt)
             data = json.loads(res)
             symbol['summary'] = data[0]['summary'] if isinstance(data, list) else data['summary']
         except Exception as exc:
@@ -711,7 +364,7 @@ class LogicIndexer:
             futures = [executor.submit(self._worker_task, *args) for args in batch_args]
             try:
                 for future in concurrent.futures.as_completed(futures):
-                    if self.circuit_open:
+                    if self.llm_client.circuit_open:
                         executor.shutdown(wait=False, cancel_futures=True)
                         break
                     try:
@@ -720,7 +373,6 @@ class LogicIndexer:
                     except FatalError as e:
                         print(f"\n{e}")
                         self.summary_errors.append(StageError("symbol_summary", str(e)))
-                        self.circuit_open = True
                         executor.shutdown(wait=False, cancel_futures=True)
                         break
                     except Exception as e:
@@ -790,7 +442,7 @@ class LogicIndexer:
                         errors.append(StageError("symbol_summary", "Canonical source segment unavailable", f"{path}::{sym_name}"))
 
             if self.dirty_nodes:
-                if not self.api_key:
+                if not self.llm_client.api_key:
                     message = "REMY_LLM_API_KEY not found; symbol summaries remain pending."
                     print(f"Warning: {message}")
                     errors.append(StageError("symbol_summary", message))
@@ -824,7 +476,7 @@ class LogicIndexer:
                 cluster_completed = bootstrap_result.get("cluster_done", 0)
                 if bootstrap_result.get("file_failed", 0) or bootstrap_result.get("cluster_failed", 0):
                     errors.append(StageError("hierarchical_summary", "One or more requested summaries remain incomplete"))
-            elif self.db and not self.api_key:
+            elif self.db and not self.llm_client.api_key:
                 from bootstrap import _pending_clusters, _pending_files
                 pending_files = len(_pending_files(self.db))
                 pending_clusters = len(_pending_clusters(self.db))
@@ -836,8 +488,8 @@ class LogicIndexer:
                         "Auto bootstrap could not run without REMY_LLM_API_KEY",
                     ))
 
-            propagation_result = self._run_propagation_pass()
-            if self.api_key and not self.circuit_open:
+            propagation_result = propagation.run_propagation_pass(self.db, self.llm_client)
+            if self.llm_client.api_key and not self.llm_client.circuit_open:
                 if propagation_result is None:
                     errors.append(StageError("propagation", "Propagation pass did not complete"))
                 elif propagation_result.get("errors", 0):
@@ -879,7 +531,7 @@ class LogicIndexer:
             print("\n=== Logic Indexer Stats ===")
             print(f"Files in Index      : {file_count}")
             print(f"Symbols for LLM     : {len(self.dirty_nodes)}")
-            print(f"API Calls           : {self.stats['api_calls']}")
+            print(f"API Calls           : {self.llm_client.api_calls}")
             print(f"Total Duration      : {duration:.2f}s")
             print("===========================\n")
             if self.db:

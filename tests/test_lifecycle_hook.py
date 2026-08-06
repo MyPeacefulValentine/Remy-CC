@@ -49,17 +49,3 @@ def test_run_struct_scan_uses_custom_db_path(tmp_path, monkeypatch):
     assert lifecycle.run_struct_scan(str(project)) == 0
     assert observed["cwd"] == str(project)
     assert "--consume-dirty" in observed["args"]
-
-
-def test_scope_ui_checks_custom_db_path(tmp_path, monkeypatch):
-    project = tmp_path / "project"
-    custom = project / "state" / "index.db"
-    _write_config(project, "state/index.db")
-    _write_db(custom)
-    script = tmp_path / "scope.py"
-    script.write_text("", encoding="utf-8")
-    calls = []
-    monkeypatch.setattr(lifecycle, "SCOPE_UI_SCRIPT", str(script))
-    monkeypatch.setattr(lifecycle.subprocess, "run", lambda *args, **kwargs: calls.append((args, kwargs)))
-    lifecycle.maybe_launch_scope_ui(str(project), mcp_minimal=False)
-    assert len(calls) == 1

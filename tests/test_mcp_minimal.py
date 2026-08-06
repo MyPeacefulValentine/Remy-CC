@@ -8,31 +8,7 @@ from unittest.mock import patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks" / "doc_manager"))
-from injector import _detect_mcp_available, _render_mcp_minimal
-
-
-class TestDetectMcpAvailable:
-    def test_script_missing_returns_false(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("USERPROFILE", str(tmp_path))
-        with patch("injector.os.path.expanduser", return_value=str(tmp_path)):
-            assert _detect_mcp_available() is False
-
-    def test_sdk_missing_returns_false(self, tmp_path, monkeypatch):
-        script_dir = tmp_path / ".claude" / "remy-src"
-        script_dir.mkdir(parents=True)
-        (script_dir / "index_mcp_server.py").write_text("")
-        with patch("injector.os.path.expanduser", return_value=str(tmp_path)):
-            with patch("importlib.util.find_spec", return_value=None):
-                assert _detect_mcp_available() is False
-
-    def test_both_present_returns_true(self, tmp_path, monkeypatch):
-        script_dir = tmp_path / ".claude" / "remy-src"
-        script_dir.mkdir(parents=True)
-        (script_dir / "index_mcp_server.py").write_text("")
-        with patch("injector.os.path.expanduser", return_value=str(tmp_path)):
-            with patch("importlib.util.find_spec", return_value=object()):
-                assert _detect_mcp_available() is True
+from injector import _render_mcp_minimal
 
 
 def _create_db(path, clusters=None, files_count=5, symbols_count=20):

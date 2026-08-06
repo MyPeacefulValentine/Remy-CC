@@ -183,17 +183,6 @@ Based on the `REMY_LOGIC_INDEX_AUTO_INJECT` policy:
 | `ASK` | Prompts user for confirmation before injection |
 | `NEVER` | Only generates files, no injection |
 
-### Scope Selection (Injection Filtering)
-
-For large projects where `logic_index.db` exceeds the context window budget, a scope selector filters which files are injected. The document injector generates `logic_tree_view.md` — a filtered subset of `logic_index.db` — based on user selection stored in `.claude/logic_inject_selection.json`.
-
-Configuration methods:
-- **SessionStart UI**: When `REMY_LOGIC_INDEX_INTERACTIVE` is `true`, a browser-based selector UI launches on session start (startup/clear/compact events). Users check/uncheck files and layers to control injection scope.
-- **CLI**: Run `remy-cc logic-scope [--path <dir>]` to open the selector at any time.
-- **Profiles**: The selector supports saving/loading named profiles (up to 20) for quick switching between scope configurations.
-
-If no selection file exists, the full `logic_index.db` is injected (equivalent to selecting all files).
-
 ## Output Format
 
 `logic_index.db` is structured as:
@@ -265,8 +254,6 @@ variables with the same `REMY_*` names override both files for that process tree
 | `REMY_LLM_MAX_TOKENS` | `32768` | Response token limit (range: `1024..1048576`) |
 | `REMY_REMY_LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
 | `REMY_LOGIC_INDEX_FILTER_SMALL` | `false` | Skip LLM summarization for small functions without docstrings |
-| `REMY_REMY_LOGIC_INDEX_INTERACTIVE` | `true` | Launch scope selector UI on SessionStart |
-| `REMY_LOGIC_SCOPE_TIMEOUT` | `300` | Scope selector timeout in seconds |
 | `REMY_LANG` | `en` | Summary output language (`en` / `zh-CN`) |
 | `REMY_STRUCT_SCAN_TIMEOUT` | `60` | Lifecycle structural scan timeout in seconds |
 

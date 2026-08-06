@@ -1610,13 +1610,12 @@ def _try_default_llm_call():
         return None
     try:
         sys.path.insert(0, _IMPACT_DIR)
-        from run import LogicIndexer
+        from llm_client import LlmClient
     except ImportError:
         return None
 
     def _call(prompt):
-        indexer = LogicIndexer(os.getcwd())
-        return indexer._call_llm(prompt)
+        return LlmClient().call(prompt)
 
     return _call
 

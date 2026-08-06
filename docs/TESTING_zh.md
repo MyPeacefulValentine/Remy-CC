@@ -112,6 +112,33 @@ navigation记录为同库双口径：corpus口径（cluster/file数、有摘要f
 通道对中英文语料均为空集，由审计探针证实）。p1_1基线的1346字符测量基于
 已漂移的语料范围（当时0个file有摘要），不作为对比基准。
 
+## A1.1 run.py职责拆分
+
+`llm_client.py`（`LlmClient`类：HTTP传输、上界退避重试、401/403/429熔断、
+截断检测、错误分类）与`propagation.py`（强制重算判定、计数器清零、候选
+收集、子变更载荷、父摘要重写、传播主流程）自`run.py`拆出。`run.py`保留
+`LogicIndexer`作为编排与CLI入口：参数、输出状态、退出码`0 / 2 / 1`、
+`success / partial / failed`聚合规则与dirty确认均不变。
+`index_mcp_queries.py`与`cli.py`的默认LLM通道改为直接构造`LlmClient`
+（每次调用新建实例，熔断不跨调用，与拆分前行为一致）。
+
+```
+python -m pytest Remy-CC/tests/test_llm_client.py Remy-CC/tests/test_propagation.py -v
+```
+
+等价性由一次性探针验证（不设永久golden测试）：拆分前树
+（`git archive HEAD`）与拆分后树在同一无API key fixture上各跑
+`LogicIndexer.run()`，`files`、`symbols`、`summary_versions`、
+`retrieval_documents`、`node_change_counters`五表dump与全部`RunResult`
+字段逐字节一致（时间戳列除外）。导入`llm_client`无网络I/O、不创建文件；
+拆分前`import run`基线为0.068秒（只记录，不设阈值）。
+
+同一版本内注入系统收敛到MCP minimal视图：`generate_logic_tree_view`
+无条件渲染该视图，范围选择器全链（`logic_scope_ui.py`、
+`remy-cc logic-scope`、selection文件）删除，5个注入env字段移除（注册表
+55字段，injection组8字段），存量配置中的旧键经strict加载round-trip保留
+且不激活。安装器无条件安装`mcp`包，pip失败或Python低于3.10时中止。
+
 ## P1.2.1扫描范围与解析器缓存身份
 
 schema 11.0.0为每个`files`行增加`parser_contract_version`、

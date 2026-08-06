@@ -282,7 +282,7 @@ def test_get_registry_exposes_ui_metadata(ui_home):
         status, payload, _ = _request(port, "GET", "/api/config")
     assert status == 200
     registry = payload["registry"]
-    assert len(registry) == 60
+    assert len(registry) == 55
     assert [group["id"] for group in payload["groups"]] == [
         "llm_api", "index_generation", "injection", "mcp", "summary", "timeline", "system",
     ]

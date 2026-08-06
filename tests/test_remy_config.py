@@ -51,7 +51,7 @@ def test_registry_owns_llm_defaults(config_home):
 def test_registry_ui_metadata_contract(config_home):
     _ = config_home
     registry = remy_config.registry_for_ui()
-    assert len(registry) == 60
+    assert len(registry) == 55
     group_ids = [group["id"] for group in remy_config.GROUPS]
     assert group_ids == ["llm_api", "index_generation", "injection", "mcp", "summary", "timeline", "system"]
     counts = {group_id: 0 for group_id in group_ids}
@@ -60,7 +60,7 @@ def test_registry_ui_metadata_contract(config_home):
     assert counts == {
         "llm_api": 7,
         "index_generation": 12,
-        "injection": 13,
+        "injection": 8,
         "mcp": 9,
         "summary": 11,
         "timeline": 2,
@@ -99,9 +99,7 @@ def test_registry_ui_metadata_contract(config_home):
             "REMY_RESOLVE_SCORE_DIRECT_IMPORT", "REMY_RESOLVE_SCORE_GLOBAL",
         ],
         "injection": [
-            "REMY_LOGIC_INDEX_AUTO_INJECT", "REMY_LOGIC_INDEX_INTERACTIVE",
-            "REMY_LOGIC_SCOPE_TIMEOUT", "REMY_NAV_TIER_FULL_MAX",
-            "REMY_NAV_MCP_MINIMAL_ENABLED", "REMY_NAV_TIER_CLUSTER_MAX",
+            "REMY_LOGIC_INDEX_AUTO_INJECT",
             "REMY_PROJECT_TREE_AUTO_INJECT", "REMY_TIMELINE_AUTO_INJECT",
             "REMY_ENRICHMENT_TIER_FULL_MAX", "REMY_ENRICHMENT_TIER_MID_MAX",
             "REMY_ENRICHMENT_CAP", "REMY_ENRICHMENT_CAP_LARGE",

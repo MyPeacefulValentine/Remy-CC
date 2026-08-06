@@ -188,17 +188,6 @@ python "~/.claude/skills/remy-index/run.py"
 | `ASK` | 注入前提示用户确认 |
 | `NEVER` | 仅生成文件，不注入 |
 
-### 范围选择（注入过滤）
-
-对于 `logic_index.db` 超出上下文窗口预算的大型项目，范围选择器可过滤注入的文件。文档注入器基于 `.claude/logic_inject_selection.json` 中的用户选择，生成 `logic_tree_view.md` —— `logic_index.db` 的过滤子集。
-
-配置方式：
-- **SessionStart UI**：当 `REMY_LOGIC_INDEX_INTERACTIVE` 为 `true` 时，会话启动（startup/clear/compact 事件）时弹出浏览器选择器 UI。用户可勾选/取消文件和层以控制注入范围。
-- **CLI**：随时运行 `remy-cc logic-scope [--path <目录>]` 打开选择器。
-- **存档**：选择器支持保存/加载命名配置存档（上限 20 个），方便在不同范围配置间切换。
-
-若选择文件不存在，则注入完整的 `logic_index.db`（等同于选择所有文件）。
-
 ## 输出格式
 
 `logic_index.db` 结构如下：
@@ -270,8 +259,6 @@ pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
 | `REMY_LLM_MAX_TOKENS` | `32768` | 响应Token上限（范围：`1024..1048576`） |
 | `REMY_REMY_LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
 | `REMY_LOGIC_INDEX_FILTER_SMALL` | `false` | 跳过无文档小函数的LLM摘要 |
-| `REMY_REMY_LOGIC_INDEX_INTERACTIVE` | `true` | SessionStart时启动范围选择器 |
-| `REMY_LOGIC_SCOPE_TIMEOUT` | `300` | 范围选择器超时秒数 |
 | `REMY_LANG` | `en` | 摘要输出语言（`en` / `zh-CN`） |
 | `REMY_STRUCT_SCAN_TIMEOUT` | `60` | 生命周期结构扫描超时秒数 |
 

@@ -143,6 +143,40 @@ corpora, confirmed by audit probes). The 1346-character measurement in the
 p1_1 baseline reflects a corpus scope that has since drifted (zero files had
 summaries then) and is not a comparison reference.
 
+## A1.1 run.py responsibility split
+
+`llm_client.py` (class `LlmClient`: HTTP transport, capped exponential retry,
+circuit breaker on 401/403/429, truncation detection, error classification)
+and `propagation.py` (force-recompute checks, counter resets, candidate
+collection, child-change payloads, parent rewrite, propagation pass) are
+extracted from `run.py`. `run.py` keeps `LogicIndexer` as the orchestration
+and CLI entry: arguments, output statuses, exit codes `0 / 2 / 1`, the
+`success / partial / failed` aggregation rule, and dirty confirmation are
+unchanged. The default LLM channels in `index_mcp_queries.py` and `cli.py`
+construct `LlmClient` directly (one instance per call; the breaker does not
+persist across calls, matching prior behavior).
+
+```
+python -m pytest Remy-CC/tests/test_llm_client.py Remy-CC/tests/test_propagation.py -v
+```
+
+Equivalence was verified by a one-shot probe, not a permanent golden test:
+the pre-split tree (`git archive HEAD`) and the post-split tree ran
+`LogicIndexer.run()` on an identical fixture without an API key, and the
+dumps of `files`, `symbols`, `summary_versions`, `retrieval_documents`,
+`node_change_counters` plus all `RunResult` fields compared byte-for-byte
+identical (timestamp columns excluded). Importing `llm_client` performs no
+network I/O and creates no files; the pre-split `import run` baseline was
+0.068 s (recorded only, no threshold).
+
+In the same release the injection system converges on the MCP minimal view:
+`generate_logic_tree_view` renders it unconditionally, the scope-selector
+chain (`logic_scope_ui.py`, `remy-cc logic-scope`, selection files) is
+removed, five injection env fields are dropped (registry 55 fields,
+injection group 8), and stale keys in existing user configs round-trip
+without activation. The installer installs the `mcp` package unconditionally
+and aborts when pip fails or Python is older than 3.10.
+
 ## P1.2.1 scan scope and parser cache identity
 
 Schema 11.0.0 adds `parser_contract_version`, `parser_backend`, and

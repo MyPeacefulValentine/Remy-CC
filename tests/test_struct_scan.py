@@ -6,7 +6,6 @@ import sqlite3
 import sys
 import tempfile
 import shutil
-import urllib.error
 
 import pytest
 
@@ -20,6 +19,21 @@ from symbol_selection import (
     TYPE_VARIANT,
     select_symbols,
 )
+
+
+class _StubLlm:
+    """In-memory stand-in for llm_client.LlmClient."""
+
+    def __init__(self, response="", api_key: "str | None" = "fake-key"):
+        self.response = response
+        self.api_key: "str | None" = api_key
+        self.circuit_open = False
+        self.api_calls = 0
+        self.lang = "English"
+
+    def call(self, prompt):
+        self.api_calls += 1
+        return self.response
 
 
 @pytest.fixture
@@ -1651,37 +1665,6 @@ class TestDetectClustersCounters:
         assert rows[0] == 0
 
 
-class TestRunLlmRetryBackoff:
-    def test_retry_wait_is_capped_at_sixty_seconds(self, monkeypatch):
-        import run
-
-        instance = run.LogicIndexer.__new__(run.LogicIndexer)
-        instance.circuit_open = False
-        instance.base_url = "https://example.invalid"
-        instance.api_key = "fake-key"
-        instance.model = "fake-model"
-        instance.lang = "English"
-        instance.max_tokens = 32768
-        instance.retry_limit = 8
-        instance.timeout = 300
-        instance.stats = {"api_calls": 0}
-        instance.ssl_context = None
-        waits = []
-
-        def fail(*_args, **_kwargs):
-            raise urllib.error.URLError("offline")
-
-        monkeypatch.setattr(run.urllib.request, "urlopen", fail)
-        monkeypatch.setattr(run.random, "random", lambda: 0.0)
-        monkeypatch.setattr(run.time, "sleep", waits.append)
-
-        result = instance._call_llm("prompt")
-
-        assert result.startswith("Error: Network error")
-        assert waits == [2, 4, 8, 16, 32, 60.0, 60.0, 60.0]
-        assert max(waits) == run.DEFAULT_RETRY_BACKOFF_CAP_SECONDS
-
-
 class TestRunPyV8Compat:
     """run.py LogicIndexer helpers must operate under the current schema."""
 
@@ -1915,9 +1898,7 @@ class TestRunPyHierarchicalBootstrap:
         instance = run.LogicIndexer.__new__(run.LogicIndexer)
         instance.db = conn
         instance.root_dir = str(tmp_path)
-        instance.api_key = "fake-key"
-        instance.circuit_open = False
-        instance._call_llm = lambda prompt: '{"short":"x","full":null}'
+        instance.llm_client = _StubLlm('{"short":"x","full":null}')
         yield instance
         conn.close()
 
@@ -1988,19 +1969,17 @@ class TestRunPyHierarchicalBootstrap:
         instance = run.LogicIndexer.__new__(run.LogicIndexer)
         instance.db = None
         instance.root_dir = str(tmp_path)
-        instance.api_key = "fake-key"
-        instance.circuit_open = False
-        instance._call_llm = lambda p: ""
+        instance.llm_client = _StubLlm("")
         result = instance._run_hierarchical_bootstrap()
         assert result is None
 
     def test_skipped_when_circuit_open(self, indexer):
-        indexer.circuit_open = True
+        indexer.llm_client.circuit_open = True
         result = indexer._run_hierarchical_bootstrap()
         assert result is None
 
     def test_warns_and_skips_when_api_key_missing(self, indexer, capsys):
-        indexer.api_key = None
+        indexer.llm_client.api_key = None
         result = indexer._run_hierarchical_bootstrap()
         out = capsys.readouterr().out
         assert result is None
@@ -2029,293 +2008,10 @@ class TestRunPyHierarchicalBootstrap:
 
         monkeypatch.setattr(bootstrap, "bootstrap_summaries", fake)
         indexer.dirty_nodes = []
-        indexer.stats = {"start_time": 0.0, "api_calls": 0}
+        indexer.stats = {"start_time": 0.0}
         try:
             indexer._run_hierarchical_bootstrap()
         finally:
             pass
         assert recorded["called"] is True
-
-
-class TestPropagationPass:
-    """LogicIndexer propagation helpers: force recompute, candidate collection,
-    payload build, parent rewrite, and end-to-end pass (P4-C/D/E)."""
-
-    @pytest.fixture
-    def indexer(self, tmp_path):
-        from struct_scan import SCHEMA_SQL, VERSION
-        import run
-        db_path = tmp_path / "logic_index.db"
-        conn = sqlite3.connect(str(db_path))
-        conn.executescript(SCHEMA_SQL)
-        conn.execute("INSERT INTO meta (key, value) VALUES ('version', ?)", (VERSION,))
-        conn.commit()
-        instance = run.LogicIndexer.__new__(run.LogicIndexer)
-        instance.db = conn
-        instance.root_dir = str(tmp_path)
-        instance.api_key = "fake-key"
-        instance.circuit_open = False
-        instance._call_llm = lambda prompt: '{"short":"x","full":null}'
-        yield instance
-        conn.close()
-
-    def _seed_counter(self, db, kind, ref, child=0, leaf=0, last_force=None):
-        db.execute(
-            "INSERT INTO node_change_counters "
-            "(node_kind, node_ref, child_change_count, leaf_descendant_count, last_force_recompute_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (kind, ref, child, leaf, last_force),
-        )
-        db.commit()
-
-    def _seed_ok_summary(self, db, kind, ref, short="ok", version=1):
-        payload = json.dumps({"short": short, "full": None})
-        db.execute(
-            "INSERT INTO summary_versions "
-            "(node_kind, node_ref, version, summary, status, created_at) "
-            "VALUES (?, ?, ?, ?, 'ok', '2025-01-01T00:00:00')",
-            (kind, ref, version, payload),
-        )
-        db.commit()
-
-    def test_force_check_threshold_primary_fires(self, indexer, monkeypatch):
-        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "3")
-        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP", "-1")
-        self._seed_counter(indexer.db, "file", "a.py", child=3)
-        assert indexer._force_recompute_check("file", "a.py") is True
-
-    def test_force_check_below_threshold_does_not_fire(self, indexer, monkeypatch):
-        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "3")
-        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP", "-1")
-        self._seed_counter(indexer.db, "file", "a.py", child=2)
-        assert indexer._force_recompute_check("file", "a.py") is False
-
-    def test_force_check_backup_disabled_with_negative_one(self, indexer, monkeypatch):
-        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "1000")
-        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP", "-1")
-        self._seed_counter(indexer.db, "file", "a.py", child=0, leaf=99999)
-        assert indexer._force_recompute_check("file", "a.py") is False
-
-    def test_force_check_backup_threshold_fires(self, indexer, monkeypatch):
-        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "1000")
-        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP", "5")
-        self._seed_counter(indexer.db, "file", "a.py", child=0, leaf=5)
-        assert indexer._force_recompute_check("file", "a.py") is True
-
-    def test_force_check_no_counter_row_returns_false(self, indexer):
-        assert indexer._force_recompute_check("file", "missing.py") is False
-
-    def test_zero_counter_resets_both_fields(self, indexer):
-        self._seed_counter(indexer.db, "file", "a.py", child=10, leaf=20)
-        indexer._zero_counter("file", "a.py")
-        row = indexer.db.execute(
-            "SELECT child_change_count, leaf_descendant_count, last_force_recompute_at "
-            "FROM node_change_counters WHERE node_kind='file' AND node_ref='a.py'"
-        ).fetchone()
-        assert row == (0, 0, None)
-
-    def test_zero_counter_mark_force_stamps_timestamp(self, indexer):
-        self._seed_counter(indexer.db, "file", "a.py", child=10, leaf=20)
-        indexer._zero_counter("file", "a.py", mark_force=True)
-        row = indexer.db.execute(
-            "SELECT child_change_count, leaf_descendant_count, last_force_recompute_at "
-            "FROM node_change_counters WHERE node_kind='file' AND node_ref='a.py'"
-        ).fetchone()
-        assert row[0] == 0
-        assert row[1] == 0
-        assert row[2] is not None
-
-    def test_collect_candidates_includes_parent_with_ok_and_counter(self, indexer):
-        self._seed_ok_summary(indexer.db, "file", "a.py")
-        self._seed_counter(indexer.db, "file", "a.py", child=2)
-        candidates = indexer._collect_propagation_candidates("file")
-        assert ("a.py", 2) in candidates
-
-    def test_collect_candidates_excludes_parent_without_ok_summary(self, indexer):
-        self._seed_counter(indexer.db, "file", "a.py", child=2)
-        candidates = indexer._collect_propagation_candidates("file")
-        assert candidates == []
-
-    def test_collect_candidates_excludes_parent_with_zero_counter(self, indexer):
-        self._seed_ok_summary(indexer.db, "file", "a.py")
-        self._seed_counter(indexer.db, "file", "a.py", child=0)
-        candidates = indexer._collect_propagation_candidates("file")
-        assert candidates == []
-
-    def test_build_child_changes_file_parent(self, indexer):
-        indexer.db.execute("INSERT INTO files (path, struct_hash) VALUES ('a.py', 'h')")
-        indexer.db.execute(
-            "INSERT INTO symbols (file_path, name, type, name_tokens) "
-            "VALUES ('a.py', 'foo', 'function', 'foo')"
-        )
-        indexer.db.commit()
-        self._seed_ok_summary(indexer.db, "symbol", "a.py::foo", short="v1", version=1)
-        self._seed_ok_summary(indexer.db, "symbol", "a.py::foo", short="v2", version=2)
-        changes = indexer._build_child_changes_payload("file", "a.py")
-        assert len(changes) == 1
-        c = changes[0]
-        assert c["child_ref"] == "a.py::foo"
-        assert c["new_summary"]["short"] == "v2"
-        assert c["old_summary"]["short"] == "v1"
-
-    def test_build_child_changes_skips_when_new_equals_old(self, indexer):
-        indexer.db.execute("INSERT INTO files (path, struct_hash) VALUES ('a.py', 'h')")
-        indexer.db.execute(
-            "INSERT INTO symbols (file_path, name, type, name_tokens) "
-            "VALUES ('a.py', 'foo', 'function', 'foo')"
-        )
-        indexer.db.commit()
-        self._seed_ok_summary(indexer.db, "symbol", "a.py::foo", short="same", version=1)
-        self._seed_ok_summary(indexer.db, "symbol", "a.py::foo", short="same", version=2)
-        changes = indexer._build_child_changes_payload("file", "a.py")
-        assert changes == []
-
-    def test_build_child_changes_cluster_parent(self, indexer):
-        indexer.db.execute("INSERT INTO files (path, struct_hash) VALUES ('a.py', 'h')")
-        indexer.db.execute(
-            "INSERT INTO clusters (name, label, entry_symbols, file_count) "
-            "VALUES ('C', NULL, '[]', 1)"
-        )
-        cid = indexer.db.execute("SELECT last_insert_rowid()").fetchone()[0]
-        indexer.db.execute(
-            "INSERT INTO cluster_members (cluster_id, file_path) VALUES (?, 'a.py')", (cid,)
-        )
-        indexer.db.commit()
-        self._seed_ok_summary(indexer.db, "file", "a.py", short="fv1", version=1)
-        self._seed_ok_summary(indexer.db, "file", "a.py", short="fv2", version=2)
-        changes = indexer._build_child_changes_payload("cluster", "C")
-        assert len(changes) == 1
-        assert changes[0]["new_summary"]["short"] == "fv2"
-
-    def test_rewrite_parent_summary_invokes_summarizer(self, indexer, monkeypatch):
-        import summarizer
-        calls = {"count": 0}
-
-        def fake_summarize(db, file_path, hint, llm_call):
-            calls["count"] += 1
-            return {"short": "rewritten", "full": None}, "ok"
-
-        monkeypatch.setattr(summarizer, "summarize_file", fake_summarize)
-        indexer.db.execute("INSERT INTO files (path, struct_hash) VALUES ('a.py', 'h')")
-        indexer.db.commit()
-        indexer._rewrite_parent_summary("file", "a.py")
-        assert calls["count"] == 1
-        row = indexer.db.execute(
-            "SELECT summary FROM summary_versions "
-            "WHERE node_kind='file' AND node_ref='a.py' AND status='ok'"
-        ).fetchone()
-        assert row is not None
-        assert json.loads(row[0])["short"] == "rewritten"
-
-    def test_rewrite_parent_skips_pending_status(self, indexer, monkeypatch):
-        import summarizer
-
-        def fake_summarize(db, file_path, hint, llm_call):
-            return None, "pending"
-
-        monkeypatch.setattr(summarizer, "summarize_file", fake_summarize)
-        indexer.db.execute("INSERT INTO files (path, struct_hash) VALUES ('a.py', 'h')")
-        indexer.db.commit()
-        indexer._rewrite_parent_summary("file", "a.py")
-        row = indexer.db.execute(
-            "SELECT COUNT(*) FROM summary_versions "
-            "WHERE node_kind='file' AND node_ref='a.py'"
-        ).fetchone()
-        assert row[0] == 0
-
-    def test_propagation_pass_propagate_true_rewrites_and_zeros(self, indexer, monkeypatch, capsys):
-        import llm_judge
-        import summarizer
-
-        indexer.db.execute("INSERT INTO files (path, struct_hash) VALUES ('a.py', 'h')")
-        indexer.db.execute(
-            "INSERT INTO symbols (file_path, name, type, name_tokens) "
-            "VALUES ('a.py', 'foo', 'function', 'foo')"
-        )
-        indexer.db.commit()
-        self._seed_ok_summary(indexer.db, "file", "a.py", short="file_v1")
-        self._seed_ok_summary(indexer.db, "symbol", "a.py::foo", short="s_v1", version=1)
-        self._seed_ok_summary(indexer.db, "symbol", "a.py::foo", short="s_v2", version=2)
-        self._seed_counter(indexer.db, "file", "a.py", child=2)
-
-        monkeypatch.setattr(llm_judge, "judge_propagation",
-                            lambda *args, **kw: {"propagate": True, "rationale": "",
-                                                 "matched_dimension": "signature",
-                                                 "confidence": "high"})
-        monkeypatch.setattr(summarizer, "summarize_file",
-                            lambda db, fp, hint, llm: ({"short": "file_v2", "full": None}, "ok"))
-
-        stats = indexer._run_propagation_pass()
-        assert stats["file_propagate"] == 1
-        counter = indexer.db.execute(
-            "SELECT child_change_count FROM node_change_counters "
-            "WHERE node_kind='file' AND node_ref='a.py'"
-        ).fetchone()
-        assert counter[0] == 0
-
-    def test_propagation_pass_propagate_false_keeps_counter(self, indexer, monkeypatch):
-        import llm_judge
-
-        indexer.db.execute("INSERT INTO files (path, struct_hash) VALUES ('a.py', 'h')")
-        indexer.db.execute(
-            "INSERT INTO symbols (file_path, name, type, name_tokens) "
-            "VALUES ('a.py', 'foo', 'function', 'foo')"
-        )
-        indexer.db.commit()
-        self._seed_ok_summary(indexer.db, "file", "a.py", short="file_v1")
-        self._seed_ok_summary(indexer.db, "symbol", "a.py::foo", short="s_v1", version=1)
-        self._seed_ok_summary(indexer.db, "symbol", "a.py::foo", short="s_v2", version=2)
-        self._seed_counter(indexer.db, "file", "a.py", child=2)
-
-        monkeypatch.setattr(llm_judge, "judge_propagation",
-                            lambda *a, **kw: {"propagate": False, "rationale": "",
-                                              "matched_dimension": "internal_refactor",
-                                              "confidence": "high"})
-        stats = indexer._run_propagation_pass()
-        assert stats["file_skip"] == 1
-        counter = indexer.db.execute(
-            "SELECT child_change_count FROM node_change_counters "
-            "WHERE node_kind='file' AND node_ref='a.py'"
-        ).fetchone()
-        assert counter[0] == 2
-
-    def test_propagation_pass_force_recompute_overrides_verdict(self, indexer, monkeypatch):
-        import llm_judge
-        import summarizer
-
-        indexer.db.execute("INSERT INTO files (path, struct_hash) VALUES ('a.py', 'h')")
-        indexer.db.commit()
-        self._seed_ok_summary(indexer.db, "file", "a.py", short="file_v1")
-        self._seed_counter(indexer.db, "file", "a.py", child=100)
-
-        monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "50")
-        judge_called = {"count": 0}
-
-        def fake_judge(*a, **kw):
-            judge_called["count"] += 1
-            return {"propagate": False}
-
-        monkeypatch.setattr(llm_judge, "judge_propagation", fake_judge)
-        monkeypatch.setattr(summarizer, "summarize_file",
-                            lambda db, fp, hint, llm: ({"short": "forced", "full": None}, "ok"))
-
-        stats = indexer._run_propagation_pass()
-        assert stats["file_force"] == 1
-        assert judge_called["count"] == 0
-        row = indexer.db.execute(
-            "SELECT child_change_count, last_force_recompute_at "
-            "FROM node_change_counters WHERE node_kind='file' AND node_ref='a.py'"
-        ).fetchone()
-        assert row[0] == 0
-        assert row[1] is not None
-
-    def test_propagation_pass_skipped_when_no_api_key(self, indexer):
-        indexer.api_key = None
-        result = indexer._run_propagation_pass()
-        assert result is None
-
-    def test_propagation_pass_skipped_when_circuit_open(self, indexer):
-        indexer.circuit_open = True
-        result = indexer._run_propagation_pass()
-        assert result is None
 

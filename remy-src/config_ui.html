@@ -1000,17 +1000,11 @@ function validate(data){
 }
 
 function validateConstraints(data){
-  var navFull=parseInt(data["REMY_NAV_TIER_FULL_MAX"]||"200",10);
-  var navCluster=parseInt(data["REMY_NAV_TIER_CLUSTER_MAX"]||"2000",10);
   var eCap=parseInt(data["REMY_ENRICHMENT_CAP"]||"15",10);
   var eCapLarge=parseInt(data["REMY_ENRICHMENT_CAP_LARGE"]||"10",10);
   var eTierFull=parseInt(data["REMY_ENRICHMENT_TIER_FULL_MAX"]||"200",10);
   var eTierMid=parseInt(data["REMY_ENRICHMENT_TIER_MID_MAX"]||"1000",10);
   var errors=[];
-  if(navFull>navCluster){
-    errors.push({key:"REMY_NAV_TIER_FULL_MAX",msg:"must be ≤ REMY_NAV_TIER_CLUSTER_MAX ("+navCluster+")"});
-    errors.push({key:"REMY_NAV_TIER_CLUSTER_MAX",msg:"must be ≥ REMY_NAV_TIER_FULL_MAX ("+navFull+")"});
-  }
   if(eCap<eCapLarge){
     errors.push({key:"REMY_ENRICHMENT_CAP",msg:"must be ≥ REMY_ENRICHMENT_CAP_LARGE ("+eCapLarge+")"});
     errors.push({key:"REMY_ENRICHMENT_CAP_LARGE",msg:"must be ≤ REMY_ENRICHMENT_CAP ("+eCap+")"});
