@@ -2015,3 +2015,79 @@ class TestRunPyHierarchicalBootstrap:
             pass
         assert recorded["called"] is True
 
+
+class TestSummaryInvalidationScope:
+    """scan_file invalidates a file summary only when its symbol set changes.
+    Body-only edits keep file and cluster summaries usable so the LLM
+    propagation judgment stays reachable."""
+
+    _BASE = (
+        'def main():\n    """Entry point."""\n    greet("world")\n\n'
+        'def greet(name):\n    return f"hello {name}"\n'
+    )
+
+    def _seed(self, db, kind, ref):
+        db.execute(
+            "INSERT INTO summary_versions "
+            "(node_kind, node_ref, version, summary, status, created_at) "
+            "VALUES (?, ?, 1, ?, 'ok', '2025-01-01T00:00:00')",
+            (kind, ref, json.dumps({"short": "seeded", "full": None})),
+        )
+        db.commit()
+
+    def _status(self, db, kind, ref):
+        row = db.execute(
+            "SELECT status FROM summary_versions "
+            "WHERE node_kind = ? AND node_ref = ? ORDER BY version DESC LIMIT 1",
+            (kind, ref),
+        ).fetchone()
+        return row[0] if row else None
+
+    def _rescan(self, scanner, temp_project, source):
+        (temp_project / "src" / "main.py").write_text(source, encoding="utf-8")
+        scanner.scan_files(["src/main.py"])
+
+    def test_body_only_edit_keeps_file_summary_usable(self, scanner, temp_project):
+        scanner.scan_all()
+        self._seed(scanner.db, "file", "src/main.py")
+        self._rescan(scanner, temp_project, self._BASE.replace('"world"', '"universe"'))
+        assert self._status(scanner.db, "file", "src/main.py") == "ok"
+
+    def test_added_symbol_invalidates_file_summary(self, scanner, temp_project):
+        scanner.scan_all()
+        self._seed(scanner.db, "file", "src/main.py")
+        self._rescan(
+            scanner,
+            temp_project,
+            self._BASE + '\ndef farewell(name):\n    return f"bye {name}"\n',
+        )
+        assert self._status(scanner.db, "file", "src/main.py") == "stale"
+
+    def test_removed_symbol_invalidates_file_summary(self, scanner, temp_project):
+        scanner.scan_all()
+        self._seed(scanner.db, "file", "src/main.py")
+        self._rescan(
+            scanner,
+            temp_project,
+            'def main():\n    """Entry point."""\n    return None\n',
+        )
+        assert self._status(scanner.db, "file", "src/main.py") == "stale"
+
+    def test_body_only_edit_still_invalidates_symbol_summary(self, scanner, temp_project):
+        scanner.scan_all()
+        self._seed(scanner.db, "symbol", "src/main.py::greet")
+        self._rescan(
+            scanner,
+            temp_project,
+            self._BASE.replace('f"hello {name}"', 'f"hi {name}"'),
+        )
+        assert self._status(scanner.db, "symbol", "src/main.py::greet") == "stale"
+
+    def test_body_only_edit_keeps_cluster_summary_usable(self, scanner, temp_project):
+        scanner.scan_all()
+        row = scanner.db.execute("SELECT name FROM clusters LIMIT 1").fetchone()
+        assert row is not None
+        self._seed(scanner.db, "cluster", row[0])
+        self._rescan(scanner, temp_project, self._BASE.replace('"world"', '"universe"'))
+        assert self._status(scanner.db, "cluster", row[0]) == "ok"
+

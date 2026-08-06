@@ -24,7 +24,6 @@ from retrieval_projection import (
     delete_file_nodes,
     delete_node,
     mark_current_summary_stale,
-    mark_node_and_ancestors_stale,
     refresh_node,
 )
 from symbol_names import tokenize_symbol
@@ -313,8 +312,6 @@ class StructScanner:
             )
         }
         old_symbol_refs = {f"{rel_path}::{name}" for name in old_hashes}
-        if existing:
-            mark_node_and_ancestors_stale(self.db, "file", rel_path)
         existing_versions = {
             row[0]: row[1]
             for row in self.db.execute(
@@ -392,7 +389,7 @@ class StructScanner:
                 continue
 
             if has_existing_version:
-                mark_node_and_ancestors_stale(self.db, "symbol", node_ref)
+                mark_current_summary_stale(self.db, "symbol", node_ref)
 
             initial_summary = None
             if sym_info.docstring:
@@ -413,6 +410,8 @@ class StructScanner:
 
         for removed_ref in old_symbol_refs - new_symbol_refs:
             delete_node(self.db, "symbol", removed_ref)
+        if existing and old_symbol_refs != new_symbol_refs:
+            mark_current_summary_stale(self.db, "file", rel_path)
         refresh_node(self.db, "file", rel_path)
 
         seen_edges = {}

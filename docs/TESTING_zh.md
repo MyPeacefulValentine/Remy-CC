@@ -158,6 +158,35 @@ python -m pytest Remy-CC/tests/test_mcp_queries.py -k Impact -v
 `TestQueryImpactRendering`覆盖标签去重、层内计数、两个result limit下输出一致、
 limit小于该层符号数时的文件总数、截断标记，以及全部文件都展示时不出现该标记。
 
+## 摘要失效范围
+
+摘要失效只在结构身份变化时发生。`scanner.scan_file`在符号hash变化时把该symbol
+摘要置`stale`；只有文件符号集合变化（`old_symbol_refs != new_symbol_refs`）时
+才把file摘要置`stale`；`_detect_clusters`只在集群成员集合变化时把cluster摘要置
+`stale`。此前`scan_file`对每个被重扫的已存在文件无条件置file摘要为`stale`，并
+经`mark_node_and_ancestors_stale`级联到cluster。由于
+`summarizer._bump_parent_counter_if_applicable`在父摘要为`stale`或缺失时跳过
+自增，父节点从不进入`collect_propagation_candidates`，`judge_propagation`在内容
+变化路径上不被调用。该函数已删除，两处调用改为`mark_current_summary_stale`。
+
+```
+python -m pytest Remy-CC/tests/test_struct_scan.py -k SummaryInvalidationScope -v
+python -m pytest Remy-CC/tests/test_summary_versions.py -k ParentCounterBump -v
+```
+
+`TestSummaryInvalidationScope`用真实扫描覆盖：只改函数体时file与cluster摘要保持
+可用、新增符号与删除符号时file摘要失效、只改函数体时symbol摘要仍失效。断言直接
+查询`summary_versions`最新版本状态，不经过被测模块的`select_current_summary`。
+`TestParentCounterBumpOnWrite`新增两项：父摘要为`stale`时不自增计数器，以及
+`stale`屏障阻断更早的`ok`版本——后者与"父节点无任何摘要行"在
+`select_current_summary`中走不同分支。
+
+本仓库索引上的一次性验证记录：修复前一次扫描输出`PROPAGATION_RESULT`六项全零，
+20个file与4个cluster摘要全部无条件重建；修复后一次扫描输出
+`file_skip=1 cluster_propagate=1 cluster_skip=1`，`judge_cache`新增3条LLM判定
+记录，只有3个符号集合变化的file进入bootstrap，cluster层bootstrap为0 pending。
+两次扫描的变更文件数不同（20与3），调用次数不作为成本对比依据。
+
 ## P1.2.1扫描范围与解析器缓存身份
 
 schema 11.0.0为每个`files`行增加`parser_contract_version`、

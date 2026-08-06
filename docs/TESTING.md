@@ -201,6 +201,45 @@ identical output across two result limits, the file total under a limit smaller
 than the level's symbol count, the truncation marker, and its absence when every
 file is shown.
 
+## Summary invalidation scope
+
+Summaries are invalidated only when structural identity changes.
+`scanner.scan_file` marks a symbol summary `stale` when its hash changes; it
+marks a file summary `stale` only when the file's symbol set changes
+(`old_symbol_refs != new_symbol_refs`); `_detect_clusters` marks a cluster
+summary `stale` only when the cluster's member set changes. Previously
+`scan_file` marked the file summary `stale` unconditionally for every rescanned
+existing file and cascaded to the cluster through
+`mark_node_and_ancestors_stale`. Because
+`summarizer._bump_parent_counter_if_applicable` skips the increment when the
+parent summary is `stale` or absent, parents never entered
+`collect_propagation_candidates` and `judge_propagation` was unreachable on the
+content-change path. That function is removed; both call sites now use
+`mark_current_summary_stale`.
+
+```
+python -m pytest Remy-CC/tests/test_struct_scan.py -k SummaryInvalidationScope -v
+python -m pytest Remy-CC/tests/test_summary_versions.py -k ParentCounterBump -v
+```
+
+`TestSummaryInvalidationScope` drives real scans and covers: a body-only edit
+keeps the file and cluster summaries usable, adding or removing a symbol
+invalidates the file summary, and a body-only edit still invalidates the symbol
+summary. Its assertions query the latest `summary_versions` row directly rather
+than going through the module under test via `select_current_summary`.
+`TestParentCounterBumpOnWrite` gains two cases: a `stale` parent summary does
+not bump the counter, and the `stale` barrier blocks an older `ok` version — the
+latter takes a different branch in `select_current_summary` than "parent has no
+summary row at all".
+
+One-shot verification on this repository's own index: before the change a scan
+printed six zeros in `PROPAGATION_RESULT` and rebuilt 20 file and 4 cluster
+summaries unconditionally; after the change a scan printed
+`file_skip=1 cluster_propagate=1 cluster_skip=1`, added three LLM judgment rows
+to `judge_cache`, sent only the 3 files whose symbol sets changed through
+bootstrap, and reported 0 pending clusters. The two scans saw different change
+counts (20 versus 3), so the call counts are not a cost comparison.
+
 ## P1.2.1 scan scope and parser cache identity
 
 Schema 11.0.0 adds `parser_contract_version`, `parser_backend`, and

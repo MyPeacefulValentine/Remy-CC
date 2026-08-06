@@ -14,6 +14,7 @@ from struct_scan import (
     VERSION,
     _transition_status,
 )
+import retrieval_projection
 import summarizer
 
 
@@ -481,6 +482,29 @@ class TestParentCounterBumpOnWrite:
         )
         rows = db.execute("SELECT COUNT(*) FROM node_change_counters").fetchone()[0]
         assert rows == 0
+
+    def test_symbol_write_skips_bump_when_file_summary_is_stale(self, populated):
+        summarizer.write_summary_version(
+            populated, "file", "a.py", {"short": "file summary", "full": None}, "ok"
+        )
+        retrieval_projection.mark_current_summary_stale(populated, "file", "a.py")
+        summarizer.write_summary_version(
+            populated, "symbol", "a.py::foo", {"short": "sym summary", "full": None}, "ok"
+        )
+        assert self._counter(populated, "file", "a.py") is None
+
+    def test_stale_barrier_blocks_bump_through_older_ok_version(self, populated):
+        summarizer.write_summary_version(
+            populated, "file", "a.py", {"short": "v1", "full": None}, "ok"
+        )
+        summarizer.write_summary_version(
+            populated, "file", "a.py", {"short": "v2", "full": None}, "ok"
+        )
+        retrieval_projection.mark_current_summary_stale(populated, "file", "a.py")
+        summarizer.write_summary_version(
+            populated, "symbol", "a.py::foo", {"short": "sym summary", "full": None}, "ok"
+        )
+        assert self._counter(populated, "file", "a.py") is None
 
 
 class TestClusterTagsI18n:

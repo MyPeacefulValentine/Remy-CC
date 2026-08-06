@@ -368,31 +368,6 @@ def mark_current_summary_stale(db, node_kind, node_ref):
     return True
 
 
-def mark_node_and_ancestors_stale(db, node_kind, node_ref):
-    changed = mark_current_summary_stale(db, node_kind, node_ref)
-    if node_kind == "symbol":
-        if "::" not in node_ref:
-            return changed
-        file_ref = node_ref.rsplit("::", 1)[0]
-        changed = mark_current_summary_stale(db, "file", file_ref) or changed
-        row = db.execute(
-            "SELECT c.name FROM clusters c JOIN cluster_members cm "
-            "ON cm.cluster_id = c.id WHERE cm.file_path = ?",
-            (file_ref,),
-        ).fetchone()
-        if row:
-            changed = mark_current_summary_stale(db, "cluster", row[0]) or changed
-    elif node_kind == "file":
-        row = db.execute(
-            "SELECT c.name FROM clusters c JOIN cluster_members cm "
-            "ON cm.cluster_id = c.id WHERE cm.file_path = ?",
-            (node_ref,),
-        ).fetchone()
-        if row:
-            changed = mark_current_summary_stale(db, "cluster", row[0]) or changed
-    return changed
-
-
 def _table_exists(db, table_name):
     return db.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table_name,)
