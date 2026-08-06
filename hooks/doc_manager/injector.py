@@ -238,7 +238,6 @@ def generate_logic_tree_view(cwd):
     try:
         file_count = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
         if file_count == 0:
-            db.close()
             return
 
         lang = str(remy_config.load_config(cwd, strict=False).get("REMY_LANG", "en"))

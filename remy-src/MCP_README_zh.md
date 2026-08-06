@@ -181,15 +181,17 @@ callers of parse_file (2 levels, 5 results)
 impact analysis for: src/parser.py
 
 upstream (callers into these files):
-  [depth 1] src/loader.py, src/cli.py ... +2
-  [depth 2] src/app.py, tests/test_loader.py ... +3
+  [depth 1] 4 file(s), 7 symbol(s): src/loader.py, src/cli.py, src/app.py, tests/test_loader.py
+  [depth 2] 6 file(s), 9 symbol(s): src/app.py, src/server.py, src/worker.py, tests/test_cli.py, tests/test_app.py ... +1 more file(s)
 
 downstream (called by these files):
-  [depth 1] src/ast_nodes.py, src/utils.py
-  [depth 2] src/tokenizer.py
+  [depth 1] 2 file(s), 3 symbol(s): src/ast_nodes.py, src/utils.py
+  [depth 2] 1 file(s), 1 symbol(s): src/tokenizer.py
 
-summary: 8 files affected, 7 upstream + 3 downstream symbols
+summary: 12 files affected, 16 upstream + 4 downstream symbols
 ```
+
+每个深度行列出去重后的文件，因此含多个匹配符号的文件只出现一次。行内的 `file(s)`、`symbol(s)` 计数与 `files affected` 总数覆盖该层全部结果。每层最多打印 5 个文件标签，其余以 `+N more file(s)` 说明；`REMY_MCP_RESULT_LIMIT` 不作用于该工具。
 
 ---
 

@@ -172,6 +172,8 @@ UI = {
         "verify_mcp": "  MCP SDK: {status}",
         "verify_ts_yes": "installed",
         "verify_ts_no": "not installed (optional)",
+        "verify_mcp_no": "not installed (required)",
+        "verify_mcp_missing": "MCP SDK (mcp) is a required component but is not installed; run: pip install --user mcp",
         "verify_issues": "Found {count} issues:",
         "verify_ok": "Verification passed. All checks OK.",
         "argparse_desc": "Remy Installer",
@@ -259,6 +261,8 @@ UI = {
         "verify_mcp": "  MCP SDK: {status}",
         "verify_ts_yes": "已安装",
         "verify_ts_no": "未安装（可选）",
+        "verify_mcp_no": "未安装（必需）",
+        "verify_mcp_missing": "MCP SDK (mcp) 为必需组件但未安装；请执行：pip install --user mcp",
         "verify_issues": "发现 {count} 个问题：",
         "verify_ok": "验证通过。所有检查项正常。",
         "argparse_desc": "Remy 安装工具",
@@ -1257,6 +1261,8 @@ def do_verify() -> None:
         mcp_available = True
     except ImportError:
         pass
+    if not mcp_available:
+        errors.append(_t("verify_mcp_missing"))
 
     pyver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     print(_t("verify_header", ver=SUITE_VERSION))
@@ -1264,7 +1270,7 @@ def do_verify() -> None:
     print(_t("verify_target", path=claude_home))
     print(_t("verify_ts", status=_t("verify_ts_yes") if ts_available else _t("verify_ts_no")))
     print(_t("verify_j2", status=_t("verify_ts_yes") if j2_available else _t("verify_ts_no")))
-    print(_t("verify_mcp", status=_t("verify_ts_yes") if mcp_available else _t("verify_ts_no")))
+    print(_t("verify_mcp", status=_t("verify_ts_yes") if mcp_available else _t("verify_mcp_no")))
     gh_available = shutil.which("gh") is not None
     print(_t("verify_gh", status=_t("verify_ts_yes") if gh_available else _t("verify_ts_no")))
 

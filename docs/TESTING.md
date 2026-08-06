@@ -175,7 +175,28 @@ chain (`logic_scope_ui.py`, `remy-cc logic-scope`, selection files) is
 removed, five injection env fields are dropped (registry 55 fields,
 injection group 8), and stale keys in existing user configs round-trip
 without activation. The installer installs the `mcp` package unconditionally
-and aborts when pip fails or Python is older than 3.10.
+and aborts when pip fails or Python is older than 3.10; `remy-cc verify`
+reports a missing `mcp` package as an error and exits 1.
+
+## query_impact rendering and counting
+
+`_format_impact_result` labels each depth level with distinct file paths, so a
+file that contributes several matched symbols is printed once instead of once
+per symbol. The per-level `file(s)` and `symbol(s)` counts and the
+`files affected` total are computed over the whole level. Previously the file
+set accumulated over a `REMY_MCP_RESULT_LIMIT` prefix while the symbol totals
+used the full list, so the two numbers in the summary line came from different
+samples; `REMY_MCP_RESULT_LIMIT` no longer applies to this tool. Level labels
+are capped at five files and the remainder is reported as `+N more file(s)`.
+
+```
+python -m pytest Remy-CC/tests/test_mcp_queries.py -k Impact -v
+```
+
+`TestQueryImpactRendering` covers label de-duplication, the per-level counts,
+identical output across two result limits, the file total under a limit smaller
+than the level's symbol count, the truncation marker, and its absence when every
+file is shown.
 
 ## P1.2.1 scan scope and parser cache identity
 

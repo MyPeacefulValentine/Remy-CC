@@ -89,6 +89,41 @@ def _write_union_db(tmp_path, symbols):
     db.close()
 
 
+def _write_impact_db(tmp_path, fan_out_files, symbols_per_file):
+    """Graph where root.py::entry calls symbols_per_file symbols in each of fan_out_files files."""
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir(parents=True)
+    db = sqlite3.connect(str(claude_dir / "logic_index.db"))
+    db.executescript(SCHEMA_SQL)
+    db.execute(
+        "INSERT INTO files (path, struct_hash, language, layer) "
+        "VALUES ('root.py','h','python','Core')"
+    )
+    db.execute(
+        "INSERT INTO symbols (file_path,name,short_name,type,lineno,name_tokens) "
+        "VALUES ('root.py','entry','entry','function',1,'entry')"
+    )
+    for file_index in range(fan_out_files):
+        path = f"dep{file_index}.py"
+        db.execute(
+            "INSERT INTO files (path, struct_hash, language, layer) VALUES (?,?,?,?)",
+            (path, f"h{file_index}", "python", "Util"),
+        )
+        for symbol_index in range(symbols_per_file):
+            name = f"fn{symbol_index}"
+            db.execute(
+                "INSERT INTO symbols (file_path,name,short_name,type,lineno,name_tokens) "
+                "VALUES (?,?,?,?,?,?)",
+                (path, name, name, "function", symbol_index + 1, name),
+            )
+            db.execute(
+                "INSERT INTO edges VALUES (NULL,'root.py','entry',?,?,?,?,'definite',NULL,NULL)",
+                (name, path, f"{path}::{name}", symbol_index + 1),
+            )
+    db.commit()
+    db.close()
+
+
 class TestOpenDb:
     def test_returns_connection_when_db_exists(self, db_dir, monkeypatch):
         from index_mcp_queries import _open_db
@@ -226,6 +261,52 @@ class TestQueryImpactImpl:
         from index_mcp_queries import query_impact_impl
         result = query_impact_impl(["a.py"], 2, 2, False, False)
         assert "error" in result.lower() or "not found" in result.lower()
+
+
+class TestQueryImpactRendering:
+    """Depth lines label files; a file with many symbols must not repeat, and the
+    file count must cover every symbol rather than a result-limit prefix."""
+
+    def _run(self, root, monkeypatch, limit=None, files=3, symbols=20):
+        _write_impact_db(root, files, symbols)
+        monkeypatch.chdir(root)
+        if limit is not None:
+            monkeypatch.setenv("REMY_MCP_RESULT_LIMIT", str(limit))
+        from index_mcp_queries import query_impact_impl
+        return query_impact_impl(["root.py"], 0, 1, False, False)
+
+    @staticmethod
+    def _depth_line(result, depth=1):
+        return [line for line in result.splitlines() if f"[depth {depth}]" in line][0]
+
+    def test_repeated_file_appears_once_per_level(self, tmp_path, monkeypatch):
+        result = self._run(tmp_path, monkeypatch)
+        assert self._depth_line(result).count("dep0.py") == 1
+
+    def test_level_line_reports_file_and_symbol_counts(self, tmp_path, monkeypatch):
+        result = self._run(tmp_path, monkeypatch)
+        assert "[depth 1] 3 file(s), 60 symbol(s):" in result
+
+    def test_file_count_ignores_result_limit(self, tmp_path, monkeypatch):
+        result = self._run(tmp_path, monkeypatch, limit=10)
+        assert "summary: 3 files affected, 0 upstream + 60 downstream symbols" in result
+
+    def test_output_identical_across_result_limits(self, tmp_path, monkeypatch):
+        low = self._run(tmp_path / "low", monkeypatch, limit=10)
+        high = self._run(tmp_path / "high", monkeypatch, limit=500)
+        assert low == high
+
+    def test_label_truncation_is_announced(self, tmp_path, monkeypatch):
+        line = self._depth_line(self._run(tmp_path, monkeypatch, files=8, symbols=2))
+        assert "8 file(s), 16 symbol(s):" in line
+        assert line.endswith("... +3 more file(s)")
+        labels = line.split(": ", 1)[1].split(" ...")[0].split(", ")
+        assert labels == ["dep0.py", "dep1.py", "dep2.py", "dep3.py", "dep4.py"]
+
+    def test_no_truncation_marker_when_every_file_is_shown(self, tmp_path, monkeypatch):
+        result = self._run(tmp_path, monkeypatch, files=3, symbols=2)
+        assert "more file(s)" not in result
+        assert self._depth_line(result).endswith("dep0.py, dep1.py, dep2.py")
 
 
 class TestQueryPatternsImpl:

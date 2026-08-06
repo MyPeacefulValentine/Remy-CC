@@ -30,6 +30,7 @@ import remy_config
 
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 _DB_NOT_FOUND = "Error: logic_index.db not found. Run /remy-index to initialize the project index."
+_IMPACT_LABELS_PER_LEVEL = 5
 
 
 _DB_OVERRIDE: ContextVar[Optional[str]] = ContextVar("remy_index_db_override", default=None)
@@ -351,7 +352,7 @@ def query_impact_impl(files, depth_up, depth_down, include_ambiguous, static_onl
             upstream = _bfs_callers(db, seeds, depth_up, static_only) if depth_up > 0 else {}
             downstream = _bfs_callees(db, seeds, depth_down, static_only) if depth_down > 0 else {}
 
-        return _format_impact_result(db, target_files, seeds, upstream, downstream)
+        return _format_impact_result(target_files, upstream, downstream)
     finally:
         db.close()
 
@@ -422,41 +423,49 @@ def _format_bfs_result(db, title, levels, max_depth):
     return "\n".join(lines)
 
 
-def _format_impact_result(db, target_files, seeds, upstream, downstream):
+def _impact_level_files(qualified_list):
+    """Distinct file paths of one BFS level, in first-seen order."""
+    files = []
+    seen = set()
+    for qualified in qualified_list:
+        fpath = qualified.split("::")[0] if "::" in qualified else qualified
+        if fpath not in seen:
+            seen.add(fpath)
+            files.append(fpath)
+    return files
+
+
+def _format_impact_result(target_files, upstream, downstream):
     all_files = set()
     lines = [f"impact analysis for: {', '.join(target_files)}\n"]
 
-    lines.append("upstream (callers into these files):")
-    if upstream:
-        for depth, qualified_list in sorted(upstream.items()):
-            entries = qualified_list[:_config_values()[1]]
-            lines.append(f"  [depth {depth}] " + ", ".join(
-                f"{q.split('::')[0]}" for q in entries[:5]
-            ) + (f" ... +{len(entries)-5}" if len(entries) > 5 else ""))
-            for q in entries:
-                fpath = q.split("::")[0] if "::" in q else q
-                all_files.add(fpath)
-    else:
-        lines.append("  (none)")
-    lines.append("")
-
-    lines.append("downstream (called by these files):")
-    if downstream:
-        for depth, qualified_list in sorted(downstream.items()):
-            entries = qualified_list[:_config_values()[1]]
-            lines.append(f"  [depth {depth}] " + ", ".join(
-                f"{q.split('::')[0]}" for q in entries[:5]
-            ) + (f" ... +{len(entries)-5}" if len(entries) > 5 else ""))
-            for q in entries:
-                fpath = q.split("::")[0] if "::" in q else q
-                all_files.add(fpath)
-    else:
-        lines.append("  (none)")
-    lines.append("")
+    for title, levels in (
+        ("upstream (callers into these files):", upstream),
+        ("downstream (called by these files):", downstream),
+    ):
+        lines.append(title)
+        if not levels:
+            lines.append("  (none)")
+        else:
+            for depth, qualified_list in sorted(levels.items()):
+                files = _impact_level_files(qualified_list)
+                all_files.update(files)
+                shown = files[:_IMPACT_LABELS_PER_LEVEL]
+                line = (
+                    f"  [depth {depth}] {len(files)} file(s), "
+                    f"{len(qualified_list)} symbol(s): " + ", ".join(shown)
+                )
+                if len(files) > len(shown):
+                    line += f" ... +{len(files) - len(shown)} more file(s)"
+                lines.append(line)
+        lines.append("")
 
     total_up = sum(len(v) for v in upstream.values())
     total_down = sum(len(v) for v in downstream.values())
-    lines.append(f"summary: {len(all_files)} files affected, {total_up} upstream + {total_down} downstream symbols")
+    lines.append(
+        f"summary: {len(all_files)} files affected, "
+        f"{total_up} upstream + {total_down} downstream symbols"
+    )
 
     return "\n".join(lines)
 

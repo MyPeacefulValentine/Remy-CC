@@ -190,15 +190,17 @@ Analyze the impact radius of modifying one or more files. Shows both upstream ca
 impact analysis for: src/parser.py
 
 upstream (callers into these files):
-  [depth 1] src/loader.py, src/cli.py ... +2
-  [depth 2] src/app.py, tests/test_loader.py ... +3
+  [depth 1] 4 file(s), 7 symbol(s): src/loader.py, src/cli.py, src/app.py, tests/test_loader.py
+  [depth 2] 6 file(s), 9 symbol(s): src/app.py, src/server.py, src/worker.py, tests/test_cli.py, tests/test_app.py ... +1 more file(s)
 
 downstream (called by these files):
-  [depth 1] src/ast_nodes.py, src/utils.py
-  [depth 2] src/tokenizer.py
+  [depth 1] 2 file(s), 3 symbol(s): src/ast_nodes.py, src/utils.py
+  [depth 2] 1 file(s), 1 symbol(s): src/tokenizer.py
 
-summary: 8 files affected, 7 upstream + 3 downstream symbols
+summary: 12 files affected, 16 upstream + 4 downstream symbols
 ```
+
+Each depth line labels distinct files, so a file holding several matched symbols appears once. The `file(s)` and `symbol(s)` counts, and the `files affected` total, cover every result at that level. At most five file labels are printed per level and the remainder is reported as `+N more file(s)`; `REMY_MCP_RESULT_LIMIT` does not apply to this tool.
 
 ---
 

@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import sys
+import types
 
 import pytest
 
@@ -399,3 +400,52 @@ def test_uninstall_skips_user_modified_file(claude_home, monkeypatch):
 
     assert f.exists()
     assert f.read_text(encoding="utf-8") == "user-modified"
+
+
+def _seed_verifiable_home(claude_home):
+    (claude_home / "settings.json").write_text(json.dumps({"hooks": {}}), encoding="utf-8")
+    manifest = {
+        "version": "test",
+        "schema_version": 2,
+        "files": [],
+        "injected_hooks": {},
+        "injected_permissions": [],
+    }
+    (claude_home / install.MANIFEST_FILE).write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def _isolate_verify(claude_home, monkeypatch, mcp_module):
+    """Point do_verify at a temporary home and control mcp availability.
+
+    _load_remy_config_module is stubbed so the check never reads the real user
+    configuration (which holds a live API key)."""
+    def _no_config():
+        raise OSError("config access disabled in test")
+
+    _seed_verifiable_home(claude_home)
+    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
+    monkeypatch.setattr(install, "_load_remy_config_module", _no_config)
+    monkeypatch.setitem(sys.modules, "mcp", mcp_module)
+
+
+def test_verify_reports_missing_mcp_as_error(claude_home, monkeypatch, capsys):
+    """MCP SDK is a required install component, so its absence must fail verification."""
+    _isolate_verify(claude_home, monkeypatch, None)
+
+    with pytest.raises(SystemExit) as exc:
+        install.do_verify()
+
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert install._t("verify_mcp_missing") in out
+    assert install._t("verify_mcp_no") in out
+
+
+def test_verify_passes_when_mcp_installed(claude_home, monkeypatch, capsys):
+    _isolate_verify(claude_home, monkeypatch, types.ModuleType("mcp"))
+
+    install.do_verify()
+
+    out = capsys.readouterr().out
+    assert install._t("verify_ok") in out
+    assert install._t("verify_mcp_missing") not in out

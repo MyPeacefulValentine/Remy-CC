@@ -137,7 +137,24 @@ python -m pytest Remy-CC/tests/test_llm_client.py Remy-CC/tests/test_propagation
 无条件渲染该视图，范围选择器全链（`logic_scope_ui.py`、
 `remy-cc logic-scope`、selection文件）删除，5个注入env字段移除（注册表
 55字段，injection组8字段），存量配置中的旧键经strict加载round-trip保留
-且不激活。安装器无条件安装`mcp`包，pip失败或Python低于3.10时中止。
+且不激活。安装器无条件安装`mcp`包，pip失败或Python低于3.10时中止；
+`remy-cc verify`把缺失的`mcp`包记为错误并以退出码1结束。
+
+## query_impact渲染与计数
+
+`_format_impact_result`为每个深度层列出去重后的文件路径，含多个匹配符号的
+文件只打印一次，不再按符号重复。层内`file(s)`、`symbol(s)`计数与
+`files affected`总数在该层全集上计算。此前文件集合在
+`REMY_MCP_RESULT_LIMIT`前缀上累加，而符号总数使用完整列表，summary行的两个
+数字取自不同样本；`REMY_MCP_RESULT_LIMIT`不再作用于该工具。每层标签上限为
+5个文件，其余以`+N more file(s)`说明。
+
+```
+python -m pytest Remy-CC/tests/test_mcp_queries.py -k Impact -v
+```
+
+`TestQueryImpactRendering`覆盖标签去重、层内计数、两个result limit下输出一致、
+limit小于该层符号数时的文件总数、截断标记，以及全部文件都展示时不出现该标记。
 
 ## P1.2.1扫描范围与解析器缓存身份
 

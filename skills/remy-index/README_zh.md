@@ -257,9 +257,9 @@ pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
 | `REMY_LLM_RETRY_LIMIT` | `8` | 重试次数（范围：`0..32`；单次重试等待不超过60秒） |
 | `REMY_LLM_TIMEOUT` | `300` | 超时秒数（范围：`30..3600`） |
 | `REMY_LLM_MAX_TOKENS` | `32768` | 响应Token上限（范围：`1024..1048576`） |
-| `REMY_REMY_LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
+| `REMY_LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
 | `REMY_LOGIC_INDEX_FILTER_SMALL` | `false` | 跳过无文档小函数的LLM摘要 |
-| `REMY_LANG` | `en` | 摘要输出语言（`en` / `zh-CN`） |
+| `REMY_LANG` | `en` | Remy 界面与注入视图语言（`en` / `zh-CN`）；摘要以英文生成 |
 | `REMY_STRUCT_SCAN_TIMEOUT` | `60` | 生命周期结构扫描超时秒数 |
 
 `PRECISION_READ_THRESHOLD`继续作为Claude技能协议参数保留在`settings.json`，

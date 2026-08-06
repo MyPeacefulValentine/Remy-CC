@@ -132,4 +132,6 @@ class LlmClient:
                 raise
             except Exception as e:
                 return f"Error: {str(e)}"
+        # Reachable only when retry_limit < 0 (below the configured minimum of 0),
+        # so the loop body never runs; preserves the str return contract.
         return "Error: Maximum retries exceeded."

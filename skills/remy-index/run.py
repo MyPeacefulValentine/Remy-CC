@@ -7,16 +7,13 @@ Features:
     - Incremental updates via MD5 hashing
     - Concurrent API calls (ThreadPoolExecutor)
     - Zero required external dependencies (Standard Library only; tree-sitter optional)
-Version: 3.0.0
 """
 
 import json
 import os
 import sys
-import subprocess
 import time
 import concurrent.futures
-import fnmatch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 _REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "remy-src"))
@@ -45,13 +42,8 @@ from retrieval_projection import (
 )
 
 VERSION = "4.0.0"
-DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
-CONFIG_FILE = os.path.join(".claude", "logic_index_config")
 
 MAX_CTX_CHARS = 200000
-
-DEFAULT_AUTO_INJECT = "ALWAYS"
-DEFAULT_FILTER_SMALL = False
 
 
 class LogicIndexer:
@@ -61,11 +53,7 @@ class LogicIndexer:
 
         self.llm_client = LlmClient(self.config)
         self.max_workers = self.config.get_int("REMY_LLM_MAX_WORKERS")
-        self.filter_small = self.config.get_bool("REMY_LOGIC_INDEX_FILTER_SMALL")
 
-        self.exclusions = []
-        self.layers = []
-        self._load_config()
         self.db = None
         self.dirty_nodes = []
         self.summary_errors = []
@@ -76,14 +64,7 @@ class LogicIndexer:
             for ext in parser.get_extensions():
                 self._extension_map[ext] = parser
 
-        self.stats = {
-            "start_time": time.time(),
-            "total_files": 0,
-            "processed_files": 0,
-            "failed_files": 0,
-            "token_usage_estimate": 0,
-            "languages": {},
-        }
+        self.stats = {"start_time": time.time()}
 
     def _get_parser_for_file(self, filename):
         """Return the appropriate parser for a file, or None."""
@@ -91,58 +72,6 @@ class LogicIndexer:
             if filename.endswith(ext):
                 return parser
         return None
-
-    def _load_config(self):
-        config_path = os.path.join(self.root_dir, CONFIG_FILE)
-
-        if not os.path.exists(config_path):
-            try:
-                template_path = os.path.join(os.path.dirname(__file__), "default_logic_config.template")
-                if os.path.exists(template_path):
-                    os.makedirs(os.path.dirname(config_path), exist_ok=True)
-                    with open(template_path, "r", encoding="utf-8") as src:
-                        content = src.read()
-                    with open(config_path, "w", encoding="utf-8") as dst:
-                        dst.write(content)
-                    print(f"Initialized logic config at {CONFIG_FILE}")
-            except Exception as e:
-                print(f"Warning: Failed to create default config: {e}")
-
-        if os.path.exists(config_path):
-            with open(config_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    if line.startswith("!"):
-                        self.exclusions.append(line[1:])
-                    elif line.startswith("@layer:"):
-                        rest = line[len("@layer:"):]
-                        if "=" in rest:
-                            name, patterns_str = rest.split("=", 1)
-                            patterns = [p.strip() for p in patterns_str.split(",") if p.strip()]
-                            if name.strip() and patterns:
-                                self.layers.append({"name": name.strip(), "patterns": patterns})
-        else:
-            self.exclusions = [".git/", "__pycache__/", "venv/", "node_modules/", ".claude/", "dist/", "build/"]
-
-    def _is_path_excluded(self, rel_path):
-        """Check if a relative file path matches exclusion rules, including parent directory patterns."""
-        rel_path = rel_path.replace("\\", "/")
-        parts = rel_path.split("/")
-        basename = parts[-1]
-        for pattern in self.exclusions:
-            must_be_dir = pattern.endswith("/")
-            clean_pattern = pattern.rstrip("/")
-            if must_be_dir:
-                for i, segment in enumerate(parts[:-1]):
-                    cumulative = "/".join(parts[:i + 1])
-                    if fnmatch.fnmatch(segment, clean_pattern) or fnmatch.fnmatch(cumulative, clean_pattern):
-                        return True
-            else:
-                if fnmatch.fnmatch(basename, clean_pattern) or fnmatch.fnmatch(rel_path, clean_pattern):
-                    return True
-        return False
 
     def _load_prompt_template(self, parser):
         """Loads the prompt template for the given parser's language."""
