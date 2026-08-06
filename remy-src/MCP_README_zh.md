@@ -325,6 +325,39 @@ search results for 'parse_file' (2 results, matched via union)
 - 未知 cluster：`No cluster '<name>' found. Use query_cluster_summary() to list all clusters.`
 - cluster 存在但无成员：`Cluster '<name>' has no member files.`
 
+---
+
+### query_navigate
+
+在有界的 cluster/file/symbol 候选上按自然语言意图定位工作区域。意图先拆词并
+以 `any` 语义经 P1.3 确定性通道执行：symbol 候选来自 exact/prefix/BM25 并集
+（单词意图在确定性通道全空时追加 fuzzy 通道），file/cluster 候选来自投影行
+的加权 BM25 查询（名称、路径词、路径与摘要列）。每层候选受配额参数约束；
+只为入选候选读取摘要并发送给 LLM。symbol 候选携带所属 file 与 cluster，
+file 候选携带所属 cluster，逐层下钻不出现孤儿。
+
+| 参数 | 类型 | 默认值 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `intent` | `str` | （必需） | 自然语言意图；索引摘要为英文存储，建议使用英文以获得词法召回 |
+| `top_k` | `int` | `5` | 结果上限，收敛到 `1..20` |
+
+输出头部的 `source=` 标签报告实际路径：`llm`（候选 prompt 经 LLM 排序）、
+`llm-cluster-only`（词法候选为空——例如非英文意图——降级为全部 cluster 短摘要
+排序）、`heuristic`（未配置 LLM；按候选确定性顺序输出）、`heuristic-fallback`
+（LLM 响应不可解析）、`cache`。排序结果缓存在 `judge_cache`，键由规范化意图、
+`top_k`、候选 `(node_ref, content_hash)` 序列与 prompt 模板版本派生——与候选
+无关的摘要写入不再使缓存失效。
+
+**输出示例：**
+```
+## Navigate results for 'locate authentication token parser' (top 2, source=llm)
+
+1. [0.92] security / auth/token_parser.py :: parse_token
+   - parses and validates raw tokens
+2. [0.55] security / auth/session.py
+   - session lifecycle around token use
+```
+
 ## 配置
 
 Python运行时参数保存在`~/.claude/remy-config.json`，项目覆盖保存在
@@ -339,6 +372,9 @@ Python运行时参数保存在`~/.claude/remy-config.json`，项目覆盖保存�
 | `REMY_MCP_STATIC_ONLY_DEFAULT` | `false` | 查询实现收到`static_only=None`时使用的内部默认值；公开MCP工具保持`false` |
 | `REMY_FLOW_MAX_DEPTH` | `15` | query_flow深度硬上限 |
 | `REMY_FLOW_MAX_VISITED` | `2000` | query_flow访问节点硬上限 |
+| `REMY_NAVIGATE_CANDIDATE_CLUSTERS` | `5` | query_navigate每次意图查询的cluster候选上限 |
+| `REMY_NAVIGATE_CANDIDATE_FILES` | `10` | query_navigate每次意图查询的file候选上限 |
+| `REMY_NAVIGATE_CANDIDATE_SYMBOLS` | `10` | query_navigate每次意图查询的symbol候选上限 |
 | `REMY_REMY_LOGIC_INDEX_DB_PATH` | `.claude/logic_index.db` | 相对项目根的数据库路径 |
 
 相关变量（"上下文注入"分组）：

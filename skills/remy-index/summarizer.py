@@ -40,12 +40,7 @@ _LEVEL_ENV = {
 def get_char_limit(level):
     config = remy_config.load_config(strict=True)
     env_name = _LEVEL_ENV.get(level)
-    base = config.get_int(env_name) if env_name else DEFAULT_LIMITS.get(level, 200)
-    lang = config.get("REMY_LANG", "en")
-    if str(lang).startswith("zh"):
-        factor = config.get_float("REMY_SUMMARY_ZH_LENGTH_FACTOR")
-        return max(20, int(base * factor))
-    return base
+    return config.get_int(env_name) if env_name else DEFAULT_LIMITS.get(level, 200)
 
 
 def _measure_payload(payload):
@@ -213,8 +208,7 @@ _CLUSTER_TAGS = {
 
 
 def _resolve_cluster_tags():
-    lang = remy_config.load_config(strict=True).get("REMY_LANG", "en")
-    return _CLUSTER_TAGS.get(lang, _CLUSTER_TAGS["en"])
+    return _CLUSTER_TAGS["en"]
 
 
 def _render_template(template_name, payload, char_limit, strict_note=""):

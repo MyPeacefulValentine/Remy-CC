@@ -52,7 +52,6 @@ VERSION = "4.0.0"
 DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
 CONFIG_FILE = os.path.join(".claude", "logic_index_config")
 
-DEFAULT_LANG = "English"
 MAX_CTX_CHARS = 200000
 
 DEFAULT_AUTO_INJECT = "ALWAYS"
@@ -85,8 +84,7 @@ class LogicIndexer:
         self.retry_limit = self.config.get_int("REMY_LLM_RETRY_LIMIT")
         self.timeout = self.config.get_int("REMY_LLM_TIMEOUT")
         self.filter_small = self.config.get_bool("REMY_LOGIC_INDEX_FILTER_SMALL")
-        remy_lang = self.config.get("REMY_LANG", "en")
-        self.lang = {"zh-CN": "Simplified Chinese", "en": "English"}.get(remy_lang, DEFAULT_LANG)
+        self.lang = "English"
 
         self.exclusions = []
         self.layers = []

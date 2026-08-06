@@ -51,7 +51,7 @@ def test_registry_owns_llm_defaults(config_home):
 def test_registry_ui_metadata_contract(config_home):
     _ = config_home
     registry = remy_config.registry_for_ui()
-    assert len(registry) == 58
+    assert len(registry) == 60
     group_ids = [group["id"] for group in remy_config.GROUPS]
     assert group_ids == ["llm_api", "index_generation", "injection", "mcp", "summary", "timeline", "system"]
     counts = {group_id: 0 for group_id in group_ids}
@@ -61,8 +61,8 @@ def test_registry_ui_metadata_contract(config_home):
         "llm_api": 7,
         "index_generation": 12,
         "injection": 13,
-        "mcp": 6,
-        "summary": 12,
+        "mcp": 9,
+        "summary": 11,
         "timeline": 2,
         "system": 6,
     }
@@ -111,11 +111,13 @@ def test_registry_ui_metadata_contract(config_home):
             "REMY_MCP_SERVER_ENABLED", "REMY_MCP_BFS_MAX_DEPTH",
             "REMY_MCP_RESULT_LIMIT", "REMY_MCP_STATIC_ONLY_DEFAULT",
             "REMY_FLOW_MAX_DEPTH", "REMY_FLOW_MAX_VISITED",
+            "REMY_NAVIGATE_CANDIDATE_CLUSTERS", "REMY_NAVIGATE_CANDIDATE_FILES",
+            "REMY_NAVIGATE_CANDIDATE_SYMBOLS",
         ],
         "summary": [
             "REMY_SUMMARY_CHAR_LIMIT_SYMBOL", "REMY_SUMMARY_CHAR_LIMIT_FILE_COHESIVE",
             "REMY_SUMMARY_CHAR_LIMIT_FILE_UTILITY", "REMY_SUMMARY_CHAR_LIMIT_CLUSTER",
-            "REMY_SUMMARY_ZH_LENGTH_FACTOR", "REMY_FILE_KIND_MIN_SYMBOLS",
+            "REMY_FILE_KIND_MIN_SYMBOLS",
             "REMY_FILE_KIND_LOW_COHESION_THRESHOLD",
             "REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY",
             "REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP",

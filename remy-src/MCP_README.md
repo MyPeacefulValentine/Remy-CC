@@ -338,6 +338,46 @@ List member files of a cluster, optionally with short summaries.
 - Unknown cluster: `No cluster '<name>' found. Use query_cluster_summary() to list all clusters.`
 - Cluster exists but has no member files: `Cluster '<name>' has no member files.`
 
+---
+
+### query_navigate
+
+Locate work by natural-language intent over bounded cluster/file/symbol
+candidates. The intent is tokenized and run through the P1.3 deterministic
+channels with `any` semantics: symbol candidates come from the
+exact/prefix/BM25 union (single-word intents additionally try the fuzzy
+channel when all deterministic channels are empty), and file/cluster
+candidates come from a BM25 query over the projection rows (name, path
+tokens, path, and summary columns, weighted). Each layer is capped by its
+quota parameter; only the selected candidates are read and sent to the LLM.
+Symbol candidates carry their file and cluster, and file candidates carry
+their cluster, so every result supports layer-by-layer drill-down.
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `intent` | `str` | (required) | Natural-language intent; English is recommended because index summaries are stored in English |
+| `top_k` | `int` | `5` | Result cap, clamped to `1..20` |
+
+The header `source=` label reports the path taken: `llm` (candidate prompt
+ranked by the LLM), `llm-cluster-only` (lexical candidates empty — e.g.
+non-English intents — so all cluster summaries were ranked instead),
+`heuristic` (no LLM configured; deterministic candidate order),
+`heuristic-fallback` (LLM response unparseable), or `cache`. Rankings are
+cached in `judge_cache` under a key derived from the normalized intent,
+`top_k`, the candidate `(node_ref, content_hash)` sequence, and the prompt
+template version — summary writes unrelated to the candidates do not
+invalidate the cache.
+
+**Output example:**
+```
+## Navigate results for 'locate authentication token parser' (top 2, source=llm)
+
+1. [0.92] security / auth/token_parser.py :: parse_token
+   - parses and validates raw tokens
+2. [0.55] security / auth/session.py
+   - session lifecycle around token use
+```
+
 ## Configuration
 
 All Python runtime parameters are stored in `~/.claude/remy-config.json` with
@@ -353,6 +393,9 @@ variables override file values for that process tree.
 | `REMY_MCP_STATIC_ONLY_DEFAULT` | `false` | Internal default when a query implementation receives `static_only=None`; public MCP tools retain `false` |
 | `REMY_FLOW_MAX_DEPTH` | `15` | Hard cap on query_flow depth |
 | `REMY_FLOW_MAX_VISITED` | `2000` | Hard cap on query_flow visited nodes |
+| `REMY_NAVIGATE_CANDIDATE_CLUSTERS` | `5` | Cluster candidate cap per query_navigate intent |
+| `REMY_NAVIGATE_CANDIDATE_FILES` | `10` | File candidate cap per query_navigate intent |
+| `REMY_NAVIGATE_CANDIDATE_SYMBOLS` | `10` | Symbol candidate cap per query_navigate intent |
 | `REMY_REMY_LOGIC_INDEX_DB_PATH` | `.claude/logic_index.db` | Database path relative to the project root |
 
 Related variable (in "Context Injection" group):

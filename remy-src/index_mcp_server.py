@@ -178,6 +178,9 @@ mcp = FastMCP(
         "- To list a cluster's member files: query_cluster_files (optionally with short summaries)\n"
         "- To locate work by intent (\"where do I modify auth logic\"): query_navigate (LLM-ranked clusters/files)\n"
         "\n"
+        "Index summaries are stored in English. Phrase query_search text and\n"
+        "query_navigate intents in English for best lexical recall.\n"
+        "\n"
         "Do NOT use these tools when:\n"
         "- You need to read file content before making an edit (use Read instead)\n"
         "- You are reading configuration files, templates, or non-code assets\n"
@@ -232,7 +235,7 @@ def query_patterns(pattern_type: str = "", signal_name: str = "", file: str = ""
 def query_search(text: str, limit: int = 10, file_hint: str = "",
                  match: str = "all", language: str = "",
                  symbol_type: str = "", path_hint: str = "") -> str:
-    """Search symbols with all/any/phrase matching and structural filters."""
+    """Search symbols with all/any/phrase matching and structural filters. Summaries are indexed in English; English query text maximizes lexical recall."""
     return _with_freshness(query_search_impl(
         text,
         limit,
@@ -264,7 +267,7 @@ def query_cluster_files(cluster: str, with_summary: bool = False) -> str:
 
 @mcp.tool()
 def query_navigate(intent: str, top_k: int = 5) -> str:
-    """Locate work by natural-language intent. Returns top_k ranked entries with {cluster, file?, symbol?, relevance_score, rationale}. Uses cached LLM ranking when available."""
+    """Locate work by natural-language intent over bounded cluster/file/symbol candidates. Returns top_k ranked entries with {cluster, file?, symbol?, relevance_score, rationale}. Index summaries are English; phrase the intent in English for lexical candidate recall (non-English intents fall back to cluster-level ranking)."""
     return _with_freshness(query_navigate_impl(intent, top_k))
 
 

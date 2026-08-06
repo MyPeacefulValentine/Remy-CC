@@ -170,10 +170,9 @@ class TestCharLimit:
         monkeypatch.delenv("REMY_SUMMARY_CHAR_LIMIT_SYMBOL", raising=False)
         assert summarizer.get_char_limit("symbol") == 100
 
-    def test_zh_factor(self, monkeypatch):
+    def test_zh_lang_no_longer_scales_limit(self, monkeypatch):
         monkeypatch.setenv("REMY_LANG", "zh-CN")
-        monkeypatch.setenv("REMY_SUMMARY_ZH_LENGTH_FACTOR", "0.5")
-        assert summarizer.get_char_limit("symbol") == 50
+        assert summarizer.get_char_limit("symbol") == 100
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv("REMY_LANG", "en")
@@ -485,22 +484,13 @@ class TestParentCounterBumpOnWrite:
 
 
 class TestClusterTagsI18n:
-    """Verify summarize_cluster.md tag placeholders resolve per REMY_LANG."""
+    """Cluster tag placeholders resolve to the English set regardless of REMY_LANG."""
 
     _PAYLOAD = {"name": "auth/gateway", "files": [], "entry_symbols": [], "inbound_clusters": []}
 
-    def test_zh_cn_renders_chinese_tags(self, monkeypatch):
-        monkeypatch.setenv("REMY_LANG", "zh-CN")
-        text = summarizer._render_template("summarize_cluster.md", self._PAYLOAD, 200)
-        assert "[定位]" in text
-        assert "[API]" in text
-        assert "[依赖]" in text
-        assert "无外部调用方" in text
-        assert "{{tag_position}}" not in text
-        assert "{{empty_inbound_phrase}}" not in text
-
-    def test_en_renders_english_tags(self, monkeypatch):
-        monkeypatch.setenv("REMY_LANG", "en")
+    @pytest.mark.parametrize("lang", ["zh-CN", "en", "fr"])
+    def test_any_lang_renders_english_tags(self, monkeypatch, lang):
+        monkeypatch.setenv("REMY_LANG", lang)
         text = summarizer._render_template("summarize_cluster.md", self._PAYLOAD, 200)
         assert "[Role]" in text
         assert "[API]" in text
@@ -508,11 +498,8 @@ class TestClusterTagsI18n:
         assert "No external callers." in text
         assert "[定位]" not in text
         assert "[依赖]" not in text
-
-    def test_unknown_lang_is_rejected(self, monkeypatch):
-        monkeypatch.setenv("REMY_LANG", "fr")
-        with pytest.raises(ValueError, match="REMY_LANG"):
-            summarizer._render_template("summarize_cluster.md", self._PAYLOAD, 200)
+        assert "{{tag_position}}" not in text
+        assert "{{empty_inbound_phrase}}" not in text
 
 
 class TestShortFieldGuard:

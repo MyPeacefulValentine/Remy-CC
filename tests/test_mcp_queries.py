@@ -696,6 +696,50 @@ class TestRetrievalBaseline:
         assert {"channel": "prefix", "rank": 1} in top["sources"]
         assert top["priority"] == 1
 
+    def test_p1_4_navigation_measurement_dual_view(self, tmp_path):
+        baseline = self._module()
+        root = (Path(__file__).resolve().parents[1] / "eval" / "tasks" /
+                "retrieval_baseline")
+        p1_3 = baseline.load_spec(root / "p1_3.json")
+        p1_4 = baseline.load_spec(root / "p1_4.json")
+        assert p1_4["id"] == "p1_4_navigate_candidates"
+        assert ({task["id"] for task in p1_4["tasks"]}
+                == {task["id"] for task in p1_3["tasks"]})
+        intents = p1_4["navigation"]["intents"]
+        assert len(intents) == 3
+        assert any(any("一" <= char <= "鿿" for char in intent)
+                   for intent in intents)
+
+        nav_db = tmp_path / "navigate.db"
+        baseline.build_fixture(p1_4, nav_db).close()
+        import index_mcp_queries as queries
+        nav = baseline.navigation_measurement(queries, nav_db, intents, 5)
+        assert nav["measured"] is True
+        assert nav["corpus"] == {
+            "cluster_count": 2, "file_count": 6, "file_with_short_count": 2,
+        }
+        records = {rec["intent"]: rec for rec in nav["intents"]}
+
+        english = records["locate authentication token parser"]
+        assert english["fallback_reason"] is None
+        assert english["candidate_counts"] == {"cluster": 0, "file": 1, "symbol": 3}
+        assert english["candidate_total"] == 4
+        assert english["prompt_chars"] > 0
+        assert english["corpus_chars"] > 0
+        assert english["candidates_key"].startswith("navigate:")
+        assert english["llm_called"] is False
+
+        chinese = records["定位认证令牌解析器"]
+        assert chinese["fallback_reason"] == "lexical_empty"
+        assert chinese["candidate_total"] == 0
+        assert chinese["prompt_chars"] == 0
+        assert chinese["fallback_prompt_chars"] > 0
+
+        mixed = records["认证 token 解析"]
+        assert mixed["fallback_reason"] is None
+        assert mixed["candidate_counts"]["symbol"] >= 1
+        assert mixed["prompt_chars"] > 0
+
     def test_compare_results_classifies_empty_query_contract_change(self):
         baseline = self._module()
         old = {

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Query implementations for the remy-index MCP server."""
 import difflib
+import hashlib
 import json
 import os
 import sys
@@ -1370,13 +1371,152 @@ def _normalize_intent(intent):
     return " ".join(intent.lower().split())
 
 
-def _navigate_cache_key(db, intent):
-    row = db.execute("SELECT MAX(id) FROM summary_versions").fetchone()
-    max_id = row[0] if row and row[0] is not None else 0
-    return f"navigate::{_normalize_intent(intent)}::sv{max_id}"
+_NAVIGATE_PROMPT_VERSION = "p1_4.1"
+_NAVIGATE_DOC_COLUMNS = "{name name_tokens signature file_path summary_short summary_full}"
+_NAVIGATE_DOC_WEIGHTS = "bm25(retrieval_fts, 1.0, 1.0, 0.0, 0.5, 5.0, 1.0)"
+_NAVIGATE_KIND_ORDER = {"symbol": 0, "file": 1, "cluster": 2}
 
 
-def _collect_navigate_corpus(db):
+def _navigate_quotas():
+    config = _config()
+    return (
+        config.get_int("REMY_NAVIGATE_CANDIDATE_CLUSTERS"),
+        config.get_int("REMY_NAVIGATE_CANDIDATE_FILES"),
+        config.get_int("REMY_NAVIGATE_CANDIDATE_SYMBOLS"),
+    )
+
+
+def _file_cluster_map(db):
+    return dict(db.execute(
+        "SELECT cm.file_path, c.name FROM cluster_members cm "
+        "JOIN clusters c ON c.id = cm.cluster_id"
+    ).fetchall())
+
+
+def _navigate_doc_rows(db, query, kind, row_limit):
+    sql = (
+        "SELECT d.node_ref, d.summary_short, d.content_hash, "
+        + _NAVIGATE_DOC_WEIGHTS + " AS rank "
+        "FROM retrieval_fts "
+        "JOIN retrieval_documents d ON d.doc_id = retrieval_fts.rowid "
+        "WHERE retrieval_fts MATCH ? AND d.node_kind = ? "
+        "ORDER BY rank, d.node_ref LIMIT ?"
+    )
+    expression = _fts_expression(query)
+    params = [_NAVIGATE_DOC_COLUMNS + " : (" + expression + ")", kind, row_limit]
+    return db.execute(sql, params).fetchall()
+
+
+def _navigate_symbol_rows(db, query):
+    channels = []
+    for channel, search in (
+        ("exact", _search_exact),
+        ("prefix", _search_like),
+        ("bm25", _search_fts),
+    ):
+        channels.append((channel, search(db, query)))
+    merged = _merge_candidates(channels, query.limit)
+    if not merged and len(query.words) == 1:
+        merged = _merge_candidates([("fuzzy", _search_fuzzy(db, query))], query.limit)
+    return merged
+
+
+def _navigate_symbol_docs(db, refs):
+    docs = {}
+    for ref in refs:
+        row = db.execute(
+            "SELECT content_hash, summary_short FROM retrieval_documents "
+            "WHERE node_kind = 'symbol' AND node_ref = ?",
+            (ref,),
+        ).fetchone()
+        docs[ref] = (row[0], row[1]) if row else ("", None)
+    return docs
+
+
+def _navigate_candidates(db, intent):
+    """Bounded cluster/file/symbol candidates for one intent (lexical stage)."""
+    try:
+        k_cluster, k_file, k_symbol = _navigate_quotas()
+        symbol_query = _make_search_query(
+            intent, min(k_symbol, _config_values()[1]), match="any"
+        )
+    except _SearchInputError:
+        return []
+    _register_search_functions(db)
+    file_to_cluster = _file_cluster_map(db)
+    candidates = []
+
+    for kind, quota in (("cluster", k_cluster), ("file", k_file)):
+        rows = _navigate_doc_rows(db, symbol_query, kind, quota)
+        for position, (node_ref, short, chash, _rank) in enumerate(rows, 1):
+            candidates.append({
+                "kind": kind,
+                "node_ref": node_ref,
+                "cluster": node_ref if kind == "cluster"
+                           else file_to_cluster.get(node_ref, "(unclustered)"),
+                "file": None if kind == "cluster" else node_ref,
+                "symbol": None,
+                "short": short or "",
+                "content_hash": chash or "",
+                "sources": [("bm25", position)],
+            })
+
+    merged = _navigate_symbol_rows(db, symbol_query)[:k_symbol]
+    refs = [f"{item['file_path']}::{item['name']}" for item in merged]
+    docs = _navigate_symbol_docs(db, refs)
+    for item, ref in zip(merged, refs):
+        chash, short = docs[ref]
+        candidates.append({
+            "kind": "symbol",
+            "node_ref": ref,
+            "cluster": file_to_cluster.get(item["file_path"], "(unclustered)"),
+            "file": item["file_path"],
+            "symbol": item["name"],
+            "short": short or "",
+            "content_hash": chash or "",
+            "sources": list(item["sources"]),
+        })
+    return candidates
+
+
+def _cluster_fallback_candidates(db, clusters):
+    candidates = []
+    for cluster in clusters:
+        row = db.execute(
+            "SELECT content_hash FROM retrieval_documents "
+            "WHERE node_kind = 'cluster' AND node_ref = ?",
+            (cluster["name"],),
+        ).fetchone()
+        candidates.append({
+            "kind": "cluster",
+            "node_ref": cluster["name"],
+            "cluster": cluster["name"],
+            "file": None,
+            "symbol": None,
+            "short": cluster["short"] or cluster["label"] or "",
+            "content_hash": row[0] if row else "",
+            "sources": [],
+        })
+    return candidates
+
+
+def _navigate_cache_key(intent, top_k, candidates):
+    payload = {
+        "intent": _normalize_intent(intent),
+        "top_k": top_k,
+        "template": _NAVIGATE_PROMPT_VERSION,
+        "candidates": [
+            [entry["kind"], entry["node_ref"], entry["content_hash"]]
+            for entry in candidates
+        ],
+    }
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return "navigate:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _collect_cluster_corpus(db):
     cluster_rows = db.execute(
         "SELECT name, label FROM clusters ORDER BY file_count DESC"
     ).fetchall()
@@ -1388,6 +1528,11 @@ def _collect_navigate_corpus(db):
             "label": label,
             "short": summary.get("short") if summary else None,
         })
+    return clusters
+
+
+def _collect_navigate_corpus(db):
+    clusters = _collect_cluster_corpus(db)
     file_rows = db.execute("SELECT path FROM files").fetchall()
     files = []
     for (fpath,) in file_rows:
@@ -1409,7 +1554,23 @@ def query_navigate_impl(intent, top_k=5, llm_call=None):
             return "Error: intent must not be empty."
         top_k = max(1, min(top_k, 20))
 
-        cache_key = _navigate_cache_key(db, intent)
+        candidates = _navigate_candidates(db, intent)
+
+        if llm_call is None:
+            llm_call = _try_default_llm_call()
+
+        source = "llm"
+        if not candidates:
+            clusters = _collect_cluster_corpus(db)
+            has_files = db.execute("SELECT 1 FROM files LIMIT 1").fetchone()
+            if not clusters and not has_files:
+                return "No clusters or files indexed; run /remy-index first."
+            if llm_call is None or not clusters:
+                return f"No matches for intent '{intent}' (source=heuristic)."
+            candidates = _cluster_fallback_candidates(db, clusters)
+            source = "llm-cluster-only"
+
+        cache_key = _navigate_cache_key(intent, top_k, candidates)
         row = db.execute(
             "SELECT result FROM judge_cache WHERE payload_hash = ?", (cache_key,)
         ).fetchone()
@@ -1421,22 +1582,15 @@ def query_navigate_impl(intent, top_k=5, llm_call=None):
             except json.JSONDecodeError:
                 pass
 
-        clusters, files = _collect_navigate_corpus(db)
-        if not clusters and not files:
-            return "No clusters or files indexed; run /remy-index first."
-
         if llm_call is None:
-            llm_call = _try_default_llm_call()
-
-        if llm_call is None:
-            ranked = _heuristic_navigate(db, intent, clusters, files, top_k)
+            ranked = _heuristic_navigate(candidates, top_k)
             return _format_navigate(ranked, intent, source="heuristic")
 
-        prompt = _build_navigate_prompt(intent, clusters, files, top_k)
+        prompt = _build_navigate_prompt(intent, candidates, top_k)
         raw = llm_call(prompt)
         ranked = _parse_navigate_response(raw, top_k)
         if not ranked:
-            ranked = _heuristic_navigate(db, intent, clusters, files, top_k)
+            ranked = _heuristic_navigate(candidates, top_k)
             return _format_navigate(ranked, intent, source="heuristic-fallback")
 
         from datetime import datetime as _dt
@@ -1446,7 +1600,7 @@ def query_navigate_impl(intent, top_k=5, llm_call=None):
              _dt.now().isoformat(timespec="seconds")),
         )
         db.commit()
-        return _format_navigate(ranked, intent, source="llm")
+        return _format_navigate(ranked, intent, source=source)
     finally:
         db.close()
 
@@ -1467,23 +1621,24 @@ def _try_default_llm_call():
     return _call
 
 
-def _build_navigate_prompt(intent, clusters, files, top_k):
-    cluster_corpus = [
-        {"name": c["name"], "short": c["short"] or c["label"] or ""}
-        for c in clusters
-    ]
-    file_corpus = [
-        {"path": f["path"], "short": f["short"] or ""}
-        for f in files if f["short"]
-    ]
+def _build_navigate_prompt(intent, candidates, top_k):
     payload = {
         "intent": intent,
         "top_k": top_k,
-        "clusters": cluster_corpus,
-        "files": file_corpus,
+        "candidates": [
+            {
+                "kind": entry["kind"],
+                "cluster": entry["cluster"],
+                "file": entry["file"],
+                "symbol": entry["symbol"],
+                "short": entry["short"],
+            }
+            for entry in candidates
+        ],
     }
     return (
-        "Task: Rank clusters/files by relevance to the given intent. "
+        "Task: Rank the candidate code locations by relevance to the given intent. "
+        "Choose only from the provided candidates. "
         "Return a JSON array of <= top_k entries, each "
         "{\"cluster\": str, \"file\": str|null, \"symbol\": str|null, "
         "\"relevance_score\": float in [0,1], \"rationale\": str}.\n"
@@ -1523,46 +1678,27 @@ def _parse_navigate_response(raw, top_k):
     return cleaned
 
 
-def _heuristic_navigate(db, intent, clusters, files, top_k):
-    intent_tokens = set(_normalize_intent(intent).split())
-    if not intent_tokens:
-        return []
-    file_to_cluster = {}
-    for row in db.execute(
-        "SELECT cm.file_path, c.name FROM cluster_members cm "
-        "JOIN clusters c ON c.id = cm.cluster_id"
-    ).fetchall():
-        file_to_cluster[row[0]] = row[1]
-
-    scored = []
-    for c in clusters:
-        text = " ".join(filter(None, [c["name"], c["label"], c["short"]])).lower()
-        text_tokens = set(text.split())
-        overlap = len(intent_tokens & text_tokens)
-        if overlap == 0:
-            continue
-        scored.append({
-            "cluster": c["name"],
-            "file": None,
-            "symbol": None,
-            "relevance_score": overlap / max(1, len(intent_tokens)),
-            "rationale": f"token overlap={overlap}",
+def _heuristic_navigate(candidates, top_k):
+    ordered = sorted(
+        range(len(candidates)),
+        key=lambda index: (
+            _NAVIGATE_KIND_ORDER[candidates[index]["kind"]], index
+        ),
+    )
+    ranked = []
+    for index in ordered[:top_k]:
+        entry = candidates[index]
+        sources = ", ".join(
+            f"{channel}#{rank}" for channel, rank in entry["sources"]
+        ) or "cluster-fallback"
+        ranked.append({
+            "cluster": entry["cluster"],
+            "file": entry["file"],
+            "symbol": entry["symbol"],
+            "relevance_score": 0.0,
+            "rationale": f"sources: {sources}",
         })
-    for f in files:
-        text = " ".join(filter(None, [f["path"], f["short"]])).lower()
-        text_tokens = set(text.split())
-        overlap = len(intent_tokens & text_tokens)
-        if overlap == 0:
-            continue
-        scored.append({
-            "cluster": file_to_cluster.get(f["path"], "(unclustered)"),
-            "file": f["path"],
-            "symbol": None,
-            "relevance_score": overlap / max(1, len(intent_tokens)),
-            "rationale": f"token overlap={overlap}",
-        })
-    scored.sort(key=lambda e: e["relevance_score"], reverse=True)
-    return scored[:top_k]
+    return ranked
 
 
 def _format_navigate(ranked, intent, source):

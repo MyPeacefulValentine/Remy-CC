@@ -459,7 +459,37 @@ def evaluate_task(queries, db, db_path: Path, task: dict,
     }
 
 
-def navigation_measurement(queries, db_path: Path | None, intent: str, top_k: int) -> dict:
+def _navigation_intents(spec: dict) -> list[str]:
+    block = spec.get("navigation", {})
+    intents = block.get("intents")
+    if isinstance(intents, list) and intents:
+        return [str(item) for item in intents]
+    return [str(block.get("intent", "retrieval baseline"))]
+
+
+def _corpus_candidates(clusters: list[dict], files: list[dict]) -> list[dict]:
+    candidates = []
+    for cluster in clusters:
+        candidates.append({
+            "kind": "cluster",
+            "cluster": cluster["name"],
+            "file": None,
+            "symbol": None,
+            "short": cluster["short"] or cluster["label"] or "",
+        })
+    for row in files:
+        if row["short"]:
+            candidates.append({
+                "kind": "file",
+                "cluster": "(corpus)",
+                "file": row["path"],
+                "symbol": None,
+                "short": row["short"],
+            })
+    return candidates
+
+
+def navigation_measurement(queries, db_path: Path | None, intents: list[str], top_k: int) -> dict:
     if db_path is None:
         return {"measured": False, "reason": "navigate database not provided"}
     path = Path(db_path).resolve()
@@ -468,17 +498,50 @@ def navigation_measurement(queries, db_path: Path | None, intent: str, top_k: in
     db = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
     try:
         clusters, files = queries._collect_navigate_corpus(db)
-        prompt = queries._build_navigate_prompt(intent, clusters, files, top_k)
+        corpus_candidates = _corpus_candidates(clusters, files)
+        records = []
+        for intent in intents:
+            corpus_chars = len(
+                queries._build_navigate_prompt(intent, corpus_candidates, top_k)
+            )
+            candidates = queries._navigate_candidates(db, intent)
+            counts = {"cluster": 0, "file": 0, "symbol": 0}
+            for entry in candidates:
+                counts[entry["kind"]] += 1
+            if candidates:
+                prompt_chars = len(
+                    queries._build_navigate_prompt(intent, candidates, top_k)
+                )
+                fallback_reason = None
+                fallback_prompt_chars = None
+            else:
+                prompt_chars = 0
+                fallback_reason = "lexical_empty"
+                fallback_prompt_chars = len(queries._build_navigate_prompt(
+                    intent, queries._cluster_fallback_candidates(db, clusters), top_k
+                ))
+            records.append({
+                "intent": intent,
+                "top_k": top_k,
+                "corpus_chars": corpus_chars,
+                "candidate_counts": counts,
+                "candidate_total": len(candidates),
+                "prompt_chars": prompt_chars,
+                "llm_called": False,
+                "fallback_reason": fallback_reason,
+                "fallback_prompt_chars": fallback_prompt_chars,
+                "candidates_key": queries._navigate_cache_key(intent, top_k, candidates),
+            })
         return {
             "measured": True,
             "database": str(path),
-            "intent": intent,
             "top_k": top_k,
-            "cluster_count": len(clusters),
-            "file_count": len(files),
-            "file_with_short_count": sum(bool(row.get("short")) for row in files),
-            "prompt_chars": len(prompt),
-            "llm_called": False,
+            "corpus": {
+                "cluster_count": len(clusters),
+                "file_count": len(files),
+                "file_with_short_count": sum(bool(row.get("short")) for row in files),
+            },
+            "intents": records,
         }
     finally:
         db.close()
@@ -608,7 +671,7 @@ def run_baseline(spec: dict, *, warmups: int = 3, iterations: int = 30,
         "navigation": navigation_measurement(
             queries,
             navigate_db,
-            spec.get("navigation", {}).get("intent", "retrieval baseline"),
+            _navigation_intents(spec),
             spec.get("navigation", {}).get("top_k", 5),
         ),
         "tasks": task_records,

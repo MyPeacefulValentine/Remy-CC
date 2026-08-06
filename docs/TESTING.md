@@ -100,6 +100,49 @@ sizes. The `expected_channel` values in `p1_1.json` and `p1_2.json` record the
 previous channel semantics; mismatches against them are the intended channel
 reorganization, not defects.
 
+## P1.4 intent navigation candidate reduction
+
+`query_navigate` no longer writes every cluster and file summary into the LLM
+prompt. The intent is tokenized and reuses the P1.3 deterministic channels
+with `any` semantics for symbol candidates (single-word intents additionally
+try the fuzzy channel when all deterministic channels are empty), while
+file/cluster candidates come from a weighted BM25 query over the projection
+rows. Each layer is capped by `REMY_NAVIGATE_CANDIDATE_CLUSTERS/FILES/SYMBOLS`
+(defaults 5/10/10); summaries are read only for selected candidates. When the
+lexical candidate set is empty the query degrades to a cluster-only prompt
+(`source=llm-cluster-only`); without an LLM the merged candidates are emitted
+in deterministic order (`source=heuristic`), or `No matches` when the
+candidate set is empty. The cache key is a hash of the normalized intent,
+`top_k`, the candidate `(node_ref, content_hash)` sequence, and the prompt
+template version, stored in the existing `judge_cache`; summary writes
+unrelated to the candidates no longer invalidate the cache, and `top_k` is
+part of the key. The schema stays at 11.0.0. In the same change index
+summaries become English-only: `run.py` fixes the summary language to
+English, cluster tags use the en set, and the `SUMMARY_ZH_LENGTH_FACTOR`
+registry field is removed (the key in existing config files no longer
+activates and round-trips as an unknown field); existing Chinese summaries
+are replaced only on regeneration or `remy-cc summary-rebuild`.
+
+Run the P1.4 task set (tasks reuse p1_3 verbatim to verify the
+`query_search` contract does not regress; the navigation block carries
+English/Chinese/mixed intents):
+
+```bash
+PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_baseline/p1_4.json --navigate-db .claude/logic_index.db --update-snapshot eval/baselines/p1_4.json
+```
+
+Navigation records use a same-database dual measurement: the corpus view
+(cluster/file counts, files with summaries, `corpus_chars` — the character
+size of the full-corpus prompt equivalent) and the candidate view (per-layer
+candidate counts, `prompt_chars`, `fallback_reason`, and the content-identity
+cache key). Acceptance asserts `prompt_chars < corpus_chars` and a candidate
+total within the quota sum; Chinese intents record
+`fallback_reason=lexical_empty` (unicode61 keeps contiguous CJK as a single
+token, so lexical channels return empty sets against both Chinese and English
+corpora, confirmed by audit probes). The 1346-character measurement in the
+p1_1 baseline reflects a corpus scope that has since drifted (zero files had
+summaries then) and is not a comparison reference.
+
 ## P1.2.1 scan scope and parser cache identity
 
 Schema 11.0.0 adds `parser_contract_version`, `parser_backend`, and

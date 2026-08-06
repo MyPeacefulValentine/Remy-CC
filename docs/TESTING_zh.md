@@ -81,6 +81,37 @@ prefix通道进入公共结果并排第1，摘要候选`persist_blob`保留在�
 和数据库大小。`p1_1.json`与`p1_2.json`中的`expected_channel`记录旧通道语义，
 与其失配属于预期中的通道重组，不是缺陷。
 
+## P1.4意图导航候选缩减
+
+`query_navigate`不再把全部cluster与file摘要写入LLM prompt。意图拆词后以
+`any`语义复用P1.3确定性通道生成symbol候选（单词意图在确定性通道全空时追加
+fuzzy），file/cluster候选来自投影行的加权BM25查询；每层候选受
+`REMY_NAVIGATE_CANDIDATE_CLUSTERS/FILES/SYMBOLS`（默认5/10/10）约束，只为
+入选候选读取摘要并构造prompt。词法候选为空时降级为cluster-only prompt
+（`source=llm-cluster-only`），无LLM时按候选确定性顺序输出
+（`source=heuristic`）或在候选为空时返回`No matches`。缓存键由规范化意图、
+`top_k`、候选`(node_ref, content_hash)`序列与prompt模板版本哈希派生，存入
+现有`judge_cache`；与候选无关的摘要写入不再使缓存失效，`top_k`进入键。
+schema保持11.0.0。同期索引内摘要统一英文存储：`run.py`摘要语言固定English、
+cluster标签固定en集、`SUMMARY_ZH_LENGTH_FACTOR`注册字段随本阶段移除（存量
+配置文件中的该键不再激活，按未知字段round-trip保留）；存量中文摘要仅在重新
+生成或`remy-cc summary-rebuild`时替换。
+
+运行P1.4任务集（tasks逐字复用p1_3以验证`query_search`契约不回归；
+navigation区块扩展为英文/中文/混合三条意图）：
+
+```bash
+PYTHONPATH=. python -m eval.cli retrieval-baseline --tasks eval/tasks/retrieval_baseline/p1_4.json --navigate-db .claude/logic_index.db --update-snapshot eval/baselines/p1_4.json
+```
+
+navigation记录为同库双口径：corpus口径（cluster/file数、有摘要file数、
+`corpus_chars`=全语料prompt等价字符数）与candidate口径（各层候选数、
+`prompt_chars`、`fallback_reason`、候选内容身份缓存键）。验收断言
+`prompt_chars < corpus_chars`且候选总数不超过配额和；中文意图记录
+`fallback_reason=lexical_empty`（unicode61将连续CJK收为单一token，词法
+通道对中英文语料均为空集，由审计探针证实）。p1_1基线的1346字符测量基于
+已漂移的语料范围（当时0个file有摘要），不作为对比基准。
+
 ## P1.2.1扫描范围与解析器缓存身份
 
 schema 11.0.0为每个`files`行增加`parser_contract_version`、
