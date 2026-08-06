@@ -78,12 +78,20 @@ def cmd_config(args):
         _load_config_ui().main()
 
 
+def _module_available(name):
+    try:
+        __import__(name)
+    except ImportError:
+        return False
+    return True
+
+
 def cmd_verify(_args):
     claude_home = get_claude_home()
     errors = []
 
-    if sys.version_info < (3, 7):
-        errors.append("Python version too old: {} (requires >= 3.7)".format(sys.version))
+    if sys.version_info < (3, 10):
+        errors.append("Python version too old: {} (requires >= 3.10)".format(sys.version))
 
     settings_path = claude_home / "settings.json"
     if not settings_path.exists():
@@ -146,11 +154,25 @@ def cmd_verify(_args):
         except (json.JSONDecodeError, OSError) as e:
             errors.append("Manifest read error: " + str(e))
 
+    ts_available = _module_available("tree_sitter")
+    j2_available = _module_available("jinja2")
+    mcp_available = _module_available("mcp")
+    if not mcp_available:
+        errors.append(
+            "MCP SDK (mcp) is a required component but is not installed; "
+            "run: pip install --user mcp"
+        )
+    gh_available = shutil.which("gh") is not None
+
     ver = get_version()
     pyver = "{}.{}.{}".format(*sys.version_info[:3])
     print("Remy v{}".format(ver))
     print("  Python: {}".format(pyver))
     print("  Target: {}".format(claude_home))
+    print("  tree-sitter: {}".format("installed" if ts_available else "not installed (optional)"))
+    print("  Jinja2: {}".format("installed" if j2_available else "not installed (optional)"))
+    print("  MCP SDK: {}".format("installed" if mcp_available else "not installed (required)"))
+    print("  GitHub CLI (gh): {}".format("installed" if gh_available else "not installed (optional)"))
     print()
 
     if errors:

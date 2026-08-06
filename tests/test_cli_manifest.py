@@ -26,6 +26,7 @@ def claude_home(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     monkeypatch.setattr(cli, "get_claude_home", lambda: home)
+    monkeypatch.setitem(sys.modules, "mcp", types.ModuleType("mcp"))
     return home
 
 
@@ -71,6 +72,32 @@ def test_verify_schema_v2_all_present(claude_home, capsys):
     out = capsys.readouterr().out
     assert "files missing from manifest" not in out
     assert "Verification passed" in out
+
+
+def test_verify_reports_missing_mcp_as_error(claude_home, capsys, monkeypatch):
+    """The MCP SDK is a required install component, so `remy-cc verify` must fail
+    without it — matching install.py --verify and the installer's abort-on-failure."""
+    h1 = _seed_file(claude_home / "language.md", "lang")
+    _write_manifest(claude_home, [{"path": "language.md", "sha256": h1}])
+    monkeypatch.setitem(sys.modules, "mcp", None)
+
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_verify(types.SimpleNamespace())
+
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert "MCP SDK (mcp) is a required component" in out
+    assert "MCP SDK: not installed (required)" in out
+
+
+def test_verify_prints_dependency_status_lines(claude_home, capsys):
+    h1 = _seed_file(claude_home / "language.md", "lang")
+    _write_manifest(claude_home, [{"path": "language.md", "sha256": h1}])
+    cli.cmd_verify(types.SimpleNamespace())
+    out = capsys.readouterr().out
+    assert "MCP SDK: installed" in out
+    for label in ("tree-sitter:", "Jinja2:", "GitHub CLI (gh):"):
+        assert label in out
 
 
 def test_verify_schema_v2_missing_detected(claude_home, capsys):

@@ -137,8 +137,10 @@ python -m pytest Remy-CC/tests/test_llm_client.py Remy-CC/tests/test_propagation
 无条件渲染该视图，范围选择器全链（`logic_scope_ui.py`、
 `remy-cc logic-scope`、selection文件）删除，5个注入env字段移除（注册表
 55字段，injection组8字段），存量配置中的旧键经strict加载round-trip保留
-且不激活。安装器无条件安装`mcp`包，pip失败或Python低于3.10时中止；
-`remy-cc verify`把缺失的`mcp`包记为错误并以退出码1结束。
+且不激活。安装器无条件安装`mcp`包，pip失败或Python低于3.10时中止。校验有两个
+独立入口，二者必须遵守同一契约：源码目录的`install.py --verify`与已安装
+shim背后的`cli.py::cmd_verify`（`remy-cc verify`）。两者都把缺失的`mcp`包
+记为错误并以退出码1结束，也都要求Python 3.10。
 
 ## query_impact渲染与计数
 

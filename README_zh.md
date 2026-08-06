@@ -206,7 +206,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | Conda 或 Mamba（可选） | 存在时自动注入到 Shell 环境 |
 | `gh` CLI（可选） | `/remy-reposcout` 和 `/remy-ci` GitHub Actions 模式依赖 |
 | tree-sitter Python 包（可选） | C/C++/TypeScript 的高精度解析和调用图提取 |
-| `mcp` Python 包 | remy-index MCP 服务器所需；安装器自动安装，失败即中止；`remy-cc verify` 将其缺失记为错误 |
+| `mcp` Python 包 | remy-index MCP 服务器所需；安装器自动安装，失败即中止；`remy-cc verify` 与 `python install.py --verify` 均将其缺失记为错误 |
 
 语言通过`~/.claude/remy-config.json`中的`REMY_LANG`或`remy-cc config`设置。
 

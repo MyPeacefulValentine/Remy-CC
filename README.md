@@ -206,7 +206,7 @@ For small, low-risk changes, steps 3–6 can be skipped.
 | Conda or Mamba (optional) | Auto-injected into shell environment when present |
 | `gh` CLI (optional) | Required by `/remy-reposcout` and `/remy-ci` GitHub Actions mode |
 | tree-sitter Python packages (optional) | Higher-precision C/C++/TypeScript parsing and call graph extraction |
-| `mcp` Python package | Required for the remy-index MCP server; the installer installs it automatically and aborts on failure, and `remy-cc verify` reports its absence as an error |
+| `mcp` Python package | Required for the remy-index MCP server; the installer installs it automatically and aborts on failure, and both `remy-cc verify` and `python install.py --verify` report its absence as an error |
 
 Language is configured through `REMY_LANG` in `~/.claude/remy-config.json` or through `remy-cc config`.
 
