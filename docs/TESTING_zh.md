@@ -353,38 +353,55 @@ python -m pytest Remy-CC/tests/test_pre_tool_guard.py -v
 项目内绝对路径改写为相对路径；项目外绝对路径请求确认；Read / Glob / Grep不受该门约
 束；kebab-case的三种结果（新文件拒绝、只有snake变体存在时改写、两者都存在时询问）；
 Edit的软提醒；lock文件警告；无任何路径的载荷静默退出；stdin非法JSON时fails open并
-写stderr。
+写stderr。packet门另覆盖`.claude/temp_task/`豁免（相对路径、绝对路径、新建文件，
+以及`temp_task`之外的`.claude/`路径仍被门禁约束）和结构不合规packet对项目文件写入
+的拒绝。
 
-四个用例断言修复后的期望行为并带`pytest.mark.xfail(strict=True)`，修复缺陷后它们转
-为XPASS失败，提醒移除标记：
+此前四个缺陷以`xfail(strict=True)`用例记录。三个已修复，一个裁定为有意设计；四个
+用例现均为正式回归测试：
 
-| 用例 | 缺陷 |
+| 用例 | 处置 |
 | :--- | :--- |
-| `test_does_not_reinject_when_encoding_already_set` | `inject_bash_env`的跳过条件要求命令同时含`PYTHONIOENCODING`与`miniforge3`，只含前者时会再注入一次（实测export出现2次）。 |
-| `test_evidence_entry_missing_id_is_rejected` | evidence条目缺`id`键时字典推导抛`KeyError`，被宽泛的`except`吞掉，`validate_packet`返回`(True, None)`，格式错误的packet因此放行全部写入。 |
-| `test_bash_is_subject_to_packet_validation` | Bash分支在`validate_packet`之前退出，因此`echo x > f`可在证据未确认时写文件。 |
-| `test_writing_to_the_active_packet_is_permitted` | 门禁拒绝对packet自身的写入，因此它自己要求的整改动作——把证据提升为`confirmed`——无法用Edit或Write完成。 |
+| `test_does_not_reinject_when_encoding_already_set` | 已修复。`inject_bash_env`跳过任何携带注入preamble标记（`.env_setup.sh`）的命令，且仅在命令未设置编码时追加export。手写含编码的命令仍获得一次mamba preamble。 |
+| `test_evidence_entry_missing_id_is_rejected` | 已修复。`validate_packet`显式校验结构并fail closed：非法JSON、根非对象、`evidence`/`proposed_changes`非list、条目非dict、`id`缺失或非字符串、`evidence_refs`非list、引用非字符串均拒绝并附整改提示。仅I/O错误仍放行。 |
+| `test_writing_to_the_active_packet_is_permitted` | 已修复。`main()`将`.claude/temp_task/`下的写入目标豁免于证据门禁，因此门禁自己要求的整改——把证据提升为`confirmed`或修复损坏的packet——始终可用Edit/Write执行。该豁免与上述fail-closed改动在同一提交落地；单独落地任何一个都会死锁或保持静默绕过。 |
+| `test_bash_bypasses_packet_validation_by_design`（由`test_bash_is_subject_to_packet_validation`改名） | 不修复——裁定为有意设计。shell命令无法静态判定读写，且技能协议依赖Bash向`.claude/temp_task/`写入。理由记录在该用例的docstring中，用例断言`allow`。 |
 
-`test_validation_is_not_scoped_to_a_file_path`记录第五个问题但不带xfail标记，因为当
-前行为就是该断言所述：`proposed_changes`中任何一处未确认引用都会阻塞全部文件的编
-辑，`validate_packet`不接收`file_path`参数。
+`test_validation_is_not_scoped_to_a_file_path`继续记录门禁的全局性：
+`proposed_changes`中任何一处未确认引用会阻塞`.claude/temp_task/`之外全部文件的编
+辑。按文件收窄需要packet schema不具备的change到file映射。
 
-断言强度经变异检验：删除suspected/stale检查、删除`inject_bash_env`中的Python判断、
-把`has_kebab_case`扩大到整个路径、把`path_is_contained`的`commonpath`比较换成字符串
-前缀，四个变异各自只破坏一条对应断言，无交叉。
+断言强度在树的临时副本上经变异检验：四个原始变异（删除suspected/stale检查、删除
+`inject_bash_env`中的Python判断、把`has_kebab_case`扩大到整个路径、把
+`path_is_contained`的`commonpath`比较换成字符串前缀）各自只破坏一条断言；四个修复
+后变异（移除temp_task豁免、恢复吞掉结构错误、删除export前置条件、删除preamble标记
+跳过）在72用例全绿基线上分别破坏3、2、1、2条对应断言。
 
-### 仍无行为覆盖的模块
+### hook与安装器模块覆盖
 
-记录在此以免重复发现：
+此前记录为零行为覆盖的三个模块现已有测试：
 
-| 模块 | 行数 | 唯一引用 | 未测内容 |
-| :--- | :--- | :--- | :--- |
-| `hooks/logic_dirty_tracker.py` | 58 | `test_cli_manifest.py`的清单哈希条目 | PostToolUse分派：非Edit/Write提前退出、缺`file_path`提前退出、`DirtyQueue.record`委派，以及吞掉全部异常的裸`except` |
-| `hooks/env_system/enforcer_hook.py` | 59 | 无 | `load_reminder_text`的语言选择、primary到fallback的文件顺序、"文件缺失"默认串 |
-| `remy-src/patch_descriptions.py` | 66 | 无 | `patch()`在`MAX_FRONTMATTER_LINES`内改写frontmatter、`lang`到`en`的回退、行未变化时的短路、文件缺失与JSON格式错误的告警 |
+```
+python -m pytest Remy-CC/tests/test_logic_dirty_tracker.py Remy-CC/tests/test_enforcer_hook.py Remy-CC/tests/test_patch_descriptions.py -v
+```
 
-`remy-src/patch_descriptions.py`在逻辑索引中显示被`test_mcp_minimal.py`调用；该边是
-与`unittest.mock.patch`的同名冲突，不是真实覆盖。
+`tests/test_logic_dirty_tracker.py`通过subprocess stdin驱动PostToolUse hook：
+Write与Edit把归一化的项目相对路径写入`.claude/logic_index_dirty`；只读工具、缺
+`file_path`的载荷、非源码扩展名和项目外路径均不记录；stdin非法时静默退出0。
+`HOME`/`USERPROFILE`指向临时目录，加载器因此回退到仓库的`skills/remy-index`副本。
+
+`tests/test_enforcer_hook.py`把hook复制到临时目录以控制reminder文件集合：
+`REMY_LANG=zh-CN`选择`reminder_prompt_zh.md`，`en`（或未设置语言）选择英文文件，
+primary缺失时回退到另一语言，两个文件都缺失时返回文档化的默认串，读取文本被
+strip。`remy-src`通过`PYTHONPATH`提供。
+
+`tests/test_patch_descriptions.py`在进程内覆盖`patch()`：`description:`行只在前
+`MAX_FRONTMATTER_LINES`行内被改写，请求语言回退到`en`，行未变化时不写文件（用只读
+目标文件证明），`skill_descriptions.json`缺失或格式错误时向stderr告警且不触碰任何
+SKILL.md。
+
+`remy-src/patch_descriptions.py`在逻辑索引中显示被`test_mcp_minimal.py`调用；该边
+是与`unittest.mock.patch`的同名冲突，早于上述真实覆盖存在。
 
 ## 边界
 

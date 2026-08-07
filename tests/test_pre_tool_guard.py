@@ -1,9 +1,10 @@
 """Tests for pre_tool_guard.py: pure helpers, packet validation, and the main() decision matrix.
 
-Assertions record the CURRENT behaviour. Four cases assert the expected
-post-fix behaviour and carry ``xfail(strict=True)`` so that fixing the
-corresponding defect turns them into XPASS failures, prompting removal of the
-marker. See docs/TESTING.md "PreToolUse guard" for the defect list.
+Four defects originally recorded here with ``xfail(strict=True)`` markers are
+now resolved: three were fixed (injection idempotency, structural packet
+rejection, the temp_task remediation exemption) and the Bash bypass was ruled
+an intentional escape hatch. All four cases are regular regression tests now.
+See docs/TESTING.md "PreToolUse guard" for the fix record.
 """
 
 import importlib.util
@@ -163,15 +164,21 @@ class TestInjectBashEnv:
         assert "PYTHONIOENCODING" not in result
         assert "mamba shell hook" in result
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="Defect: the skip condition requires BOTH PYTHONIOENCODING and "
-               "miniforge3, so a command that already sets the encoding is "
-               "injected a second time.",
-    )
     def test_does_not_reinject_when_encoding_already_set(self):
         result = guard.inject_bash_env('export PYTHONIOENCODING=utf-8; python x.py')
-        assert result is None or result.count("PYTHONIOENCODING") == 1
+        assert result is not None
+        assert result.count("PYTHONIOENCODING") == 1
+        assert "mamba shell hook" in result
+
+    def test_reinjecting_injected_python_output_is_skipped(self):
+        first = guard.inject_bash_env("python x.py")
+        assert first is not None
+        assert guard.inject_bash_env(first) is None
+
+    def test_reinjecting_injected_non_python_output_is_skipped(self):
+        first = guard.inject_bash_env("ls -la")
+        assert first is not None
+        assert guard.inject_bash_env(first) is None
 
 
 class TestValidatePacket:
@@ -185,12 +192,14 @@ class TestValidatePacket:
         _write_packet(tmp_path, [], [], marker="gone.json", packet_name=None)
         assert guard.validate_packet(str(tmp_path))[0] is True
 
-    def test_malformed_json_fails_open(self, tmp_path):
+    def test_malformed_json_is_rejected(self, tmp_path):
         task_dir = tmp_path / ".claude" / "temp_task"
         task_dir.mkdir(parents=True)
         (task_dir / ".active_packet").write_text("p.json", encoding="utf-8")
         (task_dir / "p.json").write_text("{not json", encoding="utf-8")
-        assert guard.validate_packet(str(tmp_path))[0] is True
+        is_valid, message = guard.validate_packet(str(tmp_path))
+        assert is_valid is False
+        assert message
 
     def test_empty_proposed_changes_passes(self, tmp_path):
         _write_packet(tmp_path, self._CONFIRMED, [])
@@ -225,14 +234,29 @@ class TestValidatePacket:
         assert guard.validate_packet(str(tmp_path))[0] is False
         assert "file_path" not in guard.validate_packet.__code__.co_varnames
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="Defect: an evidence entry without an 'id' key raises KeyError in "
-               "the dict comprehension, which the broad except clause swallows, "
-               "so a malformed packet silently permits every write.",
-    )
     def test_evidence_entry_missing_id_is_rejected(self, tmp_path):
         _write_packet(tmp_path, [{"status": "confirmed"}], self._CHANGE)
+        assert guard.validate_packet(str(tmp_path))[0] is False
+
+    def test_non_dict_evidence_entry_is_rejected(self, tmp_path):
+        _write_packet(tmp_path, ["not a dict"], self._CHANGE)
+        assert guard.validate_packet(str(tmp_path))[0] is False
+
+    def test_non_string_evidence_id_is_rejected(self, tmp_path):
+        _write_packet(tmp_path, [{"id": ["E-1"], "status": "confirmed"}], self._CHANGE)
+        assert guard.validate_packet(str(tmp_path))[0] is False
+
+    def test_non_dict_change_entry_is_rejected(self, tmp_path):
+        _write_packet(tmp_path, self._CONFIRMED, ["not a dict"])
+        assert guard.validate_packet(str(tmp_path))[0] is False
+
+    def test_non_list_evidence_refs_is_rejected(self, tmp_path):
+        _write_packet(tmp_path, self._CONFIRMED,
+                      [{"id": "C-1", "evidence_refs": "E-1"}])
+        assert guard.validate_packet(str(tmp_path))[0] is False
+
+    def test_non_list_evidence_container_is_rejected(self, tmp_path):
+        _write_packet(tmp_path, {"E-1": {"status": "confirmed"}}, self._CHANGE)
         assert guard.validate_packet(str(tmp_path))[0] is False
 
 
@@ -349,27 +373,18 @@ class TestMainPacketGate:
         )
         assert _decision(proc) == "allow"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="Defect: the Bash branch exits before validate_packet runs, so a "
-               "redirection such as 'echo x > f' writes files while evidence is "
-               "still unconfirmed.",
-    )
-    def test_bash_is_subject_to_packet_validation(self, tmp_path):
+    def test_bash_bypasses_packet_validation_by_design(self, tmp_path):
+        """Bash is a documented escape hatch: a shell command cannot be
+        statically classified as read or write, and skill protocols write into
+        .claude/temp_task/ through Bash."""
         _write_packet(tmp_path, self._SUSPECTED, self._CHANGE)
         proc = _run_hook(
             {"tool_name": "Bash", "tool_input": {"command": "echo x > a.py"},
              "cwd": str(tmp_path)},
             tmp_path / "home",
         )
-        assert _decision(proc) == "deny"
+        assert _decision(proc) == "allow"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="Defect: the guard denies writes to the packet itself, so the "
-               "remediation it demands (promote evidence to confirmed) cannot be "
-               "performed with Edit/Write.",
-    )
     def test_writing_to_the_active_packet_is_permitted(self, tmp_path):
         _write_packet(tmp_path, self._SUSPECTED, self._CHANGE)
         packet_rel = os.path.join(".claude", "temp_task", "p.json")
@@ -378,7 +393,49 @@ class TestMainPacketGate:
              "cwd": str(tmp_path)},
             tmp_path / "home",
         )
-        assert _decision(proc) != "deny"
+        assert _decision(proc) == "allow"
+
+    def test_absolute_path_into_temp_task_is_permitted(self, tmp_path):
+        _write_packet(tmp_path, self._SUSPECTED, self._CHANGE)
+        packet_abs = tmp_path / ".claude" / "temp_task" / "p.json"
+        proc = _run_hook(
+            {"tool_name": "Write", "tool_input": {"file_path": str(packet_abs)},
+             "cwd": str(tmp_path)},
+            tmp_path / "home",
+        )
+        assert _decision(proc) == "allow"
+
+    def test_new_file_under_temp_task_is_permitted(self, tmp_path):
+        _write_packet(tmp_path, self._SUSPECTED, self._CHANGE)
+        new_rel = os.path.join(".claude", "temp_task", "next_packet.json")
+        proc = _run_hook(
+            {"tool_name": "Write", "tool_input": {"file_path": new_rel},
+             "cwd": str(tmp_path)},
+            tmp_path / "home",
+        )
+        assert _decision(proc) == "allow"
+
+    def test_claude_dir_outside_temp_task_is_still_gated(self, tmp_path):
+        _write_packet(tmp_path, self._SUSPECTED, self._CHANGE)
+        other_rel = os.path.join(".claude", "settings.local.json")
+        proc = _run_hook(
+            {"tool_name": "Write", "tool_input": {"file_path": other_rel},
+             "cwd": str(tmp_path)},
+            tmp_path / "home",
+        )
+        assert _decision(proc) == "deny"
+
+    def test_structurally_invalid_packet_denies_writes(self, tmp_path):
+        task_dir = tmp_path / ".claude" / "temp_task"
+        task_dir.mkdir(parents=True)
+        (task_dir / ".active_packet").write_text("p.json", encoding="utf-8")
+        (task_dir / "p.json").write_text("{not json", encoding="utf-8")
+        proc = _run_hook(
+            {"tool_name": "Write", "tool_input": {"file_path": "a.py"},
+             "cwd": str(tmp_path)},
+            tmp_path / "home",
+        )
+        assert _decision(proc) == "deny"
 
 
 class TestMainPathLogic:

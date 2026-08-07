@@ -57,6 +57,10 @@ MESSAGES = {
         "zh-CN": "证据 '{ref_id}' 的状态为 '{status}'，不允许用于写操作。请先读取并将其更新为 confirmed。",
         "en": "Evidence '{ref_id}' has status '{status}', not allowed for write operations. Read and update to confirmed first.",
     },
+    "packet_malformed": {
+        "zh-CN": "任务包结构不合规（{detail}）。请修正 .claude/temp_task/ 下的 packet 文件，或删除 .claude/temp_task/.active_packet 解除门禁。",
+        "en": "Task packet is structurally invalid ({detail}). Fix the packet file under .claude/temp_task/, or delete .claude/temp_task/.active_packet to lift the gate.",
+    },
     "path_optimized": {
         "zh-CN": "🛡️ 路径优化：将绝对路径转换为相对路径 '{rel_path}' (项目内文件安全)",
         "en": "🛡️ Path optimization: Converted absolute path to relative '{rel_path}' (safe project-internal file)",
@@ -137,14 +141,19 @@ def has_kebab_case(path):
 def inject_bash_env(original_command):
     """
     Injects environment variables and activation scripts into the bash command.
+    Skips commands that already carry the injected preamble marker
+    (".env_setup.sh"), so re-feeding an injected command never accumulates a
+    second preamble; the encoding export is likewise added at most once.
     """
+    if ".env_setup.sh" in original_command:
+        return None
     if "PYTHONIOENCODING" in original_command and "miniforge3" in original_command:
         return None
 
     clean_preamble = BASH_PREAMBLE.strip().replace('\n', ' ')
     env_vars = ""
 
-    if is_python_related(original_command):
+    if is_python_related(original_command) and "PYTHONIOENCODING" not in original_command:
         env_vars = 'export PYTHONIOENCODING="utf-8"; '
 
     return f"{env_vars}{clean_preamble} {original_command}"
@@ -153,7 +162,10 @@ def validate_packet(cwd):
     """
     Validate the active task packet before allowing Edit/Write operations.
     Returns (is_valid, error_message). Returns (True, None) if no active packet exists.
-    Fails open on any I/O or parse error to avoid blocking legitimate edits.
+    Fails open on I/O errors only; a packet that does not parse or violates the
+    expected structure fails closed, so a corrupt packet cannot silently disable
+    the evidence gate. Remediation stays possible because main() exempts writes
+    under .claude/temp_task/ from this gate.
     """
     active_marker = os.path.join(cwd, ".claude", "temp_task", ".active_packet")
     if not os.path.exists(active_marker):
@@ -168,28 +180,52 @@ def validate_packet(cwd):
             return True, None
 
         with open(packet_path, "r", encoding="utf-8") as f:
-            packet = json.load(f)
-
-        evidence_list = packet.get("evidence_packet", {}).get("evidence", [])
-        proposed_changes = packet.get("evidence_packet", {}).get("proposed_changes", [])
-
-        if not proposed_changes:
-            return True, None
-
-        evidence_by_id = {item["id"]: item for item in evidence_list}
-
-        for change in proposed_changes:
-            for ref_id in change.get("evidence_refs", []):
-                ev = evidence_by_id.get(ref_id)
-                if ev is None:
-                    return False, _msg("evidence_id_missing", ref_id=ref_id, change_id=change.get('id', '?'))
-                if ev.get("status") in ("suspected", "stale"):
-                    return False, _msg("evidence_status_blocked", ref_id=ref_id, status=ev.get('status'))
-
+            raw_packet = f.read()
+    except (IOError, OSError):
         return True, None
 
-    except (json.JSONDecodeError, KeyError, IOError, OSError):
+    try:
+        packet = json.loads(raw_packet)
+    except json.JSONDecodeError:
+        return False, _msg("packet_malformed", detail="invalid JSON")
+
+    if not isinstance(packet, dict):
+        return False, _msg("packet_malformed", detail="packet root is not an object")
+
+    evidence_packet = packet.get("evidence_packet", {})
+    if not isinstance(evidence_packet, dict):
+        return False, _msg("packet_malformed", detail="evidence_packet is not an object")
+
+    evidence_list = evidence_packet.get("evidence", [])
+    proposed_changes = evidence_packet.get("proposed_changes", [])
+    if not isinstance(evidence_list, list) or not isinstance(proposed_changes, list):
+        return False, _msg("packet_malformed", detail="evidence/proposed_changes is not a list")
+
+    if not proposed_changes:
         return True, None
+
+    evidence_by_id = {}
+    for item in evidence_list:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+            return False, _msg("packet_malformed", detail="evidence entry without a string 'id'")
+        evidence_by_id[item["id"]] = item
+
+    for change in proposed_changes:
+        if not isinstance(change, dict):
+            return False, _msg("packet_malformed", detail="proposed_changes entry is not an object")
+        refs = change.get("evidence_refs", [])
+        if not isinstance(refs, list):
+            return False, _msg("packet_malformed", detail="evidence_refs is not a list")
+        for ref_id in refs:
+            if not isinstance(ref_id, str):
+                return False, _msg("packet_malformed", detail="evidence_refs entry is not a string")
+            ev = evidence_by_id.get(ref_id)
+            if ev is None:
+                return False, _msg("evidence_id_missing", ref_id=ref_id, change_id=change.get('id', '?'))
+            if ev.get("status") in ("suspected", "stale"):
+                return False, _msg("evidence_status_blocked", ref_id=ref_id, status=ev.get('status'))
+
+    return True, None
 
 def main():
     # Force UTF-8 for stdin/stdout to handle Chinese paths correctly on Windows
@@ -287,16 +323,21 @@ def main():
         additional_context_buffer = []
 
         if tool_name in ["Edit", "Write", "NotebookEdit"]:
-            is_valid, error_msg = validate_packet(cwd)
-            if not is_valid:
-                print(json.dumps({
-                    "hookSpecificOutput": {
-                        "hookEventName": "PreToolUse",
-                        "permissionDecision": "deny",
-                        "permissionDecisionReason": f"🛑 Evidence 验证失败：{error_msg}"
-                    }
-                }))
-                sys.exit(0)
+            target_path = tool_input.get("file_path") or tool_input.get("notebook_path", "")
+            packet_dir = os.path.join(cwd, ".claude", "temp_task")
+            target_abs = target_path if is_absolute_path(target_path) else os.path.join(cwd, target_path)
+            packet_exempt = bool(target_path) and path_is_contained(target_abs, packet_dir)
+            if not packet_exempt:
+                is_valid, error_msg = validate_packet(cwd)
+                if not is_valid:
+                    print(json.dumps({
+                        "hookSpecificOutput": {
+                            "hookEventName": "PreToolUse",
+                            "permissionDecision": "deny",
+                            "permissionDecisionReason": f"🛑 Evidence 验证失败：{error_msg}"
+                        }
+                    }))
+                    sys.exit(0)
 
             strict_rules = (
                 "CRITICAL CODE HYGIENE:\n"

@@ -455,41 +455,70 @@ confirmation; Read / Glob / Grep exempt from that gate; the three kebab-case
 outcomes (deny on a new file, redirect when only the snake variant exists, ask when
 both exist); the Edit soft reminder; the lock-file warning; a payload without any
 path exiting silently; and malformed stdin failing open with a stderr note.
+The packet gate additionally covers the `.claude/temp_task/` exemption (a
+relative path, an absolute path, a new file, and a `.claude/` path outside
+`temp_task` remaining gated) and a structurally invalid packet denying writes
+to project files.
 
-Four cases assert the expected post-fix behaviour and carry
-`pytest.mark.xfail(strict=True)`, so fixing the defect turns them into XPASS
-failures that prompt removing the marker:
+Four defects were originally recorded here as `xfail(strict=True)` cases.
+Three are fixed and one was ruled intentional; all four are regular regression
+tests now:
 
-| Case | Defect |
+| Case | Resolution |
 | :--- | :--- |
-| `test_does_not_reinject_when_encoding_already_set` | The skip condition at `inject_bash_env` requires BOTH `PYTHONIOENCODING` and `miniforge3`, so a command that already sets the encoding is injected a second time (measured: the export appears twice). |
-| `test_evidence_entry_missing_id_is_rejected` | An evidence entry without an `id` key raises `KeyError` in the dict comprehension; the broad `except` swallows it and `validate_packet` returns `(True, None)`, so a malformed packet permits every write. |
-| `test_bash_is_subject_to_packet_validation` | The Bash branch exits before `validate_packet` runs, so `echo x > f` writes files while evidence is still unconfirmed. |
-| `test_writing_to_the_active_packet_is_permitted` | The guard denies writes to the packet itself, so the remediation it demands — promoting evidence to `confirmed` — cannot be performed with Edit or Write. |
+| `test_does_not_reinject_when_encoding_already_set` | Fixed. `inject_bash_env` skips any command carrying the injected preamble marker (`.env_setup.sh`) and adds the encoding export only when the command does not already set it. A command that sets the encoding manually still receives the mamba preamble once. |
+| `test_evidence_entry_missing_id_is_rejected` | Fixed. `validate_packet` validates structure explicitly and fails closed: invalid JSON, a non-object root, non-list `evidence`/`proposed_changes`, a non-dict entry, a missing or non-string `id`, non-list `evidence_refs`, and a non-string ref all deny with a remediation hint. Only I/O errors still fail open. |
+| `test_writing_to_the_active_packet_is_permitted` | Fixed. `main()` exempts write targets under `.claude/temp_task/` from the evidence gate, so the remediation the gate demands — promoting evidence to `confirmed` or repairing a malformed packet — is always executable with Edit/Write. This exemption and the fail-closed change above landed together; either alone would deadlock or stay silently bypassable. |
+| `test_bash_bypasses_packet_validation_by_design` (renamed from `test_bash_is_subject_to_packet_validation`) | Not fixed — ruled intentional. A shell command cannot be statically classified as read or write, and skill protocols write into `.claude/temp_task/` through Bash. The rationale is recorded in the case's docstring, and the bypass is asserted as an `allow`. |
 
-`test_validation_is_not_scoped_to_a_file_path` records a fifth issue without an
-xfail marker, because the current behaviour is what the assertion states: a single
-unconfirmed reference anywhere in `proposed_changes` blocks edits to every file,
-since `validate_packet` takes no `file_path` argument.
+`test_validation_is_not_scoped_to_a_file_path` still records that the gate is
+global: one unconfirmed reference anywhere in `proposed_changes` blocks edits
+to every file outside `.claude/temp_task/`. Narrowing per file would require a
+change-to-file mapping that the packet schema does not carry.
 
-Assertion strength was checked by mutation: dropping the suspected/stale check,
-dropping the Python detection in `inject_bash_env`, widening `has_kebab_case` to
-the whole path, and replacing the `commonpath` check in `path_is_contained` with a
-string prefix each broke exactly one assertion and no others.
+Assertion strength was checked by mutation in a temporary copy of the tree:
+the four original mutations (dropping the suspected/stale check, dropping the
+Python detection in `inject_bash_env`, widening `has_kebab_case` to the whole
+path, and replacing the `commonpath` check in `path_is_contained` with a
+string prefix) each broke exactly one assertion. Four post-fix mutations
+(removing the temp_task exemption, swallowing structural errors again,
+dropping the export precondition, and dropping the preamble-marker skip) broke
+3, 2, 1 and 2 corresponding assertions against a green 72-case baseline.
 
-### Modules still without behavioural coverage
+### Hook and installer module coverage
 
-Recorded so the gap is explicit rather than rediscovered:
+The three modules previously listed here as having no behavioural coverage are
+now tested:
 
-| Module | Lines | Only reference | What is untested |
-| :--- | :--- | :--- | :--- |
-| `hooks/logic_dirty_tracker.py` | 58 | `test_cli_manifest.py` manifest hash entry | PostToolUse dispatch: the non-Edit/Write early exit, the missing-`file_path` early exit, `DirtyQueue.record` delegation, and the bare `except` that swallows every failure |
-| `hooks/env_system/enforcer_hook.py` | 59 | none | `load_reminder_text` language selection, the primary-to-fallback file order, and the "files missing" default string |
-| `remy-src/patch_descriptions.py` | 66 | none | `patch()` frontmatter rewriting within `MAX_FRONTMATTER_LINES`, the `lang` to `en` fallback, the unchanged-line short circuit, and the missing-file / malformed-JSON warnings |
+```
+python -m pytest Remy-CC/tests/test_logic_dirty_tracker.py Remy-CC/tests/test_enforcer_hook.py Remy-CC/tests/test_patch_descriptions.py -v
+```
 
-`remy-src/patch_descriptions.py` appears in the logic index as being called from
-`test_mcp_minimal.py`; that edge is a same-name collision with
-`unittest.mock.patch` and not real coverage.
+`tests/test_logic_dirty_tracker.py` drives the PostToolUse hook through
+subprocess stdin: Write and Edit record the normalized project-relative path
+into `.claude/logic_index_dirty`; read-only tools, payloads without
+`file_path`, non-source extensions, and paths outside the project record
+nothing; malformed stdin exits 0 silently. `HOME`/`USERPROFILE` point at a
+temporary directory, so the loader falls back to the repository's
+`skills/remy-index` copy.
+
+`tests/test_enforcer_hook.py` copies the hook into a temporary directory to
+control the reminder file set: `REMY_LANG=zh-CN` selects
+`reminder_prompt_zh.md`, `en` (or an unset language) selects the English file,
+a missing primary falls back to the other language, the documented default
+string is returned when both files are absent, and the loaded text is
+stripped. `remy-src` is supplied through `PYTHONPATH`.
+
+`tests/test_patch_descriptions.py` covers `patch()` in-process: the
+`description:` line is rewritten only within the first `MAX_FRONTMATTER_LINES`
+lines, the requested language falls back to `en`, an unchanged line does not
+write the file (proven with a read-only target file), and a missing or
+malformed `skill_descriptions.json` warns on stderr without touching any
+SKILL.md.
+
+`remy-src/patch_descriptions.py` appears in the logic index as being called
+from `test_mcp_minimal.py`; that edge is a same-name collision with
+`unittest.mock.patch` and predates the real coverage above.
 
 ## Boundaries
 

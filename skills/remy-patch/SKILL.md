@@ -66,7 +66,7 @@ Although strict schema validation is disabled, you MUST internally structure you
     -   If file does not exist: HALT. Report error. Do NOT proceed.
 2.  **Extract constraints**: parse `evidence_packet.proposed_changes[]` as the authoritative change scope.
     -   MUST NOT make changes outside the described scope.
-    -   For any `evidence[]` item with `status: "suspected"`: re-read the referenced `path` and `range` and confirm before proceeding.
+    -   For any `evidence[]` item with `status: "suspected"`: re-read the referenced `path` and `range` and confirm before proceeding. After confirming, `Edit` the packet file to promote that item's `status` to `"confirmed"` — the PreToolUse guard exempts writes under `.claude/temp_task/`, so this edit is always permitted.
 3.  Proceed to Phase 1.
 
 **If NO argument provided:**
