@@ -116,7 +116,9 @@ def build_child_changes_payload(db, parent_kind, parent_ref):
     Children are determined structurally:
         parent_kind='file'    -> children = symbols in that file
         parent_kind='cluster' -> children = files in that cluster
-    old_summary uses the second-most-recent ok version when present.
+    old_summary is the greatest version below the current one regardless of that
+    version's status, so a predecessor already marked ``stale`` still serves as
+    the comparison baseline.
     """
     if not db:
         return []
@@ -149,8 +151,7 @@ def build_child_changes_payload(db, parent_kind, parent_ref):
         }
         previous_rows = db.execute(
             "SELECT summary FROM summary_versions "
-            "WHERE node_kind = ? AND node_ref = ? "
-            "AND status IN ('ok', 'oversized_warn') AND version < ? "
+            "WHERE node_kind = ? AND node_ref = ? AND version < ? "
             "ORDER BY version DESC LIMIT 1",
             (child_kind, child_ref, current["version"]),
         ).fetchall()
@@ -202,6 +203,7 @@ def run_propagation_pass(db, llm_client):
 
     For each candidate (parent with ok summary AND child_change_count > 0):
     - If force-recompute fires: rewrite parent + zero counter + stamp last_force.
+    - Else if no child summary text changed: zero counter (nothing to accumulate).
     - Else: call judge_propagation; propagate=true → rewrite + zero counter,
       propagate=false → keep counter (accumulates toward THRESHOLD_PRIMARY).
     """
@@ -235,6 +237,7 @@ def run_propagation_pass(db, llm_client):
             parent_prev = get_latest_ok_summary(db, parent_kind, parent_ref)
             child_changes = build_child_changes_payload(db, parent_kind, parent_ref)
             if not child_changes:
+                zero_counter(db, parent_kind, parent_ref)
                 stats[f"{parent_kind}_skip"] += 1
                 continue
             try:

@@ -506,6 +506,194 @@ class TestParentCounterBumpOnWrite:
         )
         assert self._counter(populated, "file", "a.py") is None
 
+    def test_identical_payload_does_not_bump(self, populated):
+        summarizer.write_summary_version(
+            populated, "file", "a.py", {"short": "file summary", "full": None}, "ok"
+        )
+        summarizer.write_summary_version(
+            populated, "symbol", "a.py::foo", {"short": "same", "full": None}, "ok"
+        )
+        summarizer.write_summary_version(
+            populated, "symbol", "a.py::foo", {"short": "same", "full": None}, "ok"
+        )
+        assert self._counter(populated, "file", "a.py") == 1
+
+    def test_differing_payload_still_bumps(self, populated):
+        summarizer.write_summary_version(
+            populated, "file", "a.py", {"short": "file summary", "full": None}, "ok"
+        )
+        summarizer.write_summary_version(
+            populated, "symbol", "a.py::foo", {"short": "first", "full": None}, "ok"
+        )
+        summarizer.write_summary_version(
+            populated, "symbol", "a.py::foo", {"short": "second", "full": None}, "ok"
+        )
+        assert self._counter(populated, "file", "a.py") == 2
+
+    def test_version_still_increments_when_bump_is_skipped(self, populated):
+        summarizer.write_summary_version(
+            populated, "file", "a.py", {"short": "file summary", "full": None}, "ok"
+        )
+        first = summarizer.write_summary_version(
+            populated, "symbol", "a.py::foo", {"short": "same", "full": None}, "ok"
+        )
+        second = summarizer.write_summary_version(
+            populated, "symbol", "a.py::foo", {"short": "same", "full": None}, "ok"
+        )
+        assert (first, second) == (1, 2)
+        rows = populated.execute(
+            "SELECT version, status FROM summary_versions "
+            "WHERE node_kind = 'symbol' AND node_ref = 'a.py::foo' ORDER BY version"
+        ).fetchall()
+        assert rows == [(1, "ok"), (2, "ok")]
+
+    def test_identical_payload_with_different_key_order_does_not_bump(self, populated):
+        summarizer.write_summary_version(
+            populated, "file", "a.py", {"short": "file summary", "full": None}, "ok"
+        )
+        summarizer.write_summary_version(
+            populated, "symbol", "a.py::foo", {"short": "same", "full": None}, "ok"
+        )
+        summarizer.write_summary_version(
+            populated, "symbol", "a.py::foo", {"full": None, "short": "same"}, "ok"
+        )
+        assert self._counter(populated, "file", "a.py") == 1
+
+    def test_pending_predecessor_bumps_again(self, populated):
+        summarizer.write_summary_version(
+            populated, "file", "a.py", {"short": "file summary", "full": None}, "ok"
+        )
+        summarizer.write_summary_version(
+            populated, "symbol", "a.py::foo", {"short": "same", "full": None}, "ok"
+        )
+        summarizer.write_summary_version(populated, "symbol", "a.py::foo", None, "pending")
+        summarizer.write_summary_version(
+            populated, "symbol", "a.py::foo", {"short": "same", "full": None}, "ok"
+        )
+        assert self._counter(populated, "file", "a.py") == 2
+
+    def test_stale_predecessor_with_identical_text_does_not_bump(self, populated):
+        summarizer.write_summary_version(
+            populated, "file", "a.py", {"short": "file summary", "full": None}, "ok"
+        )
+        summarizer.write_summary_version(
+            populated, "symbol", "a.py::foo", {"short": "same", "full": None}, "ok"
+        )
+        retrieval_projection.mark_current_summary_stale(populated, "symbol", "a.py::foo")
+        summarizer.write_summary_version(
+            populated, "symbol", "a.py::foo", {"short": "same", "full": None}, "ok"
+        )
+        assert self._counter(populated, "file", "a.py") == 1
+        rows = populated.execute(
+            "SELECT version, status FROM summary_versions "
+            "WHERE node_kind = 'symbol' AND node_ref = 'a.py::foo' ORDER BY version"
+        ).fetchall()
+        assert rows == [(1, "stale"), (2, "ok")]
+
+    def test_file_write_with_identical_payload_does_not_bump_cluster(self, populated):
+        summarizer.write_summary_version(
+            populated, "cluster", "C", {"short": "cluster summary", "full": None}, "ok"
+        )
+        summarizer.write_summary_version(
+            populated, "file", "a.py", {"short": "same", "full": None}, "ok"
+        )
+        summarizer.write_summary_version(
+            populated, "file", "a.py", {"short": "same", "full": None}, "ok"
+        )
+        assert self._counter(populated, "cluster", "C") == 1
+
+
+class TestPromptExampleFieldContract:
+    """Example payloads in the hierarchical templates match the real payload keys."""
+
+    PROMPTS_DIR = os.path.join(
+        os.path.dirname(__file__), "..", "skills", "remy-index", "prompts"
+    )
+
+    @pytest.fixture
+    def contract_db(self, db):
+        db.execute(
+            "INSERT INTO files (path, struct_hash, imports) VALUES ('a.py', 'h', '[\"b.py\"]')"
+        )
+        db.execute(
+            "INSERT INTO symbols (file_path, name, type, name_tokens) "
+            "VALUES ('a.py', 'foo', 'function', 'foo')"
+        )
+        db.execute(
+            "INSERT INTO clusters (name, label, entry_symbols, file_count) "
+            "VALUES ('C', NULL, '[\"foo\"]', 1)"
+        )
+        cid = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        db.execute(
+            "INSERT INTO cluster_members (cluster_id, file_path) VALUES (?, 'a.py')", (cid,)
+        )
+        db.commit()
+        summarizer.write_summary_version(
+            db, "symbol", "a.py::foo", {"short": "symbol text", "full": None}, "ok"
+        )
+        summarizer.write_summary_version(
+            db, "file", "a.py", {"short": "file text", "full": None}, "ok"
+        )
+        return db
+
+    def _example_inputs(self, template_name):
+        path = os.path.join(self.PROMPTS_DIR, template_name)
+        with open(path, "r", encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+        payloads = []
+        for index, line in enumerate(lines):
+            if not line.startswith("Input"):
+                continue
+            for candidate in lines[index + 1:]:
+                if not candidate.strip():
+                    continue
+                if candidate.startswith("{") and not candidate.startswith("{{"):
+                    payloads.append(json.loads(candidate))
+                break
+        return payloads
+
+    def test_file_template_examples_are_present(self):
+        assert len(self._example_inputs("summarize_file.md")) == 6
+
+    def test_cluster_template_examples_are_present(self):
+        assert len(self._example_inputs("summarize_cluster.md")) == 2
+
+    def test_file_example_top_level_keys_match_file_input(self, contract_db):
+        actual = set(summarizer._file_input(contract_db, "a.py", "cohesive"))
+        payloads = self._example_inputs("summarize_file.md")
+        assert payloads
+        for payload in payloads:
+            assert set(payload) == actual
+
+    def test_file_example_symbol_entry_keys_match_file_input(self, contract_db):
+        real = summarizer._file_input(contract_db, "a.py", "cohesive")
+        assert real["symbol_summaries"], "fixture must produce at least one symbol entry"
+        actual = set(real["symbol_summaries"][0])
+        checked = 0
+        for payload in self._example_inputs("summarize_file.md"):
+            for entry in payload["symbol_summaries"]:
+                assert set(entry) == actual
+                checked += 1
+        assert checked >= 6
+
+    def test_cluster_example_top_level_keys_match_cluster_input(self, contract_db):
+        actual = set(summarizer._cluster_input(contract_db, "C"))
+        payloads = self._example_inputs("summarize_cluster.md")
+        assert payloads
+        for payload in payloads:
+            assert set(payload) == actual
+
+    def test_cluster_example_file_entry_keys_match_cluster_input(self, contract_db):
+        real = summarizer._cluster_input(contract_db, "C")
+        assert real["file_summaries"], "fixture must produce at least one file entry"
+        actual = set(real["file_summaries"][0])
+        checked = 0
+        for payload in self._example_inputs("summarize_cluster.md"):
+            for entry in payload["file_summaries"]:
+                assert set(entry) == actual
+                checked += 1
+        assert checked >= 3
+
 
 class TestClusterTagsI18n:
     """Cluster tag placeholders resolve to the English set regardless of REMY_LANG."""

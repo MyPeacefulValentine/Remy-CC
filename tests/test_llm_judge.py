@@ -149,3 +149,102 @@ class TestJudgePropagation:
         )
         count = db.execute("SELECT COUNT(*) FROM judge_cache").fetchone()[0]
         assert count == 1
+
+
+def _first_json_object(text):
+    """Extract the first balanced JSON object from rendered prompt text."""
+    start = text.index("{")
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return json.loads(text[start:index + 1])
+    raise AssertionError("no balanced JSON object in rendered prompt")
+
+
+class TestPromptExampleFieldContract:
+    """judge_propagation.md example payloads match the keys build_prompt emits."""
+
+    PROMPT_PATH = os.path.join(
+        os.path.dirname(__file__), "..", "skills", "remy-index", "prompts",
+        "judge_propagation.md",
+    )
+
+    def _rendered_payload(self):
+        prompt = llm_judge.build_prompt(
+            "file", "f.py", {"short": "parent text", "full": None},
+            [{"child_ref": "f.py::g", "old_summary": None,
+              "new_summary": {"short": "child text", "full": None}}],
+        )
+        return _first_json_object(prompt)
+
+    def _example_inputs(self):
+        with open(self.PROMPT_PATH, "r", encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+        payloads = []
+        for index, line in enumerate(lines):
+            if not line.startswith("Input"):
+                continue
+            for candidate in lines[index + 1:]:
+                if not candidate.strip():
+                    continue
+                if candidate.startswith("{") and not candidate.startswith("{{"):
+                    payloads.append(json.loads(candidate))
+                break
+        return payloads
+
+    def test_examples_are_present(self):
+        assert len(self._example_inputs()) == 4
+
+    def test_example_top_level_keys_match_build_prompt(self):
+        actual = set(self._rendered_payload())
+        payloads = self._example_inputs()
+        assert payloads
+        for payload in payloads:
+            assert set(payload) == actual
+
+    def test_example_child_entry_keys_match_build_prompt(self):
+        rendered = self._rendered_payload()
+        assert rendered["children"], "rendered payload must carry a child entry"
+        actual = set(rendered["children"][0])
+        checked = 0
+        for payload in self._example_inputs():
+            for entry in payload["children"]:
+                assert set(entry) == actual
+                checked += 1
+        assert checked >= 4
+
+    def test_examples_cover_both_parent_kinds(self):
+        kinds = {payload["parent_kind"] for payload in self._example_inputs()}
+        assert kinds == {"file", "cluster"}
+
+    def test_example_dimensions_are_within_the_closed_set(self):
+        with open(self.PROMPT_PATH, "r", encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+        outputs = []
+        for index, line in enumerate(lines):
+            if line == "Output:" and index + 1 < len(lines):
+                candidate = lines[index + 1]
+                if candidate.startswith("{"):
+                    outputs.append(json.loads(candidate))
+        assert len(outputs) == 4
+        for payload in outputs:
+            assert payload["matched_dimension"] in llm_judge.JUDGE_DIMENSIONS
+            assert payload["confidence"] in llm_judge.JUDGE_CONFIDENCE
+            assert isinstance(payload["propagate"], bool)

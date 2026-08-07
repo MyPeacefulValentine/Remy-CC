@@ -2,7 +2,9 @@
 
 Implements the three-tier length budget (soft / warn / retry) from the
 v1.5.0 plan §5.3. Writes new ``summary_versions`` rows with strictly
-monotonic ``version`` per ``(node_kind, node_ref)``.
+monotonic ``version`` per ``(node_kind, node_ref)``. A write whose payload
+equals the immediately previous version's payload still creates a row but
+does not increment the parent's ``child_change_count``.
 """
 import json
 import os
@@ -112,10 +114,12 @@ def generate_with_limit(level, llm_call, render_prompt, retry_strict_prompt):
 def write_summary_version(db, node_kind, node_ref, payload, status,
                           decision_rationale=None, decision_dimension=None, decision_confidence=None):
     row = db.execute(
-        "SELECT MAX(version) FROM summary_versions WHERE node_kind = ? AND node_ref = ?",
+        "SELECT version, summary FROM summary_versions "
+        "WHERE node_kind = ? AND node_ref = ? ORDER BY version DESC LIMIT 1",
         (node_kind, node_ref),
     ).fetchone()
-    next_version = (row[0] or 0) + 1
+    next_version = (row[0] if row else 0) + 1
+    previous_summary_json = row[1] if row else None
     summary_json = json.dumps(payload, ensure_ascii=False) if payload is not None else None
     try:
         db.execute(
@@ -135,13 +139,33 @@ def write_summary_version(db, node_kind, node_ref, payload, status,
             ),
         )
         refresh_node(db, node_kind, node_ref)
-        if status in AVAILABLE_SUMMARY_STATUSES:
+        if status in AVAILABLE_SUMMARY_STATUSES and not _matches_previous_summary(
+            summary_json, previous_summary_json
+        ):
             _bump_parent_counter_if_applicable(db, node_kind, node_ref)
         db.commit()
     except Exception:
         db.rollback()
         raise
     return next_version
+
+
+def _matches_previous_summary(summary_json, previous_summary_json):
+    """Return True when the new payload equals the immediately previous version's.
+
+    ``previous_summary_json`` is the ``summary`` column of the greatest version
+    below the one being written, regardless of that version's status. A missing
+    predecessor, or one without summary text (``status='pending'``), yields False
+    so the write counts as a change.
+    """
+    if summary_json is None or previous_summary_json is None:
+        return False
+    if summary_json == previous_summary_json:
+        return True
+    try:
+        return json.loads(summary_json) == json.loads(previous_summary_json)
+    except (json.JSONDecodeError, TypeError):
+        return False
 
 
 def _bump_parent_counter_if_applicable(db, child_kind, child_ref):

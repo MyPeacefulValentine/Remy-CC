@@ -187,6 +187,46 @@ python -m pytest Remy-CC/tests/test_summary_versions.py -k ParentCounterBump -v
 记录，只有3个符号集合变化的file进入bootstrap，cluster层bootstrap为0 pending。
 两次扫描的变更文件数不同（20与3），调用次数不作为成本对比依据。
 
+## 摘要重写的成本门控
+
+`summarizer.write_summary_version`把新payload与紧邻上一版本的payload比较——即被写
+入版本之下version最大的那一条，不筛其status——两者相同时跳过父节点
+`child_change_count`的自增。版本行仍然插入、`refresh_node`仍然执行，因此version保
+持单调、投影保持当前。前驱缺失，或前驱的`summary`为NULL（`status='pending'`），都
+记为发生变化。`propagation.build_child_changes_payload`采用同一个"上一版本"定义，
+因此已被标记`stale`的前驱作为比较基准，不再产生`old_summary: null`。
+`run_propagation_pass`在`child_changes`为空时清零计数器；`propagate=false`仍然保持
+计数器向`REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY`累积。
+
+```
+python -m pytest Remy-CC/tests/test_summary_versions.py -k "ParentCounterBump or PromptExampleFieldContract" -v
+python -m pytest Remy-CC/tests/test_propagation.py -k "BuildChildChanges or RunPropagationPass" -v
+python -m pytest Remy-CC/tests/test_llm_judge.py -k PromptExampleFieldContract -v
+```
+
+`TestParentCounterBumpOnWrite`覆盖：相同payload不自增、不同payload仍自增、跳过自增
+时version仍递增、键顺序不同但内容相同、前驱为`pending`时重新自增、前驱为`stale`且
+文本相同时不自增，以及file到cluster一级的同一门控。`TestBuildChildChanges`覆盖：
+`stale`前驱作为比较基准、跨`stale`前驱文本相同时返回空列表、`pending`前驱产生
+`old_summary: null`。`TestPromptExampleFieldContract`（分别位于
+`test_summary_versions.py`与`test_llm_judge.py`）从`summarize_file.md`、
+`summarize_cluster.md`和`judge_propagation.md`解析示例payload，断言其键集是
+`_file_input`、`_cluster_input`和`build_prompt`实际产出键集的子集。此前这三个模板
+记录的字段名没有任何调用方传入。
+
+本仓库索引上决定比较语义的测量：已存储的57次版本转换，其前驱status全部为`stale`
+（symbol 34/34、file 18/18、cluster 4/4），因为`scan_file`在重写前把当前摘要置
+`stale`。把查询限定为`status IN ('ok','oversized_warn')`因此不匹配任何一条——0/57。
+改为与紧邻上一版本比较且不筛status，则symbol层匹配11/34，file层0/18、cluster层
+0/5，因此节省只存在于symbol到file这一级。
+
+符号hash的alpha归一化经测量后否决。最近40个提交构成的39个提交对中，5473次符号比较
+里有426次被当前hash判定为变化。把两侧都经`ast.unparse`重新归一化后匹配0/426，再把
+局部变量与参数重写为位置占位符后同样匹配0。对照实验确认探针有效：纯局部重命名、参
+数重命名、引号风格变化、冗余括号变化各自都被识别，而`+1`改为`+2`的真实变化未被识
+别。`_calculate_symbol_hash`已移除全部空白、`_strip_comments`已移除注释，因此不存
+在只含格式差异的变化类别能到达hash。
+
 ## P1.2.1扫描范围与解析器缓存身份
 
 schema 11.0.0为每个`files`行增加`parser_contract_version`、
@@ -290,6 +330,61 @@ python tests/tee_project_canary.py /path/to/tee_tee_os_framework --backend regex
 ```
 
 完整项目命令拒绝非Git目录和不等于固定提交的版本。脚本将已提交源码归档到系统临时目录后扫描，不会在输入检出目录中创建数据库。JSON报告包含解析后端、范围、源码版本、扫描状态、文件/符号/pattern/直接边/推断边/函数指针边数量、按类型统计的pattern、全部按文件与类型统计的pattern来源、耗时、数据库字节数和WAL字节数。清单可以为固定提交声明禁止出现的pattern事实；P0.6使用该规则拒绝`pic1080s`、`pic1440s`和`back_png`字节数组的`c_fnptr_register`。耗时和存储字段只作记录，不作为通过阈值。
+
+## PreToolUse 门禁
+
+`hooks/pre_tool_guard.py`决定每次Write / Edit / Bash / PowerShell / Agent调用是
+放行、改写还是拒绝。在本组测试之前它没有任何行为覆盖：唯一的引用是
+`test_install_manifest.py`断言其路径出现在安装清单中。
+
+```
+python -m pytest Remy-CC/tests/test_pre_tool_guard.py -v
+```
+
+纯函数通过`importlib`加载hook模块在进程内测试。`main()`决策矩阵通过`subprocess`
+向脚本stdin写入JSON载荷并解析`hookSpecificOutput`来测试。子进程环境把
+`HOME`/`USERPROFILE`改到临时目录并设`REMY_LANG=en`，因此没有测试读取开发者真实的
+`remy-config.json`。断言只针对`permissionDecision`、`updatedInput`和
+`additionalContext`，不针对消息文本，因此在两种语言下都成立。
+
+覆盖的16条`main()`分支：Bash命令含与不含已有编码/miniforge标记；PowerShell含与不
+含Python命令；Plan agent的语言注入；Explore与general-purpose的确认门；未知agent类
+型静默落空；Write / Edit / NotebookEdit在证据未确认时拒绝；Write在证据确认后放行；
+项目内绝对路径改写为相对路径；项目外绝对路径请求确认；Read / Glob / Grep不受该门约
+束；kebab-case的三种结果（新文件拒绝、只有snake变体存在时改写、两者都存在时询问）；
+Edit的软提醒；lock文件警告；无任何路径的载荷静默退出；stdin非法JSON时fails open并
+写stderr。
+
+四个用例断言修复后的期望行为并带`pytest.mark.xfail(strict=True)`，修复缺陷后它们转
+为XPASS失败，提醒移除标记：
+
+| 用例 | 缺陷 |
+| :--- | :--- |
+| `test_does_not_reinject_when_encoding_already_set` | `inject_bash_env`的跳过条件要求命令同时含`PYTHONIOENCODING`与`miniforge3`，只含前者时会再注入一次（实测export出现2次）。 |
+| `test_evidence_entry_missing_id_is_rejected` | evidence条目缺`id`键时字典推导抛`KeyError`，被宽泛的`except`吞掉，`validate_packet`返回`(True, None)`，格式错误的packet因此放行全部写入。 |
+| `test_bash_is_subject_to_packet_validation` | Bash分支在`validate_packet`之前退出，因此`echo x > f`可在证据未确认时写文件。 |
+| `test_writing_to_the_active_packet_is_permitted` | 门禁拒绝对packet自身的写入，因此它自己要求的整改动作——把证据提升为`confirmed`——无法用Edit或Write完成。 |
+
+`test_validation_is_not_scoped_to_a_file_path`记录第五个问题但不带xfail标记，因为当
+前行为就是该断言所述：`proposed_changes`中任何一处未确认引用都会阻塞全部文件的编
+辑，`validate_packet`不接收`file_path`参数。
+
+断言强度经变异检验：删除suspected/stale检查、删除`inject_bash_env`中的Python判断、
+把`has_kebab_case`扩大到整个路径、把`path_is_contained`的`commonpath`比较换成字符串
+前缀，四个变异各自只破坏一条对应断言，无交叉。
+
+### 仍无行为覆盖的模块
+
+记录在此以免重复发现：
+
+| 模块 | 行数 | 唯一引用 | 未测内容 |
+| :--- | :--- | :--- | :--- |
+| `hooks/logic_dirty_tracker.py` | 58 | `test_cli_manifest.py`的清单哈希条目 | PostToolUse分派：非Edit/Write提前退出、缺`file_path`提前退出、`DirtyQueue.record`委派，以及吞掉全部异常的裸`except` |
+| `hooks/env_system/enforcer_hook.py` | 59 | 无 | `load_reminder_text`的语言选择、primary到fallback的文件顺序、"文件缺失"默认串 |
+| `remy-src/patch_descriptions.py` | 66 | 无 | `patch()`在`MAX_FRONTMATTER_LINES`内改写frontmatter、`lang`到`en`的回退、行未变化时的短路、文件缺失与JSON格式错误的告警 |
+
+`remy-src/patch_descriptions.py`在逻辑索引中显示被`test_mcp_minimal.py`调用；该边是
+与`unittest.mock.patch`的同名冲突，不是真实覆盖。
 
 ## 边界
 

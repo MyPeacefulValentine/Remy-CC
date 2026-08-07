@@ -240,6 +240,59 @@ to `judge_cache`, sent only the 3 files whose symbol sets changed through
 bootstrap, and reported 0 pending clusters. The two scans saw different change
 counts (20 versus 3), so the call counts are not a cost comparison.
 
+## Summary rewrite cost gating
+
+`summarizer.write_summary_version` compares the incoming payload against the
+immediately previous version's payload — the greatest version below the one being
+written, regardless of that version's status — and skips the parent
+`child_change_count` increment when they are equal. The row is still inserted and
+`refresh_node` still runs, so versions stay monotonic and the projection stays
+current. A missing predecessor, or one whose `summary` is NULL
+(`status='pending'`), counts as a change.
+`propagation.build_child_changes_payload` uses the same definition of "previous
+version", so a predecessor already marked `stale` serves as the comparison
+baseline instead of yielding `old_summary: null`. `run_propagation_pass` zeroes
+the counter when `child_changes` is empty; `propagate=false` still keeps the
+counter accumulating toward `REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY`.
+
+```
+python -m pytest Remy-CC/tests/test_summary_versions.py -k "ParentCounterBump or PromptExampleFieldContract" -v
+python -m pytest Remy-CC/tests/test_propagation.py -k "BuildChildChanges or RunPropagationPass" -v
+python -m pytest Remy-CC/tests/test_llm_judge.py -k PromptExampleFieldContract -v
+```
+
+`TestParentCounterBumpOnWrite` covers identical payload no-bump, differing
+payload still bumps, version still increments when the bump is skipped, payload
+equality across differing key order, a `pending` predecessor bumping again, a
+`stale` predecessor with identical text not bumping, and the same gating on the
+file-to-cluster edge. `TestBuildChildChanges` covers a `stale` predecessor used
+as baseline, identical text across a `stale` predecessor returning an empty list,
+and a `pending` predecessor yielding `old_summary: null`.
+`TestPromptExampleFieldContract` (in both `test_summary_versions.py` and
+`test_llm_judge.py`) parses the example payloads out of `summarize_file.md`,
+`summarize_cluster.md` and `judge_propagation.md` and asserts their key sets are
+subsets of what `_file_input`, `_cluster_input` and `build_prompt` actually emit.
+All three templates previously documented field names that no caller passed.
+
+Measurements on this repository's index that determined the comparison semantics:
+all 57 stored version transitions have a predecessor whose status is `stale`
+(symbol 34/34, file 18/18, cluster 4/4), because `scan_file` marks the current
+summary `stale` before the rewrite. Restricting the lookup to
+`status IN ('ok','oversized_warn')` therefore matches nothing — 0/57. Comparing
+against the immediately previous version regardless of status matches 11/34 at
+symbol level and 0/18 and 0/5 at file and cluster level, so the saving exists
+only on the symbol-to-file edge.
+
+Alpha normalization of symbol hashes was measured and rejected. Across the 39
+commit pairs in the last 40 commits, 5473 symbol comparisons produced 426 that
+the current hash treats as changed. Re-normalizing both sides through
+`ast.unparse` matched 0 of those 426, and additionally rewriting local variables
+and parameters to positional placeholders also matched 0. Controls confirm the
+probe: a pure local rename, a parameter rename, a quote-style change and a
+redundant-parens change were each detected, and a genuine `+1`-to-`+2` change was
+not. `_calculate_symbol_hash` already strips all whitespace and `_strip_comments`
+already removes comments, so no formatting-only class of change reaches the hash.
+
 ## P1.2.1 scan scope and parser cache identity
 
 Schema 11.0.0 adds `parser_contract_version`, `parser_backend`, and
@@ -372,6 +425,71 @@ python tests/tee_project_canary.py /path/to/tee_tee_os_framework --backend regex
 ```
 
 The full-project command rejects non-Git directories and revisions other than the recorded commit. It archives the committed tree into a system temporary directory before scanning, so it does not create a database in the input checkout. The JSON report contains the parser backend, scope, source revision, scan status, file/symbol/pattern/direct-edge/inferred-edge/function-pointer-edge counts, pattern counts by type, all file-and-type pattern sources, elapsed seconds, database bytes, and WAL bytes. The manifest can declare forbidden pattern facts for the fixed revision; P0.6 uses this to reject `c_fnptr_register` entries for the `pic1080s`, `pic1440s`, and `back_png` byte arrays. Timing and storage fields are observations, not pass/fail thresholds.
+
+## PreToolUse guard
+
+`hooks/pre_tool_guard.py` decides whether each Write / Edit / Bash / PowerShell /
+Agent call is allowed, rewritten, or denied. It had no behavioural coverage until
+this suite: the only prior reference was `test_install_manifest.py` asserting that
+its path appears in the install manifest.
+
+```
+python -m pytest Remy-CC/tests/test_pre_tool_guard.py -v
+```
+
+Pure helpers are exercised in-process through an `importlib` load of the hook
+module. The `main()` decision matrix is exercised by piping a JSON payload to the
+script through `subprocess` and parsing `hookSpecificOutput`. The subprocess
+environment overrides `HOME` / `USERPROFILE` to a temporary directory and sets
+`REMY_LANG=en`, so no test reads the developer's real `remy-config.json`.
+Assertions target `permissionDecision`, `updatedInput` and `additionalContext`
+only — never message wording — so they hold under either language.
+
+Sixteen `main()` branches are covered: Bash with and without an existing
+encoding/miniforge marker; PowerShell with and without a Python command; the Plan
+agent language injection; the Explore / general-purpose confirmation gate; an
+unknown agent type falling through silently; Write / Edit / NotebookEdit denial on
+unconfirmed evidence; Write allowed on confirmed evidence; an absolute path inside
+the project rewritten to relative; an absolute path outside the project asking for
+confirmation; Read / Glob / Grep exempt from that gate; the three kebab-case
+outcomes (deny on a new file, redirect when only the snake variant exists, ask when
+both exist); the Edit soft reminder; the lock-file warning; a payload without any
+path exiting silently; and malformed stdin failing open with a stderr note.
+
+Four cases assert the expected post-fix behaviour and carry
+`pytest.mark.xfail(strict=True)`, so fixing the defect turns them into XPASS
+failures that prompt removing the marker:
+
+| Case | Defect |
+| :--- | :--- |
+| `test_does_not_reinject_when_encoding_already_set` | The skip condition at `inject_bash_env` requires BOTH `PYTHONIOENCODING` and `miniforge3`, so a command that already sets the encoding is injected a second time (measured: the export appears twice). |
+| `test_evidence_entry_missing_id_is_rejected` | An evidence entry without an `id` key raises `KeyError` in the dict comprehension; the broad `except` swallows it and `validate_packet` returns `(True, None)`, so a malformed packet permits every write. |
+| `test_bash_is_subject_to_packet_validation` | The Bash branch exits before `validate_packet` runs, so `echo x > f` writes files while evidence is still unconfirmed. |
+| `test_writing_to_the_active_packet_is_permitted` | The guard denies writes to the packet itself, so the remediation it demands — promoting evidence to `confirmed` — cannot be performed with Edit or Write. |
+
+`test_validation_is_not_scoped_to_a_file_path` records a fifth issue without an
+xfail marker, because the current behaviour is what the assertion states: a single
+unconfirmed reference anywhere in `proposed_changes` blocks edits to every file,
+since `validate_packet` takes no `file_path` argument.
+
+Assertion strength was checked by mutation: dropping the suspected/stale check,
+dropping the Python detection in `inject_bash_env`, widening `has_kebab_case` to
+the whole path, and replacing the `commonpath` check in `path_is_contained` with a
+string prefix each broke exactly one assertion and no others.
+
+### Modules still without behavioural coverage
+
+Recorded so the gap is explicit rather than rediscovered:
+
+| Module | Lines | Only reference | What is untested |
+| :--- | :--- | :--- | :--- |
+| `hooks/logic_dirty_tracker.py` | 58 | `test_cli_manifest.py` manifest hash entry | PostToolUse dispatch: the non-Edit/Write early exit, the missing-`file_path` early exit, `DirtyQueue.record` delegation, and the bare `except` that swallows every failure |
+| `hooks/env_system/enforcer_hook.py` | 59 | none | `load_reminder_text` language selection, the primary-to-fallback file order, and the "files missing" default string |
+| `remy-src/patch_descriptions.py` | 66 | none | `patch()` frontmatter rewriting within `MAX_FRONTMATTER_LINES`, the `lang` to `en` fallback, the unchanged-line short circuit, and the missing-file / malformed-JSON warnings |
+
+`remy-src/patch_descriptions.py` appears in the logic index as being called from
+`test_mcp_minimal.py`; that edge is a same-name collision with
+`unittest.mock.patch` and not real coverage.
 
 ## Boundaries
 

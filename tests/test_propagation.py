@@ -59,6 +59,26 @@ def _seed_ok_summary(db, kind, ref, short="ok", version=1):
     db.commit()
 
 
+def _seed_summary(db, kind, ref, short, version, status):
+    payload = json.dumps({"short": short, "full": None}) if short is not None else None
+    db.execute(
+        "INSERT INTO summary_versions "
+        "(node_kind, node_ref, version, summary, status, created_at) "
+        "VALUES (?, ?, ?, ?, ?, '2025-01-01T00:00:00')",
+        (kind, ref, version, payload, status),
+    )
+    db.commit()
+
+
+def _seed_file_with_symbol(db):
+    db.execute("INSERT INTO files (path, struct_hash) VALUES ('a.py', 'h')")
+    db.execute(
+        "INSERT INTO symbols (file_path, name, type, name_tokens) "
+        "VALUES ('a.py', 'foo', 'function', 'foo')"
+    )
+    db.commit()
+
+
 class TestForceRecomputeCheck:
     def test_threshold_primary_fires(self, db, monkeypatch):
         monkeypatch.setenv("REMY_FORCE_RECOMPUTE_THRESHOLD_PRIMARY", "3")
@@ -181,6 +201,31 @@ class TestBuildChildChanges:
         changes = propagation.build_child_changes_payload(db, "cluster", "C")
         assert len(changes) == 1
         assert changes[0]["new_summary"]["short"] == "fv2"
+
+    def test_stale_predecessor_is_used_as_baseline(self, db):
+        _seed_file_with_symbol(db)
+        _seed_summary(db, "symbol", "a.py::foo", "before", 1, "stale")
+        _seed_summary(db, "symbol", "a.py::foo", "after", 2, "ok")
+        changes = propagation.build_child_changes_payload(db, "file", "a.py")
+        assert len(changes) == 1
+        assert changes[0]["old_summary"]["short"] == "before"
+        assert changes[0]["new_summary"]["short"] == "after"
+
+    def test_stale_predecessor_with_identical_text_returns_empty(self, db):
+        _seed_file_with_symbol(db)
+        _seed_summary(db, "symbol", "a.py::foo", "same", 1, "stale")
+        _seed_summary(db, "symbol", "a.py::foo", "same", 2, "ok")
+        assert propagation.build_child_changes_payload(db, "file", "a.py") == []
+
+    def test_pending_predecessor_yields_null_old_summary(self, db):
+        _seed_file_with_symbol(db)
+        _seed_summary(db, "symbol", "a.py::foo", "first", 1, "ok")
+        _seed_summary(db, "symbol", "a.py::foo", None, 2, "pending")
+        _seed_summary(db, "symbol", "a.py::foo", "first", 3, "ok")
+        changes = propagation.build_child_changes_payload(db, "file", "a.py")
+        assert len(changes) == 1
+        assert changes[0]["old_summary"] is None
+        assert changes[0]["new_summary"]["short"] == "first"
 
 
 class TestRewriteParentSummary:
@@ -376,3 +421,29 @@ class TestRunPropagationPass:
     def test_skipped_when_db_is_none(self):
         result = propagation.run_propagation_pass(None, _StubLlm())
         assert result is None
+
+    def test_empty_child_changes_zeroes_counter(self, db, monkeypatch):
+        import llm_judge
+
+        _seed_file_with_symbol(db)
+        _seed_ok_summary(db, "file", "a.py", short="file_v1")
+        _seed_summary(db, "symbol", "a.py::foo", "same", 1, "stale")
+        _seed_summary(db, "symbol", "a.py::foo", "same", 2, "ok")
+        _seed_counter(db, "file", "a.py", child=3)
+
+        judge_called = {"count": 0}
+
+        def fake_judge(*_a, **_k):
+            judge_called["count"] += 1
+            return {"propagate": True}
+
+        monkeypatch.setattr(llm_judge, "judge_propagation", fake_judge)
+        stats = propagation.run_propagation_pass(db, _StubLlm())
+        assert stats["file_skip"] == 1
+        assert stats["errors"] == 0
+        assert judge_called["count"] == 0
+        counter = db.execute(
+            "SELECT child_change_count FROM node_change_counters "
+            "WHERE node_kind='file' AND node_ref='a.py'"
+        ).fetchone()
+        assert counter[0] == 0

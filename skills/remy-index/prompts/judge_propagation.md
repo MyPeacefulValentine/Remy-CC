@@ -27,28 +27,32 @@ Conservative bias (mandatory when uncertain):
 - False negatives (failure to propagate) are worse than false positives
   (one extra rewrite).
 
+``children`` lists only the child nodes whose summary text changed. ``old_summary``
+is null when the child has no earlier summary text to compare against, which by
+itself is not evidence of a contract change.
+
 Examples:
 
 Input:
-{"parent": "OrderService.checkout", "child_changes": [{"symbol": "OrderService.checkout", "diff_summary": "Return type changed from bool to OrderResult"}]}
+{"parent_kind": "file", "parent_ref": "orders/service.py", "parent_summary": {"short": "Orchestrates checkout and payment capture.", "full": null}, "children": [{"child_ref": "orders/service.py::OrderService.checkout", "old_summary": {"short": "Return a bool for checkout success.", "full": null}, "new_summary": {"short": "Return OrderResult carrying status and id.", "full": null}}]}
 
 Output:
 {"propagate": true, "rationale": "Return type change is a signature break visible to callers.", "matched_dimension": "signature", "confidence": "high"}
 
 Input:
-{"parent": "sort_items", "child_changes": [{"symbol": "sort_items", "diff_summary": "Replaced bubble sort with std::sort; same O(n log n) tier"}]}
+{"parent_kind": "file", "parent_ref": "utils/sorting.py", "parent_summary": {"short": "In-place ordering helpers for record batches.", "full": null}, "children": [{"child_ref": "utils/sorting.py::sort_items", "old_summary": {"short": "Order records with a bubble pass.", "full": null}, "new_summary": {"short": "Order records via the standard library sort.", "full": null}}]}
 
 Output:
 {"propagate": false, "rationale": "Same-tier algorithm swap; observable contract unchanged.", "matched_dimension": "internal_refactor", "confidence": "high"}
 
 Input:
-{"parent": "ParseConfig.load", "child_changes": [{"symbol": "_validate", "diff_summary": "Added new field validation; behavior unclear from diff"}]}
+{"parent_kind": "file", "parent_ref": "config/parser.py", "parent_summary": {"short": "Loads and validates configuration documents.", "full": null}, "children": [{"child_ref": "config/parser.py::_validate", "old_summary": null, "new_summary": {"short": "Check required and conditional fields.", "full": null}}]}
 
 Output:
-{"propagate": true, "rationale": "Validation change may surface as new exceptions to callers.", "matched_dimension": "ambiguous", "confidence": "low"}
+{"propagate": true, "rationale": "No baseline summary exists, so a new exception surface cannot be ruled out.", "matched_dimension": "ambiguous", "confidence": "low"}
 
 Input:
-{"parent": "AuthHandler.authenticate", "child_changes": [{"symbol": "_check_password", "diff_summary": "Switched from MD5 to bcrypt"}]}
+{"parent_kind": "cluster", "parent_ref": "auth", "parent_summary": {"short": "Credential verification and session issuance.", "full": "[Role] Owns password checks and token minting.\n[API] authenticate(credentials) -> Session.\n[Inbound] api/middleware calls authenticate at request entry."}, "children": [{"child_ref": "auth/handler.py", "old_summary": {"short": "Compares MD5 digests against the user store.", "full": null}, "new_summary": {"short": "Verifies passwords with bcrypt against the user store.", "full": null}}]}
 
 Output:
 {"propagate": true, "rationale": "Hash algorithm change affects stored credential compatibility.", "matched_dimension": "security", "confidence": "high"}

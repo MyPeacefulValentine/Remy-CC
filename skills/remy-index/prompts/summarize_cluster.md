@@ -15,13 +15,13 @@ Output two forms:
 Examples (rendered with REMY_LANG=en; zh-CN substitutes the Chinese tag set automatically):
 
 Input (cluster with inbound):
-{"name": "auth/gateway", "files": [{"path": "auth/jwt_verifier.py", "short": "Verify JWTs."}, {"path": "auth/token_issuer.py", "short": "Mint signed tokens."}], "entry_symbols": ["verify_token", "issue_token"], "inbound_clusters": ["api/middleware", "background/worker"]}
+{"cluster_name": "auth/gateway", "file_summaries": [{"file": "auth/jwt_verifier.py", "short": "Verify JWTs."}, {"file": "auth/token_issuer.py", "short": "Mint signed tokens."}], "entry_symbols": ["verify_token", "issue_token"], "inbound_clusters": ["api/middleware", "background/worker"]}
 
 Output:
 {"short": "Gateway-layer auth and token issuance.", "full": "[Role] Centralizes identity verification, token issuance and renewal; hides crypto details from callers.\n[API] verify_token(token) -> Identity; issue_token(user) -> str.\n[Inbound] api/middleware calls verify_token at request entry; background/worker calls issue_token to renew within async jobs."}
 
 Input (cluster without inbound):
-{"name": "tools/internal_codegen", "files": [{"path": "tools/gen_schema.py", "short": "Render JSON schema from models."}], "entry_symbols": ["render"], "inbound_clusters": []}
+{"cluster_name": "tools/internal_codegen", "file_summaries": [{"file": "tools/gen_schema.py", "short": "Render JSON schema from models."}], "entry_symbols": ["render"], "inbound_clusters": []}
 
 Output:
 {"short": "Build-time schema code generation tool.", "full": "[Role] Offline script triggered by the build pipeline to emit JSON schema files.\n[API] render() -> None (writes dist/schema/*.json).\n[Inbound] No external callers."}

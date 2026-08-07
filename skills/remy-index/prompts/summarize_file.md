@@ -41,40 +41,44 @@ The file is an entry script or main program. Describe the startup flow,
 top-level side effects, and CLI surface. Output ``full`` as null.
 {% endif %}
 
+``symbol_summaries`` carries only the symbols that already hold a summary, so it
+may be shorter than the file's full symbol list. ``imports`` lists project-internal
+file paths this file depends on.
+
 Examples:
 
 Input (kind_hint=cohesive):
-{"path": "auth/jwt_verifier.py", "symbols": ["verify_token", "_decode", "_check_expiry"], "kind_hint": "cohesive"}
+{"file_path": "auth/jwt_verifier.py", "kind_hint": "cohesive", "symbol_summaries": [{"name": "verify_token", "short": "Reject expired or tampered JWTs."}, {"name": "_decode", "short": "[Util] Split and base64-decode the token."}, {"name": "_check_expiry", "short": "Compare exp claim against current time."}], "imports": ["auth/keyring.py", "common/clock.py"]}
 
 Output:
 {"short": "Verifies JWT tokens and rejects expired or tampered payloads.", "full": null}
 
 Input (kind_hint=low_cohesion):
-{"path": "utils/string_helpers.py", "symbols": ["slugify", "truncate", "strip_html", "camel_to_snake"], "kind_hint": "low_cohesion"}
+{"file_path": "utils/string_helpers.py", "kind_hint": "low_cohesion", "symbol_summaries": [{"name": "slugify", "short": "[Util] Normalize text into a URL slug."}, {"name": "truncate", "short": "[Util] Cut text at a boundary with ellipsis."}, {"name": "strip_html", "short": "[Util] Remove markup and unescape entities."}, {"name": "camel_to_snake", "short": "[Util] Convert camelCase into snake_case."}], "imports": []}
 
 Output:
 {"short": "Heterogeneous string utilities (slug/truncate/sanitize/case).", "full": "[Format] slugify, truncate; [Sanitize] strip_html; [Naming] camel_to_snake."}
 
 Input (kind_hint=trivial):
-{"path": "constants.py", "symbols": ["MAX_RETRIES", "DEFAULT_TIMEOUT"], "kind_hint": "trivial"}
+{"file_path": "http/constants.py", "kind_hint": "trivial", "symbol_summaries": [{"name": "default_timeouts", "short": "Return the connect/read timeout pair."}], "imports": []}
 
 Output:
 {"short": "Module-level retry/timeout constants for the HTTP client.", "full": null}
 
 Input (kind_hint=abstract):
-{"path": "storage/base.py", "symbols": ["StorageBackend", "TransactionContext"], "kind_hint": "abstract"}
+{"file_path": "storage/base.py", "kind_hint": "abstract", "symbol_summaries": [{"name": "StorageBackend", "short": "Abstract get/put/delete contract."}, {"name": "StorageBackend.transaction", "short": "Yield a transactional scope to callers."}, {"name": "TransactionContext", "short": "Track pending writes until commit."}], "imports": ["storage/errors.py"]}
 
 Output:
 {"short": "Abstract storage contract: get/put/transaction with default retry wiring.", "full": null}
 
 Input (kind_hint=schema):
-{"path": "models/order.py", "symbols": ["Order", "OrderItem", "OrderStatus"], "kind_hint": "schema"}
+{"file_path": "models/order.py", "kind_hint": "schema", "symbol_summaries": [{"name": "Order", "short": "Order header with customer and total."}, {"name": "OrderItem", "short": "Line item with sku, qty and price."}, {"name": "OrderStatus", "short": "Lifecycle enum for order state."}], "imports": ["models/base.py"]}
 
 Output:
 {"short": "Order schema: header + line items + lifecycle status enum.", "full": "Order(id, customer_id, status, total); OrderItem(order_id, sku, qty, price); OrderStatus enum (DRAFT/PAID/SHIPPED/CANCELLED)."}
 
 Input (kind_hint=entry):
-{"path": "cli/main.py", "symbols": ["main", "_parse_args", "_setup_logging"], "kind_hint": "entry"}
+{"file_path": "cli/main.py", "kind_hint": "entry", "symbol_summaries": [{"name": "main", "short": "Parse argv and dispatch to a handler."}, {"name": "_parse_args", "short": "[Util] Build the argument parser."}, {"name": "_setup_logging", "short": "[Sink] Configure handlers and levels."}], "imports": ["cli/commands.py", "common/logging_config.py"]}
 
 Output:
 {"short": "CLI entry: parse argv, init logging, dispatch to subcommand handler.", "full": null}
