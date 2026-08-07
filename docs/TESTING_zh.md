@@ -315,6 +315,42 @@ B2-A验证基线为全量648项测试通过（新增6项：`test_remy_config.py`
 被搜索隐藏的已修改字段仍被保存）。注册表测试断言全部58项字段到组的精确归属
 及代表性消费者的`restart_scope`取值。两次Pyright运行均为0错误0警告。
 
+## 调用边解析：形态降级与import补链
+
+schema 12.0.0为`edges`增加`call_form`（`name` / `attribute`，默认`name`），为`files`
+增加`import_bindings`（parser无法映射到项目文件的导入绑定，JSON列表）。Python解析器
+区分`ast.Name`与`ast.Attribute`调用并收集未解析导入绑定；C/C++与TypeScript解析器不
+变，两列保持默认值。11.0.0到12.0.0 migration幂等加列；在`edges`表尚不存在的早期阶梯
+起点上，handler跳过该ALTER，表随后由`SCHEMA_SQL`以含新列的定义创建。
+
+`_resolve_call_edges`在每次postprocess从全库`import_bindings`内存派生两组数据，不落
+盘、与文件扫描顺序无关：模块名对已索引Python文件的唯一路径后缀匹配（`pkg/mod.py`或
+`pkg/mod/__init__.py`；多重命中视为不确定）成为import层补充；无命中（stdlib经
+`sys.stdlib_module_names`短路）把绑定名标记为外部。裸名callee命中外部集合时跳过全局
+回退。属性调用在import层或全局层命中时降级为`speculative`；同文件层豁免，
+`self.method()`类内调用保持`definite`。降级的单候选边不写入`edge_candidates`。
+
+```
+python -m pytest Remy-CC/tests/test_struct_scan.py -k ResolveCallEdges -v
+python -m pytest Remy-CC/tests/test_migration_ladder.py -k v11_to_v12 -v
+```
+
+验证记录（2026-08-08，双实现对同一97文件语料全量重扫）：
+
+- provenance分布：definite 1366→1706、probable 1543→101、speculative 223→1322、
+  未解析4854→4857。`test_mcp_minimal.py`对`patch_descriptions.py::patch`的同名假边
+  从`probable`变为未绑定。
+- pyright全图真值（复用`eval/gen_gt.py`的`LspClient`单会话收割93文件、708调用方、
+  1521条项目内边，47.8秒、0错误；按A1.1先例为一次性探针，不设永久harness）：
+  static-only口径（definite+probable）精确率0.712→0.919；全解析口径precision
+  0.691→0.693、recall 0.951→0.952。109条属性形式的真实调用（如
+  `remy_config.load_config`）按降级规则进入`speculative`，解析目标保持正确。残余
+  `probable`层（40条GT可判定的裸名全局单候选）实测精确率0.025。
+- 查询层零改动：flow输出的`call [name-match]`与`call [speculative resolution]`标签
+  及其测试早于本轮存在（提交`ad687885`）；`static_only`过滤集合
+  `IN ('definite','probable')`未变，降级边自动退出static-only输出。
+- TEE canary：fixture双后端与固定断言零回归；C/C++边的`call_form`保持默认`name`。
+
 ## 公开TEE canary
 
 已提交fixture来自`openharmony-sig/tee_tee_os_framework`的`b11ffb19d83da42047cc0b5cbfbbfb95ba3304f4`提交，许可证为MulanPSL-2.0。清单记录每个复制文件的Git blob SHA。fixture保留上游许可证和源码文件头。CI不访问网络。

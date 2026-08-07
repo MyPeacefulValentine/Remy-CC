@@ -18,11 +18,13 @@ class ImportVisitor(ast.NodeVisitor):
         self.root_dir = root_dir
         self.current_dir = os.path.dirname(current_file_path)
         self.internal_imports = {}
+        self._unresolved = {}
 
     def visit_Import(self, node):
         for alias in node.names:
             has_alias = alias.asname is not None
-            self._add_import(alias.name, has_alias)
+            if not self._add_import(alias.name, has_alias):
+                self._record_unresolved(alias.name, alias.asname or alias.name.split('.')[0])
 
     def visit_ImportFrom(self, node):
         module = node.module or ""
@@ -34,8 +36,22 @@ class ImportVisitor(ast.NodeVisitor):
                 full_name = alias.name
             if self._add_import(full_name, has_alias, node.level):
                 continue
-            if module:
-                self._add_import(module, has_alias, node.level)
+            if module and self._add_import(module, has_alias, node.level):
+                continue
+            if node.level == 0 and module:
+                self._record_unresolved(module, alias.asname or alias.name)
+
+    def _record_unresolved(self, module_name, bound_name):
+        names = self._unresolved.setdefault(module_name, [])
+        if bound_name not in names:
+            names.append(bound_name)
+
+    @property
+    def unresolved_bindings(self):
+        return [
+            {"module": module, "names": names}
+            for module, names in sorted(self._unresolved.items())
+        ]
 
     def _add_import(self, module_name, has_alias, level=0):
         if module_name:
@@ -132,6 +148,15 @@ class PythonParser(LanguageParser):
         visitor.visit(tree)
         return visitor.internal_imports
 
+    def collect_import_bindings(self, source, file_path, root_dir):
+        try:
+            tree = self._get_tree(source)
+        except SyntaxError:
+            return []
+        visitor = ImportVisitor(root_dir, file_path)
+        visitor.visit(tree)
+        return visitor.unresolved_bindings
+
     def collect_used_names(self, source):
         try:
             tree = self._get_tree(source)
@@ -224,15 +249,18 @@ class PythonParser(LanguageParser):
 
             if isinstance(node, ast.Call) and function_stack:
                 callee = None
+                call_form = "name"
                 if isinstance(node.func, ast.Name):
                     callee = node.func.id
                 elif isinstance(node.func, ast.Attribute):
                     callee = node.func.attr
+                    call_form = "attribute"
                 if callee:
                     edges.append(EdgeInfo(
                         caller=function_stack[-1],
                         callee=callee,
                         line=node.lineno,
+                        call_form=call_form,
                     ))
 
             child_class = None

@@ -20,6 +20,7 @@ _migrate_v7_to_v8 = migrations._migrate_v7_to_v8
 _migrate_v8_to_v9 = migrations._migrate_v8_to_v9
 _migrate_v9_to_v10 = migrations._migrate_v9_to_v10
 _migrate_v10_to_v11 = migrations._migrate_v10_to_v11
+_migrate_v11_to_v12 = migrations._migrate_v11_to_v12
 _resolve_migration_path = migrations._resolve_migration_path
 SCHEMA_SQL = schema.SCHEMA_SQL
 VERSION = schema.VERSION
@@ -238,14 +239,15 @@ def test_migration_handlers_registered():
         ("8.0.0", "9.0.0"),
         ("9.0.0", "10.0.0"),
         ("10.0.0", "11.0.0"),
+        ("11.0.0", "12.0.0"),
     )
     for step in expected:
         assert step in MIGRATION_HANDLERS
         assert callable(MIGRATION_HANDLERS[step])
 
 
-def test_version_constant_is_v11():
-    assert VERSION == "11.0.0"
+def test_version_constant_is_v12():
+    assert VERSION == "12.0.0"
 
 
 def test_migration_modules_import_without_parsers():
@@ -663,6 +665,70 @@ def test_v10_to_v11_rolls_back_on_failure(tmp_path):
     assert real_db.execute(
         "SELECT COUNT(*) FROM migration_log "
         "WHERE from_version='10.0.0' AND to_version='11.0.0'"
+    ).fetchone()[0] == 0
+    real_db.close()
+
+
+def _make_v11_db(path):
+    db = _make_v10_db(path)
+    _migrate_v10_to_v11(db)
+    db.execute("UPDATE meta SET value='11.0.0' WHERE key='version'")
+    db.commit()
+    return db
+
+
+def test_v11_to_v12_adds_call_form_and_import_bindings_and_preserves_facts(tmp_path):
+    db = _make_v11_db(tmp_path / "logic_index.db")
+    before_symbols = db.execute(
+        "SELECT file_path,name,hash FROM symbols ORDER BY file_path,name"
+    ).fetchall()
+    before_edges = db.execute(
+        "SELECT source_file,caller,callee,provenance FROM edges "
+        "ORDER BY source_file,caller,callee"
+    ).fetchall()
+    _migrate_v11_to_v12(db)
+    edge_columns = {column[1] for column in db.execute("PRAGMA table_info(edges)")}
+    assert "call_form" in edge_columns
+    file_columns = {column[1] for column in db.execute("PRAGMA table_info(files)")}
+    assert "import_bindings" in file_columns
+    assert db.execute(
+        "SELECT import_bindings FROM files WHERE path='src/foo.py'"
+    ).fetchone() == ("[]",)
+    forms = {row[0] for row in db.execute("SELECT call_form FROM edges")}
+    assert forms <= {"name"}
+    assert db.execute(
+        "SELECT file_path,name,hash FROM symbols ORDER BY file_path,name"
+    ).fetchall() == before_symbols
+    assert db.execute(
+        "SELECT source_file,caller,callee,provenance FROM edges "
+        "ORDER BY source_file,caller,callee"
+    ).fetchall() == before_edges
+    db.close()
+
+
+def test_v11_to_v12_reentry_is_idempotent(tmp_path):
+    db = _make_v11_db(tmp_path / "logic_index.db")
+    for _ in range(3):
+        _migrate_v11_to_v12(db)
+    assert db.execute(
+        "SELECT COUNT(*) FROM migration_log "
+        "WHERE from_version='11.0.0' AND to_version='12.0.0'"
+    ).fetchone()[0] == 1
+    db.close()
+
+
+def test_v11_to_v12_rolls_back_on_failure(tmp_path):
+    real_db = _make_v11_db(tmp_path / "logic_index.db")
+    wrapper = _FailOnMatch(real_db, "import_bindings")
+    with pytest.raises(sqlite3.IntegrityError):
+        _migrate_v11_to_v12(wrapper)
+    edge_columns = {column[1] for column in real_db.execute("PRAGMA table_info(edges)")}
+    assert "call_form" not in edge_columns
+    file_columns = {column[1] for column in real_db.execute("PRAGMA table_info(files)")}
+    assert "import_bindings" not in file_columns
+    assert real_db.execute(
+        "SELECT COUNT(*) FROM migration_log "
+        "WHERE from_version='11.0.0' AND to_version='12.0.0'"
     ).fetchone()[0] == 0
     real_db.close()
 

@@ -86,7 +86,7 @@ class TestProjectionCreation:
             for row in db.execute("PRAGMA index_list(retrieval_documents)").fetchall()
         }
         assert {"idx_retrieval_kind", "idx_retrieval_file"}.issubset(indexes)
-        assert VERSION == "11.0.0"
+        assert VERSION == "12.0.0"
 
     def test_shared_tokenizer_handles_supported_name_forms(self):
         from symbol_names import tokenize_symbol

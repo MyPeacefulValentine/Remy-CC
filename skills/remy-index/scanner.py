@@ -299,6 +299,7 @@ class StructScanner:
             return rel_path
 
         imports = parser.resolve_imports(source, file_path, self.root_dir)
+        import_bindings = parser.collect_import_bindings(source, file_path, self.root_dir)
         selection = select_symbols(parser.parse_symbols(source, file_path))
         symbols = selection.canonical_symbols
         call_edges = parser.extract_call_graph(source, file_path)
@@ -329,20 +330,23 @@ class StructScanner:
             identity.contract_version,
             identity.backend,
             identity.environment,
+            json.dumps(import_bindings),
             rel_path,
         )
         if existing:
             self.db.execute(
                 "UPDATE files SET struct_hash=?, language=?, layer=?, imports=?, "
-                "parser_contract_version=?, parser_backend=?, parser_environment=? "
+                "parser_contract_version=?, parser_backend=?, parser_environment=?, "
+                "import_bindings=? "
                 "WHERE path=?",
                 file_values,
             )
         else:
             self.db.execute(
                 "INSERT INTO files (path, struct_hash, language, layer, imports, "
-                "parser_contract_version, parser_backend, parser_environment) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "parser_contract_version, parser_backend, parser_environment, "
+                "import_bindings) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
                 (rel_path,) + file_values[:-1],
             )
 
@@ -420,16 +424,19 @@ class StructScanner:
             if key in seen_edges:
                 if e.line < seen_edges[key]["line"]:
                     seen_edges[key]["line"] = e.line
+                if e.call_form == "name":
+                    seen_edges[key]["call_form"] = "name"
                 continue
             seen_edges[key] = {
                 "caller": e.caller, "callee": e.callee, "line": e.line,
                 "provenance": e.provenance, "synthesized_from": e.synthesized_from, "via": e.via,
+                "call_form": e.call_form,
             }
         for edge in seen_edges.values():
             self.db.execute(
-                "INSERT INTO edges (source_file, caller, callee, line, provenance, synthesized_from, via) VALUES (?,?,?,?,?,?,?)",
+                "INSERT INTO edges (source_file, caller, callee, line, provenance, synthesized_from, via, call_form) VALUES (?,?,?,?,?,?,?,?)",
                 (rel_path, edge["caller"], edge["callee"], edge["line"],
-                 edge["provenance"], edge["synthesized_from"], edge["via"])
+                 edge["provenance"], edge["synthesized_from"], edge["via"], edge["call_form"])
             )
 
         for pat in pattern_list:
@@ -442,24 +449,80 @@ class StructScanner:
 
         return rel_path
 
+    def _derive_import_bindings(self):
+        """Derive per-file import supplements and external name sets.
+
+        Reads every file's unresolved import bindings and matches each module
+        name against the indexed Python files by unique path suffix
+        (``pkg/mod.py`` or ``pkg/mod/__init__.py``). A unique match becomes an
+        import supplement for the resolver's import layer; no match marks the
+        bound names as external (stdlib modules short-circuit via
+        ``sys.stdlib_module_names``); multiple matches are inconclusive and
+        produce neither. Derived in memory on every postprocess pass, so the
+        result is independent of file scan order.
+        """
+        rows = self.db.execute(
+            "SELECT path, import_bindings FROM files ORDER BY path"
+        ).fetchall()
+        py_paths = [r[0] for r in rows if r[0].endswith(".py")]
+        stdlib_names = getattr(sys, "stdlib_module_names", frozenset())
+
+        def _suffix_hits(module_name):
+            parts = module_name.split(".")
+            suffixes = ("/".join(parts) + ".py", "/".join(parts) + "/__init__.py")
+            hits = []
+            for path in py_paths:
+                for suffix in suffixes:
+                    if path == suffix or path.endswith("/" + suffix):
+                        hits.append(path)
+                        break
+            return hits
+
+        supplements = {}
+        externals = {}
+        for source_file, bindings_json in rows:
+            try:
+                bindings = json.loads(bindings_json) if bindings_json else []
+            except (TypeError, ValueError):
+                bindings = []
+            for binding in bindings:
+                module_name = binding.get("module") or ""
+                names = binding.get("names") or []
+                if not module_name:
+                    continue
+                if module_name.split(".")[0] in stdlib_names:
+                    externals.setdefault(source_file, set()).update(names)
+                    continue
+                hits = _suffix_hits(module_name)
+                if len(hits) == 1:
+                    supplements.setdefault(source_file, []).append(hits[0])
+                elif not hits:
+                    externals.setdefault(source_file, set()).update(names)
+        return supplements, externals
+
     def _resolve_call_edges(self):
         fanout_cap = _env_int("RESOLVE_FANOUT_CAP", 10)
         score_same = _env_int("RESOLVE_SCORE_SAME_FILE", 2)
         score_import = _env_int("RESOLVE_SCORE_DIRECT_IMPORT", 1)
         score_global = _env_int("RESOLVE_SCORE_GLOBAL", 0)
 
+        supplements, external_names = self._derive_import_bindings()
+
         unresolved = self.db.execute(
-            "SELECT id, source_file, callee FROM edges "
+            "SELECT id, source_file, callee, call_form FROM edges "
             "WHERE callee_qualified IS NULL "
             "AND (provenance != 'inferred' OR provenance IS NULL) "
             "ORDER BY source_file, caller, callee, COALESCE(line, 0), id"
         ).fetchall()
 
-        for edge_id, source_file, callee_name in unresolved:
+        for edge_id, source_file, callee_name, call_form in unresolved:
             imports_row = self.db.execute(
                 "SELECT imports FROM files WHERE path = ?", (source_file,)
             ).fetchone()
             import_list = json.loads(imports_row[0]) if imports_row and imports_row[0] else []
+            for extra in supplements.get(source_file, ()):
+                if extra not in import_list:
+                    import_list.append(extra)
 
             candidates = []
 
@@ -485,6 +548,8 @@ class StructScanner:
                         candidates.append((q, score_import))
 
             if not candidates:
+                if call_form != "attribute" and callee_name in external_names.get(source_file, ()):
+                    continue
                 global_syms = self.db.execute(
                     "SELECT file_path || '::' || name FROM symbols "
                     "WHERE (name = ? OR short_name = ?) AND file_path != ? "
@@ -502,6 +567,8 @@ class StructScanner:
             best_file = best.split("::")[0] if "::" in best else None
 
             if len(candidates) > 1 and candidates[0][1] == candidates[1][1]:
+                provenance = "speculative"
+            elif call_form == "attribute" and candidates[0][1] < score_same:
                 provenance = "speculative"
             elif candidates[0][1] >= score_import:
                 provenance = "definite"

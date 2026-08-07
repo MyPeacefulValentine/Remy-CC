@@ -410,6 +410,55 @@ asserts the exact field-to-group assignment for all 58 fields and the
 documented `restart_scope` values of representative consumers. Both Pyright
 runs report zero errors and zero warnings.
 
+## Call-edge resolution: form downgrade and import supplements
+
+Schema 12.0.0 adds `call_form` to `edges` (`name` / `attribute`, default `name`)
+and `import_bindings` to `files` (import bindings the parser could not map to a
+project file, as a JSON list). The Python parser distinguishes `ast.Name` from
+`ast.Attribute` calls and collects unresolved import bindings; the C/C++ and
+TypeScript parsers are unchanged and keep both defaults. The 11.0.0 to 12.0.0
+migration adds the columns idempotently; on ladders starting before `edges`
+existed the handler skips that ALTER and `SCHEMA_SQL` later creates the table
+with the new column in place.
+
+`_resolve_call_edges` derives two data sets from all stored `import_bindings`
+on every postprocess pass, in memory and independent of file scan order: a
+unique path-suffix match of the module name against indexed Python files
+(`pkg/mod.py` or `pkg/mod/__init__.py`; multiple hits are inconclusive) becomes
+an import-layer supplement, and a miss (stdlib modules short-circuit via
+`sys.stdlib_module_names`) marks the bound names as external. A bare-name
+callee found in the external set skips the global fallback. Attribute calls
+resolved at the import or global layer are downgraded to `speculative`;
+same-file hits are exempt, so `self.method()` calls stay `definite`. Downgraded
+single-candidate edges are not written to `edge_candidates`.
+
+```
+python -m pytest Remy-CC/tests/test_struct_scan.py -k ResolveCallEdges -v
+python -m pytest Remy-CC/tests/test_migration_ladder.py -k v11_to_v12 -v
+```
+
+Verification record (2026-08-08, both implementations full-scanning the same
+97-file corpus):
+
+- Provenance distribution: definite 1366→1706, probable 1543→101, speculative
+  223→1322, unresolved 4854→4857. The same-name false edge from
+  `test_mcp_minimal.py` to `patch_descriptions.py::patch` went from `probable`
+  to unbound.
+- Pyright full-graph ground truth (one `LspClient` session from `eval/gen_gt.py`
+  harvesting 93 files, 708 callers, 1521 in-project edges in 47.8 s with zero
+  errors; a one-off probe per the A1.1 precedent, no permanent harness):
+  static-only precision (definite+probable) 0.712→0.919; all-resolved precision
+  0.691→0.693 and recall 0.951→0.952. 109 true attribute-form calls (e.g.
+  `remy_config.load_config`) moved into `speculative` under the downgrade rule
+  while keeping the correct target. The remaining `probable` layer (40
+  GT-decidable bare-name global single candidates) measured 0.025 precision.
+- No query-layer changes: the flow labels `call [name-match]` and
+  `call [speculative resolution]` and their tests predate this work (commit
+  `ad687885`), and the `static_only` filter `IN ('definite','probable')` is
+  unchanged, so downgraded edges drop out of static-only output automatically.
+- TEE canary: both fixture backends and their fixed assertions show no
+  regression; `call_form` stays at the `name` default for C/C++ edges.
+
 ## Public TEE canary
 
 The committed fixture comes from `openharmony-sig/tee_tee_os_framework` commit `b11ffb19d83da42047cc0b5cbfbbfb95ba3304f4` under MulanPSL-2.0. Its manifest records each copied file's Git blob SHA. The fixture retains the upstream license and source headers. CI does not access the network.

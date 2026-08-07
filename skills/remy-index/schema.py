@@ -3,7 +3,7 @@
 from retrieval_projection import RETRIEVAL_SCHEMA_SQL
 
 
-VERSION = "11.0.0"
+VERSION = "12.0.0"
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS files (
     path TEXT PRIMARY KEY,
@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS files (
     actual_kind TEXT,
     parser_contract_version TEXT NOT NULL DEFAULT '',
     parser_backend TEXT NOT NULL DEFAULT '',
-    parser_environment TEXT NOT NULL DEFAULT '{}'
+    parser_environment TEXT NOT NULL DEFAULT '{}',
+    import_bindings TEXT NOT NULL DEFAULT '[]'
 );
 CREATE TABLE IF NOT EXISTS symbols (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,7 +58,8 @@ CREATE TABLE IF NOT EXISTS edges (
     line INTEGER,
     provenance TEXT,
     synthesized_from TEXT,
-    via TEXT
+    via TEXT,
+    call_form TEXT NOT NULL DEFAULT 'name'
 );
 CREATE TABLE IF NOT EXISTS edge_candidates (
     edge_id INTEGER NOT NULL REFERENCES edges(id) ON DELETE CASCADE,

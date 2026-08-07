@@ -69,6 +69,7 @@ class EdgeInfo:
     provenance: Optional[str] = None
     synthesized_from: Optional[str] = None
     via: Optional[str] = None
+    call_form: str = "name"
 
 
 class LanguageParser(ABC):
@@ -119,6 +120,13 @@ class LanguageParser(ABC):
     def extract_patterns(self, source: str, file_path: str) -> list:
         """Extract event/callback registration patterns from source.
         Returns list of dicts: {pattern_type, signal_name, handler, line, metadata}.
+        """
+        return []
+
+    def collect_import_bindings(self, source: str, file_path: str, root_dir: str) -> list:
+        """Collect import bindings that resolve_imports could not map to a project file.
+        Returns list of dicts: {"module": dotted module name, "names": [bound local names]}.
+        Languages without name-binding import semantics keep the empty default.
         """
         return []
 

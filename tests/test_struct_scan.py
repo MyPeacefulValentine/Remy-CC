@@ -64,7 +64,7 @@ def _normalized_current_state(db):
     return {
         "files": db.execute(
             "SELECT path,struct_hash,language,layer,imports,kind_hint,actual_kind,"
-            "parser_contract_version,parser_backend,parser_environment "
+            "parser_contract_version,parser_backend,parser_environment,import_bindings "
             "FROM files ORDER BY path"
         ).fetchall(),
         "symbols": db.execute(
@@ -78,7 +78,7 @@ def _normalized_current_state(db):
         ).fetchall(),
         "edges": db.execute(
             "SELECT source_file,caller,callee,callee_file,callee_qualified,line,provenance,"
-            "synthesized_from,via FROM edges ORDER BY source_file,caller,callee,"
+            "synthesized_from,via,call_form FROM edges ORDER BY source_file,caller,callee,"
             "callee_qualified,line,provenance,via"
         ).fetchall(),
         "edge_candidates": db.execute(
@@ -119,7 +119,7 @@ class TestInitDb:
     def test_version_in_meta(self, scanner):
         row = scanner.db.execute("SELECT value FROM meta WHERE key='version'").fetchone()
         assert row is not None
-        assert row[0] == "11.0.0"
+        assert row[0] == "12.0.0"
 
     def test_wal_mode_enabled(self, scanner):
         mode = scanner.db.execute("PRAGMA journal_mode").fetchone()[0]
@@ -176,7 +176,7 @@ class TestInitDb:
 
         scanner = StructScanner(str(tmp_path))
         version = scanner.db.execute("SELECT value FROM meta WHERE key='version'").fetchone()[0]
-        assert version == "11.0.0"
+        assert version == "12.0.0"
         tables = {r[0] for r in scanner.db.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()}
@@ -578,6 +578,170 @@ class TestResolveCallEdges:
         ).fetchone()
         assert row is not None
         assert row[0] == "speculative"
+
+    @staticmethod
+    def _project(tmp_path, files):
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        (claude_dir / "logic_index_config").write_text("!.git/\n!.claude/\n", encoding="utf-8")
+        for rel, content in files.items():
+            target = tmp_path / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        scanner = StructScanner(str(tmp_path))
+        scanner.scan_all()
+        return scanner
+
+    def test_call_form_recorded_for_name_and_attribute(self, tmp_path):
+        scanner = self._project(tmp_path, {
+            "a.py": "def caller(d):\n    plain()\n    d.member()\n",
+            "b.py": "def plain():\n    return 1\n",
+        })
+        rows = dict(scanner.db.execute(
+            "SELECT callee, call_form FROM edges WHERE source_file='a.py'"
+        ).fetchall())
+        assert rows == {"plain": "name", "member": "attribute"}
+
+    def test_attribute_call_global_hit_is_speculative(self, tmp_path):
+        scanner = self._project(tmp_path, {
+            "a.py": "def caller(d):\n    return d.get('k')\n",
+            "b.py": "class Cfg:\n    def get(self, key):\n        return key\n",
+        })
+        row = scanner.db.execute(
+            "SELECT callee_qualified, provenance FROM edges WHERE callee='get'"
+        ).fetchone()
+        assert row == ("b.py::Cfg.get", "speculative")
+
+    def test_attribute_call_import_hit_is_speculative(self, tmp_path):
+        scanner = self._project(tmp_path, {
+            "a.py": "import helper_mod\n\ndef caller():\n    return helper_mod.run()\n",
+            "lib/helper_mod.py": "def run():\n    return 'ok'\n",
+        })
+        row = scanner.db.execute(
+            "SELECT callee_qualified, provenance FROM edges WHERE callee='run'"
+        ).fetchone()
+        assert row == ("lib/helper_mod.py::run", "speculative")
+
+    def test_same_file_attribute_call_stays_definite(self, tmp_path):
+        scanner = self._project(tmp_path, {
+            "a.py": (
+                "class Own:\n"
+                "    def helper(self):\n"
+                "        return 1\n"
+                "    def call_self(self):\n"
+                "        return self.helper()\n"
+            ),
+        })
+        row = scanner.db.execute(
+            "SELECT callee_qualified, provenance FROM edges WHERE callee='helper'"
+        ).fetchone()
+        assert row == ("a.py::Own.helper", "definite")
+
+    def test_stdlib_binding_suppresses_global_fallback(self, tmp_path):
+        scanner = self._project(tmp_path, {
+            "a.py": (
+                "from unittest.mock import patch\n\n"
+                "def caller():\n"
+                "    with patch('x'):\n"
+                "        return None\n"
+            ),
+            "b.py": "def patch(target):\n    return target\n",
+        })
+        row = scanner.db.execute(
+            "SELECT callee_qualified, provenance FROM edges "
+            "WHERE source_file='a.py' AND callee='patch'"
+        ).fetchone()
+        assert row == (None, None)
+
+    def test_nonproject_binding_suppresses_global_fallback(self, tmp_path):
+        scanner = self._project(tmp_path, {
+            "a.py": (
+                "from thirdparty_pkg import parse\n\n"
+                "def caller():\n"
+                "    return parse('x')\n"
+            ),
+            "b.py": "def parse(text):\n    return text\n",
+        })
+        row = scanner.db.execute(
+            "SELECT callee_qualified, provenance FROM edges "
+            "WHERE source_file='a.py' AND callee='parse'"
+        ).fetchone()
+        assert row == (None, None)
+
+    def test_import_binding_supplement_unique_basename_is_definite(self, tmp_path):
+        scanner = self._project(tmp_path, {
+            "a.py": "from helper_mod import run\n\ndef caller():\n    return run()\n",
+            "lib/helper_mod.py": "def run():\n    return 'ok'\n",
+        })
+        row = scanner.db.execute(
+            "SELECT callee_qualified, provenance FROM edges WHERE callee='run'"
+        ).fetchone()
+        assert row == ("lib/helper_mod.py::run", "definite")
+
+    def test_import_binding_supplement_package_init_is_definite(self, tmp_path):
+        scanner = self._project(tmp_path, {
+            "a.py": "from pkgx import pkfn\n\ndef caller():\n    return pkfn()\n",
+            "src/pkgx/__init__.py": "def pkfn():\n    return 'pk'\n",
+        })
+        row = scanner.db.execute(
+            "SELECT callee_qualified, provenance FROM edges WHERE callee='pkfn'"
+        ).fetchone()
+        assert row == ("src/pkgx/__init__.py::pkfn", "definite")
+
+    def test_ambiguous_module_name_neither_links_nor_suppresses(self, tmp_path):
+        scanner = self._project(tmp_path, {
+            "a.py": "from helper_mod import run\n\ndef caller():\n    return run()\n",
+            "lib/helper_mod.py": "def run():\n    return 'lib'\n",
+            "alt/helper_mod.py": "def run():\n    return 'alt'\n",
+        })
+        row = scanner.db.execute(
+            "SELECT callee_qualified, provenance FROM edges WHERE callee='run'"
+        ).fetchone()
+        assert row is not None
+        assert row[0] is not None
+        assert row[1] == "speculative"
+
+    def test_mixed_call_forms_dedupe_to_name(self, tmp_path):
+        scanner = self._project(tmp_path, {
+            "a.py": "def caller(obj):\n    plain()\n    obj.plain()\n",
+            "b.py": "def plain():\n    return 1\n",
+        })
+        row = scanner.db.execute(
+            "SELECT call_form, provenance FROM edges "
+            "WHERE source_file='a.py' AND callee='plain'"
+        ).fetchone()
+        assert row == ("name", "probable")
+
+    def test_incremental_rescan_updates_external_suppression(self, tmp_path):
+        scanner = self._project(tmp_path, {
+            "a.py": "def caller():\n    return parse('x')\n",
+            "b.py": "def parse(text):\n    return text\n",
+        })
+        row = scanner.db.execute(
+            "SELECT provenance FROM edges WHERE source_file='a.py' AND callee='parse'"
+        ).fetchone()
+        assert row == ("probable",)
+
+        (tmp_path / "a.py").write_text(
+            "from thirdparty_pkg import parse\n\ndef caller():\n    return parse('x')\n",
+            encoding="utf-8",
+        )
+        scanner.scan_files(["a.py"])
+
+        row = scanner.db.execute(
+            "SELECT callee_qualified, provenance FROM edges "
+            "WHERE source_file='a.py' AND callee='parse'"
+        ).fetchone()
+        assert row == (None, None)
+
+    def test_failed_relative_import_is_not_recorded_as_binding(self, tmp_path):
+        from parsers.python_parser import PythonParser
+        parser = PythonParser()
+        source = "from .missing_mod import thing\n\ndef caller():\n    return thing()\n"
+        bindings = parser.collect_import_bindings(
+            source, str(tmp_path / "pkg" / "a.py"), str(tmp_path)
+        )
+        assert bindings == []
 
 
 class TestDetectClusters:

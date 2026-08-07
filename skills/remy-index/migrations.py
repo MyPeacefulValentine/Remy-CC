@@ -318,12 +318,45 @@ def _migrate_v10_to_v11(db):
         raise
 
 
+def _migrate_v11_to_v12(db):
+    """Add edge call-form and per-file unresolved import bindings.
+
+    Tables absent from pre-v12 ladders (edges did not exist at v6) are
+    skipped: initialize_database applies SCHEMA_SQL afterwards, which
+    creates them with the new columns already in place.
+    """
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        edge_columns = {column[1] for column in db.execute("PRAGMA table_info(edges)")}
+        if edge_columns and "call_form" not in edge_columns:
+            db.execute("ALTER TABLE edges ADD COLUMN call_form TEXT NOT NULL DEFAULT 'name'")
+        file_columns = {column[1] for column in db.execute("PRAGMA table_info(files)")}
+        if file_columns and "import_bindings" not in file_columns:
+            db.execute("ALTER TABLE files ADD COLUMN import_bindings TEXT NOT NULL DEFAULT '[]'")
+
+        already = db.execute(
+            "SELECT 1 FROM migration_log WHERE from_version=? AND to_version=?",
+            ("11.0.0", "12.0.0"),
+        ).fetchone()
+        if not already:
+            db.execute(
+                "INSERT INTO migration_log (from_version, to_version, applied_at) "
+                "VALUES (?,?,?)",
+                ("11.0.0", "12.0.0", datetime.now().isoformat(timespec="seconds")),
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
 MIGRATION_HANDLERS = {
     ('6.0.0', '7.0.0'): _migrate_v6_to_v7,
     ('7.0.0', '8.0.0'): _migrate_v7_to_v8,
     ('8.0.0', '9.0.0'): _migrate_v8_to_v9,
     ('9.0.0', '10.0.0'): _migrate_v9_to_v10,
     ('10.0.0', '11.0.0'): _migrate_v10_to_v11,
+    ('11.0.0', '12.0.0'): _migrate_v11_to_v12,
 }
 
 def _resolve_migration_path(old_version, new_version):

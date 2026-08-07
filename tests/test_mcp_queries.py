@@ -35,9 +35,9 @@ def db_dir(tmp_path, monkeypatch):
     db.execute("INSERT INTO summary_versions (node_kind,node_ref,version,summary,status,created_at) VALUES ('symbol','a.py::main',1,'{\"short\":\"entry point\",\"full\":null}','ok',?)", (_now,))
     db.execute("INSERT INTO summary_versions (node_kind,node_ref,version,summary,status,created_at) VALUES ('symbol','a.py::helper',1,'{\"short\":\"does stuff\",\"full\":null}','ok',?)", (_now,))
     db.execute("INSERT INTO summary_versions (node_kind,node_ref,version,summary,status,created_at) VALUES ('symbol','b.py::process',1,'{\"short\":\"processes data\",\"full\":null}','ok',?)", (_now,))
-    db.execute("INSERT INTO edges VALUES (NULL,'a.py','main','process','b.py','b.py::process',5,'definite',NULL,NULL)")
-    db.execute("INSERT INTO edges VALUES (NULL,'a.py','main','helper',NULL,'a.py::helper',3,'definite',NULL,NULL)")
-    db.execute("INSERT INTO edges VALUES (NULL,'a.py','helper','run','b.py','b.py::Util.run',14,'inferred',NULL,'interface-impl')")
+    db.execute("INSERT INTO edges VALUES (NULL,'a.py','main','process','b.py','b.py::process',5,'definite',NULL,NULL,'name')")
+    db.execute("INSERT INTO edges VALUES (NULL,'a.py','main','helper',NULL,'a.py::helper',3,'definite',NULL,NULL,'name')")
+    db.execute("INSERT INTO edges VALUES (NULL,'a.py','helper','run','b.py','b.py::Util.run',14,'inferred',NULL,'interface-impl','name')")
     edge_id = db.execute("SELECT id FROM edges WHERE caller='main' AND callee='process'").fetchone()[0]
     db.execute("INSERT INTO edge_candidates VALUES (?,?,?)", (edge_id, "b.py::process", 1))
     db.execute("INSERT INTO edge_candidates VALUES (?,?,?)", (edge_id, "c.py::process", 0))
@@ -117,7 +117,7 @@ def _write_impact_db(tmp_path, fan_out_files, symbols_per_file):
                 (path, name, name, "function", symbol_index + 1, name),
             )
             db.execute(
-                "INSERT INTO edges VALUES (NULL,'root.py','entry',?,?,?,?,'definite',NULL,NULL)",
+                "INSERT INTO edges VALUES (NULL,'root.py','entry',?,?,?,?,'definite',NULL,NULL,'name')",
                 (name, path, f"{path}::{name}", symbol_index + 1),
             )
     db.commit()
@@ -1066,12 +1066,12 @@ def flow_db_dir(tmp_path, monkeypatch):
     db.execute("INSERT INTO symbols (file_path,name,short_name,type,args,lineno,end_lineno,hash,bases,name_tokens) VALUES ('models/vgg.py','VGG.forward','forward','function','self,x',15,35,NULL,NULL,'VGG forward')")
     db.execute("INSERT INTO symbols (file_path,name,short_name,type,args,lineno,end_lineno,hash,bases,name_tokens) VALUES ('train.py','train_epoch','train_epoch','function','model,loader',5,50,NULL,NULL,'train epoch')")
     db.execute("INSERT INTO symbols (file_path,name,short_name,type,args,lineno,end_lineno,hash,bases,name_tokens) VALUES ('losses.py','compute_loss','compute_loss','function','pred,target',3,20,NULL,NULL,'compute loss')")
-    db.execute("INSERT INTO edges VALUES (NULL,'src/fs/read.c','sys_read','vfs_read','src/fs/read.c','src/fs/read.c::vfs_read',15,'definite',NULL,NULL)")
-    db.execute("INSERT INTO edges VALUES (NULL,'src/fs/read.c','vfs_read','new_sync_read','src/fs/vfs.c','src/fs/vfs.c::new_sync_read',60,'definite',NULL,NULL)")
-    db.execute("INSERT INTO edges VALUES (NULL,'train.py','train_epoch','forward','models/resnet.py','models/resnet.py::ResNet.forward',25,'definite',NULL,NULL)")
-    db.execute("INSERT INTO edges VALUES (NULL,'models/resnet.py','ResNet.forward','compute_loss',NULL,'losses.py::compute_loss',35,'inferred',NULL,'interface-impl')")
-    db.execute("INSERT INTO edges VALUES (NULL,'src/fs/vfs.c','new_sync_read','sys_write',NULL,NULL,20,NULL,NULL,NULL)")
-    db.execute("INSERT INTO edges VALUES (NULL,'src/fs/vfs.c','orphan_caller','sys_read','src/fs/read.c','src/fs/read.c::sys_read',99,'definite',NULL,NULL)")
+    db.execute("INSERT INTO edges VALUES (NULL,'src/fs/read.c','sys_read','vfs_read','src/fs/read.c','src/fs/read.c::vfs_read',15,'definite',NULL,NULL,'name')")
+    db.execute("INSERT INTO edges VALUES (NULL,'src/fs/read.c','vfs_read','new_sync_read','src/fs/vfs.c','src/fs/vfs.c::new_sync_read',60,'definite',NULL,NULL,'name')")
+    db.execute("INSERT INTO edges VALUES (NULL,'train.py','train_epoch','forward','models/resnet.py','models/resnet.py::ResNet.forward',25,'definite',NULL,NULL,'name')")
+    db.execute("INSERT INTO edges VALUES (NULL,'models/resnet.py','ResNet.forward','compute_loss',NULL,'losses.py::compute_loss',35,'inferred',NULL,'interface-impl','name')")
+    db.execute("INSERT INTO edges VALUES (NULL,'src/fs/vfs.c','new_sync_read','sys_write',NULL,NULL,20,NULL,NULL,NULL,'name')")
+    db.execute("INSERT INTO edges VALUES (NULL,'src/fs/vfs.c','orphan_caller','sys_read','src/fs/read.c','src/fs/read.c::sys_read',99,'definite',NULL,NULL,'name')")
     db.commit()
     db.close()
     return tmp_path
