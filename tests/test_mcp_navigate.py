@@ -65,8 +65,6 @@ def env(tmp_path, monkeypatch):
     conn.commit()
     conn.close()
     monkeypatch.chdir(tmp_path)
-    if "index_mcp_navigate" in sys.modules:
-        del sys.modules["index_mcp_navigate"]
     import index_mcp_navigate
     yield index_mcp_navigate
 
