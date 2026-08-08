@@ -68,11 +68,11 @@
           "location": { "type": "string", "description": "具体函数/行号" },
           "action": { "type": "string", "enum": ["Create", "Modify", "Delete"], "description": "操作类型" },
           "summary": { "type": "string", "description": "修改目的与内容简述" },
-          "scope_position": { "type": "string", "description": "修改层级：以 `[标签]` 开头（zh-CN：补丁/局部修复/接口变更/跨域重构；en：Boundary-Wrap/Source-Modify/Contract-Change/Scope-Refactor），后接 1 句话说明为何此修改位于此层级。参见 SKILL.md Phase 2 的 Scope Tag Reference 表" },
+          "scope_position": { "type": "string", "description": "修改层级：以 `[标签]` 开头（zh-CN：补丁/局部修复/接口变更/跨域重构；en：Boundary-Wrap/Source-Modify/Contract-Change/Scope-Refactor），后接 1 句话说明为何此修改位于此层级。参见 SKILL.md Phase 3 的 Scope Tag Reference 表" },
           "ripple_effect": { "type": "string", "description": "涟漪效应" },
           "caller_refs": {
             "type": "array",
-            "description": "调用入口列表；action='Create' 且目标为可执行代码（函数/类/模块）时必填，参见 SKILL.md Phase 3.4",
+            "description": "调用入口列表；action='Create' 且目标为可执行代码（函数/类/模块）时必填，参见 SKILL.md Phase 4.5",
             "items": {
               "type": "object",
               "required": ["caller_file", "caller_function", "evidence_ref"],

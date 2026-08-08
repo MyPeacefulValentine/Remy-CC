@@ -15,27 +15,35 @@ In both paths, the AI must read all relevant source code definitions. Guessing o
 
 A **reuse scan** is performed: for any planned new function or utility, the project is searched for existing implementations with similar names or purposes. If a reusable function exists, the plan references it rather than proposing new code.
 
-### Phase 2: Ambiguity Elimination Loop
+### Phase 2: Requirement Restatement Gate
+
+Skipped when the task text already contains both explicit target files/symbols and verifiable acceptance criteria (a spec-complete task emits `Restatement skipped: spec-complete`; bug fixes with an error log or repro steps count as spec-complete). Otherwise the AI restates its understanding in prose — **Goal / Motivation / Out-of-scope** — and asks for confirmation via a two-option `AskUserQuestion`. Deviations are merged via free text and the restatement loops until confirmed.
+
+### Phase 3: Ambiguity Elimination Loop
 
 The AI scans for ambiguities using a mandatory 5-category checklist (Interface Contract, Resource & Dependency, Behavioral Boundary, Execution Order, Change Boundary). If multiple technical paths exist, the AI **must** pause and use `AskUserQuestion` to ask the user — each question must include exactly one recommended option with a 1-sentence reason. Questions with inter-dependencies are presented sequentially rather than batched.
 
 Upon receiving an answer, the AI searches for related code and performs **cross-constraint validation** against all previously locked decisions before proceeding. If a contradiction is found, the conflicting prior decision is invalidated and re-presented. This loop repeats until all "TBD" items are converted to "Fixed" constraints.
 
-### Phase 3.1: Assumption Manifest & Scenario Probes
+### Phase 4.1: Assumption Manifest & Scenario Probes
 
 After the loop exits, the AI generates a list of ALL implicit assumptions (implementation-level and behavioral-level) not already in Table 1. Each assumption includes a confidence level and category. Assumptions with confidence ≤ Level 4 trigger concrete scenario probes — the AI constructs a specific execution scenario to help the user judge whether the assumption is correct.
 
-Assumptions are presented in batches via `AskUserQuestion`. User rejections trigger a one-time re-entry into the Phase 2 loop to resolve the new ambiguity. A second re-entry is prohibited.
+Assumptions are presented in batches via `AskUserQuestion`. User rejections trigger a one-time re-entry into the Phase 3 loop to resolve the new ambiguity. A second re-entry is prohibited.
 
-### Phase 3.2: Plan-Code Alignment Check
+### Phase 4.2: Scenario Confirmation Gate
+
+Triggered when locked decisions include contract-change / scope-refactor level modifications or new user-visible behavior; otherwise skipped with `Scenario confirmation skipped: no interface/behavior change`. The AI emits the main success scenario in prose using use-case format (Preconditions → Trigger → Main flow → Postconditions) plus extension scenarios (`condition → expected behavior`), then asks for confirmation via a two-option `AskUserQuestion`. Wording-level deviations loop freely; a decision-level deviation re-enters the Phase 3 loop at most once, tracked by an independent `_scenario_pass` counter.
+
+### Phase 4.3: Plan-Code Alignment Check
 
 Before generating the final tables, the AI re-reads target function signatures to confirm no concurrent external modifications invalidated the plan's assumptions. If a contradiction is detected, the ambiguity resolution loop is re-entered.
 
-Two further pre-emit checks (Phase 3.3 Schema Deletion Tree-Wide Scan and Phase 3.4 Orphan Creation Detection) run afterwards to guard against dead code and untracked delete impact.
+Two further pre-emit checks (Phase 4.4 Schema Deletion Tree-Wide Scan and Phase 4.5 Orphan Creation Detection) run afterwards to guard against dead code and untracked delete impact.
 
-### Phase 4: Audit Output (5 Tables)
+### Phase 5: Audit Output (5 Tables)
 
-Once Phase 3 completes, the AI loads the template selected by the loaded `language.md` directive (`audit_template_zh.md` for Chinese or `audit_template_en.md` for English) and generates five tables:
+Once Phase 4 completes, the AI loads the template selected by the loaded `language.md` directive (`audit_template_zh.md` for Chinese or `audit_template_en.md` for English) and generates five tables:
 
 | Table | Purpose |
 | :--- | :--- |
@@ -45,7 +53,7 @@ Once Phase 3 completes, the AI loads the template selected by the loaded `langua
 | Physical Change Simulation | Lists every file, function, and operation type to be modified, with ripple effect estimates. |
 | Verification Plan | Defines how to verify the implementation end-to-end after execution, with rollback conditions. |
 
-### Phase 5: Evidence Packet Generation
+### Phase 6: Evidence Packet Generation
 
 After the 5 tables, the AI writes an `AgentTaskPacketLite` JSON file to `.claude/temp_task/task_{TIMESTAMP}.json`. This packet contains:
 
@@ -55,7 +63,7 @@ After the 5 tables, the AI writes an `AgentTaskPacketLite` JSON file to `.claude
 
 The `.active_packet` pointer is updated to reference the new packet.
 
-### Phase 6: Mandatory Stop
+### Phase 7: Mandatory Stop
 
 The AI stops and presents three options:
 

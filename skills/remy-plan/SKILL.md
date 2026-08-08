@@ -18,11 +18,12 @@ This skill enforces a rigorous **Zero-Decision** pre-implementation review. It f
 
 ```
 Phase 1 (Context Saturation)
-   -> Phase 2 (Ambiguity Elimination Loop)
-   -> Phase 3 (Pre-Emit Verification)
-   -> Phase 4 (Analysis Output)
-   -> Phase 5 (Evidence Packet)
-   -> Phase 6 (Explicit Stop)
+   -> Phase 2 (Requirement Restatement Gate)
+   -> Phase 3 (Ambiguity Elimination Loop)
+   -> Phase 4 (Pre-Emit Verification, incl. 4.2 Scenario Confirmation Gate)
+   -> Phase 5 (Analysis Output)
+   -> Phase 6 (Evidence Packet)
+   -> Phase 7 (Explicit Stop)
 ```
 
 ## Phase 1: Context Saturation
@@ -67,9 +68,9 @@ Execute the following four sub-tasks in order:
 4.  **Supplementary Actions** (still mandatory):
     1.  Apply all **Saturation Principles** listed above.
     2.  **Reuse Scan**: For any planned new function or utility, `Grep` the project for existing implementations with similar names or purposes. If a reusable function exists, the plan MUST reference it (Modify/extend) rather than proposing a new one.
-    3.  **Runtime Probe (Optional)**: When static analysis is insufficient to verify a technical claim, execute a non-invasive probe per the constraints defined in Phase 3.1 step 2 (**Read-Only**, **Ephemeral** — system temp directory only, **Sandboxed** — no side-effects, no network, no package installation). Cite probe output as evidence in Table 1 or Table 3; probe results do NOT enter the Evidence Packet.
+    3.  **Runtime Probe (Optional)**: When static analysis is insufficient to verify a technical claim, execute a non-invasive probe per the constraints defined in Phase 4.1 step 2 (**Read-Only**, **Ephemeral** — system temp directory only, **Sandboxed** — no side-effects, no network, no package installation). Cite probe output as evidence in Table 1 or Table 3; probe results do NOT enter the Evidence Packet.
 
-After completing Phase 1.2, proceed to **Phase 2: Ambiguity Elimination Loop**.
+After completing Phase 1.2, proceed to **Phase 2: Requirement Restatement Gate**.
 
 ### 1.3 Manual Saturation Fallback (no logic_index.db)
 
@@ -77,11 +78,44 @@ Use this path when `logic_index.db` is unavailable or contains no call graph dat
 1.  Apply all **Saturation Principles** listed above.
 2.  **Action**: Use `Read`, `Grep`, or `Glob` to saturate your context.
 
-## Phase 2: Ambiguity Elimination Loop (Loop-Until-Saturated)
+After completing Phase 1.3, proceed to **Phase 2: Requirement Restatement Gate**.
+
+## Phase 2: Requirement Restatement Gate
+
+Validates that the saturated understanding matches the user's intent BEFORE any architectural decision is made. Phase 3 scans for implementation-level decision points; it cannot detect a wrong understanding of the goal itself — this gate can.
+
+### 2.1 Skip Predicate
+
+Skip this gate when the task text contains BOTH:
+*   (a) explicit target files or symbols, AND
+*   (b) verifiable acceptance criteria.
+
+A bug-fix task accompanied by an error log or reproduction steps counts as spec-complete. When skipping, emit exactly one line before entering Phase 3:
+```
+Restatement skipped: spec-complete
+```
+Skipping without this declaration is a protocol violation.
+
+### 2.2 Restate
+
+Output the restatement as prose (NOT inside `AskUserQuestion`), in the language selected by the loaded `language.md` directive, structured as three sections:
+*   **Goal**: what will be changed, in one or two sentences.
+*   **Motivation**: why the user wants this, as understood from the task text and context.
+*   **Out-of-scope**: what this task will NOT do.
+
+### 2.3 Confirm
+
+Use `AskUserQuestion` with exactly two options:
+*   "确认 (Confirm)" — the understanding is correct; proceed to **Phase 3**.
+*   "有偏差 (Deviation)" — the user supplies corrections via free text.
+
+On Deviation: merge the correction into the understanding, re-run any saturation reads the correction requires, then re-emit the restatement (2.2) and ask again. Loop until confirmed. No re-entry counter applies here — restatement iterations are wording-level and carry no plan state.
+
+## Phase 3: Ambiguity Elimination Loop (Loop-Until-Saturated)
 
 You MUST execute the following loop until NO ambiguities remain.
 
-**Scope Tag Reference** (used by Phase 2.3 Recommendation and by Table 4):
+**Scope Tag Reference** (used by Phase 3.3 Recommendation and by Table 4):
 
 | English | 中文 | Definition |
 | :--- | :--- | :--- |
@@ -92,7 +126,7 @@ You MUST execute the following loop until NO ambiguities remain.
 
 When the loaded `language.md` directive selects Chinese, output the 中文 label; otherwise output the English label.
 
-### 2.1 Scan
+### 3.1 Scan
 
 Identify current architectural decision points based on *saturated* context. You MUST explicitly check each of the following 5 categories and mark each as either "ambiguity identified" or "N/A (no decision needed)":
 *   **Interface Contract**: Function signatures, return types, error types, API shape.
@@ -112,13 +146,13 @@ Identify current architectural decision points based on *saturated* context. You
 ```
 Skipping this output block is a protocol violation.
 
-### 2.2 Check
+### 3.2 Check
 
 Are there unresolved ambiguities?
-*   **NO**: Break loop and proceed to **Phase 3.1: Assumption Manifest & Scenario Probes**.
-*   **YES**: Continue to Phase 2.3.
+*   **NO**: Break loop and proceed to **Phase 4.1: Assumption Manifest & Scenario Probes**.
+*   **YES**: Continue to Phase 3.3.
 
-### 2.3 Ask
+### 3.3 Ask
 
 Use `AskUserQuestion` to resolve *current layer* ambiguities.
 *   **Multi-Question Batching**: Present all currently visible ambiguities that have NO dependency between them. If question B's options depend on question A's answer, present A first; present B in the next iteration after A is resolved.
@@ -130,33 +164,33 @@ Use `AskUserQuestion` to resolve *current layer* ambiguities.
         queue = queue[4:]
         AskUserQuestion(batch)
     ```
-    Exiting Phase 2.3 while `queue` is non-empty is a protocol violation.
+    Exiting Phase 3.3 while `queue` is non-empty is a protocol violation.
 *   **Language**: Follow the loaded `language.md` directive.
 *   **Format**: Short header, reasonable options.
 *   **Recommendation (MUST)**: Every question MUST have exactly 1 recommended option. Append `（推荐）` to the recommended label and include a 1-sentence reason in its description. Omitting the recommendation is a protocol violation.
 *   **Scope Tagging (MUST)**: For each candidate option proposing a code change, prefix its description with a scope tag from the **Scope Tag Reference** table (output label per `REMY_LANG`).
 *   **Prohibited Pattern Cross-Check (MUST)**: Before marking an option as recommended, verify it does NOT trigger Prohibited Modification Patterns 1 (Symptom-Driven / Whack-a-Mole), 3 (Technical Debt / Overfitting), or 6 (Over-Engineering) from `output-styles/system-architect.md` §2.3. If `[补丁]` / `[Boundary-Wrap]` is recommended over a `[局部修复]` / `[Source-Modify]` alternative, the 1-sentence reason MUST cite one of: (a) bug source resides in third-party / read-only code, (b) the boundary IS the actual responsibility boundary, or (c) Source-Modify would trigger Prohibited Pattern 6 (Over-Engineering).
 
-### 2.4 Saturate (Again) — ACTION REQUIRED
+### 3.4 Saturate (Again) — ACTION REQUIRED
 
 *   **Trigger**: Immediately upon receiving the user's choice.
 *   **Mandate**: You **MUST** invoke `Grep`/`Glob` targeting the specific keywords of the choice (e.g., if user selected "Redis", grep for "redis", "cache", "sentinel").
 *   **Read**: You **MUST** read any newly discovered configuration/utility files.
 *   **Cross-Constraint Validation**: Compare the newly locked decision against ALL previously locked decisions. If a logical contradiction exists (e.g., "use Redis" vs. prior "no new runtime dependencies"), mark the conflicting prior decision as `invalidated` and re-present it in the next loop iteration.
-*   **Runtime Probe (Optional)**: If the chosen option involves a verifiable technical claim (e.g., "library X supports feature Y"), a runtime probe (per Phase 3.1 step 2 constraints) may be used here to confirm feasibility before proceeding.
-*   **Blocker**: Do NOT proceed to **Phase 2.5** until these new tool outputs are visible in the context AND no contradictions remain unresolved.
+*   **Runtime Probe (Optional)**: If the chosen option involves a verifiable technical claim (e.g., "library X supports feature Y"), a runtime probe (per Phase 4.1 step 2 constraints) may be used here to confirm feasibility before proceeding.
+*   **Blocker**: Do NOT proceed to **Phase 3.5** until these new tool outputs are visible in the context AND no contradictions remain unresolved.
 
-### 2.5 Repeat
+### 3.5 Repeat
 
-Go back to Phase 2.1.
+Go back to Phase 3.1.
 
-## Phase 3: Pre-Emit Verification
+## Phase 4: Pre-Emit Verification
 
-Four sub-steps executed in order after the Phase 2 loop exits. Any sub-step may return the flow to Phase 2 to resolve newly discovered ambiguities.
+Five sub-steps executed in order after the Phase 3 loop exits. Any sub-step may return the flow to Phase 3 to resolve newly discovered ambiguities.
 
-### 3.1 Assumption Manifest & Scenario Probes (Post-Loop Second Pass)
+### 4.1 Assumption Manifest & Scenario Probes (Post-Loop Second Pass)
 
-This step targets **unknown unknowns** — assumptions Claude considers obvious but which may conflict with the user's intent. It runs ONCE after the Phase 2 loop exits. A re-entry counter (`_manifest_pass`) tracks executions; if `_manifest_pass >= 1`, skip this step entirely and proceed to Phase 3.2.
+This step targets **unknown unknowns** — assumptions Claude considers obvious but which may conflict with the user's intent. It runs ONCE after the Phase 3 loop exits. A re-entry counter (`_manifest_pass`) tracks executions; if `_manifest_pass >= 1`, skip this step entirely and proceed to Phase 4.2.
 
 1.  **Generate & Triage Manifest**: List ALL implicit assumptions (implementation-level and behavioral-level) NOT already locked in Table 1. Each MUST include a 1-sentence statement, a confidence level (Level 2–5), and a category (Interface / Resource / Behavior / Ordering / Boundary).
 
@@ -177,7 +211,7 @@ This step targets **unknown unknowns** — assumptions Claude considers obvious 
 
     **Probe Constraints (Read-Only, Ephemeral, Sandboxed)**: Run probes via `Bash("python -c '...'")` or compile-and-run in the system temp directory. No project side-effects, no network calls, no package installation. Cite probe output as evidence in Table 1 or Table 3 — probe results do NOT enter the Evidence Packet.
 
-    For probe-feasible assumptions, a runtime probe is **mandatory**. If the probe confirms, elevate the assumption to Level 5 and remove it from the manifest. If the probe refutes, convert it to a new ambiguity and route to Phase 2 re-entry. Probe-infeasible assumptions are retained for user confirmation in step 3.
+    For probe-feasible assumptions, a runtime probe is **mandatory**. If the probe confirms, elevate the assumption to Level 5 and remove it from the manifest. If the probe refutes, convert it to a new ambiguity and route to Phase 3 re-entry. Probe-infeasible assumptions are retained for user confirmation in step 3.
 
 3.  **Scenario & Present (Pagination Loop — Mandatory)**: For each remaining probe-infeasible assumption with confidence ≤ Level 4, construct a concrete scenario illustrating the behavioral consequence (embed inline in the `AskUserQuestion` option description).
 
@@ -198,16 +232,38 @@ This step targets **unknown unknowns** — assumptions Claude considers obvious 
     *   User rejections or contradictions become new ambiguities.
 
 4.  **Re-entry Decision**:
-    *   If ALL assumptions are confirmed and no contradictions were detected: increment `_manifest_pass`, proceed to **Phase 3.2**.
-    *   If any assumption was rejected or a contradiction was detected: increment `_manifest_pass`, return to **Phase 2** loop to resolve the new ambiguities. After this re-entry, the loop will eventually exit again; since `_manifest_pass >= 1`, Phase 3.1 is skipped and flow proceeds directly to Phase 3.2.
+    *   If ALL assumptions are confirmed and no contradictions were detected: increment `_manifest_pass`, proceed to **Phase 4.2**.
+    *   If any assumption was rejected or a contradiction was detected: increment `_manifest_pass`, return to **Phase 3** loop to resolve the new ambiguities. After this re-entry, the loop will eventually exit again; since `_manifest_pass >= 1`, Phase 4.1 is skipped and flow proceeds directly to Phase 4.2.
 
-### 3.2 Plan-Code Alignment Check
+### 4.2 Scenario Confirmation Gate
+
+Synthesizes the locked decisions into an end-to-end behavioral narrative for user validation. Individual decision confirmations (Phase 3, Phase 4.1) do not equal confirmation of their combined behavior — this gate closes that gap.
+
+1.  **Skip Predicate**: Skip this gate when NO locked decision is tagged `[Contract-Change]` / `[Scope-Refactor]` AND the change introduces no new user-visible behavior (new command, new interaction, new output format). When skipping, emit exactly one line before entering Phase 4.3:
+    ```
+    Scenario confirmation skipped: no interface/behavior change
+    ```
+    Skipping without this declaration is a protocol violation.
+
+2.  **Emit Scenario**: Output as prose (NOT inside `AskUserQuestion`), in the language selected by the loaded `language.md` directive:
+    *   **Main success scenario** (use-case format): Preconditions → Trigger → Main flow (numbered steps) → Postconditions.
+    *   **Extensions**: each alternative/exception scenario listed as one `condition → expected behavior` item.
+
+3.  **Confirm**: Use `AskUserQuestion` with exactly two options:
+    *   "确认 (Confirm)" — the narrative matches the intent; proceed to **Phase 4.3**.
+    *   "有偏差 (Deviation)" — the user supplies corrections via free text.
+
+4.  **Deviation Routing**: Classify the correction:
+    *   **Wording-level** (the narrative misdescribes an already-locked decision): fix the narrative, re-emit (step 2), and ask again. Loops freely.
+    *   **Decision-level** (a locked decision itself is wrong): governed by an independent counter `_scenario_pass` (initial 0; do NOT reuse `_manifest_pass`). If `_scenario_pass == 0`: set it to 1, convert the correction into a new ambiguity, and return to the **Phase 3** loop. After that loop exits, Phase 4.1 is skipped (`_manifest_pass >= 1`) and flow reaches this gate again for re-presentation. If `_scenario_pass >= 1`: a second decision-level re-entry is prohibited — apply a wording-level correction if possible, otherwise HALT and report the unresolvable conflict.
+
+### 4.3 Plan-Code Alignment Check
 
 Before emitting tables, Re-`Read` each future Table 4 target's current signature + first 5 lines. Reject if either:
-(a) signature changed since Phase 1.2 reads, or (b) current code contradicts Table 1 constraints — return to **Phase 2**.
-Otherwise proceed to **Phase 3.3**.
+(a) signature changed since Phase 1.2 reads, or (b) current code contradicts Table 1 constraints — return to **Phase 3**.
+Otherwise proceed to **Phase 4.4**.
 
-### 3.3 Schema Deletion Tree-Wide Scan (Mandatory)
+### 4.4 Schema Deletion Tree-Wide Scan (Mandatory)
 
 Targets disposal-class changes: when a packet entry removes a schema column, deletes a function signature, or eliminates a named constant, single-file evidence rarely captures all parallel usages across the workspace.
 
@@ -219,10 +275,10 @@ Targets disposal-class changes: when a packet entry removes a schema column, del
 3.  **Categorization** of each hit:
     *   **Code hit** (`.py` / `.json` excluding docstring/comment blocks): MUST appear as a `Modify` entry in Table 4, OR be explicitly excluded in Table 1 with a rationale.
     *   **Documentation hit** (`.md`): Warning-level; record in Table 3 under `一致性 (Consistency)` as "doc string referenced" but does not block.
-4.  **Rejection**: If any code hit is neither in Table 4 nor explicitly excluded → return to **Phase 2** and expand the change set.
-5.  After all hits are covered: proceed to **Phase 3.4**.
+4.  **Rejection**: If any code hit is neither in Table 4 nor explicitly excluded → return to **Phase 3** and expand the change set.
+5.  After all hits are covered: proceed to **Phase 4.5**.
 
-### 3.4 Orphan Creation Detection (Mandatory)
+### 4.5 Orphan Creation Detection (Mandatory)
 
 Targets newly-created executable code: a new function or module without a current-tree caller is dead code, even when its own tests pass.
 
@@ -231,22 +287,22 @@ Targets newly-created executable code: a new function or module without a curren
     *   `caller_ref.caller_file` MUST be a file already present in the current tree (NOT another Create entry from this same packet).
     *   `caller_ref.evidence_ref` MUST point to an evidence entry whose excerpt shows the current code at the planned invocation site.
 3.  **Action**: Verify each Create entry's `caller_ref` against the evidence list. If `caller_ref` is missing OR points only to another newly-created file (self-loop), the entry is an **orphan**.
-4.  **Rejection**: Any orphan Create entry → return to **Phase 2** and add the corresponding caller's `Modify` entry to scope.
-5.  After all Create entries have non-orphan callers: proceed to **Phase 4: Analysis Output**.
+4.  **Rejection**: Any orphan Create entry → return to **Phase 3** and add the corresponding caller's `Modify` entry to scope.
+5.  After all Create entries have non-orphan callers: proceed to **Phase 5: Analysis Output**.
 
-## Phase 4: Analysis Output
+## Phase 5: Analysis Output
 
 **Audit Ethos**:
 *   **Be Harsh (Devil's Advocate)**: The goal is to find problems, not to validate the plan.
 *   **No Code Generation**: This step is pure analysis. Do not write implementation code here.
 
-**CRITICAL CONSTRAINT**: You DO NOT have the output schema until Phase 4.1. Load it there.
+**CRITICAL CONSTRAINT**: You DO NOT have the output schema until Phase 5.1. Load it there.
 *   **Prohibition**: Do NOT invent your own tables or "guess" the schema.
-*   **Requirement**: Load both template and schema dynamically ONLY after Phase 3 exits.
+*   **Requirement**: Load both template and schema dynamically ONLY after Phase 4 exits.
 
-### 4.1 Load Template
+### 5.1 Load Template
 
-Only when Phase 3 completes (ZERO ambiguities, all pre-emit checks pass):
+Only when Phase 4 completes (ZERO ambiguities, all pre-emit checks pass):
 
 1.  **Action**: Load the template file matching `REMY_LANG`:
     *   `REMY_LANG=zh-CN` → `Read` `skills/remy-plan/audit_template_zh.md`
@@ -254,13 +310,13 @@ Only when Phase 3 completes (ZERO ambiguities, all pre-emit checks pass):
 2.  **Also Load**: `~/.claude/skills/remy-plan/output_schema.json` — JSON schema defining verification depth.
 3.  **Instruction**: Use the content of these files to structure your final report.
 
-### 4.2 Emit Analysis Tables
+### 5.2 Emit Analysis Tables
 
 Emit the 5 Markdown tables per the loaded template, in the exact order specified. Each table MUST include 1 empty line before and after. Follow all Strict Rules stated in the template header.
 
-## Phase 5: Evidence Packet Generation (Mandatory)
+## Phase 6: Evidence Packet Generation (Mandatory)
 
-After generating the 5 analysis tables (Phase 4.2), you MUST produce and write an AgentTaskPacketLite JSON file before the stop prompt. This packet is the executable contract for `/remy-patch`.
+After generating the 5 analysis tables (Phase 5.2), you MUST produce and write an AgentTaskPacketLite JSON file before the stop prompt. This packet is the executable contract for `/remy-patch`.
 
 **Steps (execute in order):**
 
@@ -334,11 +390,11 @@ After generating the 5 analysis tables (Phase 4.2), you MUST produce and write a
 -   `status`: use `"confirmed"` only for files read in this session; use `"suspected"` for inferred but unread files.
 -   `proposed_changes[].evidence_refs`: MUST reference at least one evidence ID with `status: "confirmed"`.
 -   `proposed_changes[].action`: Required; must match Table 4's `操作` column (Create / Modify / Delete).
--   `proposed_changes[].caller_refs`: Required when `action == "Create"` and the target is executable code (function, class, module — not pure data / config / template files). Each entry MUST reference an existing-tree caller via `caller_file` + `caller_function` + `evidence_ref`. See Phase 3.4.
+-   `proposed_changes[].caller_refs`: Required when `action == "Create"` and the target is executable code (function, class, module — not pure data / config / template files). Each entry MUST reference an existing-tree caller via `caller_file` + `caller_function` + `evidence_ref`. See Phase 4.5.
 -   If NOT a git repo: use `"type": "filesystem"` and omit `"commit"`.
--   In the stop prompt (Phase 6), include: `📦 Packet: task_{TIMESTAMP}.json | 执行: /remy-patch task_{TIMESTAMP}.json`
+-   In the stop prompt (Phase 7), include: `📦 Packet: task_{TIMESTAMP}.json | 执行: /remy-patch task_{TIMESTAMP}.json`
 
-## Phase 6: Explicit Stop Protocol (MANDATORY)
+## Phase 7: Explicit Stop Protocol (MANDATORY)
 
 **CRITICAL**: You MUST generate ALL tables and analysis text in your response.
 

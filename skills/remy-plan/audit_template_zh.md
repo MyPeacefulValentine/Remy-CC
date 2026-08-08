@@ -40,14 +40,14 @@
 
 ### 🛠️ 表 4: 物理变更预演
 
-*   **修改层级**: 以一个标签开头 — `[补丁]` / `[局部修复]` / `[接口变更]` / `[跨域重构]` — 后接 1 句话说明为何此修改位于该层级。参见 SKILL.md Phase 2 的 Scope Tag Reference 表。
+*   **修改层级**: 以一个标签开头 — `[补丁]` / `[局部修复]` / `[接口变更]` / `[跨域重构]` — 后接 1 句话说明为何此修改位于该层级。参见 SKILL.md Phase 3 的 Scope Tag Reference 表。
 *   **涟漪效应**: 确认导入与依赖不产生循环引用。
 
 | 文件路径 | 定位 | 操作 | 简述 | 修改层级 | 涟漪效应 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `path/to/file` | `func_name` | Modify | 增加重试逻辑 | [局部修复] 在产生错误状态的函数内增加重试 | 无 |
 
-**Caller Refs 注解**（`操作=Create` 行必填，参见 SKILL.md Phase 3.4）
+**Caller Refs 注解**（`操作=Create` 行必填，参见 SKILL.md Phase 4.5）
 
 | Create 项 ID | caller_file（已存在于工作树） | caller_function | evidence_ref |
 | :--- | :--- | :--- | :--- |
@@ -68,4 +68,4 @@
 
 ---
 
-> **⚠ 检查点**: 5 张表已全部完成。**不要**输出停止提示。**必须**进入 **Phase 5 (Evidence Packet Generation)** 并执行 5 步（时间戳 → git commit → 创建目录 → 写入 packet → 更新 .active_packet），最后才输出停止提示。
+> **⚠ 检查点**: 5 张表已全部完成。**不要**输出停止提示。**必须**进入 **Phase 6 (Evidence Packet Generation)** 并执行 5 步（时间戳 → git commit → 创建目录 → 写入 packet → 更新 .active_packet），最后才输出停止提示。
