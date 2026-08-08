@@ -222,6 +222,16 @@ class TestQueryCallersImpl:
         result = query_callers_impl("c.py::process", 2, True, False)
         assert "a.py::main" in result
 
+    def test_include_ambiguous_with_static_only(self, db_dir):
+        from index_mcp_queries import query_callers_impl
+        result = query_callers_impl("b.py::process", 2, True, True)
+        assert "a.py::main" in result
+
+    def test_include_ambiguous_with_static_only_excludes_heuristic(self, db_dir):
+        from index_mcp_queries import query_callers_impl
+        result = query_callers_impl("b.py::Util.run", 2, True, True)
+        assert "a.py::helper" not in result
+
     def test_not_found_symbol(self, db_dir):
         from index_mcp_queries import query_callers_impl
         result = query_callers_impl("nonexistent", 2, False, False)
@@ -242,6 +252,11 @@ class TestQueryCalleesImpl:
     def test_include_ambiguous_expands_candidates(self, db_dir):
         from index_mcp_queries import query_callees_impl
         result = query_callees_impl("a.py::main", 1, True, False)
+        assert "b.py::process" in result
+
+    def test_include_ambiguous_with_static_only(self, db_dir):
+        from index_mcp_queries import query_callees_impl
+        result = query_callees_impl("a.py::main", 2, True, True)
         assert "b.py::process" in result
 
 

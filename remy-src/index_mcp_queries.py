@@ -125,12 +125,12 @@ def _bfs_callers_ambiguous(db, target_set, max_depth, static_only=False):
             chunk = current_list[i:i+400]
             placeholders = ",".join(["?"] * len(chunk))
             sql = f"""
-                SELECT DISTINCT source_file || '::' || caller FROM edges
+                SELECT DISTINCT source_file || '::' || caller FROM edges e
                 WHERE callee_qualified IN ({placeholders}) {prov_filter}
                 UNION
                 SELECT DISTINCT e.source_file || '::' || e.caller
                 FROM edges e JOIN edge_candidates ec ON ec.edge_id = e.id
-                WHERE ec.candidate_qualified IN ({placeholders}) {prov_filter.replace('e.', 'e.')}
+                WHERE ec.candidate_qualified IN ({placeholders}) {prov_filter}
             """
             params = chunk + chunk
             all_rows.update(r[0] for r in db.execute(sql, params).fetchall())
@@ -159,7 +159,7 @@ def _bfs_callees_ambiguous(db, target_set, max_depth, static_only=False):
             chunk = current_list[i:i+400]
             placeholders = ",".join(["?"] * len(chunk))
             sql = f"""
-                SELECT DISTINCT callee_qualified FROM edges
+                SELECT DISTINCT callee_qualified FROM edges e
                 WHERE source_file || '::' || caller IN ({placeholders})
                 AND callee_qualified IS NOT NULL {prov_filter}
                 UNION
