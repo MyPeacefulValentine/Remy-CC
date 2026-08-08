@@ -188,6 +188,33 @@ def cmd_version(_args):
     print("Remy v{}".format(get_version()))
 
 
+def _remy_cc_home():
+    env_home = os.environ.get("REMY_CC_HOME")
+    if env_home:
+        return Path(env_home)
+    try:
+        home = Path.home()
+    except RuntimeError:
+        home_str = os.environ.get("HOME") or os.environ.get("USERPROFILE") or ""
+        if not home_str:
+            print("Cannot determine home directory. Set $HOME and retry.", file=sys.stderr)
+            sys.exit(1)
+        home = Path(home_str)
+    return home / ".remy-cc"
+
+
+def cmd_daemon(args):
+    exe_name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    exe = _remy_cc_home() / "bin" / exe_name
+    if not exe.exists():
+        print("Error: remy-daemon binary not found at {}".format(exe), file=sys.stderr)
+        print("Build it with: cargo build --release --manifest-path <repo>/remy-daemon/Cargo.toml", file=sys.stderr)
+        print("Then copy target/release/{} to {}".format(exe_name, exe.parent), file=sys.stderr)
+        sys.exit(1)
+    result = subprocess.run([str(exe)] + list(args.daemon_args))
+    sys.exit(result.returncode)
+
+
 def _load_summary_modules():
     skill_dir = get_claude_home() / "skills" / "remy-index"
     if not skill_dir.is_dir():
@@ -646,6 +673,9 @@ def main():
     p_audit.add_argument("node_ref", help="Node ref (file::name, file path, or cluster name)")
     p_audit.add_argument("--path", default=None, help="Project root directory (default: current directory)")
 
+    p_daemon = sub.add_parser("daemon", help="Control the Remy-CC daemon")
+    p_daemon.add_argument("daemon_args", nargs=argparse.REMAINDER, help="Arguments passed to remy-daemon")
+
     sub.add_parser("update", help="Fetch and install latest version from remote")
     p_uninstall = sub.add_parser("uninstall", help="Remove all Remy-CC files and settings")
     p_uninstall.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
@@ -658,6 +688,7 @@ def main():
         "summary-rebuild": cmd_summary_rebuild,
         "summary-vacuum": cmd_summary_vacuum,
         "summary-audit": cmd_summary_audit,
+        "daemon": cmd_daemon,
         "update": cmd_update,
         "uninstall": cmd_uninstall,
         "verify": cmd_verify,
