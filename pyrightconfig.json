@@ -32,6 +32,7 @@
     "hooks/logic_enrichment_hook.py",
     "hooks/permission_gate.py",
     "tests/test_permission_gate.py",
+    "tests/test_mcp_server_invariants.py",
     "hooks/tree_system/lifecycle_hook.py"
   ],
   "extraPaths": [
