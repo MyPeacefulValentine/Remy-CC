@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${{ github.ref_name }}" >/dev/null 2>&1 || \
+            gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --generate-notes
+
+  build:
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup target add ${{ matrix.target }}
+      - if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --release --manifest-path remy-daemon/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          ASSET="remy-daemon-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
+          BIN_DIR="remy-daemon/target/${{ matrix.target }}/release"
+          tar -czf "$ASSET" -C "$BIN_DIR" remy-daemon
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$ASSET" > "$ASSET.sha256"
+          else
+            shasum -a 256 "$ASSET" > "$ASSET.sha256"
+          fi
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $asset = "remy-daemon-${{ github.ref_name }}-${{ matrix.target }}.zip"
+          Compress-Archive -Path "remy-daemon/target/${{ matrix.target }}/release/remy-daemon.exe" -DestinationPath $asset
+          "$((Get-FileHash $asset -Algorithm SHA256).Hash.ToLower())  $asset" | Set-Content "$asset.sha256" -Encoding ascii
+
+      - name: Upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh release upload "${{ github.ref_name }}" remy-daemon-* --clobber
