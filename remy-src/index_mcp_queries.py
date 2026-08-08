@@ -3,24 +3,29 @@
 import difflib
 import hashlib
 import json
-import os
 import sys
 import sqlite3
 import unicodedata
 from collections import defaultdict
-from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import dataclass
-from functools import wraps
-from typing import Optional
 
-_IMPACT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "remy-index")
-sys.path.insert(0, _IMPACT_DIR)
+from index_mcp_common import (
+    DB_FILE_DEFAULT,
+    _DB_NOT_FOUND,
+    _DB_OVERRIDE,
+    _IMPACT_DIR,
+    _QUERY_CONFIG,
+    _config,
+    _config_values,
+    _open_db,
+    _query_scoped,
+    database_override,
+    get_latest_summary,
+)
 from impact import (
     bfs_callers as _bfs_callers,
     bfs_callees as _bfs_callees,
     collect_file_symbols,
-    get_file_count,
     get_layer,
     get_line_range,
 )
@@ -28,86 +33,7 @@ from struct_scan import tokenize_symbol
 from retrieval_projection import select_current_summary
 import remy_config
 
-DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
-_DB_NOT_FOUND = "Error: logic_index.db not found. Run /remy-index to initialize the project index."
 _IMPACT_LABELS_PER_LEVEL = 5
-
-
-_DB_OVERRIDE: ContextVar[Optional[str]] = ContextVar("remy_index_db_override", default=None)
-_QUERY_CONFIG: ContextVar[Optional[remy_config.ConfigSnapshot]] = ContextVar(
-    "remy_index_query_config", default=None
-)
-
-
-def _query_scoped(function):
-    @wraps(function)
-    def wrapped(*args, **kwargs):
-        existing = _QUERY_CONFIG.get()
-        if existing is not None:
-            return function(*args, **kwargs)
-        snapshot = _config()
-        token = _QUERY_CONFIG.set(snapshot)
-        try:
-            return function(*args, **kwargs)
-        finally:
-            _QUERY_CONFIG.reset(token)
-    return wrapped
-
-
-@contextmanager
-def database_override(path):
-    token = _DB_OVERRIDE.set(str(path))
-    try:
-        yield
-    finally:
-        _DB_OVERRIDE.reset(token)
-
-
-def _config():
-    active = _QUERY_CONFIG.get()
-    if active is not None:
-        return active
-    snapshot = remy_config.load_config(strict=False)
-    remy_config.emit_diagnostics(snapshot, prefix="MCPConfig")
-    return snapshot
-
-
-def _config_values():
-    config = _config()
-    return (
-        config.get_int("REMY_MCP_BFS_MAX_DEPTH"),
-        config.get_int("REMY_MCP_RESULT_LIMIT"),
-        config.get_bool("REMY_MCP_STATIC_ONLY_DEFAULT"),
-        config.get_int("REMY_FLOW_MAX_DEPTH"),
-        config.get_int("REMY_FLOW_MAX_VISITED"),
-    )
-
-
-def _open_db(db_path=None):
-    path = str(db_path or _DB_OVERRIDE.get() or _config().get("REMY_LOGIC_INDEX_DB_PATH"))
-    if not os.path.exists(path):
-        return None
-    db = sqlite3.connect(path, timeout=5)
-    db.execute("PRAGMA journal_mode=WAL")
-    db.execute("PRAGMA busy_timeout=3000")
-    return db
-
-
-def get_latest_summary(db, node_kind, node_ref):
-    current = select_current_summary(db, node_kind, node_ref)
-    if current.get("id") is None:
-        if current.get("status") is None:
-            return None
-        return {
-            "short": None,
-            "full": None,
-            "status": current.get("status"),
-        }
-    return {
-        "short": current.get("short"),
-        "full": current.get("full"),
-        "status": current.get("status"),
-    }
 
 
 def _bfs_callers_ambiguous(db, target_set, max_depth, static_only=False):

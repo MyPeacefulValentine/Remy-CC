@@ -53,6 +53,7 @@ DEPLOY_FILES_MAP = {
     "remy-assets/logo.svg": "remy-assets/logo.svg",
     "remy-src/patch_descriptions.py": "remy-src/patch_descriptions.py",
     "remy-src/index_mcp_server.py": "remy-src/index_mcp_server.py",
+    "remy-src/index_mcp_common.py": "remy-src/index_mcp_common.py",
     "remy-src/index_mcp_queries.py": "remy-src/index_mcp_queries.py",
     "remy-src/remy_config.py": "remy-src/remy_config.py",
 }

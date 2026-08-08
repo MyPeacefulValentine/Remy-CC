@@ -20,6 +20,7 @@
     "tests/test_remy_config.py",
     "tests/test_config_ui.py",
     "tests/test_lifecycle_hook.py",
+    "remy-src/index_mcp_common.py",
     "remy-src/index_mcp_queries.py",
     "remy-src/cli.py",
     "hooks/doc_manager/injector.py",
