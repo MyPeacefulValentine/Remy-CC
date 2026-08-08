@@ -65,25 +65,27 @@ def env(tmp_path, monkeypatch):
     conn.commit()
     conn.close()
     monkeypatch.chdir(tmp_path)
-    import importlib
-    if "index_mcp_queries" in sys.modules:
-        del sys.modules["index_mcp_queries"]
-    import index_mcp_queries
-    yield index_mcp_queries
+    if "index_mcp_navigate" in sys.modules:
+        del sys.modules["index_mcp_navigate"]
+    import index_mcp_navigate
+    yield index_mcp_navigate
 
 
 class TestClusterSummary:
     def test_single_cluster(self, env):
-        out = env.query_cluster_summary_impl("security")
+        from index_mcp_facts import query_cluster_summary_impl
+        out = query_cluster_summary_impl("security")
         assert "security" in out
         assert "Authentication and crypto utilities" in out
 
     def test_all_clusters(self, env):
-        out = env.query_cluster_summary_impl(None)
+        from index_mcp_facts import query_cluster_summary_impl
+        out = query_cluster_summary_impl(None)
         assert "security" in out
 
     def test_missing_returns_message(self, env):
-        out = env.query_cluster_summary_impl("nonexistent")
+        from index_mcp_facts import query_cluster_summary_impl
+        out = query_cluster_summary_impl("nonexistent")
         assert "No clusters found" in out
 
 

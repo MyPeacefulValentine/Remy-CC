@@ -56,6 +56,8 @@ DEPLOY_FILES_MAP = {
     "remy-src/index_mcp_common.py": "remy-src/index_mcp_common.py",
     "remy-src/index_mcp_graph.py": "remy-src/index_mcp_graph.py",
     "remy-src/index_mcp_search.py": "remy-src/index_mcp_search.py",
+    "remy-src/index_mcp_facts.py": "remy-src/index_mcp_facts.py",
+    "remy-src/index_mcp_navigate.py": "remy-src/index_mcp_navigate.py",
     "remy-src/index_mcp_queries.py": "remy-src/index_mcp_queries.py",
     "remy-src/remy_config.py": "remy-src/remy_config.py",
 }
