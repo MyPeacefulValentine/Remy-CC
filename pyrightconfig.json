@@ -22,6 +22,7 @@
     "tests/test_lifecycle_hook.py",
     "remy-src/index_mcp_common.py",
     "remy-src/index_mcp_graph.py",
+    "remy-src/index_mcp_search.py",
     "remy-src/index_mcp_queries.py",
     "remy-src/cli.py",
     "hooks/doc_manager/injector.py",
