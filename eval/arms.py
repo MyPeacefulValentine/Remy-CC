@@ -191,6 +191,7 @@ class RemyTools:
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path).resolve()
         self._mod = None
+        self._queries = None
         self._schemas: dict[str, dict] = {}
 
     def load(self):
@@ -201,7 +202,9 @@ class RemyTools:
             if ap not in sys.path:
                 sys.path.insert(0, ap)
         import index_mcp_server as mod
+        import index_mcp_queries as queries
         self._mod = mod
+        self._queries = queries
         for t in asyncio.run(mod.mcp.list_tools()):
             if t.name in self.EXCLUDE:
                 continue
@@ -219,13 +222,14 @@ class RemyTools:
         if name not in self._schemas:
             return f"unknown tool: {name}"
         module = self._mod
-        if module is None:
+        queries = self._queries
+        if module is None or queries is None:
             return "Remy MCP tools are not loaded"
         fn = getattr(module, name, None)
         if not callable(fn):
             return f"tool not callable: {name}"
         try:
-            with module.database_override(self.db_path):
+            with queries.database_override(self.db_path):
                 return str(fn(**args))
         except Exception as e:
             return f"ERROR ({name}): {type(e).__name__}: {e}"
