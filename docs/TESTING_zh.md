@@ -152,7 +152,7 @@ shim背后的`cli.py::cmd_verify`（`remy-cc verify`）。两者都把缺失的`
 5个文件，其余以`+N more file(s)`说明。
 
 ```
-python -m pytest Remy-CC/tests/test_mcp_queries.py -k Impact -v
+python -m pytest Remy-CC/tests/test_mcp_graph.py -k Impact -v
 ```
 
 `TestQueryImpactRendering`覆盖标签去重、层内计数、两个result limit下输出一致、

@@ -193,7 +193,7 @@ samples; `REMY_MCP_RESULT_LIMIT` no longer applies to this tool. Level labels
 are capped at five files and the remainder is reported as `+N more file(s)`.
 
 ```
-python -m pytest Remy-CC/tests/test_mcp_queries.py -k Impact -v
+python -m pytest Remy-CC/tests/test_mcp_graph.py -k Impact -v
 ```
 
 `TestQueryImpactRendering` covers label de-duplication, the per-level counts,

@@ -24,9 +24,10 @@ The server exits gracefully (exit code 0) if `mcp` is not installed or if `REMY_
                                                                 │ import
                                                      ┌──────────▼───────────────┐
                                                      │  index_mcp_queries.py    │
-                                                     │  ├─ SQL queries          │
-                                                     │  ├─ BFS traversal        │
-                                                     │  └─ result formatting    │
+                                                     │  (compat re-export over) │
+                                                     │  ├─ common / facts       │
+                                                     │  ├─ graph / search       │
+                                                     │  └─ navigate             │
                                                      └──────────┬───────────────┘
                                                                 │ import
                                                      ┌──────────▼───────────────┐
@@ -493,8 +494,13 @@ python -u ~/.claude/remy-src/index_mcp_server.py
 
 | File | Lines | Role |
 | :--- | :--- | :--- |
-| `index_mcp_server.py` | ~200 | FastMCP server definition, tool handlers (thin wrappers), freshness initialization |
-| `index_mcp_queries.py` | ~830 | All query implementations: SQL, BFS traversal, symbol resolution, result formatting |
+| `index_mcp_server.py` | ~280 | FastMCP server definition, tool handlers (thin wrappers), freshness initialization |
+| `index_mcp_queries.py` | ~110 | Compatibility re-export entry: every previously public name stays importable |
+| `index_mcp_common.py` | ~100 | Shared DB access, ContextVars, config scope, summary lookup |
+| `index_mcp_facts.py` | ~240 | Symbol/file/cluster/pattern fact queries |
+| `index_mcp_graph.py` | ~580 | Ambiguous BFS, callers/callees/impact, flow traversal and formatting |
+| `index_mcp_search.py` | ~490 | Query validation, exact/prefix/BM25/fuzzy channels, candidate merging |
+| `index_mcp_navigate.py` | ~380 | Intent navigation: candidates, judge_cache key, prompt, LLM ranking |
 
 ### Architectural Constraints
 
@@ -508,7 +514,7 @@ python -u ~/.claude/remy-src/index_mcp_server.py
 
 ### Adding a New Tool
 
-1. Implement `query_xxx_impl(...)` in `index_mcp_queries.py`.
+1. Implement `query_xxx_impl(...)` in the sub-module owning the domain (`index_mcp_facts.py` / `index_mcp_graph.py` / `index_mcp_search.py` / `index_mcp_navigate.py`) and re-export it from `index_mcp_queries.py`.
 2. Add the handler in `index_mcp_server.py`:
    ```python
    @mcp.tool()
