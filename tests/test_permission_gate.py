@@ -1,0 +1,171 @@
+"""Tests for permission_gate.py: whitelist decisions, deny precedence, and fail-open IO."""
+
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+MODULE_PATH = Path(__file__).resolve().parent.parent / "hooks" / "permission_gate.py"
+spec = importlib.util.spec_from_file_location("permission_gate_tested", MODULE_PATH)
+assert spec and spec.loader
+gate = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = gate
+spec.loader.exec_module(gate)
+
+REMY_SRC = Path(__file__).resolve().parent.parent / "remy-src"
+if str(REMY_SRC) not in sys.path:
+    sys.path.insert(0, str(REMY_SRC))
+import remy_config
+
+
+@pytest.fixture(autouse=True)
+def isolated_remy_user_config(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(remy_config.Path, "home", classmethod(lambda _cls: home))
+    monkeypatch.delenv("REMY_PERMISSION_GATE", raising=False)
+    with remy_config._CACHE_LOCK:
+        remy_config._FILE_CACHE.clear()
+    yield
+    with remy_config._CACHE_LOCK:
+        remy_config._FILE_CACHE.clear()
+
+
+def _run_hook(stdin_bytes, home, *args):
+    env = dict(os.environ)
+    env.pop("REMY_PERMISSION_GATE", None)
+    env["HOME"] = str(home)
+    env["USERPROFILE"] = str(home)
+    proc = subprocess.run(
+        [sys.executable, str(MODULE_PATH), *args],
+        input=stdin_bytes, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env=env, timeout=60,
+    )
+    return proc.returncode, proc.stdout.decode("utf-8", "replace").strip()
+
+
+def _payload(cwd, tool="Write", path=".claude/temp_task/x.json"):
+    return json.dumps(
+        {"tool_name": tool, "tool_input": {"file_path": path}, "cwd": str(cwd)}
+    ).encode("utf-8")
+
+
+def _write_project_config(cwd, values):
+    claude_dir = Path(cwd) / ".claude"
+    claude_dir.mkdir(parents=True, exist_ok=True)
+    (claude_dir / "remy-config.json").write_text(
+        json.dumps({"schema_version": "1.0.0", "values": values}), encoding="utf-8"
+    )
+
+
+class TestDecide:
+    @pytest.mark.parametrize("path", [
+        ".claude/temp_task/x.json",
+        ".claude/temp_task/sub/deep.json",
+        ".claude/temp_decisions/d.md",
+        ".claude/history/reports/r.md",
+        ".claude/project_tree.md",
+        ".claude/logic_tree_view.md",
+        ".claude/logic_index.db",
+        ".claude/logic_index_dirty.lock",
+        ".claude/tree_config",
+    ])
+    def test_system_artifacts_allowed(self, tmp_path, path):
+        assert gate.decide(str(tmp_path), "Write", path) == "allow"
+
+    def test_absolute_path_allowed(self, tmp_path):
+        target = tmp_path / ".claude" / "temp_task" / "x.json"
+        assert gate.decide(str(tmp_path), "Edit", str(target)) == "allow"
+
+    @pytest.mark.parametrize("path", [
+        ".claude/settings.json",
+        ".claude/settings.local.json",
+        ".claude/SETTINGS.LOCAL.JSON",
+        ".claude/remy-config.json",
+        ".claude/temp_task/../settings.json",
+    ])
+    def test_settings_denied(self, tmp_path, path):
+        assert gate.decide(str(tmp_path), "Edit", path) == "skip:denied"
+
+    @pytest.mark.parametrize("path", [
+        "src/main.py",
+        ".claude/temp_task/../../outside.txt",
+    ])
+    def test_outside_claude_skipped(self, tmp_path, path):
+        assert gate.decide(str(tmp_path), "Edit", path) == "skip:outside"
+
+    def test_foreign_project_claude_skipped(self, tmp_path):
+        other = tmp_path / "other" / ".claude" / "temp_task"
+        other.mkdir(parents=True)
+        cwd = tmp_path / "proj"
+        cwd.mkdir()
+        assert gate.decide(str(cwd), "Write", str(other / "x.json")) == "skip:outside"
+
+    def test_unlisted_claude_file_skipped(self, tmp_path):
+        assert gate.decide(str(tmp_path), "Edit", ".claude/unknown.md") == "skip:unlisted"
+
+    def test_claude_root_skipped(self, tmp_path):
+        assert gate.decide(str(tmp_path), "Edit", ".claude") == "skip:root"
+
+    def test_other_tools_skipped(self, tmp_path):
+        assert gate.decide(str(tmp_path), "Bash", ".claude/temp_task/x.json") == "skip:tool"
+
+    def test_empty_path_skipped(self, tmp_path):
+        assert gate.decide(str(tmp_path), "Edit", "") == "skip:no_path"
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="drive-letter semantics are Windows-only")
+    def test_cross_drive_skipped(self):
+        assert gate.decide("Z:\\proj", "Edit", "C:\\other\\.claude\\temp_task\\x.json") == "skip:outside"
+
+    def test_repeated_calls_are_stable(self, tmp_path):
+        results = {gate.decide(str(tmp_path), "Write", ".claude/temp_task/x.json") for _ in range(3)}
+        assert results == {"allow"}
+
+
+class TestGateEnabled:
+    def test_default_is_enabled(self, tmp_path):
+        assert gate.gate_enabled(str(tmp_path)) is True
+
+    def test_env_off_disables(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("REMY_PERMISSION_GATE", "false")
+        assert gate.gate_enabled(str(tmp_path)) is False
+
+    def test_project_config_off_disables(self, tmp_path):
+        _write_project_config(tmp_path, {"REMY_PERMISSION_GATE": "false"})
+        assert gate.gate_enabled(str(tmp_path)) is False
+
+
+class TestMainIO:
+    def test_allow_emits_documented_decision(self, tmp_path):
+        rc, out = _run_hook(_payload(tmp_path), tmp_path / "home")
+        assert rc == 0
+        assert json.loads(out) == gate.ALLOW_DECISION
+
+    @pytest.mark.parametrize("stdin_bytes", [b"", b"not json at all", b"[1, 2]"])
+    def test_malformed_stdin_fails_open(self, tmp_path, stdin_bytes):
+        rc, out = _run_hook(stdin_bytes, tmp_path / "home")
+        assert rc == 0
+        assert out == ""
+
+    def test_denied_path_emits_nothing(self, tmp_path):
+        rc, out = _run_hook(_payload(tmp_path, "Edit", ".claude/settings.json"), tmp_path / "home")
+        assert rc == 0
+        assert out == ""
+
+    def test_gate_off_via_project_config_emits_nothing(self, tmp_path):
+        _write_project_config(tmp_path, {"REMY_PERMISSION_GATE": "false"})
+        rc, out = _run_hook(_payload(tmp_path), tmp_path / "home")
+        assert rc == 0
+        assert out == ""
+
+    def test_trace_flag_writes_log(self, tmp_path):
+        rc, out = _run_hook(_payload(tmp_path), tmp_path / "home", "--trace")
+        assert rc == 0
+        assert json.loads(out) == gate.ALLOW_DECISION
+        log = tmp_path / ".claude" / "temp_log" / "permission_gate_trace.log"
+        assert log.is_file()
+        assert "outcome=allow" in log.read_text(encoding="utf-8")

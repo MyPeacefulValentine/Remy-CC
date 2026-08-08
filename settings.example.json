@@ -135,6 +135,17 @@
           }
         ]
       }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"~/.claude/hooks/permission_gate.py\""
+          }
+        ]
+      }
     ]
   },
   "outputStyle": "system-architect",

@@ -74,6 +74,7 @@ These layers are coupled by design. Hooks maintain the context that skills depen
 | Pre-Tool Guard | Before each tool use | Converts absolute paths to relative; injects Conda/Mamba activation and UTF-8 encoding into shell commands; enforces snake_case file naming |
 | Logic Enrichment | Before Read/Grep/Glob | Consumes dirty file entries for incremental re-parsing; appends caller/callee relationships and architecture layer for the target file (requires logic index) |
 | Dirty File Tracker | After Edit/Write | Records modified file paths for incremental logic index updates on the next Read |
+| Permission Gate | On Edit/Write permission prompts | Auto-approves writes to project-level `.claude/` system artifacts (temp dirs, history, generated trees and indexes); settings files always prompt; disable via `REMY_PERMISSION_GATE` |
 | Lifecycle Manager | Session start/end, pre-compaction | Regenerates the project tree snapshot and language directive; triggers full structural scan to refresh symbol line numbers and call graph |
 | Document Injector | On demand | Injects project tree, logic index, and timeline references into `CLAUDE.md` |
 
