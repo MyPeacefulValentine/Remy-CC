@@ -15,6 +15,7 @@ from impact import (
     get_layer,
     get_line_range,
 )
+from schema import STATIC_PROVENANCE_SQL
 
 _IMPACT_LABELS_PER_LEVEL = 5
 
@@ -23,7 +24,7 @@ def _bfs_callers_ambiguous(db, target_set, max_depth, static_only=False):
     visited = set(target_set)
     current = set(target_set)
     levels = {}
-    prov_filter = "AND e.provenance IN ('definite','probable')" if static_only else ""
+    prov_filter = f"AND e.provenance {STATIC_PROVENANCE_SQL}" if static_only else ""
 
     for depth in range(1, max_depth + 1):
         if not current:
@@ -57,7 +58,7 @@ def _bfs_callees_ambiguous(db, target_set, max_depth, static_only=False):
     visited = set(target_set)
     current = set(target_set)
     levels = {}
-    prov_filter = "AND e.provenance IN ('definite','probable')" if static_only else ""
+    prov_filter = f"AND e.provenance {STATIC_PROVENANCE_SQL}" if static_only else ""
 
     for depth in range(1, max_depth + 1):
         if not current:
@@ -266,7 +267,7 @@ def _format_impact_result(target_files, upstream, downstream):
 
 
 def _load_graph(db, static_only=False):
-    prov_filter = "AND provenance IN ('definite','probable')" if static_only else ""
+    prov_filter = f"AND provenance {STATIC_PROVENANCE_SQL}" if static_only else ""
     rows = db.execute(
         f"SELECT source_file, caller, callee_qualified, provenance, via "
         f"FROM edges WHERE callee_qualified IS NOT NULL {prov_filter}"

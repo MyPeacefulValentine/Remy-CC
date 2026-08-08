@@ -225,6 +225,70 @@ class TestBfsChunking:
             db.close()
 
 
+class TestBfsAmbiguousDepth:
+    """Multi-level ambiguous BFS expansion through the edge_candidates branch."""
+
+    @pytest.fixture
+    def chain_db_dir(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        db = sqlite3.connect(str(claude_dir / "logic_index.db"))
+        db.executescript(SCHEMA_SQL)
+        for path, name in (
+            ("target.py", "target_fn"),
+            ("mid.py", "mid_fn"),
+            ("outer.py", "outer_fn"),
+        ):
+            db.execute(
+                "INSERT INTO files (path, struct_hash, language, layer) VALUES (?,?,'python','Core')",
+                (path, f"h-{path}"),
+            )
+            db.execute(
+                "INSERT INTO symbols (file_path,name,short_name,type,lineno,name_tokens) "
+                "VALUES (?,?,?,'function',1,?)",
+                (path, name, name, name),
+            )
+        db.execute(
+            "INSERT INTO edges VALUES (NULL,'mid.py','mid_fn','target_fn','target.py','target.py::target_fn',2,'definite',NULL,NULL,'name')"
+        )
+        db.execute(
+            "INSERT INTO edges VALUES (NULL,'outer.py','outer_fn','mid_fn',NULL,NULL,3,'speculative',NULL,NULL,'attribute')"
+        )
+        edge_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        db.execute(
+            "INSERT INTO edge_candidates (edge_id, candidate_qualified, score) VALUES (?,?,1)",
+            (edge_id, "mid.py::mid_fn"),
+        )
+        db.commit()
+        db.close()
+        return tmp_path
+
+    def test_callers_depth_two_reaches_candidate_edge(self, chain_db_dir):
+        from index_mcp_graph import _bfs_callers_ambiguous
+        from index_mcp_common import _open_db
+        db = _open_db()
+        assert db is not None
+        try:
+            levels = _bfs_callers_ambiguous(db, {"target.py::target_fn"}, 2)
+            assert levels[1] == ["mid.py::mid_fn"]
+            assert levels[2] == ["outer.py::outer_fn"]
+        finally:
+            db.close()
+
+    def test_callees_depth_two_reaches_direct_edge(self, chain_db_dir):
+        from index_mcp_graph import _bfs_callees_ambiguous
+        from index_mcp_common import _open_db
+        db = _open_db()
+        assert db is not None
+        try:
+            levels = _bfs_callees_ambiguous(db, {"outer.py::outer_fn"}, 2)
+            assert levels[1] == ["mid.py::mid_fn"]
+            assert levels[2] == ["target.py::target_fn"]
+        finally:
+            db.close()
+
+
 @pytest.fixture
 def flow_db_dir(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)

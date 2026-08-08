@@ -291,3 +291,29 @@ class TestCacheKeySensitivity:
         first = counter["n"]
         env.query_navigate_impl("login credentials", top_k=5, llm_call=llm)
         assert counter["n"] == first + 1
+
+
+class TestTryDefaultLlmCall:
+    def test_no_api_key_returns_none(self, env, monkeypatch):
+        monkeypatch.setattr(env, "_config", lambda: {"REMY_LLM_API_KEY": None})
+        assert env._try_default_llm_call() is None
+
+    def test_with_api_key_constructs_client_per_call(self, env, monkeypatch):
+        import llm_client
+
+        class FakeClient:
+            constructed = 0
+
+            def __init__(self):
+                FakeClient.constructed += 1
+
+            def call(self, prompt):
+                return f"ranked:{prompt}"
+
+        monkeypatch.setattr(env, "_config", lambda: {"REMY_LLM_API_KEY": "test-key"})
+        monkeypatch.setattr(llm_client, "LlmClient", FakeClient)
+        fn = env._try_default_llm_call()
+        assert fn is not None
+        assert fn("p1") == "ranked:p1"
+        assert fn("p2") == "ranked:p2"
+        assert FakeClient.constructed == 2

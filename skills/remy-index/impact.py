@@ -13,6 +13,7 @@ _REMY_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", 
 if _REMY_SRC not in sys.path:
     sys.path.insert(0, _REMY_SRC)
 import remy_config
+from schema import STATIC_PROVENANCE_SQL
 
 DB_FILE_DEFAULT = os.path.join(".claude", "logic_index.db")
 
@@ -60,7 +61,7 @@ def bfs_callers(db, target_qualified_set, max_depth, static_only=False):
     visited = set(target_qualified_set)
     current = set(target_qualified_set)
     levels = {}
-    filter_clause = "AND provenance IN ('definite','probable')" if static_only else ""
+    filter_clause = f"AND provenance {STATIC_PROVENANCE_SQL}" if static_only else ""
 
     for depth in range(1, max_depth + 1):
         if not current:
@@ -91,7 +92,7 @@ def bfs_callees(db, target_qualified_set, max_depth, static_only=False):
     visited = set(target_qualified_set)
     current = set(target_qualified_set)
     levels = {}
-    filter_clause = "AND provenance IN ('definite','probable')" if static_only else ""
+    filter_clause = f"AND provenance {STATIC_PROVENANCE_SQL}" if static_only else ""
 
     for depth in range(1, max_depth + 1):
         if not current:

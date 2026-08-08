@@ -4,6 +4,11 @@ from retrieval_projection import RETRIEVAL_SCHEMA_SQL
 
 
 VERSION = "12.0.0"
+
+# Static-only provenance filter fragment: edge provenance values treated as
+# statically resolved. Column name is supplied at each call site.
+STATIC_PROVENANCE_SQL = "IN ('definite','probable')"
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS files (
     path TEXT PRIMARY KEY,
