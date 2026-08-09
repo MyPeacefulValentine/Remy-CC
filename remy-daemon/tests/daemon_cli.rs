@@ -59,14 +59,30 @@ impl ForegroundDaemon {
             .stderr(Stdio::null())
             .spawn()
             .expect("spawn foreground daemon");
+        let child_pid = child.id();
         let daemon = Self {
             child,
             home: home.to_path_buf(),
         };
+        let run_dir = daemon.home.join("run");
         assert!(
-            wait_until(|| is_running(&daemon.home)),
-            "daemon did not reach running state"
+            wait_until(|| {
+                let published_pid = std::fs::read_to_string(run_dir.join("daemon.pid"))
+                    .ok()
+                    .and_then(|value| value.trim().parse::<u32>().ok());
+                let published_port = std::fs::read_to_string(run_dir.join("daemon.port"))
+                    .ok()
+                    .and_then(|value| value.trim().parse::<u16>().ok());
+                let token_published = std::fs::read_to_string(run_dir.join("daemon.token"))
+                    .map(|value| !value.trim().is_empty())
+                    .unwrap_or(false);
+                published_pid == Some(child_pid)
+                    && published_port.is_some_and(|port| port != 0)
+                    && token_published
+            }),
+            "daemon did not publish its endpoint"
         );
+        assert!(is_running(&daemon.home), "published daemon is not running");
         daemon
     }
 
