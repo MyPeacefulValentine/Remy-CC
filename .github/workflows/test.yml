@@ -71,6 +71,17 @@ jobs:
       - run: cargo fmt --manifest-path remy-daemon/Cargo.toml -- --check
       - run: cargo clippy --manifest-path remy-daemon/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --manifest-path remy-daemon/Cargo.toml
+      - name: verify static CRT in release binary (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: |
+          cargo build --release --manifest-path remy-daemon/Cargo.toml
+          $bytes = [System.IO.File]::ReadAllBytes("remy-daemon/target/release/remy-daemon.exe")
+          if ([System.Text.Encoding]::ASCII.GetString($bytes).Contains("VCRUNTIME140")) {
+            throw "release binary references VCRUNTIME140 (dynamic CRT); expected crt-static"
+          }
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
