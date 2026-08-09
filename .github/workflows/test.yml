@@ -71,6 +71,23 @@ jobs:
       - run: cargo fmt --manifest-path remy-daemon/Cargo.toml -- --check
       - run: cargo clippy --manifest-path remy-daemon/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --manifest-path remy-daemon/Cargo.toml
+      - name: verify static musl binary (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+          cargo build --release --manifest-path remy-daemon/Cargo.toml --target x86_64-unknown-linux-musl
+          binary="remy-daemon/target/x86_64-unknown-linux-musl/release/remy-daemon"
+          sha256sum "$binary"
+          ldd_output=$(ldd "$binary" 2>&1 || true)
+          printf '%s\n' "$ldd_output"
+          printf '%s\n' "$ldd_output" | grep -Eq 'not a dynamic executable|statically linked'
+          if readelf -d "$binary" | grep -q '(NEEDED)'; then
+            echo 'musl binary contains a dynamic NEEDED entry' >&2
+            exit 1
+          fi
       - name: verify static CRT in release binary (windows)
         if: runner.os == 'Windows'
         shell: pwsh
