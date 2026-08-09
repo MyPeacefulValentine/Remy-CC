@@ -198,10 +198,25 @@ fn detached_start_stop_roundtrip() {
 }
 
 #[test]
-fn stop_with_corrupt_pid_file_exits_2() {
+fn stop_with_corrupt_pid_file_succeeds_via_ipc() {
+    let home = tempfile::tempdir().unwrap();
+    let mut daemon = ForegroundDaemon::spawn(home.path());
+    std::fs::write(home.path().join("run").join("daemon.pid"), "not-a-pid").unwrap();
+
+    let output = run(home.path(), &["stop"]);
+    assert_eq!(exit_code(&output), 0);
+    assert!(String::from_utf8_lossy(&output.stdout).contains("stopped"));
+    assert!(wait_until(|| !is_running(home.path())));
+    let _ = daemon.child.wait();
+}
+
+#[test]
+fn stop_with_corrupt_pid_and_unreachable_ipc_exits_2() {
     let home = tempfile::tempdir().unwrap();
     let _daemon = ForegroundDaemon::spawn(home.path());
-    std::fs::write(home.path().join("run").join("daemon.pid"), "not-a-pid").unwrap();
+    let run_dir = home.path().join("run");
+    std::fs::write(run_dir.join("daemon.pid"), "not-a-pid").unwrap();
+    std::fs::remove_file(run_dir.join("daemon.port")).unwrap();
 
     let output = run(home.path(), &["stop"]);
     assert_eq!(exit_code(&output), 2);

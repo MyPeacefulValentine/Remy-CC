@@ -1,7 +1,8 @@
-//! remy-daemon — Remy-CC resident daemon, R1.1 skeleton.
+//! remy-daemon — Remy-CC resident daemon.
 //!
-//! Scope: single-instance mutual exclusion, `start|stop|status`, JSON line
-//! logging under `~/.remy-cc/log/`. No IPC protocol, no index duties.
+//! Scope (R1.1 + R1.2): single-instance mutual exclusion, `start|stop|status`,
+//! JSON line logging under `~/.remy-cc/log/`, loopback TCP IPC with version
+//! handshake (hello/ping/shutdown). No index duties.
 //!
 //! Exit codes: 0 = success; 1 = already running (`start`) / not running
 //! (`status`); 2 = unexpected error or timeout.
@@ -9,9 +10,12 @@
 mod clock;
 mod logging;
 mod process;
+mod protocol;
+mod server;
 mod single_instance;
 
-use std::io;
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -30,7 +34,7 @@ const START_WAIT: Duration = Duration::from_secs(10);
 const START_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const STOP_WAIT: Duration = Duration::from_secs(5);
 const STOP_POLL_INTERVAL: Duration = Duration::from_millis(100);
-const IDLE_SLEEP: Duration = Duration::from_secs(1);
+const IPC_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Parser)]
 #[command(
@@ -119,9 +123,8 @@ fn run_foreground(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
                 "daemon_started",
                 json!({"version": env!("CARGO_PKG_VERSION")}),
             )?;
-            loop {
-                clock.sleep(IDLE_SLEEP);
-            }
+            server::serve(&run_dir, env!("CARGO_PKG_VERSION"), &logger)?;
+            Ok(ExitCode::SUCCESS)
         }
     }
 }
@@ -157,13 +160,30 @@ fn start_detached(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
 
 fn status(home: &Path) -> io::Result<ExitCode> {
     let run_dir = run_dir(home);
-    if single_instance::is_held(&run_dir)? {
-        println!("remy-daemon: running{}", pid_suffix(&run_dir));
-        Ok(ExitCode::SUCCESS)
-    } else {
+    if !single_instance::is_held(&run_dir)? {
         println!("remy-daemon: not running");
-        Ok(ExitCode::from(1))
+        return Ok(ExitCode::from(1));
     }
+    let hello = protocol::Request::Hello {
+        protocol_version: protocol::PROTOCOL_VERSION,
+        token: server::read_token(&run_dir).unwrap_or_default(),
+    };
+    match ipc_roundtrip(&run_dir, &hello) {
+        Some(protocol::Response::Ok(ok)) if ok.ok => {
+            let version = ok.daemon_version.unwrap_or_else(|| "unknown".to_string());
+            println!(
+                "remy-daemon: running{} (version {version})",
+                pid_suffix(&run_dir)
+            );
+        }
+        _ => {
+            println!(
+                "remy-daemon: running{} (ipc-unresponsive)",
+                pid_suffix(&run_dir)
+            );
+        }
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn stop(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
@@ -172,15 +192,25 @@ fn stop(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
         println!("remy-daemon: not running");
         return Ok(ExitCode::SUCCESS);
     }
-    let Some(pid) = single_instance::read_pid(&run_dir) else {
-        eprintln!(
-            "remy-daemon: running but pid file is unreadable; terminate the process manually"
-        );
-        return Ok(ExitCode::from(2));
+
+    let shutdown = protocol::Request::Shutdown {
+        token: server::read_token(&run_dir).unwrap_or_default(),
     };
-    if !process::terminate(pid)? {
-        eprintln!("remy-daemon: failed to terminate pid {pid}");
-        return Ok(ExitCode::from(2));
+    let acknowledged = matches!(
+        ipc_roundtrip(&run_dir, &shutdown),
+        Some(protocol::Response::Ok(ok)) if ok.ok
+    );
+    if !acknowledged {
+        let Some(pid) = single_instance::read_pid(&run_dir) else {
+            eprintln!(
+                "remy-daemon: running but pid file is unreadable; terminate the process manually"
+            );
+            return Ok(ExitCode::from(2));
+        };
+        if !process::terminate(pid)? {
+            eprintln!("remy-daemon: failed to terminate pid {pid}");
+            return Ok(ExitCode::from(2));
+        }
     }
 
     let requested_at = clock.now();
@@ -192,13 +222,33 @@ fn stop(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
         let elapsed = clock.now().duration_since(requested_at).unwrap_or_default();
         if elapsed >= STOP_WAIT {
             eprintln!(
-                "remy-daemon: pid {pid} still holds the lock after {}s",
+                "remy-daemon: daemon still holds the lock after {}s",
                 STOP_WAIT.as_secs()
             );
             return Ok(ExitCode::from(2));
         }
         clock.sleep(STOP_POLL_INTERVAL);
     }
+}
+
+/// One-shot IPC exchange: connect to the port published in `run_dir`, send a
+/// single request line, read a single response line. `None` on any transport
+/// or parse failure — callers fall back to the R1.1 lock/pid paths (INV-R1).
+fn ipc_roundtrip(run_dir: &Path, request: &protocol::Request) -> Option<protocol::Response> {
+    let port = server::read_port(run_dir)?;
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let stream = TcpStream::connect_timeout(&addr, IPC_TIMEOUT).ok()?;
+    stream.set_read_timeout(Some(IPC_TIMEOUT)).ok()?;
+    stream.set_write_timeout(Some(IPC_TIMEOUT)).ok()?;
+
+    let json = serde_json::to_string(request).ok()?;
+    let mut writer = BufWriter::new(&stream);
+    writeln!(writer, "{json}").ok()?;
+    writer.flush().ok()?;
+
+    let mut line = String::new();
+    BufReader::new(&stream).read_line(&mut line).ok()?;
+    serde_json::from_str(&line).ok()
 }
 
 fn pid_suffix(run_dir: &Path) -> String {
