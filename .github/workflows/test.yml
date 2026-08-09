@@ -75,4 +75,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install pytest
-      - run: python -m pytest tests/test_daemon_integration.py -q -p no:cacheprovider
+      - run: python -m pytest tests/test_daemon_integration.py tests/test_daemon_ipc.py -q -p no:cacheprovider -s
