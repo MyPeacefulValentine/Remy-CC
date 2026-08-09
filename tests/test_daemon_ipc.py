@@ -109,13 +109,34 @@ class DaemonClient:
         return compatible, response
 
 
+def _force_cleanup(home):
+    """Teardown mirror of the Rust DetachedCleanup: try `stop`, then fall back
+    to a direct pid kill if some daemon still holds the lock. Covers the case
+    where `start` timed out (exit 2) but the detached process came up later."""
+    run_daemon(home, ["stop"], timeout=15)
+    if run_daemon(home, ["status"]).returncode != 0:
+        return
+    try:
+        pid = (Path(home) / "run" / "daemon.pid").read_text(encoding="ascii").strip()
+    except OSError:
+        return
+    if not pid.isdigit():
+        return
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/PID", pid, "/F"], capture_output=True)
+    else:
+        subprocess.run(["kill", "-KILL", pid], capture_output=True)
+
+
 @pytest.fixture
 def daemon_home(tmp_path):
     home = tmp_path / "home"
     result = run_daemon(home, ["start"])
-    assert result.returncode == 0, result.stderr
-    yield home
-    run_daemon(home, ["stop"], timeout=15)
+    try:
+        assert result.returncode == 0, result.stderr
+        yield home
+    finally:
+        _force_cleanup(home)
 
 
 def connected_client(home):

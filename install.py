@@ -107,6 +107,9 @@ DEPRECATED_PERMISSIONS = {
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
+DAEMON_SOURCE_DIR = SCRIPT_DIR / "remy-daemon" / "target" / "release"
+DAEMON_PROBE_TIMEOUT = 10
+
 # ── Bilingual UI Messages ─────────────────────────────────────
 
 UI = {
@@ -162,6 +165,8 @@ UI = {
         "uninstall_done": "\nUninstall complete. Removed {removed} files, skipped {skipped} modified files.",
         "uninstall_confirm": "This will remove all Remy-CC files and settings. Continue? [y/N] ",
         "uninstall_aborted": "Uninstall cancelled.",
+        "uninstall_daemon_running": "  [!] remy-daemon is running; uninstall did not change any files.\n      Stop it and retry: remy-cc daemon stop",
+        "uninstall_daemon_status_unknown": "  [!] Could not verify that remy-daemon is stopped; uninstall did not change any files.\n      Check it with: remy-cc daemon status",
         "verify_python_old": "Python version too old: {ver} (requires >= 3.7)",
         "verify_settings_missing": "settings.json not found",
         "verify_settings_invalid": "settings.json JSON format error: {err}",
@@ -198,6 +203,11 @@ UI = {
         "err_home_is_file": "  [!] {path} exists as a regular file, not a directory.\n      Remove or rename it, then retry.",
         "err_home_not_found": "  [!] Cannot determine home directory. Set $HOME and retry.",
         "err_permission": "\n  [!] Permission denied: {err}\n      Check directory permissions or avoid running with sudo.",
+        "daemon_src_missing": "  [i] remy-daemon binary not built; skipping daemon deployment.\n      Build it with: cargo build --release --manifest-path remy-daemon/Cargo.toml, then re-run install.py",
+        "daemon_verify_failed": "  [!] remy-daemon binary failed the --version check ({err}); skipped deployment.",
+        "daemon_running": "  [!] A remy-daemon instance is running; skipped deploying the new binary.\n      Stop it and re-run install: remy-cc daemon stop",
+        "daemon_deployed": "  [+] remy-daemon binary deployed: {path}",
+        "daemon_copy_failed": "  [!] Could not write the remy-daemon binary ({err}); kept the existing one.",
     },
     "zh-CN": {
         "target_dir": "目标目录: {path}",
@@ -251,6 +261,8 @@ UI = {
         "uninstall_done": "\n卸载完成。删除 {removed} 个文件，跳过 {skipped} 个已修改文件。",
         "uninstall_confirm": "此操作将移除所有 Remy-CC 文件和配置。是否继续？[y/N] ",
         "uninstall_aborted": "卸载已取消。",
+        "uninstall_daemon_running": "  [!] remy-daemon 正在运行，卸载未修改任何文件。\n      请先停止后重试：remy-cc daemon stop",
+        "uninstall_daemon_status_unknown": "  [!] 无法确认 remy-daemon 已停止，卸载未修改任何文件。\n      请执行以下命令检查：remy-cc daemon status",
         "verify_python_old": "Python 版本过低: {ver} (需要 >= 3.7)",
         "verify_settings_missing": "settings.json 不存在",
         "verify_settings_invalid": "settings.json JSON 格式错误: {err}",
@@ -287,6 +299,11 @@ UI = {
         "err_home_is_file": "  [!] {path} 是普通文件而非目录。\n      请移除或重命名后重试。",
         "err_home_not_found": "  [!] 无法确定用户主目录。请设置 $HOME 环境变量后重试。",
         "err_permission": "\n  [!] 权限不足: {err}\n      请检查目录权限，或避免使用 sudo 执行。",
+        "daemon_src_missing": "  [i] 未找到已构建的 remy-daemon 二进制，跳过 daemon 部署。\n      构建命令: cargo build --release --manifest-path remy-daemon/Cargo.toml，然后重新运行 install.py",
+        "daemon_verify_failed": "  [!] remy-daemon 二进制 --version 验证失败（{err}），已跳过部署。",
+        "daemon_running": "  [!] 检测到 remy-daemon 正在运行，已跳过二进制部署。\n      请执行 remy-cc daemon stop 后重新运行 install.py",
+        "daemon_deployed": "  [+] remy-daemon 二进制已部署: {path}",
+        "daemon_copy_failed": "  [!] 无法写入 remy-daemon 二进制（{err}），保留原有版本。",
     },
 }
 
@@ -298,16 +315,19 @@ def _t(key, **kwargs):
     return template.format(**kwargs) if kwargs else template
 
 
-def get_claude_home() -> Path:
+def _user_home() -> Path:
     try:
-        home = Path.home()
+        return Path.home()
     except RuntimeError:
         home_str = os.environ.get("HOME") or os.environ.get("USERPROFILE") or ""
         if not home_str:
             print(_t("err_home_not_found"))
             sys.exit(1)
-        home = Path(home_str)
-    return home / ".claude"
+        return Path(home_str)
+
+
+def get_claude_home() -> Path:
+    return _user_home() / ".claude"
 
 
 def compute_sha256(path: Path) -> str:
@@ -372,6 +392,17 @@ def _resolve_record_path(rec: dict, claude_home: Path) -> Path:
     return claude_home / p
 
 
+def _within_root(path: Path, root: Path) -> bool:
+    """Whether path resolves inside root. Reinstall cleanup is scoped to claude_home
+    by this check: records outside it (the daemon binary under ~/.remy-cc/) are
+    refreshed in place by their own deploy step, never deleted and rebuilt."""
+    try:
+        path.resolve().relative_to(root.resolve())
+    except (ValueError, OSError):
+        return False
+    return True
+
+
 def _remove_empty_dirs(start_dir: Path, stop_at: Path) -> None:
     """Remove empty directories from start_dir upward; stop at stop_at boundary or first non-empty parent."""
     try:
@@ -401,13 +432,16 @@ def _remove_empty_dirs(start_dir: Path, stop_at: Path) -> None:
 
 def cleanup_from_manifest(old_manifest: dict, claude_home: Path) -> None:
     """Delete files listed in the previous manifest. Files with mismatched sha256 are first
-    backed up to .bak, then deleted. Empty parent directories are pruned up to claude_home."""
+    backed up to .bak, then deleted. Empty parent directories are pruned up to claude_home.
+    Records outside claude_home are left alone — see _within_root."""
     files = old_manifest.get("files", [])
     if not files:
         return
     affected_parents = set()
     for entry in files:
         fpath = _resolve_record_path(entry, claude_home)
+        if not _within_root(fpath, claude_home):
+            continue
         if not fpath.exists():
             continue
         expected_hash = entry.get("sha256")
@@ -925,6 +959,98 @@ def register_path(bin_dir: Path) -> None:
 # ── Main Commands ──────────────────────────────────────────────
 
 
+def _remy_cc_home() -> Path:
+    env_home = os.environ.get("REMY_CC_HOME")
+    if env_home:
+        return Path(env_home)
+    return _user_home() / ".remy-cc"
+
+
+def _daemon_exe_name() -> str:
+    return "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+
+
+def _daemon_status(exe: Path) -> Optional[bool]:
+    """Return True when the daemon lock is held, False when it is not, and
+    None when the status probe cannot establish either state."""
+    try:
+        result = subprocess.run(
+            [str(exe), "status"], capture_output=True, timeout=DAEMON_PROBE_TIMEOUT
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode == 0:
+        return True
+    if result.returncode == 1:
+        return False
+    return None
+
+
+def _daemon_running(exe: Path) -> bool:
+    """Return whether `status` confirms a held daemon lock."""
+    return _daemon_status(exe) is True
+
+
+def _reclaim_deployed_daemon(records: list) -> None:
+    """Re-record an already-deployed binary when this run skips deployment.
+    cleanup_from_manifest no longer deletes it, so without re-recording the
+    entry would drop out of the manifest and uninstall would strand the file."""
+    dst = _remy_cc_home() / "bin" / _daemon_exe_name()
+    if dst.is_file():
+        records.append({"path": str(dst), "sha256": compute_sha256(dst)})
+
+
+def deploy_daemon_binary(records: list) -> None:
+    """Deploy a locally built remy-daemon binary to ~/.remy-cc/bin/.
+
+    Skips (with a printed reason) when the source binary is absent, fails the
+    --version check, or a daemon instance is currently running (overwriting a
+    running executable fails on Windows; the stale-version prompt tells the
+    user to stop it first). Every skip path re-records the existing binary so
+    it stays under manifest hash claim. The deployed path is recorded as an
+    absolute path (legacy-format record, resolved as-is by
+    _resolve_record_path)."""
+    exe_name = _daemon_exe_name()
+    src = DAEMON_SOURCE_DIR / exe_name
+    if not src.exists():
+        print(_t("daemon_src_missing"))
+        _reclaim_deployed_daemon(records)
+        return
+    try:
+        probe = subprocess.run(
+            [str(src), "--version"], capture_output=True, timeout=DAEMON_PROBE_TIMEOUT
+        )
+    except subprocess.TimeoutExpired:
+        print(_t("daemon_verify_failed", err="timeout"))
+        _reclaim_deployed_daemon(records)
+        return
+    except OSError as e:
+        print(_t("daemon_verify_failed", err=e))
+        _reclaim_deployed_daemon(records)
+        return
+    if probe.returncode != 0:
+        print(_t("daemon_verify_failed", err="exit code {}".format(probe.returncode)))
+        _reclaim_deployed_daemon(records)
+        return
+    if _daemon_running(src):
+        print(_t("daemon_running"))
+        _reclaim_deployed_daemon(records)
+        return
+    dst_dir = _remy_cc_home() / "bin"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst = dst_dir / exe_name
+    try:
+        shutil.copy2(src, dst)
+    except OSError as e:
+        print(_t("daemon_copy_failed", err=e))
+        _reclaim_deployed_daemon(records)
+        return
+    if os.name == "posix":
+        os.chmod(dst, 0o755)
+    records.append({"path": str(dst), "sha256": compute_sha256(dst)})
+    print(_t("daemon_deployed", path=dst))
+
+
 def do_install() -> None:
     if sys.version_info < (3, 10):
         print(_t("verify_python_old", ver=sys.version), file=sys.stderr)
@@ -1023,6 +1149,9 @@ def do_install() -> None:
     else:
         print(_t("settings_tpl_missing", name=SETTINGS_TEMPLATE))
         settings_backup = None
+
+    print()
+    deploy_daemon_binary(records)
 
     injected_hooks = template.get("hooks", {}) if tpl_path.exists() else {}
     injected_perms = template.get("permissions", {}).get("allow", []) if tpl_path.exists() else []
@@ -1126,6 +1255,16 @@ def do_uninstall() -> None:
 
     with open(manifest_path, "r", encoding="utf-8") as f:
         manifest = json.load(f)
+
+    daemon_exe = _remy_cc_home() / "bin" / _daemon_exe_name()
+    if daemon_exe.is_file():
+        daemon_status = _daemon_status(daemon_exe)
+        if daemon_status is True:
+            print(_t("uninstall_daemon_running"))
+            return
+        if daemon_status is None:
+            print(_t("uninstall_daemon_status_unknown"))
+            return
 
     files = manifest.get("files", [])
     removed = 0

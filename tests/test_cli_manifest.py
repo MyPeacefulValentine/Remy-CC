@@ -199,3 +199,54 @@ def test_uninstall_skips_modified_files(claude_home, capsys):
     cli.cmd_uninstall(args)
     assert f.exists()
     assert f.read_text(encoding="utf-8") == "user-edited"
+
+
+@pytest.mark.parametrize(
+    ("status_rc", "message_key"),
+    [(0, "daemon_running"), (2, "daemon_status_unknown")],
+)
+def test_uninstall_refuses_before_changes_when_daemon_not_confirmed_stopped(
+    claude_home, tmp_path, monkeypatch, capsys, status_rc, message_key
+):
+    remy_home = tmp_path / "remy-home"
+    daemon_name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    daemon = remy_home / "bin" / daemon_name
+    daemon_hash = _seed_file(daemon, "daemon")
+    hook = claude_home / "hooks" / "logic_dirty_tracker.py"
+    hook_hash = _seed_file(hook, "hook")
+    _write_manifest(claude_home, [
+        {"path": "hooks/logic_dirty_tracker.py", "sha256": hook_hash},
+        {"path": str(daemon), "sha256": daemon_hash},
+    ])
+    monkeypatch.setenv("REMY_CC_HOME", str(remy_home))
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda *_args, **_kwargs: types.SimpleNamespace(returncode=status_rc),
+    )
+
+    cli.cmd_uninstall(types.SimpleNamespace(yes=True))
+
+    assert hook.exists()
+    assert daemon.exists()
+    assert (claude_home / cli.MANIFEST_FILE).exists()
+    assert cli._um(message_key) in capsys.readouterr().out
+
+
+def test_uninstall_removes_stopped_daemon(claude_home, tmp_path, monkeypatch):
+    remy_home = tmp_path / "remy-home"
+    daemon_name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    daemon = remy_home / "bin" / daemon_name
+    daemon_hash = _seed_file(daemon, "daemon")
+    _write_manifest(claude_home, [{"path": str(daemon), "sha256": daemon_hash}])
+    monkeypatch.setenv("REMY_CC_HOME", str(remy_home))
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda *_args, **_kwargs: types.SimpleNamespace(returncode=1),
+    )
+
+    cli.cmd_uninstall(types.SimpleNamespace(yes=True))
+
+    assert not daemon.exists()
+    assert not (claude_home / cli.MANIFEST_FILE).exists()

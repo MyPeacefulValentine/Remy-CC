@@ -14,6 +14,7 @@ import remy_config
 
 MANIFEST_FILE = ".installer_manifest.json"
 BACKUP_SUFFIX = ".bak"
+DAEMON_STATUS_TIMEOUT = 10
 DEPLOY_DIRS = ["hooks", "skills", "output-styles", "remy-src", "remy-assets"]
 
 
@@ -461,6 +462,8 @@ _UNINSTALL_MSG = {
         "claude_restored": "  [+] CLAUDE.md restored from backup",
         "shim_removed": "  [+] CLI shim removed",
         "shim_deferred": "  [i] Could not remove {path} (in use). Delete manually after exit.",
+        "daemon_running": "  [!] remy-daemon is running; uninstall did not change any files.\n      Stop it and retry: remy-cc daemon stop",
+        "daemon_status_unknown": "  [!] Could not verify that remy-daemon is stopped; uninstall did not change any files.\n      Check it with: remy-cc daemon status",
         "done": "\nUninstall complete. Removed {removed} files, skipped {skipped} modified files.",
     },
     "zh-CN": {
@@ -473,6 +476,8 @@ _UNINSTALL_MSG = {
         "claude_restored": "  [+] CLAUDE.md 已从备份恢复",
         "shim_removed": "  [+] CLI 入口已移除",
         "shim_deferred": "  [i] 无法删除 {path}（正在使用）。退出后请手动删除。",
+        "daemon_running": "  [!] remy-daemon 正在运行，卸载未修改任何文件。\n      请先停止后重试：remy-cc daemon stop",
+        "daemon_status_unknown": "  [!] 无法确认 remy-daemon 已停止，卸载未修改任何文件。\n      请执行以下命令检查：remy-cc daemon status",
         "done": "\n卸载完成。删除 {removed} 个文件，跳过 {skipped} 个已修改文件。",
     },
 }
@@ -511,6 +516,24 @@ def hooks_equal(h1, h2):
     return h1.get("command", "").strip() == h2.get("command", "").strip()
 
 
+def _daemon_status():
+    exe_name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    exe = _remy_cc_home() / "bin" / exe_name
+    if not exe.is_file():
+        return False
+    try:
+        result = subprocess.run(
+            [str(exe), "status"], capture_output=True, timeout=DAEMON_STATUS_TIMEOUT
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode == 0:
+        return True
+    if result.returncode == 1:
+        return False
+    return None
+
+
 def cmd_uninstall(args):
     claude_home = get_claude_home()
     manifest_path = claude_home / MANIFEST_FILE
@@ -530,6 +553,14 @@ def cmd_uninstall(args):
         if answer != "y":
             print(_um("aborted"))
             return
+
+    daemon_status = _daemon_status()
+    if daemon_status is True:
+        print(_um("daemon_running"))
+        return
+    if daemon_status is None:
+        print(_um("daemon_status_unknown"))
+        return
 
     files = manifest.get("files", [])
     removed = 0

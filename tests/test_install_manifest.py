@@ -402,6 +402,67 @@ def test_uninstall_skips_user_modified_file(claude_home, monkeypatch):
     assert f.read_text(encoding="utf-8") == "user-modified"
 
 
+@pytest.mark.parametrize(
+    ("status_rc", "message_key"),
+    [(0, "uninstall_daemon_running"), (2, "uninstall_daemon_status_unknown")],
+)
+def test_uninstall_refuses_before_changes_when_daemon_not_confirmed_stopped(
+    daemon_env, claude_home, monkeypatch, capsys, status_rc, message_key
+):
+    daemon = daemon_env.remy_home / "bin" / daemon_env.exe_name
+    daemon_hash = _seed_file(daemon, "deployed-daemon")
+    hook = claude_home / "hooks" / "pre_tool_guard.py"
+    hook_hash = _seed_file(hook, "hook")
+    manifest_path = claude_home / install.MANIFEST_FILE
+    manifest_path.write_text(
+        json.dumps({
+            "version": "test",
+            "schema_version": 2,
+            "files": [
+                {"path": "hooks/pre_tool_guard.py", "sha256": hook_hash},
+                {"path": str(daemon), "sha256": daemon_hash},
+            ],
+            "injected_hooks": {},
+            "injected_permissions": [],
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
+    monkeypatch.setattr(install.subprocess, "run", _FakeDaemonRun(status_rc=status_rc))
+
+    install.do_uninstall()
+
+    assert hook.exists()
+    assert daemon.exists()
+    assert manifest_path.exists()
+    assert install._t(message_key) in capsys.readouterr().out
+
+
+def test_uninstall_removes_stopped_daemon_and_manifest(
+    daemon_env, claude_home, monkeypatch
+):
+    daemon = daemon_env.remy_home / "bin" / daemon_env.exe_name
+    daemon_hash = _seed_file(daemon, "deployed-daemon")
+    manifest_path = claude_home / install.MANIFEST_FILE
+    manifest_path.write_text(
+        json.dumps({
+            "version": "test",
+            "schema_version": 2,
+            "files": [{"path": str(daemon), "sha256": daemon_hash}],
+            "injected_hooks": {},
+            "injected_permissions": [],
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
+    monkeypatch.setattr(install.subprocess, "run", _FakeDaemonRun(status_rc=1))
+
+    install.do_uninstall()
+
+    assert not daemon.exists()
+    assert not manifest_path.exists()
+
+
 def _seed_verifiable_home(claude_home):
     (claude_home / "settings.json").write_text(json.dumps({"hooks": {}}), encoding="utf-8")
     manifest = {
@@ -449,3 +510,296 @@ def test_verify_passes_when_mcp_installed(claude_home, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert install._t("verify_ok") in out
     assert install._t("verify_mcp_missing") not in out
+
+
+# ── daemon binary deployment (R1.3) ─────────────────────────────
+
+
+@pytest.fixture
+def daemon_env(tmp_path, monkeypatch):
+    """Fake built daemon binary + isolated REMY_CC_HOME."""
+    src_dir = tmp_path / "release"
+    src_dir.mkdir()
+    exe_name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    exe = src_dir / exe_name
+    exe.write_bytes(b"fake-daemon-binary")
+    remy_home = tmp_path / "remy-cc-home"
+    monkeypatch.setenv("REMY_CC_HOME", str(remy_home))
+    monkeypatch.setattr(install, "DAEMON_SOURCE_DIR", src_dir)
+    return types.SimpleNamespace(exe=exe, remy_home=remy_home, exe_name=exe_name)
+
+
+class _FakeDaemonRun:
+    """Stands in for subprocess.run: --version returns version_rc, status
+    returns status_rc (exit 0 = a daemon holds the lock)."""
+
+    def __init__(self, version_rc=0, status_rc=1):
+        self.version_rc = version_rc
+        self.status_rc = status_rc
+        self.calls = []
+
+    def __call__(self, cmd, **kwargs):
+        self.calls.append(list(cmd))
+        rc = self.version_rc if cmd[-1] == "--version" else self.status_rc
+        return types.SimpleNamespace(returncode=rc, stdout=b"", stderr=b"")
+
+
+def test_daemon_deploy_records_absolute_path(daemon_env, monkeypatch):
+    monkeypatch.setattr(install.subprocess, "run", _FakeDaemonRun())
+    records = []
+    install.deploy_daemon_binary(records)
+
+    dst = daemon_env.remy_home / "bin" / daemon_env.exe_name
+    assert dst.exists()
+    assert dst.read_bytes() == b"fake-daemon-binary"
+    assert len(records) == 1
+    assert os.path.isabs(records[0]["path"])
+    assert install._resolve_record_path(records[0], daemon_env.remy_home) == dst
+    assert records[0]["sha256"] == install.compute_sha256(dst)
+    if os.name == "posix":
+        assert os.access(dst, os.X_OK)
+
+
+def test_daemon_deploy_skipped_when_daemon_running(daemon_env, monkeypatch, capsys):
+    monkeypatch.setattr(install.subprocess, "run", _FakeDaemonRun(status_rc=0))
+    records = []
+    install.deploy_daemon_binary(records)
+
+    assert not (daemon_env.remy_home / "bin" / daemon_env.exe_name).exists()
+    assert records == []
+    assert install._t("daemon_running") in capsys.readouterr().out
+
+
+def test_daemon_deploy_skipped_when_version_check_fails(daemon_env, monkeypatch, capsys):
+    fake = _FakeDaemonRun(version_rc=1)
+    monkeypatch.setattr(install.subprocess, "run", fake)
+    records = []
+    install.deploy_daemon_binary(records)
+
+    assert not (daemon_env.remy_home / "bin" / daemon_env.exe_name).exists()
+    assert records == []
+    assert "--version" in fake.calls[0]
+    assert install._t("daemon_verify_failed", err="exit code 1") in capsys.readouterr().out
+
+
+def test_daemon_deploy_skipped_when_source_missing(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(install, "DAEMON_SOURCE_DIR", tmp_path / "absent")
+    monkeypatch.setenv("REMY_CC_HOME", str(tmp_path / "remy-home"))
+    records = []
+    install.deploy_daemon_binary(records)
+
+    assert records == []
+    assert not (tmp_path / "remy-home").exists()
+    assert install._t("daemon_src_missing") in capsys.readouterr().out
+
+
+def test_daemon_deploy_rerun_overwrites(daemon_env, monkeypatch):
+    monkeypatch.setattr(install.subprocess, "run", _FakeDaemonRun())
+    install.deploy_daemon_binary([])
+
+    daemon_env.exe.write_bytes(b"updated-daemon-binary")
+    records = []
+    install.deploy_daemon_binary(records)
+
+    dst = daemon_env.remy_home / "bin" / daemon_env.exe_name
+    assert dst.read_bytes() == b"updated-daemon-binary"
+    assert len(records) == 1
+    assert records[0]["sha256"] == install.compute_sha256(dst)
+
+
+class _RaisingVersionRun:
+    """subprocess.run stand-in whose --version call raises exc."""
+
+    def __init__(self, exc):
+        self.exc = exc
+
+    def __call__(self, cmd, **kwargs):
+        raise self.exc
+
+
+class _StatusRaisesRun:
+    """subprocess.run stand-in: --version succeeds, status probe raises OSError."""
+
+    def __call__(self, cmd, **kwargs):
+        if cmd[-1] == "--version":
+            return types.SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+        raise OSError("probe failed")
+
+
+def test_daemon_deploy_skipped_when_version_check_times_out(daemon_env, monkeypatch, capsys):
+    exc = install.subprocess.TimeoutExpired(cmd="remy-daemon --version", timeout=install.DAEMON_PROBE_TIMEOUT)
+    monkeypatch.setattr(install.subprocess, "run", _RaisingVersionRun(exc))
+    records = []
+    install.deploy_daemon_binary(records)
+
+    assert records == []
+    assert not (daemon_env.remy_home / "bin" / daemon_env.exe_name).exists()
+    assert install._t("daemon_verify_failed", err="timeout") in capsys.readouterr().out
+
+
+def test_daemon_deploy_skipped_when_binary_not_runnable(daemon_env, monkeypatch, capsys):
+    monkeypatch.setattr(install.subprocess, "run", _RaisingVersionRun(OSError("exec format error")))
+    records = []
+    install.deploy_daemon_binary(records)
+
+    assert records == []
+    assert not (daemon_env.remy_home / "bin" / daemon_env.exe_name).exists()
+    assert "exec format error" in capsys.readouterr().out
+
+
+def test_daemon_deploy_proceeds_when_status_probe_errors(daemon_env, monkeypatch):
+    monkeypatch.setattr(install.subprocess, "run", _StatusRaisesRun())
+    records = []
+    install.deploy_daemon_binary(records)
+
+    dst = daemon_env.remy_home / "bin" / daemon_env.exe_name
+    assert dst.exists()
+    assert len(records) == 1
+
+
+# ── reinstall scoping: cleanup vs. deploy (R1.3 follow-up) ──────
+
+
+def test_cleanup_skips_records_outside_claude_home(claude_home, tmp_path):
+    """Reinstall cleanup must leave the daemon binary under ~/.remy-cc/ in place;
+    deploy_daemon_binary overwrites it instead of cleanup deleting and rebuilding it."""
+    inside = claude_home / "hooks" / "pre_tool_guard.py"
+    h_inside = _seed_file(inside, "hook")
+    outside = tmp_path / "remy-cc-home" / "bin" / "remy-daemon"
+    h_outside = _seed_file(outside, "daemon")
+
+    install.cleanup_from_manifest(
+        {
+            "schema_version": 2,
+            "files": [
+                {"path": "hooks/pre_tool_guard.py", "sha256": h_inside},
+                {"path": str(outside), "sha256": h_outside},
+            ],
+        },
+        claude_home,
+    )
+
+    assert not inside.exists()
+    assert outside.exists()
+    assert outside.read_text(encoding="utf-8") == "daemon"
+
+
+def test_cleanup_still_removes_legacy_absolute_inside_home(claude_home):
+    """The _within_root guard keys on containment, not absoluteness: v1 manifests
+    recorded absolute paths inside claude_home and those must still be cleaned."""
+    legacy = claude_home / "skills" / "remy-plan" / "SKILL.md"
+    h = _seed_file(legacy, "v1.4.3")
+
+    install.cleanup_from_manifest({"files": [{"path": str(legacy), "sha256": h}]}, claude_home)
+
+    assert not legacy.exists()
+
+
+def test_daemon_deploy_reclaims_existing_when_source_missing(daemon_env, monkeypatch, capsys):
+    """A prior deployment must stay under manifest hash claim across a run that
+    cannot rebuild it, otherwise uninstall would strand the binary."""
+    monkeypatch.setattr(install.subprocess, "run", _FakeDaemonRun())
+    install.deploy_daemon_binary([])
+    dst = daemon_env.remy_home / "bin" / daemon_env.exe_name
+    deployed_hash = install.compute_sha256(dst)
+    capsys.readouterr()
+
+    daemon_env.exe.unlink()
+    records = []
+    install.deploy_daemon_binary(records)
+
+    assert dst.exists()
+    assert records == [{"path": str(dst), "sha256": deployed_hash}]
+    assert install._t("daemon_src_missing") in capsys.readouterr().out
+
+
+def test_daemon_deploy_reclaims_existing_when_daemon_running(daemon_env, monkeypatch):
+    monkeypatch.setattr(install.subprocess, "run", _FakeDaemonRun())
+    install.deploy_daemon_binary([])
+    dst = daemon_env.remy_home / "bin" / daemon_env.exe_name
+    deployed_hash = install.compute_sha256(dst)
+
+    monkeypatch.setattr(install.subprocess, "run", _FakeDaemonRun(status_rc=0))
+    daemon_env.exe.write_bytes(b"newer-daemon-binary")
+    records = []
+    install.deploy_daemon_binary(records)
+
+    assert dst.read_bytes() == b"fake-daemon-binary"
+    assert records == [{"path": str(dst), "sha256": deployed_hash}]
+
+
+def test_daemon_deploy_survives_copy_permission_error(daemon_env, monkeypatch, capsys):
+    """Windows raises PermissionError (winerror 32) when the target exe is running.
+    Install must continue so write_manifest still runs."""
+    monkeypatch.setattr(install.subprocess, "run", _FakeDaemonRun())
+    install.deploy_daemon_binary([])
+    dst = daemon_env.remy_home / "bin" / daemon_env.exe_name
+    deployed_hash = install.compute_sha256(dst)
+    capsys.readouterr()
+
+    def _refuse(src, target):
+        raise PermissionError(13, "used by another process")
+
+    monkeypatch.setattr(install.shutil, "copy2", _refuse)
+    records = []
+    install.deploy_daemon_binary(records)
+
+    assert dst.exists()
+    assert records == [{"path": str(dst), "sha256": deployed_hash}]
+    assert "used by another process" in capsys.readouterr().out
+
+
+def test_daemon_record_survives_reinstall_without_source(daemon_env, monkeypatch, claude_home):
+    """Full reinstall sequence: deploy, then re-run with no buildable source.
+    The binary must survive cleanup and stay listed in the regenerated manifest."""
+    monkeypatch.setattr(install.subprocess, "run", _FakeDaemonRun())
+    first = []
+    install.deploy_daemon_binary(first)
+    install.write_manifest(claude_home, first, None, injected_hooks={}, injected_permissions=[])
+
+    dst = daemon_env.remy_home / "bin" / daemon_env.exe_name
+    manifest = json.loads((claude_home / install.MANIFEST_FILE).read_text(encoding="utf-8"))
+    assert str(dst) in {e["path"] for e in manifest["files"]}
+
+    daemon_env.exe.unlink()
+    install.cleanup_from_manifest(manifest, claude_home)
+    assert dst.exists()
+
+    second = []
+    install.deploy_daemon_binary(second)
+    install.write_manifest(claude_home, second, None, injected_hooks={}, injected_permissions=[])
+
+    reloaded = json.loads((claude_home / install.MANIFEST_FILE).read_text(encoding="utf-8"))
+    assert str(dst) in {e["path"] for e in reloaded["files"]}
+    assert dst.exists()
+
+
+def _raise_no_home():
+    raise RuntimeError("no home")
+
+
+def test_remy_cc_home_env_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("REMY_CC_HOME", str(tmp_path / "custom"))
+    assert install._remy_cc_home() == tmp_path / "custom"
+
+
+def test_remy_cc_home_falls_back_when_path_home_raises(monkeypatch, tmp_path):
+    """Mirrors the cli.py _remy_cc_home contract (tests/test_cli_daemon.py)."""
+    monkeypatch.delenv("REMY_CC_HOME", raising=False)
+    monkeypatch.setattr(install.Path, "home", _raise_no_home)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    assert install._remy_cc_home() == tmp_path / ".remy-cc"
+
+
+def test_remy_cc_home_exits_1_when_no_home_determinable(monkeypatch, capsys):
+    monkeypatch.delenv("REMY_CC_HOME", raising=False)
+    monkeypatch.delenv("HOME", raising=False)
+    monkeypatch.delenv("USERPROFILE", raising=False)
+    monkeypatch.setattr(install.Path, "home", _raise_no_home)
+
+    with pytest.raises(SystemExit) as exc:
+        install._remy_cc_home()
+
+    assert exc.value.code == 1
+    assert install._t("err_home_not_found") in capsys.readouterr().out
