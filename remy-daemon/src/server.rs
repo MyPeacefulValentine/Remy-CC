@@ -153,6 +153,23 @@ fn write_port(run_dir: &Path, port: u16) -> io::Result<()> {
     fs::write(run_dir.join(PORT_FILE), port.to_string())
 }
 
+/// Remove endpoint files left behind by a previous daemon process (crash-only
+/// residue, INV-R3). Must only be called while holding the single-instance
+/// lock: the lock guarantees the previous owner is gone, so the files describe
+/// no live endpoint. Port is removed before token so no reader can observe a
+/// port file without a readable token. Returns the names actually removed.
+pub fn clean_stale_endpoints(run_dir: &Path) -> io::Result<Vec<&'static str>> {
+    let mut removed = Vec::new();
+    for name in [PORT_FILE, TOKEN_FILE] {
+        match fs::remove_file(run_dir.join(name)) {
+            Ok(()) => removed.push(name),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(removed)
+}
+
 pub fn read_port(run_dir: &Path) -> Option<u16> {
     fs::read_to_string(run_dir.join(PORT_FILE))
         .ok()?
@@ -229,6 +246,64 @@ mod tests {
         write_port(dir.path(), 45678).unwrap();
         assert_eq!(read_token(dir.path()).as_deref(), Some("secret"));
         assert_eq!(read_port(dir.path()), Some(45678));
+    }
+
+    #[test]
+    fn clean_stale_endpoints_removes_port_and_token() {
+        let dir = tempfile::tempdir().unwrap();
+        write_token(dir.path(), "old-token").unwrap();
+        write_port(dir.path(), 12345).unwrap();
+
+        let removed = clean_stale_endpoints(dir.path()).unwrap();
+
+        assert_eq!(removed, vec![PORT_FILE, TOKEN_FILE]);
+        assert_eq!(read_port(dir.path()), None);
+        assert_eq!(read_token(dir.path()), None);
+    }
+
+    #[test]
+    fn clean_stale_endpoints_on_clean_dir_is_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(clean_stale_endpoints(dir.path()).unwrap().is_empty());
+    }
+
+    /// Non-NotFound removal errors must propagate (caller run_foreground then
+    /// fails fast with exit 2) instead of serving next to unremovable residue.
+    #[cfg(windows)]
+    #[test]
+    fn clean_stale_endpoints_propagates_sharing_violation() {
+        use std::os::windows::fs::OpenOptionsExt;
+        // FILE_SHARE_READ | FILE_SHARE_WRITE, without FILE_SHARE_DELETE, so
+        // remove_file hits a sharing violation while the handle is held.
+        const SHARE_READ_WRITE: u32 = 0x1 | 0x2;
+
+        let dir = tempfile::tempdir().unwrap();
+        write_port(dir.path(), 12345).unwrap();
+        let _hold = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(SHARE_READ_WRITE)
+            .open(dir.path().join(PORT_FILE))
+            .unwrap();
+
+        let err = clean_stale_endpoints(dir.path()).unwrap_err();
+        assert_ne!(err.kind(), io::ErrorKind::NotFound);
+    }
+
+    /// Same contract on Unix via an unwritable parent directory (assumes the
+    /// test does not run as root, which is true for CI runners and dev shells).
+    #[cfg(unix)]
+    #[test]
+    fn clean_stale_endpoints_propagates_permission_errors() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        write_port(dir.path(), 12345).unwrap();
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o555)).unwrap();
+
+        let result = clean_stale_endpoints(dir.path());
+
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
     }
 
     #[test]

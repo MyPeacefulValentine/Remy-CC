@@ -150,6 +150,55 @@ fn force_kill_releases_lock_and_allows_restart() {
     assert!(is_running(home.path()));
 }
 
+#[test]
+fn start_cleans_residue_from_previous_crash() {
+    let home = tempfile::tempdir().unwrap();
+    let run_dir = home.path().join("run");
+    std::fs::create_dir_all(&run_dir).unwrap();
+    std::fs::write(run_dir.join("daemon.port"), "1").unwrap();
+    std::fs::write(run_dir.join("daemon.token"), "stale-token").unwrap();
+    std::fs::write(run_dir.join("daemon.pid"), "99999").unwrap();
+
+    let _daemon = ForegroundDaemon::spawn(home.path());
+
+    assert!(
+        wait_until(|| {
+            std::fs::read_to_string(run_dir.join("daemon.port"))
+                .map(|p| p.trim() != "1")
+                .unwrap_or(false)
+        }),
+        "stale port file was not replaced"
+    );
+    let token = std::fs::read_to_string(run_dir.join("daemon.token")).unwrap();
+    assert_ne!(token.trim(), "stale-token");
+    let pid = std::fs::read_to_string(run_dir.join("daemon.pid")).unwrap();
+    assert_ne!(pid.trim(), "99999");
+
+    let status = run(home.path(), &["status"]);
+    assert_eq!(exit_code(&status), 0);
+    let stdout = String::from_utf8_lossy(&status.stdout);
+    assert!(stdout.contains("running"), "stdout: {stdout}");
+    assert!(!stdout.contains("ipc-unresponsive"), "stdout: {stdout}");
+}
+
+#[test]
+fn residue_without_lock_reads_as_not_running() {
+    let home = tempfile::tempdir().unwrap();
+    let run_dir = home.path().join("run");
+    std::fs::create_dir_all(&run_dir).unwrap();
+    std::fs::write(run_dir.join("daemon.port"), "1").unwrap();
+    std::fs::write(run_dir.join("daemon.token"), "stale-token").unwrap();
+    std::fs::write(run_dir.join("daemon.pid"), "99999").unwrap();
+
+    let status = run(home.path(), &["status"]);
+    assert_eq!(exit_code(&status), 1);
+    assert!(String::from_utf8_lossy(&status.stdout).contains("not running"));
+
+    let stop = run(home.path(), &["stop"]);
+    assert_eq!(exit_code(&stop), 0);
+    assert!(String::from_utf8_lossy(&stop.stdout).contains("not running"));
+}
+
 /// Best-effort teardown for a detached daemon: `stop`, then direct kill via
 /// the recorded pid if the lock is still held.
 struct DetachedCleanup {

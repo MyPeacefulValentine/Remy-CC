@@ -112,6 +112,7 @@ fn run_foreground(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
             Ok(ExitCode::from(1))
         }
         AcquireOutcome::Acquired(_guard) => {
+            let residue = server::clean_stale_endpoints(&run_dir)?;
             single_instance::write_pid(&run_dir, std::process::id())?;
             let logger = JsonLogger::new(
                 &home.join("log"),
@@ -123,6 +124,9 @@ fn run_foreground(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
                 "daemon_started",
                 json!({"version": env!("CARGO_PKG_VERSION")}),
             )?;
+            if !residue.is_empty() {
+                logger.log("info", "residue_cleaned", json!({"files": residue}))?;
+            }
             server::serve(&run_dir, env!("CARGO_PKG_VERSION"), &logger)?;
             Ok(ExitCode::SUCCESS)
         }
