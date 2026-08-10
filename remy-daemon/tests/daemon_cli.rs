@@ -167,6 +167,127 @@ fn force_kill_releases_lock_and_allows_restart() {
 }
 
 #[test]
+fn process_restart_recovers_persisted_job_states_idempotently() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let mut first = ForegroundDaemon::spawn(home.path());
+    first.kill();
+    assert!(wait_until(|| !is_running(home.path())));
+
+    let connection = rusqlite::Connection::open(home.path().join("state.db")).unwrap();
+    connection
+        .execute(
+            "INSERT INTO projects(id, project_key, project_path, db_path, created_at, last_seen_at) \
+             VALUES (1, ?1, ?1, ?2, 1000, 1000)",
+            rusqlite::params![
+                project.path().to_string_lossy(),
+                project.path().join("logic_index.db").to_string_lossy()
+            ],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO jobs( \
+                 id, project_id, job_type, target_db_path, file_path, priority, status, \
+                 created_at, started_at, dedupe_key \
+             ) VALUES (1, 1, 'incremental_scan', ?1, 'a.py', 1, 'running', 1000, 1100, 'incremental_scan:a.py')",
+            rusqlite::params![project.path().join("logic_index.db").to_string_lossy()],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO jobs( \
+                 id, project_id, job_type, target_db_path, file_path, priority, status, \
+                 created_at, dedupe_key \
+             ) VALUES (2, 1, 'incremental_scan', ?1, 'a.py', 1, 'pending', 1200, 'incremental_scan:a.py')",
+            rusqlite::params![project.path().join("logic_index.db").to_string_lossy()],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO jobs( \
+                 id, project_id, job_type, target_db_path, file_path, priority, status, \
+                 created_at, started_at, dedupe_key \
+             ) VALUES (3, 1, 'incremental_scan', ?1, 'b.py', 1, 'cancel_requested', 1000, 1100, 'incremental_scan:b.py')",
+            rusqlite::params![project.path().join("logic_index.db").to_string_lossy()],
+        )
+        .unwrap();
+    drop(connection);
+
+    let mut second = ForegroundDaemon::spawn(home.path());
+    let connection = rusqlite::Connection::open(home.path().join("state.db")).unwrap();
+    let first_row: (String, Option<i64>) = connection
+        .query_row(
+            "SELECT status, superseded_by_job_id FROM jobs WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(first_row, ("superseded".to_string(), Some(2)));
+    assert_eq!(
+        connection
+            .query_row("SELECT status FROM jobs WHERE id = 2", [], |row| {
+                row.get::<_, String>(0)
+            })
+            .unwrap(),
+        "pending"
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT status FROM jobs WHERE id = 3", [], |row| {
+                row.get::<_, String>(0)
+            })
+            .unwrap(),
+        "cancelled"
+    );
+    drop(connection);
+
+    second.kill();
+    assert!(wait_until(|| !is_running(home.path())));
+    let _third = ForegroundDaemon::spawn(home.path());
+    let connection = rusqlite::Connection::open(home.path().join("state.db")).unwrap();
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM jobs WHERE status IN ('running', 'cancel_requested')",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT COUNT(*) FROM jobs", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        3
+    );
+}
+
+#[test]
+fn higher_state_schema_prevents_endpoint_publication() {
+    let home = tempfile::tempdir().unwrap();
+    let db_path = home.path().join("state.db");
+    let connection = rusqlite::Connection::open(&db_path).unwrap();
+    connection
+        .pragma_update(None, "user_version", 99_u32)
+        .unwrap();
+    drop(connection);
+
+    let output = run(home.path(), &["start", "--foreground"]);
+
+    assert_eq!(exit_code(&output), 2);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("newer than supported"));
+    assert!(!home.path().join("run").join("daemon.port").exists());
+    assert!(!home.path().join("run").join("daemon.pid").exists());
+    let connection = rusqlite::Connection::open(db_path).unwrap();
+    let version: u32 = connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 99);
+}
+
+#[test]
 fn start_cleans_residue_from_previous_crash() {
     let home = tempfile::tempdir().unwrap();
     let run_dir = home.path().join("run");

@@ -1,10 +1,4 @@
-"""Integration tests for remy-daemon IPC contract (R1.2): hello/ping/shutdown,
-bad token rejection, version-mismatch fallback, latency measurement.
-
-Skip conditions match test_daemon_integration.py: no cargo/rustc OR no compiled
-binary. These tests drive the daemon through its IPC endpoints to validate INV-R4
-(client-side version adjudication and fallback) and measure roundtrip latency.
-"""
+"""Integration tests for the remy-daemon protocol v2 job contract."""
 import json
 import os
 import shutil
@@ -18,8 +12,8 @@ from pathlib import Path
 import pytest
 
 DAEMON_SOURCE = Path(__file__).resolve().parent.parent / "remy-daemon"
-
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
+STATE_SCHEMA_VERSION = 1
 
 
 def has_rust_toolchain():
@@ -27,24 +21,22 @@ def has_rust_toolchain():
 
 
 def daemon_binary_exists():
-    if sys.platform == "win32":
-        return (DAEMON_SOURCE / "target" / "debug" / "remy-daemon.exe").exists()
-    return (DAEMON_SOURCE / "target" / "debug" / "remy-daemon").exists()
+    name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    return (DAEMON_SOURCE / "target" / "debug" / name).exists()
 
 
 skip_reason = None
 if not has_rust_toolchain():
     skip_reason = "cargo/rustc not found in PATH"
 elif not daemon_binary_exists():
-    skip_reason = "remy-daemon binary not built; run: cargo build --manifest-path remy-daemon/Cargo.toml"
+    skip_reason = "remy-daemon binary not built; run cargo build first"
 
 pytestmark = pytest.mark.skipif(skip_reason is not None, reason=skip_reason or "")
 
 
 def daemon_bin():
-    if sys.platform == "win32":
-        return DAEMON_SOURCE / "target" / "debug" / "remy-daemon.exe"
-    return DAEMON_SOURCE / "target" / "debug" / "remy-daemon"
+    name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    return DAEMON_SOURCE / "target" / "debug" / name
 
 
 def run_daemon(home, args, timeout=10):
@@ -58,10 +50,6 @@ def run_daemon(home, args, timeout=10):
 
 
 class DaemonClient:
-    """Probe-level IPC client: reads endpoint files, sends one JSON line per
-    connection, reads one JSON line back. Candidate for R2 hook reuse
-    evaluation (plan section 4.2 R1.2)."""
-
     def __init__(self, run_dir, timeout=2.0):
         self.run_dir = Path(run_dir)
         self.timeout = timeout
@@ -69,9 +57,6 @@ class DaemonClient:
         self.token = None
 
     def discover(self, wait_secs=5.0):
-        """Wait for daemon.port, then read both endpoint files. The daemon
-        writes daemon.token before daemon.port, so seeing the port file
-        guarantees the token file is readable."""
         deadline = time.time() + wait_secs
         port_path = self.run_dir / "daemon.port"
         while time.time() < deadline:
@@ -96,23 +81,29 @@ class DaemonClient:
         return json.loads(line)
 
     def hello(self, protocol_version=PROTOCOL_VERSION):
-        """Handshake with client-side version adjudication (INV-R4). Returns
-        (compatible, response); the caller falls back to non-IPC paths when
-        compatible is False."""
         response = self.request(
             {"cmd": "hello", "protocol_version": protocol_version, "token": self.token}
         )
         compatible = (
-            response.get("ok") is True
+            response.get("type") == "hello"
             and response.get("protocol_version") == protocol_version
+            and response.get("state_schema_version") == STATE_SCHEMA_VERSION
         )
         return compatible, response
 
+    def job_request(self, command, **fields):
+        return self.request(
+            {
+                "cmd": command,
+                "protocol_version": PROTOCOL_VERSION,
+                "state_schema_version": STATE_SCHEMA_VERSION,
+                "token": self.token,
+                **fields,
+            }
+        )
+
 
 def _force_cleanup(home):
-    """Teardown mirror of the Rust DetachedCleanup: try `stop`, then fall back
-    to a direct pid kill if some daemon still holds the lock. Covers the case
-    where `start` timed out (exit 2) but the detached process came up later."""
     run_daemon(home, ["stop"], timeout=15)
     if run_daemon(home, ["status"]).returncode != 0:
         return
@@ -143,49 +134,109 @@ def connected_client(home):
     return DaemonClient(home / "run").discover()
 
 
-def test_hello_handshake_golden_sample(daemon_home):
-    client = connected_client(daemon_home)
-    compatible, response = client.hello()
+def submit(client, project, file_path="src/main.py", priority="background"):
+    return client.job_request(
+        "submit_job",
+        project_path=str(project),
+        db_path=str(project / ".claude" / "logic_index.db"),
+        file_path=file_path,
+        priority=priority,
+    )
 
+
+def test_hello_handshake_golden_sample(daemon_home):
+    compatible, response = connected_client(daemon_home).hello()
     assert compatible is True
-    assert response["ok"] is True
+    assert response["type"] == "hello"
     assert response["protocol_version"] == PROTOCOL_VERSION
-    assert isinstance(response["daemon_version"], str)
-    assert response["daemon_version"] != ""
+    assert response["state_schema_version"] == STATE_SCHEMA_VERSION
+    assert response["daemon_version"]
 
 
 def test_bad_token_rejected(daemon_home):
     client = connected_client(daemon_home)
     response = client.request({"cmd": "ping", "token": "not-the-token"})
-
-    assert response == {"ok": False, "error": "bad_token"}
+    assert response["type"] == "error"
+    assert response["code"] == "bad_token"
 
 
 def test_version_mismatch_triggers_client_fallback(daemon_home):
-    client = connected_client(daemon_home)
-    compatible, response = client.hello(protocol_version=999)
-
-    assert response["ok"] is True
+    compatible, response = connected_client(daemon_home).hello(protocol_version=999)
+    assert response["type"] == "hello"
     assert response["protocol_version"] == PROTOCOL_VERSION
     assert compatible is False
 
 
+def test_business_version_mismatches_are_rejected(daemon_home, tmp_path):
+    client = connected_client(daemon_home)
+    project = tmp_path / "project"
+    project.mkdir()
+    payload = {
+        "cmd": "submit_job",
+        "protocol_version": 999,
+        "state_schema_version": STATE_SCHEMA_VERSION,
+        "token": client.token,
+        "project_path": str(project),
+        "db_path": str(project / "index.db"),
+        "file_path": "a.py",
+        "priority": "interactive",
+    }
+    assert client.request(payload)["code"] == "incompatible_protocol"
+    payload["protocol_version"] = PROTOCOL_VERSION
+    payload["state_schema_version"] = 999
+    assert client.request(payload)["code"] == "incompatible_state_schema"
+
+
+def test_submit_get_cancel_and_pending_deduplication(daemon_home, tmp_path):
+    client = connected_client(daemon_home)
+    project = tmp_path / "project"
+    project.mkdir()
+
+    first = submit(client, project)
+    assert first["type"] == "submitted"
+    assert first["created"] is True
+    assert first["job"]["status"] == "pending"
+    job_id = first["job"]["id"]
+
+    duplicate = submit(client, project, priority="interactive")
+    assert duplicate["created"] is False
+    assert duplicate["job"]["id"] == job_id
+    assert duplicate["job"]["priority"] == "interactive"
+
+    queried = client.job_request("get_job", job_id=job_id)
+    assert queried["type"] == "job"
+    assert queried["job"]["id"] == job_id
+    assert queried["job"]["result"] is None
+    assert queried["job"]["error"] is None
+
+    cancelled = client.job_request("cancel_job", job_id=job_id)
+    assert cancelled["type"] == "cancelled"
+    assert cancelled["changed"] is True
+    assert cancelled["job"]["status"] == "cancelled"
+    repeated = client.job_request("cancel_job", job_id=job_id)
+    assert repeated["changed"] is False
+    assert repeated["job"]["status"] == "cancelled"
+
+
+def test_invalid_paths_and_unknown_jobs_have_stable_error_codes(daemon_home, tmp_path):
+    client = connected_client(daemon_home)
+    project = tmp_path / "project"
+    project.mkdir()
+    invalid = submit(client, project, file_path="../outside.py")
+    assert invalid["code"] == "invalid_request"
+    assert client.job_request("get_job", job_id=9_999_999)["code"] == "not_found"
+
+
 def test_ping_roundtrip(daemon_home):
     client = connected_client(daemon_home)
-    response = client.request({"cmd": "ping", "token": client.token})
-
-    assert response == {"ok": True}
+    assert client.request({"cmd": "ping", "token": client.token}) == {"type": "ack"}
 
 
 def test_shutdown_stops_daemon(daemon_home):
     client = connected_client(daemon_home)
-    response = client.request({"cmd": "shutdown", "token": client.token})
-    assert response == {"ok": True}
-
+    assert client.request({"cmd": "shutdown", "token": client.token}) == {"type": "ack"}
     deadline = time.time() + 10
-    while time.time() < deadline:
-        if run_daemon(daemon_home, ["status"]).returncode == 1:
-            break
+    while time.time() < deadline and run_daemon(daemon_home, ["status"]).returncode != 1:
         time.sleep(0.05)
     status = run_daemon(daemon_home, ["status"])
     assert status.returncode == 1
@@ -198,20 +249,18 @@ def test_invalid_json_reports_error(daemon_home):
         sock.sendall(b"this is not json\n")
         with sock.makefile("r", encoding="utf-8") as reader:
             response = json.loads(reader.readline())
-
-    assert response == {"ok": False, "error": "invalid_json"}
+    assert response["type"] == "error"
+    assert response["code"] == "invalid_request"
 
 
 def test_latency_measurement_recorded(daemon_home):
     client = connected_client(daemon_home)
-
     samples = []
     for _ in range(50):
         start = time.perf_counter()
         response = client.request({"cmd": "ping", "token": client.token})
         samples.append((time.perf_counter() - start) * 1000.0)
-        assert response == {"ok": True}
-
+        assert response == {"type": "ack"}
     median = statistics.median(samples)
     p99 = sorted(samples)[int(len(samples) * 0.99) - 1]
     print(
