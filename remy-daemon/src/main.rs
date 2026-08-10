@@ -1,8 +1,8 @@
 //! remy-daemon — Remy-CC resident daemon.
 //!
-//! Scope (R1.1 + R1.2): single-instance mutual exclusion, `start|stop|status`,
-//! JSON line logging under `~/.remy-cc/log/`, loopback TCP IPC with version
-//! handshake (hello/ping/shutdown). No index duties.
+//! Scope (R1 + R2.1): single-instance lifecycle, JSON line logging, loopback
+//! IPC version handshake, and persistent job registration/query/cancellation.
+//! Scanner workers and hook clients remain outside this binary at R2.1.
 //!
 //! Exit codes: 0 = success; 1 = already running (`start`) / not running
 //! (`status`); 2 = unexpected error or timeout.
@@ -13,6 +13,7 @@ mod process;
 mod protocol;
 mod server;
 mod single_instance;
+mod state;
 
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::net::{SocketAddr, TcpStream};
@@ -113,12 +114,14 @@ fn run_foreground(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
         }
         AcquireOutcome::Acquired(_guard) => {
             let residue = server::clean_stale_endpoints(&run_dir)?;
-            single_instance::write_pid(&run_dir, std::process::id())?;
             let logger = JsonLogger::new(
                 &home.join("log"),
                 logging::DEFAULT_MAX_LOG_BYTES,
                 Arc::clone(clock),
             )?;
+            let (mut state, recovery) =
+                state::StateStore::open(home, Arc::clone(clock)).map_err(io::Error::other)?;
+            single_instance::write_pid(&run_dir, std::process::id())?;
             logger.log(
                 "info",
                 "daemon_started",
@@ -127,7 +130,18 @@ fn run_foreground(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
             if !residue.is_empty() {
                 logger.log("info", "residue_cleaned", json!({"files": residue}))?;
             }
-            server::serve(&run_dir, env!("CARGO_PKG_VERSION"), &logger)?;
+            if recovery != state::RecoveryReport::default() {
+                logger.log(
+                    "info",
+                    "jobs_recovered",
+                    json!({
+                        "requeued": recovery.requeued,
+                        "cancelled": recovery.cancelled,
+                        "superseded": recovery.superseded,
+                    }),
+                )?;
+            }
+            server::serve(&run_dir, env!("CARGO_PKG_VERSION"), &logger, &mut state)?;
             Ok(ExitCode::SUCCESS)
         }
     }
@@ -145,7 +159,10 @@ fn start_detached(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
 
     let started_at = clock.now();
     loop {
-        if single_instance::is_held(&run_dir)? {
+        if single_instance::is_held(&run_dir)?
+            && server::read_port(&run_dir).is_some()
+            && server::read_token(&run_dir).is_some()
+        {
             println!("remy-daemon: started{}", pid_suffix(&run_dir));
             return Ok(ExitCode::SUCCESS);
         }
@@ -173,10 +190,9 @@ fn status(home: &Path) -> io::Result<ExitCode> {
         token: server::read_token(&run_dir).unwrap_or_default(),
     };
     match ipc_roundtrip(&run_dir, &hello) {
-        Some(protocol::Response::Ok(ok)) if ok.ok => {
-            let version = ok.daemon_version.unwrap_or_else(|| "unknown".to_string());
+        Some(protocol::Response::Hello { daemon_version, .. }) => {
             println!(
-                "remy-daemon: running{} (version {version})",
+                "remy-daemon: running{} (version {daemon_version})",
                 pid_suffix(&run_dir)
             );
         }
@@ -202,7 +218,7 @@ fn stop(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
     };
     let acknowledged = matches!(
         ipc_roundtrip(&run_dir, &shutdown),
-        Some(protocol::Response::Ok(ok)) if ok.ok
+        Some(protocol::Response::Ack)
     );
     if !acknowledged {
         let Some(pid) = single_instance::read_pid(&run_dir) else {

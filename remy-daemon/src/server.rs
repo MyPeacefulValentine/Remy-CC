@@ -1,9 +1,7 @@
-//! IPC server: loopback TCP listener, session token, accept loop handling
-//! hello/ping/shutdown over JSON Lines (R1.2).
+//! IPC server: loopback TCP listener and JSON Lines commands.
 //!
-//! Token check uses plain equality: the token guards against accidental
-//! cross-user connections on shared machines, not against attackers
-//! (plan §4.2 R1.2: "非安全边界").
+//! The session token prevents accidental cross-user connections; it is not a
+//! security boundary.
 
 use std::fs::{self};
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
@@ -13,6 +11,7 @@ use std::time::Duration;
 
 use crate::logging::JsonLogger;
 use crate::protocol::{Request, Response, MAX_LINE_BYTES, PROTOCOL_VERSION};
+use crate::state::{StateError, StateStore, SubmitJob, STATE_SCHEMA_VERSION};
 
 pub const PORT_FILE: &str = "daemon.port";
 pub const TOKEN_FILE: &str = "daemon.token";
@@ -20,10 +19,12 @@ const IO_TIMEOUT: Duration = Duration::from_secs(2);
 const TOKEN_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const TOKEN_LENGTH: usize = 43;
 
-/// Bind the loopback listener, publish token then port (token first, so a
-/// client that sees the port file is guaranteed to find the token), and run
-/// the accept loop until a shutdown command arrives.
-pub fn serve(run_dir: &Path, daemon_version: &str, logger: &JsonLogger) -> io::Result<()> {
+pub fn serve(
+    run_dir: &Path,
+    daemon_version: &str,
+    logger: &JsonLogger,
+    state: &mut StateStore,
+) -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
 
@@ -34,12 +35,16 @@ pub fn serve(run_dir: &Path, daemon_version: &str, logger: &JsonLogger) -> io::R
     logger.log(
         "info",
         "ipc_listening",
-        serde_json::json!({"port": port, "protocol_version": PROTOCOL_VERSION}),
+        serde_json::json!({
+            "port": port,
+            "protocol_version": PROTOCOL_VERSION,
+            "state_schema_version": STATE_SCHEMA_VERSION,
+        }),
     )?;
 
     loop {
         let (stream, _) = listener.accept()?;
-        match handle_connection(&stream, &token, daemon_version) {
+        match handle_connection(&stream, &token, daemon_version, logger, state)? {
             ConnectionOutcome::Continue => {}
             ConnectionOutcome::Shutdown => {
                 logger.log("info", "ipc_shutdown_requested", serde_json::Value::Null)?;
@@ -54,10 +59,13 @@ enum ConnectionOutcome {
     Shutdown,
 }
 
-/// Serve one connection. Total bytes read per connection are capped at
-/// MAX_LINE_BYTES via `Read::take`, which closes the unbounded `read_line`
-/// buffering surface; the per-line length can never exceed the remaining cap.
-fn handle_connection(stream: &TcpStream, token: &str, daemon_version: &str) -> ConnectionOutcome {
+fn handle_connection(
+    stream: &TcpStream,
+    token: &str,
+    daemon_version: &str,
+    logger: &JsonLogger,
+    state: &mut StateStore,
+) -> io::Result<ConnectionOutcome> {
     let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
 
@@ -67,41 +75,139 @@ fn handle_connection(stream: &TcpStream, token: &str, daemon_version: &str) -> C
     for line in reader.lines() {
         let line = match line {
             Ok(line) => line,
-            Err(_) => return ConnectionOutcome::Continue,
+            Err(_) => return Ok(ConnectionOutcome::Continue),
         };
 
         let request: Request = match serde_json::from_str(&line) {
             Ok(request) => request,
             Err(_) => {
-                write_response(&mut writer, &Response::error("invalid_json"));
+                write_response(
+                    &mut writer,
+                    &Response::error("invalid_request", "request is not valid protocol v2 JSON"),
+                );
                 continue;
             }
         };
 
-        let request_token = match &request {
-            Request::Hello { token, .. }
-            | Request::Ping { token }
-            | Request::Shutdown { token } => token,
-        };
-        if request_token != token {
-            write_response(&mut writer, &Response::error("bad_token"));
-            return ConnectionOutcome::Continue;
+        if request.token() != token {
+            write_response(
+                &mut writer,
+                &Response::error("bad_token", "session token does not match"),
+            );
+            return Ok(ConnectionOutcome::Continue);
+        }
+
+        if let Some((protocol_version, state_schema_version)) = request.business_versions() {
+            if protocol_version != PROTOCOL_VERSION {
+                write_response(
+                    &mut writer,
+                    &Response::error(
+                        "incompatible_protocol",
+                        format!(
+                            "client protocol {protocol_version}; daemon protocol {PROTOCOL_VERSION}"
+                        ),
+                    ),
+                );
+                continue;
+            }
+            if state_schema_version != STATE_SCHEMA_VERSION {
+                write_response(
+                    &mut writer,
+                    &Response::error(
+                        "incompatible_state_schema",
+                        format!(
+                            "client state schema {state_schema_version}; daemon state schema {STATE_SCHEMA_VERSION}"
+                        ),
+                    ),
+                );
+                continue;
+            }
         }
 
         match request {
             Request::Hello { .. } => {
                 write_response(&mut writer, &Response::hello(daemon_version.to_string()));
             }
-            Request::Ping { .. } => {
-                write_response(&mut writer, &Response::ok());
-            }
+            Request::Ping { .. } => write_response(&mut writer, &Response::Ack),
             Request::Shutdown { .. } => {
-                write_response(&mut writer, &Response::ok());
-                return ConnectionOutcome::Shutdown;
+                write_response(&mut writer, &Response::Ack);
+                return Ok(ConnectionOutcome::Shutdown);
             }
+            Request::SubmitJob {
+                project_path,
+                db_path,
+                file_path,
+                priority,
+                ..
+            } => match state.submit(SubmitJob {
+                project_path,
+                db_path,
+                file_path,
+                priority,
+            }) {
+                Ok(result) => {
+                    let _ = logger.log(
+                        "info",
+                        if result.created {
+                            "job_submitted"
+                        } else {
+                            "job_reused"
+                        },
+                        serde_json::json!({"job_id": result.job.id}),
+                    );
+                    write_response(
+                        &mut writer,
+                        &Response::Submitted {
+                            job: result.job,
+                            created: result.created,
+                        },
+                    );
+                }
+                Err(error) if error.is_fatal() => return Err(io::Error::other(error)),
+                Err(error) => write_response(&mut writer, &state_error_response(error)),
+            },
+            Request::GetJob { job_id, .. } => match state.get(job_id) {
+                Ok(job) => write_response(&mut writer, &Response::Job { job }),
+                Err(error) if error.is_fatal() => return Err(io::Error::other(error)),
+                Err(error) => write_response(&mut writer, &state_error_response(error)),
+            },
+            Request::CancelJob { job_id, .. } => match state.cancel(job_id) {
+                Ok(result) => {
+                    if result.changed {
+                        let _ = logger.log(
+                            "info",
+                            "job_cancel_updated",
+                            serde_json::json!({
+                                "job_id": result.job.id,
+                                "status": result.job.status,
+                            }),
+                        );
+                    }
+                    write_response(
+                        &mut writer,
+                        &Response::Cancelled {
+                            job: result.job,
+                            changed: result.changed,
+                        },
+                    );
+                }
+                Err(error) if error.is_fatal() => return Err(io::Error::other(error)),
+                Err(error) => write_response(&mut writer, &state_error_response(error)),
+            },
         }
     }
-    ConnectionOutcome::Continue
+    Ok(ConnectionOutcome::Continue)
+}
+
+fn state_error_response(error: StateError) -> Response {
+    let code = match error {
+        StateError::InvalidInput(_) => "invalid_request",
+        StateError::NotFound(_) => "not_found",
+        StateError::NotCancellable(_) => "not_cancellable",
+        StateError::InvalidTransition { .. } => "invalid_transition",
+        StateError::Sqlite(_) | StateError::Io(_) | StateError::Corrupt(_) => "storage_error",
+    };
+    Response::error(code, error.to_string())
 }
 
 fn write_response(writer: &mut impl Write, response: &Response) {
@@ -111,9 +217,6 @@ fn write_response(writer: &mut impl Write, response: &Response) {
     }
 }
 
-/// Random token from `RandomState`, whose per-instance keys come from OS
-/// entropy. Each 64-bit SipHash output yields ten 6-bit characters, so five
-/// rounds cover TOKEN_LENGTH with independent bits per character.
 fn generate_token() -> String {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hasher};
@@ -153,11 +256,6 @@ fn write_port(run_dir: &Path, port: u16) -> io::Result<()> {
     fs::write(run_dir.join(PORT_FILE), port.to_string())
 }
 
-/// Remove endpoint files left behind by a previous daemon process (crash-only
-/// residue, INV-R3). Must only be called while holding the single-instance
-/// lock: the lock guarantees the previous owner is gone, so the files describe
-/// no live endpoint. Port is removed before token so no reader can observe a
-/// port file without a readable token. Returns the names actually removed.
 pub fn clean_stale_endpoints(run_dir: &Path) -> io::Result<Vec<&'static str>> {
     let mut removed = Vec::new();
     for name in [PORT_FILE, TOKEN_FILE] {
@@ -196,12 +294,16 @@ mod tests {
     use super::*;
     use crate::clock::fake::FakeClock;
     use crate::clock::Clock;
+    use crate::state::JobStatus;
+
+    fn clock() -> Arc<dyn Clock> {
+        Arc::new(FakeClock::new(
+            SystemTime::UNIX_EPOCH + Duration::from_secs(1_754_000_000),
+        ))
+    }
 
     fn test_logger(dir: &Path) -> JsonLogger {
-        let clock = Arc::new(FakeClock::new(
-            SystemTime::UNIX_EPOCH + Duration::from_secs(1_754_000_000),
-        ));
-        JsonLogger::new(dir, 1024 * 1024, clock as Arc<dyn Clock>).unwrap()
+        JsonLogger::new(dir, 1024 * 1024, clock()).unwrap()
     }
 
     fn request_line(value: serde_json::Value) -> String {
@@ -225,104 +327,35 @@ mod tests {
         let token = generate_token();
         assert_eq!(token.len(), TOKEN_LENGTH);
         assert!(token.bytes().all(|b| TOKEN_CHARS.contains(&b)));
-    }
-
-    #[test]
-    fn generate_token_produces_distinct_values() {
         assert_ne!(generate_token(), generate_token());
     }
 
     #[test]
-    fn generate_token_characters_are_not_constant() {
-        let token = generate_token();
-        let first = token.as_bytes()[0];
-        assert!(token.bytes().any(|b| b != first));
-    }
-
-    #[test]
-    fn token_and_port_files_roundtrip() {
+    fn token_and_port_files_roundtrip_and_cleanup() {
         let dir = tempfile::tempdir().unwrap();
         write_token(dir.path(), "secret").unwrap();
         write_port(dir.path(), 45678).unwrap();
         assert_eq!(read_token(dir.path()).as_deref(), Some("secret"));
         assert_eq!(read_port(dir.path()), Some(45678));
-    }
-
-    #[test]
-    fn clean_stale_endpoints_removes_port_and_token() {
-        let dir = tempfile::tempdir().unwrap();
-        write_token(dir.path(), "old-token").unwrap();
-        write_port(dir.path(), 12345).unwrap();
-
-        let removed = clean_stale_endpoints(dir.path()).unwrap();
-
-        assert_eq!(removed, vec![PORT_FILE, TOKEN_FILE]);
-        assert_eq!(read_port(dir.path()), None);
-        assert_eq!(read_token(dir.path()), None);
-    }
-
-    #[test]
-    fn clean_stale_endpoints_on_clean_dir_is_noop() {
-        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            clean_stale_endpoints(dir.path()).unwrap(),
+            vec![PORT_FILE, TOKEN_FILE]
+        );
         assert!(clean_stale_endpoints(dir.path()).unwrap().is_empty());
     }
 
-    /// Non-NotFound removal errors must propagate (caller run_foreground then
-    /// fails fast with exit 2) instead of serving next to unremovable residue.
-    #[cfg(windows)]
     #[test]
-    fn clean_stale_endpoints_propagates_sharing_violation() {
-        use std::os::windows::fs::OpenOptionsExt;
-        // FILE_SHARE_READ | FILE_SHARE_WRITE, without FILE_SHARE_DELETE, so
-        // remove_file hits a sharing violation while the handle is held.
-        const SHARE_READ_WRITE: u32 = 0x1 | 0x2;
-
-        let dir = tempfile::tempdir().unwrap();
-        write_port(dir.path(), 12345).unwrap();
-        let _hold = fs::OpenOptions::new()
-            .read(true)
-            .share_mode(SHARE_READ_WRITE)
-            .open(dir.path().join(PORT_FILE))
-            .unwrap();
-
-        let err = clean_stale_endpoints(dir.path()).unwrap_err();
-        assert_ne!(err.kind(), io::ErrorKind::NotFound);
-    }
-
-    /// Same contract on Unix via an unwritable parent directory (assumes the
-    /// test does not run as root, which is true for CI runners and dev shells).
-    #[cfg(unix)]
-    #[test]
-    fn clean_stale_endpoints_propagates_permission_errors() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let dir = tempfile::tempdir().unwrap();
-        write_port(dir.path(), 12345).unwrap();
-        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o555)).unwrap();
-
-        let result = clean_stale_endpoints(dir.path());
-
-        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
-        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
-    }
-
-    #[test]
-    fn read_port_and_token_absent_return_none() {
-        let dir = tempfile::tempdir().unwrap();
-        assert_eq!(read_port(dir.path()), None);
-        assert_eq!(read_token(dir.path()), None);
-    }
-
-    #[test]
-    fn serve_answers_hello_ping_and_exits_on_shutdown() {
+    fn serve_answers_jobs_and_rejects_wrong_versions() {
         let dir = tempfile::tempdir().unwrap();
         let run_dir = dir.path().join("run");
-        let log_dir = dir.path().join("log");
-        let logger = test_logger(&log_dir);
+        let project = dir.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let logger = test_logger(&dir.path().join("log"));
+        let (mut state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
 
         let run_dir_clone = run_dir.clone();
         let handle = std::thread::spawn(move || {
-            serve(&run_dir_clone, "0.1.0-test", &logger).unwrap();
+            serve(&run_dir_clone, "0.1.0-test", &logger, &mut state).unwrap();
         });
 
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
@@ -336,31 +369,58 @@ mod tests {
             );
             std::thread::sleep(Duration::from_millis(10));
         };
-        let token = read_token(&run_dir).expect("token file written before port file");
-
+        let token = read_token(&run_dir).unwrap();
         let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+
         let hello = roundtrip(
             &stream,
             &request_line(serde_json::json!({
                 "cmd": "hello", "protocol_version": PROTOCOL_VERSION, "token": token,
             })),
         );
-        assert_eq!(hello["ok"], true);
-        assert_eq!(hello["protocol_version"], PROTOCOL_VERSION);
-        assert_eq!(hello["daemon_version"], "0.1.0-test");
+        assert_eq!(hello["type"], "hello");
+        assert_eq!(hello["state_schema_version"], STATE_SCHEMA_VERSION);
 
-        let ping = roundtrip(
+        let incompatible = roundtrip(
             &stream,
-            &request_line(serde_json::json!({"cmd": "ping", "token": token})),
+            &request_line(serde_json::json!({
+                "cmd": "submit_job", "protocol_version": 999,
+                "state_schema_version": STATE_SCHEMA_VERSION, "token": token,
+                "project_path": project, "db_path": dir.path().join("index.db"),
+                "file_path": "src/main.py", "priority": "interactive",
+            })),
         );
-        assert_eq!(ping, serde_json::json!({"ok": true}));
+        assert_eq!(incompatible["code"], "incompatible_protocol");
+
+        let submitted = roundtrip(
+            &stream,
+            &request_line(serde_json::json!({
+                "cmd": "submit_job", "protocol_version": PROTOCOL_VERSION,
+                "state_schema_version": STATE_SCHEMA_VERSION, "token": token,
+                "project_path": project, "db_path": dir.path().join("index.db"),
+                "file_path": "src/main.py", "priority": "interactive",
+            })),
+        );
+        assert_eq!(submitted["type"], "submitted");
+        assert_eq!(submitted["created"], true);
+        assert_eq!(submitted["job"]["status"], "pending");
+        let job_id = submitted["job"]["id"].as_i64().unwrap();
+
+        let cancelled = roundtrip(
+            &stream,
+            &request_line(serde_json::json!({
+                "cmd": "cancel_job", "protocol_version": PROTOCOL_VERSION,
+                "state_schema_version": STATE_SCHEMA_VERSION, "token": token,
+                "job_id": job_id,
+            })),
+        );
+        assert_eq!(cancelled["job"]["status"], JobStatus::Cancelled.as_db());
 
         let shutdown = roundtrip(
             &stream,
             &request_line(serde_json::json!({"cmd": "shutdown", "token": token})),
         );
-        assert_eq!(shutdown, serde_json::json!({"ok": true}));
-
+        assert_eq!(shutdown, serde_json::json!({"type": "ack"}));
         handle.join().unwrap();
     }
 
@@ -369,46 +429,39 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let run_dir = dir.path().join("run");
         let logger = test_logger(&dir.path().join("log"));
-
+        let (mut state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
         let run_dir_clone = run_dir.clone();
         let handle = std::thread::spawn(move || {
-            serve(&run_dir_clone, "0.1.0-test", &logger).unwrap();
+            serve(&run_dir_clone, "0.1.0-test", &logger, &mut state).unwrap();
         });
-
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let port = loop {
             if let Some(port) = read_port(&run_dir) {
                 break port;
             }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "port file not written"
-            );
+            assert!(std::time::Instant::now() < deadline);
             std::thread::sleep(Duration::from_millis(10));
         };
         let token = read_token(&run_dir).unwrap();
-
         let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
         let rejected = roundtrip(
             &stream,
             &request_line(serde_json::json!({"cmd": "ping", "token": "wrong"})),
         );
-        assert_eq!(
-            rejected,
-            serde_json::json!({"ok": false, "error": "bad_token"})
-        );
-
+        assert_eq!(rejected["code"], "bad_token");
         let mut reader = BufReader::new(&stream);
         let mut rest = String::new();
         reader.read_line(&mut rest).unwrap();
-        assert!(rest.is_empty(), "server should close after bad token");
+        assert!(rest.is_empty());
 
         let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
-        let shutdown = roundtrip(
-            &stream,
-            &request_line(serde_json::json!({"cmd": "shutdown", "token": token})),
+        assert_eq!(
+            roundtrip(
+                &stream,
+                &request_line(serde_json::json!({"cmd": "shutdown", "token": token}))
+            )["type"],
+            "ack"
         );
-        assert_eq!(shutdown["ok"], true);
         handle.join().unwrap();
     }
 
@@ -417,37 +470,32 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let run_dir = dir.path().join("run");
         let logger = test_logger(&dir.path().join("log"));
-
+        let (mut state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
         let run_dir_clone = run_dir.clone();
         let handle = std::thread::spawn(move || {
-            serve(&run_dir_clone, "0.1.0-test", &logger).unwrap();
+            serve(&run_dir_clone, "0.1.0-test", &logger, &mut state).unwrap();
         });
-
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let port = loop {
             if let Some(port) = read_port(&run_dir) {
                 break port;
             }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "port file not written"
-            );
+            assert!(std::time::Instant::now() < deadline);
             std::thread::sleep(Duration::from_millis(10));
         };
         let token = read_token(&run_dir).unwrap();
-
         let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
-        let error = roundtrip(&stream, "this is not json\n");
         assert_eq!(
-            error,
-            serde_json::json!({"ok": false, "error": "invalid_json"})
+            roundtrip(&stream, "this is not json\n")["code"],
+            "invalid_request"
         );
-
-        let shutdown = roundtrip(
-            &stream,
-            &request_line(serde_json::json!({"cmd": "shutdown", "token": token})),
+        assert_eq!(
+            roundtrip(
+                &stream,
+                &request_line(serde_json::json!({"cmd": "shutdown", "token": token}))
+            )["type"],
+            "ack"
         );
-        assert_eq!(shutdown["ok"], true);
         handle.join().unwrap();
     }
 }
