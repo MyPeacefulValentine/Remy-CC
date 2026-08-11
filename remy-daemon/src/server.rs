@@ -11,7 +11,8 @@ use std::time::Duration;
 
 use crate::logging::JsonLogger;
 use crate::protocol::{Request, Response, MAX_LINE_BYTES, PROTOCOL_VERSION};
-use crate::state::{StateError, StateStore, SubmitJob, STATE_SCHEMA_VERSION};
+use crate::scheduler::SchedulerHandle;
+use crate::state::{ListJobs, StateError, SubmitJob, STATE_SCHEMA_VERSION};
 
 pub const PORT_FILE: &str = "daemon.port";
 pub const TOKEN_FILE: &str = "daemon.token";
@@ -23,7 +24,7 @@ pub fn serve(
     run_dir: &Path,
     daemon_version: &str,
     logger: &JsonLogger,
-    state: &mut StateStore,
+    scheduler: &SchedulerHandle,
 ) -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
@@ -44,7 +45,7 @@ pub fn serve(
 
     loop {
         let (stream, _) = listener.accept()?;
-        match handle_connection(&stream, &token, daemon_version, logger, state)? {
+        match handle_connection(&stream, &token, daemon_version, logger, scheduler)? {
             ConnectionOutcome::Continue => {}
             ConnectionOutcome::Shutdown => {
                 logger.log("info", "ipc_shutdown_requested", serde_json::Value::Null)?;
@@ -64,7 +65,7 @@ fn handle_connection(
     token: &str,
     daemon_version: &str,
     logger: &JsonLogger,
-    state: &mut StateStore,
+    scheduler: &SchedulerHandle,
 ) -> io::Result<ConnectionOutcome> {
     let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
@@ -139,7 +140,7 @@ fn handle_connection(
                 file_path,
                 priority,
                 ..
-            } => match state.submit(SubmitJob {
+            } => match scheduler.submit(SubmitJob {
                 project_path,
                 db_path,
                 file_path,
@@ -166,12 +167,12 @@ fn handle_connection(
                 Err(error) if error.is_fatal() => return Err(io::Error::other(error)),
                 Err(error) => write_response(&mut writer, &state_error_response(error)),
             },
-            Request::GetJob { job_id, .. } => match state.get(job_id) {
+            Request::GetJob { job_id, .. } => match scheduler.get(job_id) {
                 Ok(job) => write_response(&mut writer, &Response::Job { job }),
                 Err(error) if error.is_fatal() => return Err(io::Error::other(error)),
                 Err(error) => write_response(&mut writer, &state_error_response(error)),
             },
-            Request::CancelJob { job_id, .. } => match state.cancel(job_id) {
+            Request::CancelJob { job_id, .. } => match scheduler.cancel(job_id) {
                 Ok(result) => {
                     if result.changed {
                         let _ = logger.log(
@@ -191,6 +192,48 @@ fn handle_connection(
                         },
                     );
                 }
+                Err(error) if error.is_fatal() => return Err(io::Error::other(error)),
+                Err(error) => write_response(&mut writer, &state_error_response(error)),
+            },
+            Request::ListJobs {
+                project_path,
+                status,
+                job_type,
+                limit,
+                ..
+            } => {
+                let applied_limit = limit.unwrap_or(50).clamp(1, 200);
+                let filters = crate::protocol::JobFilters {
+                    project_path: project_path.clone(),
+                    status,
+                    job_type: job_type.clone(),
+                };
+                match scheduler.list(ListJobs {
+                    project_path,
+                    status,
+                    job_type,
+                    limit: applied_limit,
+                }) {
+                    Ok(jobs) => write_response(
+                        &mut writer,
+                        &Response::JobList {
+                            jobs,
+                            limit: applied_limit,
+                            filters,
+                        },
+                    ),
+                    Err(error) if error.is_fatal() => return Err(io::Error::other(error)),
+                    Err(error) => write_response(&mut writer, &state_error_response(error)),
+                }
+            }
+            Request::StatusSnapshot { .. } => match scheduler.status() {
+                Ok((active_jobs, recent_errors)) => write_response(
+                    &mut writer,
+                    &Response::Status {
+                        active_jobs,
+                        recent_errors,
+                    },
+                ),
                 Err(error) if error.is_fatal() => return Err(io::Error::other(error)),
                 Err(error) => write_response(&mut writer, &state_error_response(error)),
             },
@@ -294,7 +337,7 @@ mod tests {
     use super::*;
     use crate::clock::fake::FakeClock;
     use crate::clock::Clock;
-    use crate::state::JobStatus;
+    use crate::state::{JobStatus, StateStore};
 
     fn clock() -> Arc<dyn Clock> {
         Arc::new(FakeClock::new(
@@ -351,11 +394,13 @@ mod tests {
         let project = dir.path().join("project");
         fs::create_dir_all(&project).unwrap();
         let logger = test_logger(&dir.path().join("log"));
-        let (mut state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
+        let (state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
+        let (scheduler, scheduler_thread) = crate::scheduler::start(state, clock()).unwrap();
 
         let run_dir_clone = run_dir.clone();
+        let scheduler_clone = scheduler.clone();
         let handle = std::thread::spawn(move || {
-            serve(&run_dir_clone, "0.1.0-test", &logger, &mut state).unwrap();
+            serve(&run_dir_clone, "0.1.0-test", &logger, &scheduler_clone).unwrap();
         });
 
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
@@ -414,7 +459,10 @@ mod tests {
                 "job_id": job_id,
             })),
         );
-        assert_eq!(cancelled["job"]["status"], JobStatus::Cancelled.as_db());
+        assert_eq!(
+            cancelled["job"]["status"],
+            JobStatus::CancelRequested.as_db()
+        );
 
         let shutdown = roundtrip(
             &stream,
@@ -422,6 +470,8 @@ mod tests {
         );
         assert_eq!(shutdown, serde_json::json!({"type": "ack"}));
         handle.join().unwrap();
+        scheduler.shutdown();
+        scheduler_thread.join().unwrap();
     }
 
     #[test]
@@ -429,10 +479,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let run_dir = dir.path().join("run");
         let logger = test_logger(&dir.path().join("log"));
-        let (mut state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
+        let (state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
+        let (scheduler, scheduler_thread) = crate::scheduler::start(state, clock()).unwrap();
         let run_dir_clone = run_dir.clone();
+        let scheduler_clone = scheduler.clone();
         let handle = std::thread::spawn(move || {
-            serve(&run_dir_clone, "0.1.0-test", &logger, &mut state).unwrap();
+            serve(&run_dir_clone, "0.1.0-test", &logger, &scheduler_clone).unwrap();
         });
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let port = loop {
@@ -463,6 +515,8 @@ mod tests {
             "ack"
         );
         handle.join().unwrap();
+        scheduler.shutdown();
+        scheduler_thread.join().unwrap();
     }
 
     #[test]
@@ -470,10 +524,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let run_dir = dir.path().join("run");
         let logger = test_logger(&dir.path().join("log"));
-        let (mut state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
+        let (state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
+        let (scheduler, scheduler_thread) = crate::scheduler::start(state, clock()).unwrap();
         let run_dir_clone = run_dir.clone();
+        let scheduler_clone = scheduler.clone();
         let handle = std::thread::spawn(move || {
-            serve(&run_dir_clone, "0.1.0-test", &logger, &mut state).unwrap();
+            serve(&run_dir_clone, "0.1.0-test", &logger, &scheduler_clone).unwrap();
         });
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let port = loop {
@@ -497,5 +553,7 @@ mod tests {
             "ack"
         );
         handle.join().unwrap();
+        scheduler.shutdown();
+        scheduler_thread.join().unwrap();
     }
 }

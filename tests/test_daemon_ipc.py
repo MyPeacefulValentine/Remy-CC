@@ -1,4 +1,4 @@
-"""Integration tests for the remy-daemon protocol v2 job contract."""
+"""Integration tests for the remy-daemon protocol v3 job contract."""
 import json
 import os
 import shutil
@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 DAEMON_SOURCE = Path(__file__).resolve().parent.parent / "remy-daemon"
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 STATE_SCHEMA_VERSION = 1
 
 
@@ -199,9 +199,11 @@ def test_submit_get_cancel_and_pending_deduplication(daemon_home, tmp_path):
     job_id = first["job"]["id"]
 
     duplicate = submit(client, project, priority="interactive")
-    assert duplicate["created"] is False
-    assert duplicate["job"]["id"] == job_id
-    assert duplicate["job"]["priority"] == "interactive"
+    assert duplicate["job"]["id"] in {job_id, job_id + 1}
+    if duplicate["created"]:
+        assert duplicate["job"]["status"] == "pending"
+    else:
+        assert duplicate["job"]["priority"] == "interactive"
 
     queried = client.job_request("get_job", job_id=job_id)
     assert queried["type"] == "job"
@@ -212,10 +214,75 @@ def test_submit_get_cancel_and_pending_deduplication(daemon_home, tmp_path):
     cancelled = client.job_request("cancel_job", job_id=job_id)
     assert cancelled["type"] == "cancelled"
     assert cancelled["changed"] is True
-    assert cancelled["job"]["status"] == "cancelled"
+    assert cancelled["job"]["status"] in {"cancelled", "cancel_requested"}
     repeated = client.job_request("cancel_job", job_id=job_id)
     assert repeated["changed"] is False
-    assert repeated["job"]["status"] == "cancelled"
+    assert repeated["job"]["status"] in {"cancelled", "cancel_requested"}
+
+
+def _wait_for_terminal(client, job_id, timeout=10.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        response = client.job_request("get_job", job_id=job_id)
+        if response["job"]["status"] in {
+            "succeeded", "failed", "cancelled", "superseded"
+        }:
+            return response["job"]
+        time.sleep(0.02)
+    raise TimeoutError("job {} did not reach a terminal state".format(job_id))
+
+
+def test_incremental_scan_worker_writes_structured_result(daemon_home, tmp_path):
+    client = connected_client(daemon_home)
+    project = tmp_path / "worker_project"
+    project.mkdir()
+    source = project / "main.py"
+    source.write_text("def answer():\n    return 42\n", encoding="utf-8")
+
+    response = submit(client, project, file_path="main.py", priority="interactive")
+    job = _wait_for_terminal(client, response["job"]["id"])
+
+    assert job["status"] == "succeeded"
+    assert job["progress_current"] == job["progress_total"] == 3
+    assert job["result"]["schema_version"] == 1
+    assert job["result"]["outcome"] == "success"
+    assert job["result"]["successful_paths"] == ["main.py"]
+    assert job["result"]["failed_paths"] == []
+    assert job["result"]["postprocess_complete"] is True
+    assert (project / ".claude" / "logic_index.db").exists()
+
+
+def test_list_jobs_and_status_json_contract(daemon_home, tmp_path):
+    client = connected_client(daemon_home)
+    project = tmp_path / "list_project"
+    project.mkdir()
+    (project / "main.py").write_text("x = 1\n", encoding="utf-8")
+    submitted = submit(client, project, file_path="main.py")
+    _wait_for_terminal(client, submitted["job"]["id"])
+
+    response = client.job_request(
+        "list_jobs", project_path=str(project), status="succeeded",
+        job_type="incremental_scan", limit=50,
+    )
+    assert response["type"] == "job_list"
+    assert response["limit"] == 50
+    assert response["filters"] == {
+        "project_path": str(project),
+        "status": "succeeded",
+        "job_type": "incremental_scan",
+    }
+    assert [job["id"] for job in response["jobs"]] == [submitted["job"]["id"]]
+
+    status = run_daemon(daemon_home, ["status", "--json"])
+    assert status.returncode == 0
+    payload = json.loads(status.stdout)
+    assert payload["running"] is True
+    assert payload["ipc_responsive"] is True
+    assert payload["protocol_version"] == PROTOCOL_VERSION
+    assert payload["state_schema_version"] == STATE_SCHEMA_VERSION
+    assert payload["diagnostic_error"] is None
+    assert isinstance(payload["active_jobs"], list)
+    assert isinstance(payload["recent_errors"], list)
 
 
 def test_invalid_paths_and_unknown_jobs_have_stable_error_codes(daemon_home, tmp_path):

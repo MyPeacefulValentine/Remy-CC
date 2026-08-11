@@ -247,6 +247,21 @@ pub struct SubmitResult {
     pub created: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ListJobs {
+    pub project_path: Option<String>,
+    pub status: Option<JobStatus>,
+    pub job_type: Option<String>,
+    pub limit: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProgressUpdate {
+    pub current: i64,
+    pub total: i64,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CancelResult {
     pub job: Job,
@@ -349,6 +364,190 @@ impl StateStore {
 
     pub fn get(&self, job_id: i64) -> StateResult<Job> {
         load_job(&self.connection, job_id)
+    }
+
+    pub fn claim_next_pending(&mut self) -> StateResult<Option<Job>> {
+        let now = self.now_millis()?;
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let job_id: Option<i64> = tx
+            .query_row(
+                "SELECT j.id FROM jobs j \
+                 WHERE j.status = 'pending' \
+                   AND NOT EXISTS ( \
+                       SELECT 1 FROM jobs active \
+                       WHERE active.project_id = j.project_id \
+                         AND active.job_type = j.job_type \
+                         AND active.dedupe_key = j.dedupe_key \
+                         AND active.status IN ('running', 'cancel_requested') \
+                   ) \
+                 ORDER BY j.priority DESC, j.created_at ASC, j.id ASC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(job_id) = job_id else {
+            tx.commit()?;
+            return Ok(None);
+        };
+        if !transition_job(
+            &tx,
+            job_id,
+            JobStatus::Pending,
+            JobStatus::Running,
+            now,
+            None,
+        )? {
+            return Err(StateError::Corrupt(format!(
+                "pending job {job_id} changed during claim"
+            )));
+        }
+        tx.execute(
+            "UPDATE jobs SET progress_current = 0, progress_total = 3, \
+                 progress_message = 'runtime_validation' WHERE id = ?1",
+            params![job_id],
+        )?;
+        let job = load_job(&tx, job_id)?;
+        tx.commit()?;
+        Ok(Some(job))
+    }
+
+    pub fn update_progress(&mut self, job_id: i64, update: ProgressUpdate) -> StateResult<Job> {
+        if update.current < 0 || update.total < 0 || update.current > update.total {
+            return Err(StateError::InvalidInput(
+                "progress must satisfy 0 <= current <= total".to_string(),
+            ));
+        }
+        let changed = self.connection.execute(
+            "UPDATE jobs SET progress_current = ?1, progress_total = ?2, \
+                 progress_message = ?3 \
+             WHERE id = ?4 AND status IN ('running', 'cancel_requested') \
+               AND (progress_current IS NULL OR progress_current <= ?1)",
+            params![update.current, update.total, update.message, job_id],
+        )?;
+        if changed != 1 {
+            let current = self.get(job_id)?;
+            return Err(StateError::InvalidTransition {
+                from: current.status,
+                to: current.status,
+            });
+        }
+        self.get(job_id)
+    }
+
+    pub fn complete_success(&mut self, job_id: i64, result: Value) -> StateResult<Job> {
+        self.complete(job_id, JobStatus::Succeeded, result)
+    }
+
+    pub fn complete_failure(&mut self, job_id: i64, error: Value) -> StateResult<Job> {
+        self.complete(job_id, JobStatus::Failed, error)
+    }
+
+    pub fn confirm_cancelled(&mut self, job_id: i64) -> StateResult<Job> {
+        let now = self.now_millis()?;
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let current = load_job(&tx, job_id)?;
+        if current.status != JobStatus::CancelRequested {
+            return Err(StateError::InvalidTransition {
+                from: current.status,
+                to: JobStatus::Cancelled,
+            });
+        }
+        transition_job(
+            &tx,
+            job_id,
+            JobStatus::CancelRequested,
+            JobStatus::Cancelled,
+            now,
+            None,
+        )?;
+        let job = load_job(&tx, job_id)?;
+        tx.commit()?;
+        Ok(job)
+    }
+
+    pub fn list(&self, filter: ListJobs) -> StateResult<Vec<Job>> {
+        let limit = filter.limit.clamp(1, 200) as i64;
+        let project_key = filter
+            .project_path
+            .as_deref()
+            .map(normalize_project_filter)
+            .transpose()?;
+        let status = filter.status.map(JobStatus::as_db);
+        let job_type = filter.job_type.as_deref();
+        if let Some(value) = job_type {
+            if value != "incremental_scan" {
+                return Err(StateError::InvalidInput(format!(
+                    "unsupported job_type {value}"
+                )));
+            }
+        }
+        let mut statement = self.connection.prepare(
+            "SELECT j.id FROM jobs j JOIN projects p ON p.id = j.project_id \
+             WHERE (?1 IS NULL OR p.project_key = ?1) \
+               AND (?2 IS NULL OR j.status = ?2) \
+               AND (?3 IS NULL OR j.job_type = ?3) \
+             ORDER BY j.created_at DESC, j.id DESC LIMIT ?4",
+        )?;
+        let ids = statement
+            .query_map(params![project_key, status, job_type, limit], |row| {
+                row.get(0)
+            })?
+            .collect::<Result<Vec<i64>, _>>()?;
+        ids.into_iter()
+            .map(|job_id| load_job(&self.connection, job_id))
+            .collect()
+    }
+
+    pub fn recent_failed(&self, limit: usize) -> StateResult<Vec<Job>> {
+        self.list(ListJobs {
+            status: Some(JobStatus::Failed),
+            limit: limit.clamp(1, 200),
+            ..ListJobs::default()
+        })
+    }
+
+    fn complete(&mut self, job_id: i64, status: JobStatus, payload: Value) -> StateResult<Job> {
+        if !matches!(status, JobStatus::Succeeded | JobStatus::Failed) {
+            return Err(StateError::InvalidInput(
+                "completion status must be succeeded or failed".to_string(),
+            ));
+        }
+        let now = self.now_millis()?;
+        let encoded = serde_json::to_string(&payload)
+            .map_err(|error| StateError::InvalidInput(error.to_string()))?;
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let current = load_job(&tx, job_id)?;
+        if current.status != JobStatus::Running {
+            return Err(StateError::InvalidTransition {
+                from: current.status,
+                to: status,
+            });
+        }
+        let (result, error) = if status == JobStatus::Succeeded {
+            (Some(encoded), None)
+        } else {
+            (None, Some(encoded))
+        };
+        let changed = tx.execute(
+            "UPDATE jobs SET status = ?1, progress_current = 3, progress_total = 3, \
+                 progress_message = 'finalizing', result_json = ?2, error_json = ?3, \
+                 finished_at = ?4 WHERE id = ?5 AND status = 'running'",
+            params![status.as_db(), result, error, now, job_id],
+        )?;
+        if changed != 1 {
+            return Err(StateError::Corrupt(format!(
+                "running job {job_id} changed during completion"
+            )));
+        }
+        let job = load_job(&tx, job_id)?;
+        tx.commit()?;
+        Ok(job)
     }
 
     pub fn cancel(&mut self, job_id: i64) -> StateResult<CancelResult> {
@@ -667,6 +866,21 @@ fn parse_json(value: Option<String>, field: &str) -> StateResult<Option<Value>> 
         .transpose()
 }
 
+fn normalize_project_filter(value: &str) -> StateResult<String> {
+    let path = Path::new(value);
+    if !path.is_absolute() {
+        return Err(StateError::InvalidInput(
+            "project_path filter must be absolute".to_string(),
+        ));
+    }
+    let normalized = if path.exists() {
+        display_path(&fs::canonicalize(path)?)
+    } else {
+        path.to_string_lossy().into_owned()
+    };
+    Ok(project_key(&normalized))
+}
+
 fn normalize_existing_project(value: &str) -> StateResult<String> {
     let path = Path::new(value);
     if !path.is_absolute() || !path.is_dir() {
@@ -674,13 +888,28 @@ fn normalize_existing_project(value: &str) -> StateResult<String> {
             "project_path must be an existing absolute directory".to_string(),
         ));
     }
-    Ok(fs::canonicalize(path)?.to_string_lossy().into_owned())
+    Ok(display_path(&fs::canonicalize(path)?))
+}
+
+fn display_path(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    #[cfg(windows)]
+    {
+        value.strip_prefix(r"\\?\").unwrap_or(&value).to_string()
+    }
+    #[cfg(not(windows))]
+    {
+        value.into_owned()
+    }
 }
 
 fn project_key(project_path: &str) -> String {
     #[cfg(windows)]
     {
-        project_path.to_lowercase()
+        project_path
+            .strip_prefix(r"\\?\")
+            .unwrap_or(project_path)
+            .to_lowercase()
     }
     #[cfg(not(windows))]
     {
@@ -710,7 +939,7 @@ fn normalize_database_path(value: &str) -> StateResult<String> {
     for component in suffix.iter().rev() {
         normalized.push(component);
     }
-    Ok(normalized.to_string_lossy().into_owned())
+    Ok(display_path(&normalized))
 }
 
 fn normalize_source_path(value: &str) -> StateResult<String> {
@@ -1150,6 +1379,101 @@ mod tests {
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
         assert_eq!(version, 99);
+    }
+
+    #[test]
+    fn claim_orders_interactive_before_background_and_fifo_within_priority() {
+        let home = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let db = project.path().join("logic_index.db");
+        let mut store = store_in(home.path());
+        let background = store
+            .submit(request(
+                project.path(),
+                &db,
+                "background.py",
+                JobPriority::Background,
+            ))
+            .unwrap();
+        let first_interactive = store
+            .submit(request(
+                project.path(),
+                &db,
+                "first.py",
+                JobPriority::Interactive,
+            ))
+            .unwrap();
+        let second_interactive = store
+            .submit(request(
+                project.path(),
+                &db,
+                "second.py",
+                JobPriority::Interactive,
+            ))
+            .unwrap();
+
+        assert_eq!(
+            store.claim_next_pending().unwrap().unwrap().id,
+            first_interactive.job.id
+        );
+        store
+            .complete_success(first_interactive.job.id, serde_json::json!({"ok": true}))
+            .unwrap();
+        assert_eq!(
+            store.claim_next_pending().unwrap().unwrap().id,
+            second_interactive.job.id
+        );
+        store
+            .complete_success(second_interactive.job.id, serde_json::json!({"ok": true}))
+            .unwrap();
+        assert_eq!(
+            store.claim_next_pending().unwrap().unwrap().id,
+            background.job.id
+        );
+    }
+
+    #[test]
+    fn completion_and_list_preserve_structured_payload_and_bounds() {
+        let home = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let db = project.path().join("logic_index.db");
+        let mut store = store_in(home.path());
+        let submitted = store
+            .submit(request(
+                project.path(),
+                &db,
+                "main.py",
+                JobPriority::Interactive,
+            ))
+            .unwrap();
+        let claimed = store.claim_next_pending().unwrap().unwrap();
+        assert_eq!(claimed.progress_current, Some(0));
+        assert_eq!(claimed.progress_total, Some(3));
+        store
+            .update_progress(
+                claimed.id,
+                ProgressUpdate {
+                    current: 2,
+                    total: 3,
+                    message: "scanning".to_string(),
+                },
+            )
+            .unwrap();
+        let payload = serde_json::json!({"schema_version": 1, "outcome": "success"});
+        let completed = store.complete_success(claimed.id, payload.clone()).unwrap();
+        assert_eq!(completed.status, JobStatus::Succeeded);
+        assert_eq!(completed.result, Some(payload));
+        assert_eq!(completed.progress_current, Some(3));
+        let jobs = store
+            .list(ListJobs {
+                project_path: Some(project.path().to_string_lossy().into_owned()),
+                status: Some(JobStatus::Succeeded),
+                job_type: Some("incremental_scan".to_string()),
+                limit: 500,
+            })
+            .unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].id, submitted.job.id);
     }
 
     #[test]

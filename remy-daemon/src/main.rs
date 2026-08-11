@@ -11,9 +11,11 @@ mod clock;
 mod logging;
 mod process;
 mod protocol;
+mod scheduler;
 mod server;
 mod single_instance;
 mod state;
+mod worker;
 
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::net::{SocketAddr, TcpStream};
@@ -59,7 +61,11 @@ enum DaemonCommand {
     /// Stop a running daemon
     Stop,
     /// Report whether a daemon is running (exit 0 = running, 1 = not)
-    Status,
+    Status {
+        /// Emit a stable JSON diagnostic object
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -77,7 +83,7 @@ fn main() -> ExitCode {
         DaemonCommand::Start { foreground: true } => run_foreground(&home, &clock),
         DaemonCommand::Start { foreground: false } => start_detached(&home, &clock),
         DaemonCommand::Stop => stop(&home, &clock),
-        DaemonCommand::Status => status(&home),
+        DaemonCommand::Status { json } => status(&home, json),
     };
 
     match result {
@@ -119,7 +125,7 @@ fn run_foreground(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
                 logging::DEFAULT_MAX_LOG_BYTES,
                 Arc::clone(clock),
             )?;
-            let (mut state, recovery) =
+            let (state, recovery) =
                 state::StateStore::open(home, Arc::clone(clock)).map_err(io::Error::other)?;
             single_instance::write_pid(&run_dir, std::process::id())?;
             logger.log(
@@ -141,7 +147,9 @@ fn run_foreground(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
                     }),
                 )?;
             }
-            server::serve(&run_dir, env!("CARGO_PKG_VERSION"), &logger, &mut state)?;
+            let (scheduler, _scheduler_thread) = scheduler::start(state, Arc::clone(clock))?;
+            server::serve(&run_dir, env!("CARGO_PKG_VERSION"), &logger, &scheduler)?;
+            scheduler.shutdown();
             Ok(ExitCode::SUCCESS)
         }
     }
@@ -179,10 +187,24 @@ fn start_detached(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
     }
 }
 
-fn status(home: &Path) -> io::Result<ExitCode> {
+fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
     let run_dir = run_dir(home);
     if !single_instance::is_held(&run_dir)? {
-        println!("remy-daemon: not running");
+        if json_output {
+            println!(
+                "{}",
+                status_json(
+                    false,
+                    false,
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    Some(("not_running", "daemon is not running"))
+                )
+            );
+        } else {
+            println!("remy-daemon: not running");
+        }
         return Ok(ExitCode::from(1));
     }
     let hello = protocol::Request::Hello {
@@ -191,19 +213,88 @@ fn status(home: &Path) -> io::Result<ExitCode> {
     };
     match ipc_roundtrip(&run_dir, &hello) {
         Some(protocol::Response::Hello { daemon_version, .. }) => {
-            println!(
-                "remy-daemon: running{} (version {daemon_version})",
-                pid_suffix(&run_dir)
-            );
+            if json_output {
+                let request = protocol::Request::StatusSnapshot {
+                    protocol_version: protocol::PROTOCOL_VERSION,
+                    state_schema_version: state::STATE_SCHEMA_VERSION,
+                    token: server::read_token(&run_dir).unwrap_or_default(),
+                };
+                match ipc_roundtrip(&run_dir, &request) {
+                    Some(protocol::Response::Status {
+                        active_jobs,
+                        recent_errors,
+                    }) => println!(
+                        "{}",
+                        status_json(
+                            true,
+                            true,
+                            Some(daemon_version),
+                            active_jobs,
+                            recent_errors,
+                            None
+                        )
+                    ),
+                    _ => println!(
+                        "{}",
+                        status_json(
+                            true,
+                            false,
+                            Some(daemon_version),
+                            Vec::new(),
+                            Vec::new(),
+                            Some(("invalid_response", "status response is invalid"))
+                        )
+                    ),
+                }
+            } else {
+                println!(
+                    "remy-daemon: running{} (version {daemon_version})",
+                    pid_suffix(&run_dir)
+                );
+            }
         }
         _ => {
-            println!(
-                "remy-daemon: running{} (ipc-unresponsive)",
-                pid_suffix(&run_dir)
-            );
+            if json_output {
+                println!(
+                    "{}",
+                    status_json(
+                        true,
+                        false,
+                        None,
+                        Vec::new(),
+                        Vec::new(),
+                        Some(("ipc_unresponsive", "daemon IPC is unresponsive"))
+                    )
+                );
+            } else {
+                println!(
+                    "remy-daemon: running{} (ipc-unresponsive)",
+                    pid_suffix(&run_dir)
+                );
+            }
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn status_json(
+    running: bool,
+    ipc_responsive: bool,
+    daemon_version: Option<String>,
+    active_jobs: Vec<state::Job>,
+    recent_errors: Vec<state::Job>,
+    diagnostic: Option<(&str, &str)>,
+) -> serde_json::Value {
+    json!({
+        "running": running,
+        "ipc_responsive": ipc_responsive,
+        "daemon_version": daemon_version,
+        "protocol_version": protocol::PROTOCOL_VERSION,
+        "state_schema_version": if running && ipc_responsive { Some(state::STATE_SCHEMA_VERSION) } else { None },
+        "active_jobs": active_jobs,
+        "recent_errors": recent_errors,
+        "diagnostic_error": diagnostic.map(|(kind, message)| json!({"kind": kind, "message": message})),
+    })
 }
 
 fn stop(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {

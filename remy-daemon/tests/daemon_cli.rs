@@ -230,7 +230,7 @@ fn process_restart_recovers_persisted_job_states_idempotently() {
                 row.get::<_, String>(0)
             })
             .unwrap(),
-        "pending"
+        "running"
     );
     assert_eq!(
         connection
@@ -254,7 +254,7 @@ fn process_restart_recovers_persisted_job_states_idempotently() {
                 |row| row.get::<_, i64>(0),
             )
             .unwrap(),
-        0
+        1
     );
     assert_eq!(
         connection

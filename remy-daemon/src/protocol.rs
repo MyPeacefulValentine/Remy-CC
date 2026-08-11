@@ -1,12 +1,13 @@
 //! IPC protocol types: JSON Lines requests and tagged responses.
 //!
-//! PROTOCOL_VERSION history: 1 (R1.2 initial), 2 (R2.1 persistent jobs).
+//! PROTOCOL_VERSION history: 1 (R1.2 initial), 2 (R2.1 persistent jobs),
+//! 3 (R2.2 scheduling, job listing, and status snapshot).
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{Job, JobPriority, STATE_SCHEMA_VERSION};
+use crate::state::{Job, JobPriority, JobStatus, STATE_SCHEMA_VERSION};
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 pub const MAX_LINE_BYTES: u64 = 65536;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -43,6 +44,20 @@ pub enum Request {
         token: String,
         job_id: i64,
     },
+    ListJobs {
+        protocol_version: u32,
+        state_schema_version: u32,
+        token: String,
+        project_path: Option<String>,
+        status: Option<JobStatus>,
+        job_type: Option<String>,
+        limit: Option<usize>,
+    },
+    StatusSnapshot {
+        protocol_version: u32,
+        state_schema_version: u32,
+        token: String,
+    },
 }
 
 impl Request {
@@ -53,7 +68,9 @@ impl Request {
             | Self::Shutdown { token }
             | Self::SubmitJob { token, .. }
             | Self::GetJob { token, .. }
-            | Self::CancelJob { token, .. } => token,
+            | Self::CancelJob { token, .. }
+            | Self::ListJobs { token, .. }
+            | Self::StatusSnapshot { token, .. } => token,
         }
     }
 
@@ -73,10 +90,27 @@ impl Request {
                 protocol_version,
                 state_schema_version,
                 ..
+            }
+            | Self::ListJobs {
+                protocol_version,
+                state_schema_version,
+                ..
+            }
+            | Self::StatusSnapshot {
+                protocol_version,
+                state_schema_version,
+                ..
             } => Some((*protocol_version, *state_schema_version)),
             Self::Hello { .. } | Self::Ping { .. } | Self::Shutdown { .. } => None,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct JobFilters {
+    pub project_path: Option<String>,
+    pub status: Option<JobStatus>,
+    pub job_type: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -98,6 +132,15 @@ pub enum Response {
     Cancelled {
         job: Job,
         changed: bool,
+    },
+    JobList {
+        jobs: Vec<Job>,
+        limit: usize,
+        filters: JobFilters,
+    },
+    Status {
+        active_jobs: Vec<Job>,
+        recent_errors: Vec<Job>,
     },
     Error {
         code: String,
@@ -183,6 +226,20 @@ mod tests {
                 token: "token".to_string(),
                 job_id: 7,
             },
+            Request::ListJobs {
+                protocol_version: PROTOCOL_VERSION,
+                state_schema_version: STATE_SCHEMA_VERSION,
+                token: "token".to_string(),
+                project_path: Some("/repo".to_string()),
+                status: Some(JobStatus::Pending),
+                job_type: Some("incremental_scan".to_string()),
+                limit: Some(50),
+            },
+            Request::StatusSnapshot {
+                protocol_version: PROTOCOL_VERSION,
+                state_schema_version: STATE_SCHEMA_VERSION,
+                token: "token".to_string(),
+            },
         ];
         for request in requests {
             let json = serde_json::to_string(&request).unwrap();
@@ -203,6 +260,19 @@ mod tests {
             Response::Cancelled {
                 job: sample_job(),
                 changed: true,
+            },
+            Response::JobList {
+                jobs: vec![sample_job()],
+                limit: 50,
+                filters: JobFilters {
+                    project_path: Some("/repo".to_string()),
+                    status: Some(JobStatus::Pending),
+                    job_type: Some("incremental_scan".to_string()),
+                },
+            },
+            Response::Status {
+                active_jobs: vec![sample_job()],
+                recent_errors: Vec::new(),
             },
             Response::error("not_found", "job missing"),
         ];
