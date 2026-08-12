@@ -84,7 +84,7 @@ fn handle_connection(
             Err(_) => {
                 write_response(
                     &mut writer,
-                    &Response::error("invalid_request", "request is not valid protocol v2 JSON"),
+                    &Response::error("invalid_request", "request is not valid protocol JSON"),
                 );
                 continue;
             }
@@ -167,6 +167,19 @@ fn handle_connection(
                 Err(error) if error.is_fatal() => return Err(io::Error::other(error)),
                 Err(error) => write_response(&mut writer, &state_error_response(error)),
             },
+            Request::PromoteJob {
+                job_id, priority, ..
+            } => match scheduler.promote(job_id, priority) {
+                Ok(result) => write_response(
+                    &mut writer,
+                    &Response::Promoted {
+                        job: result.job,
+                        changed: result.changed,
+                    },
+                ),
+                Err(error) if error.is_fatal() => return Err(io::Error::other(error)),
+                Err(error) => write_response(&mut writer, &state_error_response(error)),
+            },
             Request::GetJob { job_id, .. } => match scheduler.get(job_id) {
                 Ok(job) => write_response(&mut writer, &Response::Job { job }),
                 Err(error) if error.is_fatal() => return Err(io::Error::other(error)),
@@ -197,6 +210,7 @@ fn handle_connection(
             },
             Request::ListJobs {
                 project_path,
+                file_path,
                 status,
                 job_type,
                 limit,
@@ -205,11 +219,13 @@ fn handle_connection(
                 let applied_limit = limit.unwrap_or(50).clamp(1, 200);
                 let filters = crate::protocol::JobFilters {
                     project_path: project_path.clone(),
+                    file_path: file_path.clone(),
                     status,
                     job_type: job_type.clone(),
                 };
                 match scheduler.list(ListJobs {
                     project_path,
+                    file_path,
                     status,
                     job_type,
                     limit: applied_limit,

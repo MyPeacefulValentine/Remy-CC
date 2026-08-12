@@ -1,13 +1,14 @@
 //! IPC protocol types: JSON Lines requests and tagged responses.
 //!
 //! PROTOCOL_VERSION history: 1 (R1.2 initial), 2 (R2.1 persistent jobs),
-//! 3 (R2.2 scheduling, job listing, and status snapshot).
+//! 3 (R2.2 scheduling, job listing, and status snapshot),
+//! 4 (R2.3 file-filtered job queries for hook clients).
 
 use serde::{Deserialize, Serialize};
 
 use crate::state::{Job, JobPriority, JobStatus, STATE_SCHEMA_VERSION};
 
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 pub const MAX_LINE_BYTES: u64 = 65536;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -32,6 +33,13 @@ pub enum Request {
         file_path: String,
         priority: JobPriority,
     },
+    PromoteJob {
+        protocol_version: u32,
+        state_schema_version: u32,
+        token: String,
+        job_id: i64,
+        priority: JobPriority,
+    },
     GetJob {
         protocol_version: u32,
         state_schema_version: u32,
@@ -49,6 +57,7 @@ pub enum Request {
         state_schema_version: u32,
         token: String,
         project_path: Option<String>,
+        file_path: Option<String>,
         status: Option<JobStatus>,
         job_type: Option<String>,
         limit: Option<usize>,
@@ -67,6 +76,7 @@ impl Request {
             | Self::Ping { token }
             | Self::Shutdown { token }
             | Self::SubmitJob { token, .. }
+            | Self::PromoteJob { token, .. }
             | Self::GetJob { token, .. }
             | Self::CancelJob { token, .. }
             | Self::ListJobs { token, .. }
@@ -77,6 +87,11 @@ impl Request {
     pub fn business_versions(&self) -> Option<(u32, u32)> {
         match self {
             Self::SubmitJob {
+                protocol_version,
+                state_schema_version,
+                ..
+            }
+            | Self::PromoteJob {
                 protocol_version,
                 state_schema_version,
                 ..
@@ -109,6 +124,7 @@ impl Request {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct JobFilters {
     pub project_path: Option<String>,
+    pub file_path: Option<String>,
     pub status: Option<JobStatus>,
     pub job_type: Option<String>,
 }
@@ -125,6 +141,10 @@ pub enum Response {
     Submitted {
         job: Job,
         created: bool,
+    },
+    Promoted {
+        job: Job,
+        changed: bool,
     },
     Job {
         job: Job,
@@ -214,6 +234,13 @@ mod tests {
                 file_path: "src/main.py".to_string(),
                 priority: JobPriority::Interactive,
             },
+            Request::PromoteJob {
+                protocol_version: PROTOCOL_VERSION,
+                state_schema_version: STATE_SCHEMA_VERSION,
+                token: "token".to_string(),
+                job_id: 7,
+                priority: JobPriority::Interactive,
+            },
             Request::GetJob {
                 protocol_version: PROTOCOL_VERSION,
                 state_schema_version: STATE_SCHEMA_VERSION,
@@ -231,6 +258,7 @@ mod tests {
                 state_schema_version: STATE_SCHEMA_VERSION,
                 token: "token".to_string(),
                 project_path: Some("/repo".to_string()),
+                file_path: Some("src/main.py".to_string()),
                 status: Some(JobStatus::Pending),
                 job_type: Some("incremental_scan".to_string()),
                 limit: Some(50),
@@ -256,6 +284,10 @@ mod tests {
                 job: sample_job(),
                 created: true,
             },
+            Response::Promoted {
+                job: sample_job(),
+                changed: true,
+            },
             Response::Job { job: sample_job() },
             Response::Cancelled {
                 job: sample_job(),
@@ -266,6 +298,7 @@ mod tests {
                 limit: 50,
                 filters: JobFilters {
                     project_path: Some("/repo".to_string()),
+                    file_path: Some("src/main.py".to_string()),
                     status: Some(JobStatus::Pending),
                     job_type: Some("incremental_scan".to_string()),
                 },
@@ -280,6 +313,28 @@ mod tests {
             let json = serde_json::to_string(&response).unwrap();
             assert_eq!(serde_json::from_str::<Response>(&json).unwrap(), response);
         }
+    }
+
+    #[test]
+    fn list_jobs_accepts_missing_optional_file_filter() {
+        let request: Request = serde_json::from_value(serde_json::json!({
+            "cmd": "list_jobs",
+            "protocol_version": PROTOCOL_VERSION,
+            "state_schema_version": STATE_SCHEMA_VERSION,
+            "token": "token",
+            "project_path": null,
+            "status": null,
+            "job_type": "incremental_scan",
+            "limit": 1
+        }))
+        .unwrap();
+        assert!(matches!(
+            request,
+            Request::ListJobs {
+                file_path: None,
+                ..
+            }
+        ));
     }
 
     #[test]

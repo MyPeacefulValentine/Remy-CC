@@ -247,9 +247,16 @@ pub struct SubmitResult {
     pub created: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromoteResult {
+    pub job: Job,
+    pub changed: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ListJobs {
     pub project_path: Option<String>,
+    pub file_path: Option<String>,
     pub status: Option<JobStatus>,
     pub job_type: Option<String>,
     pub limit: usize,
@@ -366,6 +373,18 @@ impl StateStore {
         load_job(&self.connection, job_id)
     }
 
+    pub fn promote(&mut self, job_id: i64, priority: JobPriority) -> StateResult<PromoteResult> {
+        let changed = self.connection.execute(
+            "UPDATE jobs SET priority = MAX(priority, ?1) \
+             WHERE id = ?2 AND status = 'pending' AND priority < ?1",
+            params![priority.as_db(), job_id],
+        )? == 1;
+        Ok(PromoteResult {
+            job: self.get(job_id)?,
+            changed,
+        })
+    }
+
     pub fn claim_next_pending(&mut self) -> StateResult<Option<Job>> {
         let now = self.now_millis()?;
         let tx = self
@@ -476,6 +495,11 @@ impl StateStore {
             .as_deref()
             .map(normalize_project_filter)
             .transpose()?;
+        let file_path = filter
+            .file_path
+            .as_deref()
+            .map(normalize_source_path)
+            .transpose()?;
         let status = filter.status.map(JobStatus::as_db);
         let job_type = filter.job_type.as_deref();
         if let Some(value) = job_type {
@@ -488,14 +512,16 @@ impl StateStore {
         let mut statement = self.connection.prepare(
             "SELECT j.id FROM jobs j JOIN projects p ON p.id = j.project_id \
              WHERE (?1 IS NULL OR p.project_key = ?1) \
-               AND (?2 IS NULL OR j.status = ?2) \
-               AND (?3 IS NULL OR j.job_type = ?3) \
-             ORDER BY j.created_at DESC, j.id DESC LIMIT ?4",
+               AND (?2 IS NULL OR j.file_path = ?2) \
+               AND (?3 IS NULL OR j.status = ?3) \
+               AND (?4 IS NULL OR j.job_type = ?4) \
+             ORDER BY j.created_at DESC, j.id DESC LIMIT ?5",
         )?;
         let ids = statement
-            .query_map(params![project_key, status, job_type, limit], |row| {
-                row.get(0)
-            })?
+            .query_map(
+                params![project_key, file_path, status, job_type, limit],
+                |row| row.get(0),
+            )?
             .collect::<Result<Vec<i64>, _>>()?;
         ids.into_iter()
             .map(|job_id| load_job(&self.connection, job_id))
@@ -1467,6 +1493,7 @@ mod tests {
         let jobs = store
             .list(ListJobs {
                 project_path: Some(project.path().to_string_lossy().into_owned()),
+                file_path: None,
                 status: Some(JobStatus::Succeeded),
                 job_type: Some("incremental_scan".to_string()),
                 limit: 500,
@@ -1474,6 +1501,83 @@ mod tests {
             .unwrap();
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].id, submitted.job.id);
+    }
+
+    #[test]
+    fn promote_only_updates_pending_without_creating_successor() {
+        let home = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let db = project.path().join(".claude").join("logic_index.db");
+        let mut store = store_in(home.path());
+        let submitted = store
+            .submit(request(
+                project.path(),
+                &db,
+                "main.py",
+                JobPriority::Background,
+            ))
+            .unwrap();
+        let promoted = store
+            .promote(submitted.job.id, JobPriority::Interactive)
+            .unwrap();
+        assert!(promoted.changed);
+        assert_eq!(promoted.job.priority, JobPriority::Interactive);
+        let running = store.claim_next_pending().unwrap().unwrap();
+        let unchanged = store.promote(running.id, JobPriority::Interactive).unwrap();
+        assert!(!unchanged.changed);
+        assert_eq!(unchanged.job.status, JobStatus::Running);
+        let pending = store
+            .list(ListJobs {
+                project_path: Some(project.path().to_string_lossy().into_owned()),
+                file_path: Some("main.py".to_string()),
+                status: Some(JobStatus::Pending),
+                job_type: Some("incremental_scan".to_string()),
+                limit: 10,
+            })
+            .unwrap();
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn list_filters_by_normalized_file_path() {
+        let home = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let db = project.path().join(".claude").join("logic_index.db");
+        let mut store = store_in(home.path());
+        let first = store
+            .submit(request(
+                project.path(),
+                &db,
+                "a.py",
+                JobPriority::Background,
+            ))
+            .unwrap();
+        store
+            .submit(request(
+                project.path(),
+                &db,
+                "b.py",
+                JobPriority::Background,
+            ))
+            .unwrap();
+        let jobs = store
+            .list(ListJobs {
+                project_path: Some(project.path().to_string_lossy().into_owned()),
+                file_path: Some("a.py".to_string()),
+                status: None,
+                job_type: Some("incremental_scan".to_string()),
+                limit: 10,
+            })
+            .unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].id, first.job.id);
+        assert!(store
+            .list(ListJobs {
+                file_path: Some("../outside.py".to_string()),
+                limit: 10,
+                ..ListJobs::default()
+            })
+            .is_err());
     }
 
     #[test]

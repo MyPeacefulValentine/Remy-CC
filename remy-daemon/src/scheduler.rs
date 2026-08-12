@@ -7,7 +7,8 @@ use std::thread;
 
 use crate::clock::Clock;
 use crate::state::{
-    CancelResult, Job, JobStatus, ListJobs, ProgressUpdate, StateError, StateStore, SubmitJob,
+    CancelResult, Job, JobPriority, JobStatus, ListJobs, ProgressUpdate, PromoteResult, StateError,
+    StateStore, SubmitJob,
 };
 use crate::worker::{self, WorkerEvent, WorkerOutcome};
 
@@ -15,6 +16,7 @@ pub type Reply<T> = SyncSender<Result<T, StateError>>;
 
 pub enum Command {
     Submit(SubmitJob, Reply<crate::state::SubmitResult>),
+    Promote(i64, JobPriority, Reply<PromoteResult>),
     Get(i64, Reply<Job>),
     Cancel(i64, Reply<CancelResult>),
     List(ListJobs, Reply<Vec<Job>>),
@@ -31,6 +33,10 @@ pub struct SchedulerHandle {
 impl SchedulerHandle {
     pub fn submit(&self, request: SubmitJob) -> Result<crate::state::SubmitResult, StateError> {
         self.request(|reply| Command::Submit(request, reply))
+    }
+
+    pub fn promote(&self, job_id: i64, priority: JobPriority) -> Result<PromoteResult, StateError> {
+        self.request(|reply| Command::Promote(job_id, priority, reply))
     }
 
     pub fn get(&self, job_id: i64) -> Result<Job, StateError> {
@@ -92,6 +98,10 @@ fn run(
         let result = match command {
             Command::Submit(request, reply) => {
                 send_reply(reply, store.submit(request));
+                Ok(())
+            }
+            Command::Promote(job_id, priority, reply) => {
+                send_reply(reply, store.promote(job_id, priority));
                 Ok(())
             }
             Command::Get(job_id, reply) => {
