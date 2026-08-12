@@ -569,6 +569,41 @@ SKILL.md.
 from `test_mcp_minimal.py`; that edge is a same-name collision with
 `unittest.mock.patch` and predates the real coverage above.
 
+## R2.4 installer transaction matrix
+
+R2.4 moves install ownership into `remy-src/install_runtime/`. Tests use explicit
+`CLAUDE_CONFIG_DIR`, `REMY_CC_HOME`, `HOME`, and `USERPROFILE` values under the
+system temporary directory. No install, upgrade, rollback, or uninstall test
+uses the developer's real user directories.
+
+The matrix covers manifest v1/v2 migration to v3, Python and Rust Hook modes,
+repeated installation, unknown targets, modified managed files and settings
+claims, corrupt manifest and transaction metadata, strict transaction/runtime
+fields, daemon running/unknown rejection, stale unheld lock handling,
+same-version/different-hash daemon rejection, pre-commit rollback, the
+manifest-publication crash window, committed cleanup recovery, atomic
+uninstall manifest removal, default state preservation, explicit state purge,
+project-index preservation, spaces and non-ASCII root paths, exclusion of
+Python cache files from deployment, preservation of pre-existing settings
+permissions, stable JSON results, and exit codes 0 through 4.
+
+```bash
+python -m pytest Remy-CC/tests/test_install_manifest.py Remy-CC/tests/test_cli_manifest.py Remy-CC/tests/test_cli_daemon.py Remy-CC/tests/test_daemon_ipc.py -q -p no:cacheprovider
+pyright -p Remy-CC/pyrightconfig.json
+cargo fmt --check --manifest-path Remy-CC/remy-daemon/Cargo.toml
+cargo clippy --manifest-path Remy-CC/remy-daemon/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path Remy-CC/remy-daemon/Cargo.toml
+```
+
+The 2026-08-13 Windows verification passed 130 targeted Python tests with 1
+skip, 957 full Python tests with 3 skips, 60 Rust unit tests, 13 Rust CLI
+integration tests, and Pyright with zero errors and warnings. The known
+`IncompleteFieldDefinitionWarning` from the MCP dependency remains unchanged.
+A `crt-static` release build reported `remy-daemon 0.2.0` and contained no
+`VCRUNTIME140` byte string. A temporary-directory end-to-end probe verified
+Rust-mode install, verify, default uninstall, reinstall, `--purge-state`, and
+project-index preservation. The unchanged browser UI suite passed 8 Chromium tests.
+
 ## Boundaries
 
 Committed tests use synthetic source or the fixed MulanPSL-2.0 TEE fixture, temporary directories, and temporary SQLite databases. They do not require an LLM API key or network access. P0.3 compares normalized full and incremental states. P0.4 adds fixed-revision symbols and relationships, repeated full-scan idempotency, handler rename/delete comparisons, parser-backend reporting, and local full-project measurement commands. P0.5 moves the structural implementation into `schema.py`, `symbol_names.py`, `migrations.py`, and `scanner.py`; `struct_scan.py` remains the stable CLI/import entry point. P0.6 rejects scalar and byte arrays before emitting positional registration facts, rejects numeric and expression handler values, preserves Unicode word identifiers, reports pattern types and sources, and checks the three known image arrays in the fixed full project. The fixed project has no known function-pointer struct table that omits inner aggregate braces; that C form remains outside the verified parser contract. Migration tests import without parser modules, while the full suite, Pyright, compatibility exports, both fixture backends, and the three fixed full-project scans verify the current behavior.

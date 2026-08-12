@@ -439,6 +439,33 @@ SKILL.md。
 `remy-src/patch_descriptions.py`在逻辑索引中显示被`test_mcp_minimal.py`调用；该边
 是与`unittest.mock.patch`的同名冲突，早于上述真实覆盖存在。
 
+## R2.4 安装事务测试矩阵
+
+R2.4将安装所有权集中到`remy-src/install_runtime/`。测试在系统临时目录下显式设置
+`CLAUDE_CONFIG_DIR`、`REMY_CC_HOME`、`HOME`和`USERPROFILE`。安装、升级、回滚和
+卸载测试均不访问开发者真实用户目录。
+
+矩阵覆盖manifest v1/v2到v3迁移、Python/Rust两种Hook模式、重复安装、来源不明目标、
+受管理文件和settings认领被修改、manifest与事务元数据损坏、事务/runtime字段严格校验、
+daemon运行/状态未知拒绝、未持有旧lock处理、相同版本不同hash的daemon拒绝、提交前
+回滚、manifest发布崩溃窗口、提交后清理恢复、卸载manifest原子移除、默认保留状态、
+显式状态清除、项目索引保护、含空格和非ASCII的用户根、部署时排除Python缓存文件、
+保留安装前已有的settings permission、稳定JSON结果，以及0到4退出码。
+
+```bash
+python -m pytest Remy-CC/tests/test_install_manifest.py Remy-CC/tests/test_cli_manifest.py Remy-CC/tests/test_cli_daemon.py Remy-CC/tests/test_daemon_ipc.py -q -p no:cacheprovider
+pyright -p Remy-CC/pyrightconfig.json
+cargo fmt --check --manifest-path Remy-CC/remy-daemon/Cargo.toml
+cargo clippy --manifest-path Remy-CC/remy-daemon/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path Remy-CC/remy-daemon/Cargo.toml
+```
+
+2026-08-13 Windows验证通过130项定向Python测试（1项skip）、957项全量Python测试（3项skip）、
+60项Rust单元测试、13项Rust CLI集成测试，以及0 error / 0 warning的Pyright。
+MCP依赖已有的`IncompleteFieldDefinitionWarning`保持不变。`crt-static` release构建输出
+`remy-daemon 0.2.0`，二进制不含`VCRUNTIME140`字节串。系统临时目录中的端到端探针
+验证了Rust模式安装、verify、默认卸载、重装、`--purge-state`和项目索引保留；未修改的浏览器UI套件通过8项Chromium测试。
+
 ## 边界
 
 已提交测试使用合成源码或固定的MulanPSL-2.0 TEE fixture、临时目录和临时SQLite数据库，不需要LLM API key或网络。P0.3比较全量与增量扫描的规范化状态。P0.4增加固定版本符号和关系、重复全量幂等性、handler重命名/删除比较、解析后端报告及本地完整项目测量命令。P0.5将结构扫描实现拆分到`schema.py`、`symbol_names.py`、`migrations.py`和`scanner.py`，`struct_scan.py`继续作为稳定CLI和导入入口。P0.6在生成位置注册事实前拒绝普通标量和字节数组，拒绝数值与表达式handler，保留Unicode单词标识符，报告pattern类型与来源，并检查固定完整项目中的三个已知图片数组。固定项目没有发现省略内层聚合花括号的已知函数指针结构体表，该C形式不属于当前已验证的解析契约。migration测试验证导入时不加载parser模块；完整测试、Pyright、兼容再导出、两种fixture后端和三次固定完整项目扫描验证当前行为。

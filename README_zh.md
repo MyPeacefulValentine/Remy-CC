@@ -233,14 +233,18 @@ python install.py --lang zh-CN   # 简体中文
 ```
 
 安装脚本执行以下操作：
-- 将 Hooks、Skills、输出风格和配置文件复制到 `~/.claude/`
-- 将Claude Hooks、权限和技能协议参数合并到`~/.claude/settings.json`
-- 将Python运行时Remy参数保存到`~/.claude/remy-config.json`，并一次性迁移旧值
+- 将 Claude Code 发现工件和 Python Hook 回退脚本保留在 `~/.claude/`
+- 将受管理 daemon、Python runtime 描述、事务日志和权威 manifest 部署到 `~/.remy-cc/`
+- 在 `~/.remy-cc/install/manifest.json` 中以根标识（`claude` 或 `remy`）、根内相对路径和 SHA-256 记录每个受管理文件
+- 候选 daemon 验证成功时注册 Rust `hook dirty` 与 `hook enrich`；候选与已部署 daemon 均不可用时记录 `hook_mode=python` 并使用已验证 Python 绝对路径
+- daemon 正在运行或状态未知时拒绝安装、升级和卸载
+- 只合并本套件认领的 Hook 与 permission 片段；用户修改的受管理文件或 settings 片段不会被覆盖
+- 将用户可配置 Remy 参数保存在 `~/.claude/remy-config.json`，安装事实不写入该文件
 - 将 remy-index MCP 服务器注册到 `~/.claude.json`
-- 将 Hook 和 MCP 服务器路径展开为当前机器的绝对路径
-- 交互式配置 `/remy-index` 使用的 LLM API（URL、模型、API Key）
-- 安装 remy-index MCP 服务器所需的 `mcp` SDK，安装失败即中止
+- 交互模式保留可选依赖和 LLM API 配置提示；`--non-interactive` 只验证依赖，不执行 pip、API 配置或 PATH 修改
 - 创建 `remy-cc` CLI 命令，可选将其加入系统 PATH
+
+自动化入口支持 `--non-interactive` 与 `--json`；JSON 模式隐含非交互模式，stdout 只写入一个结果对象。卸载支持 `--purge-state`，用于删除 `~/.remy-cc/` 引擎状态，同时保留所有项目索引。退出码固定为：`0` 成功、`1` 预检拒绝、`2` 提交前失败且回滚成功、`3` 已提交但清理未完成、`4` 恢复或回滚未完成。
 
 ### 命令与配置
 
@@ -250,9 +254,9 @@ python install.py --lang zh-CN   # 简体中文
 | :--- | :--- |
 | `remy-cc ui` | 打开用户Remy配置编辑器，编辑`~/.claude/remy-config.json` |
 | `remy-cc project <路径>` | 打开项目Remy配置编辑器，编辑`<路径>/.claude/remy-config.json` |
-| `remy-cc update` | 获取并安装最新版本 |
-| `remy-cc uninstall` | 移除所有 Remy 文件和配置 |
-| `remy-cc verify` | 检查安装完整性 |
+| `remy-cc update [--non-interactive] [--json]` | 获取并安装最新版本，同时保留安装器退出码 |
+| `remy-cc uninstall [--yes] [--json] [--purge-state]` | 删除受管理文件和 settings 片段；仅在显式指定时删除引擎状态 |
+| `remy-cc verify [--json]` | 检查 manifest、文件 hash、settings 认领和受管理 Python runtime |
 | `remy-cc version` | 显示版本号 |
 
 配置编辑器只管理Python运行时Remy参数。Claude Code凭据和技能协议参数继续由Claude设置管理。项目配置继承用户值，并可覆盖单个非密钥字段。

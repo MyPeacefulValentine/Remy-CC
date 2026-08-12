@@ -318,4 +318,4 @@ Install `tree-sitter` packages. Call graph extraction requires AST precision tha
 Edit `.claude/logic_index_config` to customize layer patterns. Delete lines you don't need and add your own. Unmatched files default to "Core".
 
 ### Q: Hook enrichment not appearing?
-Verify `logic_enrichment_hook.py` is registered in `~/.claude/settings.json` under `hooks.PreToolUse` with matcher `Read|Glob|Grep`. Run `python install.py --verify` to check.
+Verify that `~/.claude/settings.json` contains a `hooks.PreToolUse` entry with matcher `Read|Glob|Grep`. A manifest with `hook_mode=rust` uses the managed `remy-daemon hook enrich` command; `hook_mode=python` uses the managed Python executable and `logic_enrichment_hook.py`. Run `remy-cc verify` or `python install.py --verify` to validate the recorded mode and command.

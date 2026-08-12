@@ -323,4 +323,4 @@ pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
 编辑 `.claude/logic_index_config` 自定义层模式。删除不需要的行并添加自定义规则。未匹配的文件默认归入 "Core"。
 
 ### Q: Hook 富化信息未出现？
-确认 `logic_enrichment_hook.py` 已在 `~/.claude/settings.json` 的 `hooks.PreToolUse` 中注册，matcher 为 `Read|Glob|Grep`。运行 `python install.py --verify` 检查。
+确认`~/.claude/settings.json`包含matcher为`Read|Glob|Grep`的`hooks.PreToolUse`条目。manifest的`hook_mode=rust`时使用受管理的`remy-daemon hook enrich`命令；`hook_mode=python`时使用受管理Python解释器和`logic_enrichment_hook.py`。运行`remy-cc verify`或`python install.py --verify`校验记录模式和命令。

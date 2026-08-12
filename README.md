@@ -233,14 +233,18 @@ python install.py --lang zh-CN   # Simplified Chinese
 ```
 
 The installer:
-- Copies hooks, skills, output styles, and config files to `~/.claude/`
-- Merges Claude hooks, permissions, and skill-protocol settings into `~/.claude/settings.json`
-- Stores Python runtime Remy settings in `~/.claude/remy-config.json` and migrates old values once
+- Keeps Claude Code discovery files and Python Hook fallbacks under `~/.claude/`
+- Deploys the managed daemon, Python runtime descriptor, transaction journal, and authoritative manifest under `~/.remy-cc/`
+- Records every managed file as a root identifier (`claude` or `remy`), a root-relative path, and a SHA-256 digest in `~/.remy-cc/install/manifest.json`
+- Registers `hook dirty` and `hook enrich` with the managed Rust binary when a verified daemon candidate is available; otherwise it records `hook_mode=python` and uses the verified Python executable
+- Rejects install, upgrade, and uninstall while the daemon is running or its status cannot be established
+- Merges only owned Hook and permission fragments into `~/.claude/settings.json`; modified owned files or settings fragments are never overwritten
+- Stores user-configurable Remy settings in `~/.claude/remy-config.json`; installation facts remain outside that file
 - Registers the remy-index MCP server in `~/.claude.json`
-- Expands hook and MCP server paths to absolute paths for the current machine
-- Prompts for LLM API configuration (URL, model, API key) used by `/remy-index`
-- Installs the `mcp` SDK required by the remy-index MCP server, aborting when the installation fails
+- Prompts for optional dependencies and LLM API configuration in interactive mode; `--non-interactive` only validates dependencies and performs no pip, API, or PATH changes
 - Creates the `remy-cc` CLI command and optionally adds it to system PATH
+
+Automation entry points accept `--non-interactive` and `--json`; JSON mode implies non-interactive mode and writes exactly one result object to stdout. Uninstall accepts `--purge-state` to remove `~/.remy-cc/` engine state while preserving every project index. Exit codes are stable: `0` success, `1` preflight rejection, `2` pre-commit failure with successful rollback, `3` committed install with pending cleanup, and `4` incomplete recovery or rollback.
 
 ### CLI & Configuration
 
@@ -250,9 +254,9 @@ After installation, the `remy-cc` command is available system-wide:
 | :--- | :--- |
 | `remy-cc ui` | Open the user Remy settings editor for `~/.claude/remy-config.json` |
 | `remy-cc project <path>` | Open the project Remy settings editor for `<path>/.claude/remy-config.json` |
-| `remy-cc update` | Fetch and install the latest version |
-| `remy-cc uninstall` | Remove all Remy files and settings |
-| `remy-cc verify` | Check installation integrity |
+| `remy-cc update [--non-interactive] [--json]` | Fetch and install the latest version while preserving installer exit codes |
+| `remy-cc uninstall [--yes] [--json] [--purge-state]` | Remove managed files and settings fragments; preserve engine state unless explicitly purged |
+| `remy-cc verify [--json]` | Check manifest, file hashes, settings claims, and the managed Python runtime |
 | `remy-cc version` | Print installed version |
 
 The settings editor manages Python runtime Remy parameters only. Claude Code credentials and skill-protocol settings remain in Claude's settings. Project settings inherit user values and can override individual non-secret fields.
