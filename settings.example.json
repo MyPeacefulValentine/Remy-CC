@@ -69,7 +69,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"~/.claude/hooks/logic_enrichment_hook.py\""
+            "command": "__REMY_ENRICH_COMMAND__"
           }
         ]
       }
@@ -131,7 +131,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"~/.claude/hooks/logic_dirty_tracker.py\""
+            "command": "__REMY_DIRTY_COMMAND__"
           }
         ]
       }

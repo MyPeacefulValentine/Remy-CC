@@ -9,13 +9,16 @@ Usage:
 """
 
 import argparse
+import contextlib
 import getpass
 import hashlib
+import importlib
 import json
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -34,7 +37,7 @@ if not SUITE_VERSION:
 MANIFEST_FILE = ".installer_manifest.json"
 MANIFEST_SCHEMA_VERSION = 2
 
-DEPLOY_DIRS = ["hooks", "skills", "output-styles"]
+DEPLOY_DIRS = ["hooks", "skills", "output-styles", "remy-src/install_runtime"]
 LEGACY_HOOK_PATHS = [
     "hooks/doc_manager",
     "hooks/env_system",
@@ -516,6 +519,15 @@ def _load_remy_config_module():
     return remy_config
 
 
+def _load_install_runtime_module():
+    module_dir = SCRIPT_DIR / "remy-src"
+    if str(module_dir) not in sys.path:
+        sys.path.insert(0, str(module_dir))
+    install_runtime = importlib.import_module("install_runtime")
+    facade = importlib.import_module("install_runtime.facade")
+    return install_runtime, facade.result_for_error
+
+
 def merge_settings(template: dict, target_path: Path, claude_home: Path, lang_override: str = None) -> Optional[Path]:
     """
     Merge template settings into existing settings.json.
@@ -756,16 +768,20 @@ def register_mcp_server(claude_home: Path) -> None:
         try:
             with open(claude_json_path, "r", encoding="utf-8") as f:
                 existing = json.load(f)
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as exc:
+            raise ValueError(".claude.json is invalid") from exc
+        if not isinstance(existing, dict):
+            raise ValueError(".claude.json must be an object")
 
     ext_mcp = existing.setdefault("mcpServers", {})
     for server_name, server_conf in mcp_entries.items():
         ext_mcp[server_name] = server_conf
 
-    with open(claude_json_path, "w", encoding="utf-8") as f:
-        json.dump(existing, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    module_dir = SCRIPT_DIR / "remy-src"
+    if str(module_dir) not in sys.path:
+        sys.path.insert(0, str(module_dir))
+    storage = importlib.import_module("install_runtime.storage")
+    storage.atomic_write_json(claude_json_path, existing)
 
     print(_t("mcp_registered", name=", ".join(mcp_entries.keys())))
 
@@ -1440,6 +1456,227 @@ def do_verify() -> None:
         print(_t("verify_ok"))
 
 
+def _prepare_dependencies(non_interactive: bool) -> bool:
+    required = ("mcp",)
+    missing_required = []
+    for name in required:
+        try:
+            __import__(name)
+        except ImportError:
+            missing_required.append(name)
+    if missing_required:
+        if non_interactive:
+            print(_t("mcp_install_failed"), file=sys.stderr)
+            return False
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--user", *missing_required],
+            check=False,
+        )
+        if result.returncode != 0:
+            print(_t("mcp_install_failed"), file=sys.stderr)
+            return False
+    if non_interactive:
+        return True
+    optional = (
+        ("tree_sitter", ["tree-sitter", "tree-sitter-c", "tree-sitter-cpp", "tree-sitter-typescript"], "ts_prompt"),
+        ("jinja2", ["Jinja2"], "j2_prompt"),
+    )
+    for module_name, packages, prompt_key in optional:
+        try:
+            __import__(module_name)
+            continue
+        except ImportError:
+            pass
+        try:
+            answer = input(_t(prompt_key)).strip().lower()
+        except EOFError:
+            answer = "n"
+        if answer != "n":
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--user", *packages],
+                check=False,
+            )
+    return True
+
+
+def _build_install_candidates(stage_root: Path, lang: str, install_runtime, roots):
+    stage_claude = stage_root / "claude"
+    stage_claude.mkdir(parents=True)
+    directive = "Always respond in Chinese-simplified" if lang == "zh-CN" else "Always respond in English"
+    (stage_claude / "language.md").write_text(directive + "\n", encoding="utf-8")
+    for src_rel, dst_name in DEPLOY_FILES_MAP.items():
+        src = SCRIPT_DIR / src_rel
+        if not src.is_file():
+            raise FileNotFoundError(src_rel)
+        dst = stage_claude / dst_name
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+    for dirname in DEPLOY_DIRS:
+        src = SCRIPT_DIR / dirname
+        if not src.is_dir():
+            raise FileNotFoundError(dirname)
+        shutil.copytree(
+            src,
+            stage_claude / dirname,
+            dirs_exist_ok=True,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+        )
+    shim_dir = stage_claude / "bin"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    final_cli = roots.claude / "remy-src" / "cli.py"
+    if sys.platform == "win32":
+        shim_path = shim_dir / "remy-cc.cmd"
+        shim_path.write_text(
+            '@echo off\r\n"{}" "{}" %*\r\n'.format(sys.executable, final_cli),
+            encoding="utf-8",
+        )
+    else:
+        shim_path = shim_dir / "remy-cc"
+        shim_path.write_text(
+            '#!/bin/sh\nexec "{}" "{}" "$@"\n'.format(sys.executable, final_cli),
+            encoding="utf-8",
+        )
+        shim_path.chmod(0o755)
+    patch_module_dir = SCRIPT_DIR / "remy-src"
+    if str(patch_module_dir) not in sys.path:
+        sys.path.insert(0, str(patch_module_dir))
+    patch_descriptions = importlib.import_module("patch_descriptions")
+    patch_descriptions.patch(stage_claude, lang)
+    candidates = []
+    for path in sorted(item for item in stage_claude.rglob("*") if item.is_file()):
+        relative = path.relative_to(stage_claude).as_posix()
+        if relative.startswith("hooks/"):
+            role = "python_hook"
+        elif relative.startswith("skills/"):
+            role = "claude_skill"
+        elif relative.startswith("output-styles/"):
+            role = "output_style"
+        elif relative.startswith("remy-src/install_runtime/"):
+            role = "install_runtime"
+        elif relative.startswith("remy-src/"):
+            role = "cli_runtime"
+        else:
+            role = "claude_protocol"
+        candidates.append(
+            install_runtime.CandidateFile(
+                "claude", relative, path, role, executable=(relative == "bin/remy-cc")
+            )
+        )
+    return candidates
+
+
+def _emit_operation_result(result, json_mode: bool) -> int:
+    if json_mode:
+        print(json.dumps(result.to_dict(), ensure_ascii=False, sort_keys=True))
+    else:
+        for warning in result.warnings:
+            print("  [!] " + warning, file=sys.stderr)
+        if result.exit_code == 0:
+            print(_t("install_done", count=len(result.changed)))
+    return int(result.exit_code)
+
+
+def do_install_v3(args) -> None:
+    if sys.version_info < (3, 10):
+        if args.json:
+            print(json.dumps({
+                "schema_version": 1,
+                "operation": "install",
+                "status": "preflight_rejected",
+                "exit_code": 1,
+                "hook_mode": None,
+                "changed": [],
+                "warnings": ["Python 3.10 or newer is required"],
+                "recovery": None,
+            }, sort_keys=True))
+        else:
+            print(_t("verify_python_old", ver=sys.version), file=sys.stderr)
+        raise SystemExit(1)
+    non_interactive = bool(args.non_interactive or args.json)
+    install_runtime, result_for_error = _load_install_runtime_module()
+    if not _prepare_dependencies(non_interactive):
+        result = result_for_error(
+            "install",
+            install_runtime.InstallRuntimeError("required dependencies are unavailable"),
+        )
+        raise SystemExit(_emit_operation_result(result, bool(args.json)))
+    roots = install_runtime.roots_from_environment()
+    runtime = install_runtime.InstallRuntime(roots)
+    with tempfile.TemporaryDirectory(prefix="remy-install-candidates-") as temporary:
+        candidates = _build_install_candidates(Path(temporary), _ui_lang, install_runtime, roots)
+        template = json.loads((SCRIPT_DIR / SETTINGS_TEMPLATE).read_text(encoding="utf-8"))
+        request = install_runtime.InstallRequest(
+            suite_version=SUITE_VERSION,
+            candidates=candidates,
+            settings_template=template,
+            python_executable=sys.executable,
+            daemon_candidate=DAEMON_SOURCE_DIR / _daemon_exe_name(),
+        )
+        try:
+            result = runtime.install(request)
+        except install_runtime.InstallRuntimeError as exc:
+            result = result_for_error("install", exc)
+    if result.exit_code != 0:
+        raise SystemExit(_emit_operation_result(result, bool(args.json)))
+
+    try:
+        output_context = contextlib.redirect_stdout(sys.stderr) if args.json else contextlib.nullcontext()
+        with output_context:
+            settings_path = roots.claude / "settings.json"
+            remy_config = _load_remy_config_module()
+            remy_config_path = roots.claude / remy_config.CONFIG_FILE_NAME
+            remy_config.migrate_settings_file(settings_path, remy_config_path)
+            remy_config.save_config(remy_config_path, {"REMY_LANG": _ui_lang})
+            migrate_permissions(settings_path)
+            if not non_interactive:
+                configure_api(remy_config_path)
+            register_mcp_server(roots.claude)
+            if not non_interactive:
+                register_path(roots.claude / "bin")
+    except Exception as exc:
+        result = result_for_error(
+            "install",
+            install_runtime.InstallRuntimeError(
+                "installation committed but post-install configuration failed",
+                category="cleanup",
+            ),
+        )
+        if not args.json:
+            print("  [!] " + type(exc).__name__, file=sys.stderr)
+    code = _emit_operation_result(result, bool(args.json))
+    if code != 0:
+        raise SystemExit(code)
+
+
+def do_uninstall_v3(args) -> None:
+    if not args.non_interactive and not args.json:
+        try:
+            answer = input(_t("uninstall_confirm")).strip().lower()
+        except EOFError:
+            answer = ""
+        if answer != "y":
+            print(_t("uninstall_aborted"))
+            return
+    install_runtime, result_for_error = _load_install_runtime_module()
+    runtime = install_runtime.InstallRuntime(install_runtime.roots_from_environment())
+    try:
+        result = runtime.uninstall(purge_state=bool(args.purge_state))
+    except install_runtime.InstallRuntimeError as exc:
+        result = result_for_error("uninstall", exc)
+    code = _emit_operation_result(result, bool(args.json))
+    if code != 0:
+        raise SystemExit(code)
+
+
+def do_verify_v3(args) -> None:
+    install_runtime, _ = _load_install_runtime_module()
+    runtime = install_runtime.InstallRuntime(install_runtime.roots_from_environment())
+    result = runtime.verify_environment()
+    code = _emit_operation_result(result, bool(args.json))
+    if code != 0:
+        raise SystemExit(code)
+
+
 def main() -> None:
     global _ui_lang
     parser = argparse.ArgumentParser(
@@ -1450,24 +1687,45 @@ def main() -> None:
     group.add_argument("--verify", action="store_true", help=_t("argparse_verify"))
     parser.add_argument("--lang", default=None, choices=["en", "zh-CN"],
                         help=_t("argparse_lang"))
+    parser.add_argument("--non-interactive", action="store_true",
+                        help="Disable prompts and dependency installation")
+    parser.add_argument("--json", action="store_true",
+                        help="Emit one JSON result object and imply --non-interactive")
+    parser.add_argument("--purge-state", action="store_true",
+                        help="With --uninstall, also remove user-level engine state")
     args = parser.parse_args()
 
+    if args.purge_state and not args.uninstall:
+        parser.error("--purge-state requires --uninstall")
     if args.lang:
         _ui_lang = args.lang
-    elif not args.uninstall and not args.verify:
+    elif not args.uninstall and not args.verify and not args.non_interactive and not args.json:
         _ui_lang = prompt_language()
 
     if args.uninstall:
-        do_uninstall()
+        do_uninstall_v3(args)
     elif args.verify:
-        do_verify()
+        do_verify_v3(args)
     else:
-        do_install()
+        do_install_v3(args)
 
 
 if __name__ == "__main__":
     try:
         main()
     except PermissionError as e:
-        print(_t("err_permission", err=e))
+        if "--json" in sys.argv:
+            operation = "uninstall" if "--uninstall" in sys.argv else "verify" if "--verify" in sys.argv else "install"
+            print(json.dumps({
+                "schema_version": 1,
+                "operation": operation,
+                "status": "preflight_rejected",
+                "exit_code": 1,
+                "hook_mode": None,
+                "changed": [],
+                "warnings": ["permission denied"],
+                "recovery": None,
+            }, ensure_ascii=False, sort_keys=True))
+        else:
+            print(_t("err_permission", err=e))
         sys.exit(1)

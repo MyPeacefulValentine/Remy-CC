@@ -99,12 +99,19 @@ def _generate_banner(version, lang):
 
 
 def _get_version():
-    manifest = os.path.join(os.path.expanduser("~"), ".claude", ".installer_manifest.json")
-    try:
-        with open(manifest, "r", encoding="utf-8") as f:
-            return json.load(f).get("version", "dev")
-    except (OSError, json.JSONDecodeError):
-        return "dev"
+    remy_home = os.environ.get("REMY_CC_HOME") or os.path.join(os.path.expanduser("~"), ".remy-cc")
+    claude_home = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    manifests = (
+        (os.path.join(remy_home, "install", "manifest.json"), "suite_version"),
+        (os.path.join(claude_home, ".installer_manifest.json"), "version"),
+    )
+    for manifest, field in manifests:
+        try:
+            with open(manifest, "r", encoding="utf-8") as f:
+                return json.load(f).get(field, "dev")
+        except (OSError, json.JSONDecodeError):
+            continue
+    return "dev"
 
 
 def generate_language_md(cwd=None):

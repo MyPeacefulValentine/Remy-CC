@@ -3,10 +3,10 @@
 No Rust toolchain or built binary is required: filesystem state is faked under
 tmp_path and subprocess execution is stubbed at the boundary.
 """
+import json
 import os
 import sys
 import types
-from pathlib import Path
 
 import pytest
 
@@ -87,3 +87,17 @@ def test_cmd_daemon_forwards_args_and_exit_code(monkeypatch, tmp_path):
 
     assert exc.value.code == 7
     assert captured["argv"] == [str(exe), "start", "--foreground"]
+
+
+def test_update_json_preflight_emits_one_object(monkeypatch, capsys):
+    monkeypatch.setattr(cli.shutil, "which", lambda _name: None)
+
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_update(types.SimpleNamespace(json=True, non_interactive=True))
+
+    assert exc.value.code == 1
+    output = capsys.readouterr().out.strip().splitlines()
+    assert len(output) == 1
+    payload = json.loads(output[0])
+    assert payload["operation"] == "update"
+    assert payload["status"] == "preflight_rejected"

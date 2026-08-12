@@ -4,12 +4,19 @@ import json
 import os
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "remy-src"))
 
 import install
+from install_runtime import CandidateFile, InstallRequest, InstallRuntime, InstallRuntimeError, RootPaths
+from install_runtime.probes import DaemonProbe, probe_daemon
+from install_runtime.transaction import FileTransaction
+import install_runtime.facade as install_facade
+from install_runtime.facade import result_for_error
 
 
 @pytest.fixture
@@ -792,14 +799,610 @@ def test_remy_cc_home_falls_back_when_path_home_raises(monkeypatch, tmp_path):
     assert install._remy_cc_home() == tmp_path / ".remy-cc"
 
 
-def test_remy_cc_home_exits_1_when_no_home_determinable(monkeypatch, capsys):
-    monkeypatch.delenv("REMY_CC_HOME", raising=False)
-    monkeypatch.delenv("HOME", raising=False)
-    monkeypatch.delenv("USERPROFILE", raising=False)
-    monkeypatch.setattr(install.Path, "home", _raise_no_home)
 
-    with pytest.raises(SystemExit) as exc:
-        install._remy_cc_home()
 
-    assert exc.value.code == 1
-    assert install._t("err_home_not_found") in capsys.readouterr().out
+@pytest.fixture
+def v3_runtime(tmp_path):
+    roots = RootPaths(tmp_path / "claude root", tmp_path / "remy root")
+    return InstallRuntime(roots), roots
+
+
+def _v3_template():
+    return {
+        "hooks": {
+            "PreToolUse": [{
+                "matcher": "Read|Glob|Grep",
+                "hooks": [{"type": "command", "command": "__REMY_ENRICH_COMMAND__"}],
+            }],
+            "PostToolUse": [{
+                "matcher": "Edit|Write",
+                "hooks": [{"type": "command", "command": "__REMY_DIRTY_COMMAND__"}],
+            }],
+        },
+        "permissions": {"allow": ["Skill(remy-index)"]},
+        "env": {},
+    }
+
+
+def _v3_request(tmp_path, content="payload"):
+    source = tmp_path / "candidate.txt"
+    source.write_text(content, encoding="utf-8")
+    return InstallRequest(
+        suite_version="1.7.3",
+        candidates=[CandidateFile("claude", "skills/remy-test/data.txt", source, "claude_skill")],
+        settings_template=_v3_template(),
+        python_executable=sys.executable,
+    )
+
+
+def test_v3_python_install_writes_dual_root_manifest_and_runtime(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    result = runtime.install(_v3_request(tmp_path))
+
+    assert result.exit_code == 0
+    assert result.hook_mode == "python"
+    manifest = json.loads((roots.remy / "install" / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == 3
+    assert manifest["hook_mode"] == "python"
+    assert {entry["root"] for entry in manifest["files"]} == {"claude", "remy"}
+    assert all(not Path(entry["path"]).is_absolute() for entry in manifest["files"])
+    descriptor = json.loads((roots.remy / "runtime" / "python.json").read_text(encoding="utf-8"))
+    assert descriptor["schema_version"] == 1
+    assert Path(descriptor["executable"]).is_absolute()
+    settings = json.loads((roots.claude / "settings.json").read_text(encoding="utf-8"))
+    commands = [
+        hook["command"]
+        for entries in settings["hooks"].values()
+        for entry in entries
+        for hook in entry["hooks"]
+    ]
+    assert any(str(Path(sys.executable)) in command and "logic_enrichment_hook.py" in command for command in commands)
+    assert any(str(Path(sys.executable)) in command and "logic_dirty_tracker.py" in command for command in commands)
+
+
+def test_v3_repeat_install_is_content_idempotent(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    request = _v3_request(tmp_path)
+    runtime.install(request)
+    before = {
+        path.relative_to(tmp_path).as_posix(): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file() and not path.name.endswith("manifest.json")
+    }
+
+    runtime.install(request)
+
+    after = {
+        path.relative_to(tmp_path).as_posix(): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file() and not path.name.endswith("manifest.json")
+    }
+    assert after == before
+    assert not (roots.remy / "install" / "transaction.json").exists()
+
+
+def test_v3_rejects_unmanaged_different_target(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    target = roots.claude / "skills" / "remy-test" / "data.txt"
+    target.parent.mkdir(parents=True)
+    target.write_text("user data", encoding="utf-8")
+
+    with pytest.raises(InstallRuntimeError, match="unmanaged target"):
+        runtime.install(_v3_request(tmp_path, "candidate data"))
+
+    assert target.read_text(encoding="utf-8") == "user data"
+    assert not (roots.remy / "install" / "manifest.json").exists()
+
+
+@pytest.mark.parametrize("root,path", [("project", "data.txt"), ("claude", "../project/data.txt"), ("claude", "/absolute")])
+def test_v3_rejects_paths_outside_managed_roots(v3_runtime, tmp_path, root, path):
+    runtime, _roots = v3_runtime
+    source = tmp_path / "candidate-outside.txt"
+    source.write_text("candidate", encoding="utf-8")
+    request = InstallRequest(
+        suite_version="1.7.3",
+        candidates=[CandidateFile(root, path, source, "test")],
+        settings_template=_v3_template(),
+        python_executable=sys.executable,
+    )
+
+    with pytest.raises(InstallRuntimeError):
+        runtime.install(request)
+
+    assert not (tmp_path / "project" / "data.txt").exists()
+
+
+def test_v3_reinstall_rejects_modified_owned_file(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    request = _v3_request(tmp_path)
+    runtime.install(request)
+    target = roots.claude / "skills" / "remy-test" / "data.txt"
+    target.write_text("user modified", encoding="utf-8")
+
+    with pytest.raises(InstallRuntimeError, match="missing or modified"):
+        runtime.install(request)
+
+    assert target.read_text(encoding="utf-8") == "user modified"
+
+
+def test_v3_uninstall_preserves_engine_and_project_state(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    runtime.install(_v3_request(tmp_path))
+    state = roots.remy / "state.db"
+    state.write_bytes(b"state")
+    project_db = tmp_path / "project" / ".claude" / "logic_index.db"
+    project_db.parent.mkdir(parents=True)
+    project_db.write_bytes(b"project")
+
+    result = runtime.uninstall()
+
+    assert result.exit_code == 0
+    assert state.read_bytes() == b"state"
+    assert project_db.read_bytes() == b"project"
+    assert not (roots.remy / "install" / "manifest.json").exists()
+    assert not (roots.claude / "skills" / "remy-test" / "data.txt").exists()
+
+
+def test_v3_uninstall_purge_removes_only_remy_root(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    runtime.install(_v3_request(tmp_path))
+    (roots.remy / "state.db").write_bytes(b"state")
+    project_db = tmp_path / "project" / ".claude" / "logic_index.db"
+    project_db.parent.mkdir(parents=True)
+    project_db.write_bytes(b"project")
+
+    runtime.uninstall(purge_state=True)
+
+    assert not roots.remy.exists()
+    assert project_db.read_bytes() == b"project"
+
+
+def test_v3_precommit_failure_rolls_back_all_targets(v3_runtime, tmp_path, monkeypatch):
+    runtime, roots = v3_runtime
+    original_apply = FileTransaction._apply
+    calls = 0
+
+    def fail_after_first(self, action):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected failure")
+        return original_apply(self, action)
+
+    monkeypatch.setattr(FileTransaction, "_apply", fail_after_first)
+    with pytest.raises(InstallRuntimeError) as exc:
+        runtime.install(_v3_request(tmp_path))
+
+    assert exc.value.category == "rollback"
+    assert not (roots.remy / "install" / "manifest.json").exists()
+    assert not (roots.claude / "skills" / "remy-test" / "data.txt").exists()
+    assert not (roots.remy / "install" / "transaction.json").exists()
+
+
+def test_v3_committed_cleanup_is_recovered(v3_runtime, tmp_path, monkeypatch):
+    runtime, roots = v3_runtime
+    request = _v3_request(tmp_path)
+    original_cleanup = FileTransaction._cleanup
+    failed = False
+
+    def fail_once(self, record):
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise OSError("injected cleanup failure")
+        return original_cleanup(self, record)
+
+    monkeypatch.setattr(FileTransaction, "_cleanup", fail_once)
+    with pytest.raises(InstallRuntimeError) as exc:
+        runtime.install(request)
+    assert exc.value.category == "cleanup"
+    assert (roots.remy / "install" / "manifest.json").is_file()
+    journal_path = roots.remy / "install" / "transaction.json"
+    assert journal_path.is_file()
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert set(journal) == {
+        "schema_version", "transaction_id", "operation", "phase",
+        "old_manifest_hash", "new_manifest_hash", "actions",
+    }
+    assert set(journal["actions"][0]) == {
+        "root", "path", "operation", "old_hash", "new_hash",
+        "staged_path", "backup_path", "executable", "applied",
+    }
+    assert str(tmp_path) not in journal_path.read_text(encoding="utf-8")
+
+    result = runtime.install(request)
+
+    assert result.recovery == "completed_committed_cleanup"
+    assert not (roots.remy / "install" / "transaction.json").exists()
+
+
+def test_v3_crash_window_after_manifest_publish_recovers_as_committed(v3_runtime, tmp_path, monkeypatch):
+    runtime, roots = v3_runtime
+    request = _v3_request(tmp_path)
+    original_write = FileTransaction._write_record
+    failed = False
+
+    def fail_committed_record(self, record):
+        nonlocal failed
+        if record.phase == "committed" and not failed:
+            failed = True
+            raise OSError("injected post-publish failure")
+        return original_write(self, record)
+
+    monkeypatch.setattr(FileTransaction, "_write_record", fail_committed_record)
+    with pytest.raises(InstallRuntimeError) as exc:
+        runtime.install(request)
+    assert exc.value.category == "cleanup"
+    journal_path = roots.remy / "install" / "transaction.json"
+    assert json.loads(journal_path.read_text(encoding="utf-8"))["phase"] == "publishing_manifest"
+
+    result = runtime.install(request)
+
+    assert result.recovery == "completed_committed_cleanup"
+    assert runtime.verify().exit_code == 0
+
+
+def test_v3_uninstall_crash_after_manifest_delete_resumes_without_manifest(v3_runtime, tmp_path, monkeypatch):
+    runtime, roots = v3_runtime
+    runtime.install(_v3_request(tmp_path))
+    original_write = FileTransaction._write_record
+    failed = False
+
+    def fail_committed_record(self, record):
+        nonlocal failed
+        if record.operation == "uninstall" and record.phase == "committed" and not failed:
+            failed = True
+            raise OSError("injected post-delete failure")
+        return original_write(self, record)
+
+    monkeypatch.setattr(FileTransaction, "_write_record", fail_committed_record)
+    with pytest.raises(InstallRuntimeError) as exc:
+        runtime.uninstall()
+    assert exc.value.category == "cleanup"
+    assert not (roots.remy / "install" / "manifest.json").exists()
+    assert (roots.remy / "install" / "transaction.json").exists()
+
+    result = runtime.uninstall()
+
+    assert result.exit_code == 0
+    assert result.recovery == "completed_committed_cleanup"
+    assert not (roots.remy / "install" / "transaction.json").exists()
+
+
+def test_v3_running_daemon_rejects_before_write(v3_runtime, tmp_path, monkeypatch):
+    runtime, roots = v3_runtime
+    monkeypatch.setattr(install_facade, "probe_daemon", lambda _path: DaemonProbe("running", "0.2.0"))
+
+    with pytest.raises(InstallRuntimeError, match="must be stopped"):
+        runtime.install(_v3_request(tmp_path))
+
+    assert not roots.claude.exists()
+    assert not (roots.remy / "install" / "manifest.json").exists()
+
+
+def test_install_entry_uninstall_requires_interactive_confirmation(v3_runtime, tmp_path, monkeypatch):
+    runtime, roots = v3_runtime
+    runtime.install(_v3_request(tmp_path))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(roots.claude))
+    monkeypatch.setenv("REMY_CC_HOME", str(roots.remy))
+    monkeypatch.setattr("builtins.input", lambda _prompt: "n")
+
+    install.do_uninstall_v3(types.SimpleNamespace(
+        non_interactive=False,
+        json=False,
+        purge_state=False,
+    ))
+
+    assert (roots.remy / "install" / "manifest.json").exists()
+
+
+def test_install_entry_json_uses_v3_facade(tmp_path, monkeypatch, capsys):
+    claude_home = tmp_path / "用户 配置"
+    remy_home = tmp_path / "引擎 状态"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
+    monkeypatch.setenv("REMY_CC_HOME", str(remy_home))
+    monkeypatch.setattr(install, "DAEMON_SOURCE_DIR", tmp_path / "missing-release")
+    monkeypatch.setattr(install, "_prepare_dependencies", lambda _non_interactive: True)
+    monkeypatch.setattr(install, "register_mcp_server", lambda _home: None)
+    monkeypatch.setattr(install, "migrate_permissions", lambda _path: None)
+    monkeypatch.setattr(install, "_ui_lang", "zh-CN")
+    args = types.SimpleNamespace(non_interactive=True, json=True)
+
+    install.do_install_v3(args)
+
+    output = capsys.readouterr().out.strip().splitlines()
+    assert len(output) == 1
+    result = json.loads(output[0])
+    assert result["schema_version"] == 1
+    assert result["status"] == "ok"
+    assert result["hook_mode"] == "python"
+    assert str(tmp_path) not in output[0]
+    manifest = json.loads((remy_home / "install" / "manifest.json").read_text(encoding="utf-8"))
+    paths = {(item["root"], item["path"]) for item in manifest["files"]}
+    assert ("claude", "remy-src/install_runtime/facade.py") in paths
+    expected_shim = "bin/remy-cc.cmd" if sys.platform == "win32" else "bin/remy-cc"
+    assert ("claude", expected_shim) in paths
+    settings_text = (claude_home / "settings.json").read_text(encoding="utf-8")
+    assert "__REMY_" not in settings_text
+
+
+def test_v3_migrates_legacy_manifest_and_hook_claims(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    target = roots.claude / "skills" / "remy-test" / "data.txt"
+    old_hash = _seed_file(target, "old")
+    settings = {
+        "hooks": {
+            "PreToolUse": [{
+                "matcher": "Read|Glob|Grep",
+                "hooks": [{
+                    "type": "command",
+                    "command": 'python "{}"'.format(roots.claude / "hooks" / "logic_enrichment_hook.py"),
+                }],
+            }],
+            "PostToolUse": [{
+                "matcher": "Edit|Write",
+                "hooks": [{
+                    "type": "command",
+                    "command": 'python "{}"'.format(roots.claude / "hooks" / "logic_dirty_tracker.py"),
+                }],
+            }],
+        },
+        "permissions": {"allow": ["Skill(remy-index)"]},
+    }
+    roots.claude.mkdir(parents=True, exist_ok=True)
+    (roots.claude / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
+    legacy = {
+        "version": "1.7.3",
+        "schema_version": 2,
+        "files": [{"path": "skills/remy-test/data.txt", "sha256": old_hash}],
+        "injected_hooks": settings["hooks"],
+        "injected_permissions": ["Skill(remy-index)"],
+    }
+    legacy_path = roots.claude / ".installer_manifest.json"
+    legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
+
+    runtime.install(_v3_request(tmp_path, "new"))
+
+    assert not legacy_path.exists()
+    assert (roots.remy / "install" / "manifest.json").is_file()
+    assert target.read_text(encoding="utf-8") == "new"
+    migrated = json.loads((roots.claude / "settings.json").read_text(encoding="utf-8"))
+    commands = [
+        hook["command"]
+        for entries in migrated["hooks"].values()
+        for entry in entries
+        for hook in entry["hooks"]
+    ]
+    assert not any(command.startswith('python "') for command in commands)
+
+
+def test_v3_corrupt_manifest_rejects_without_writes(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    manifest = roots.remy / "install" / "manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text("{invalid", encoding="utf-8")
+
+    with pytest.raises(InstallRuntimeError):
+        runtime.install(_v3_request(tmp_path))
+
+    assert manifest.read_text(encoding="utf-8") == "{invalid"
+    assert not roots.claude.exists()
+
+
+def test_v3_corrupt_transaction_rejects_without_writes(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    journal = roots.remy / "install" / "transaction.json"
+    journal.parent.mkdir(parents=True)
+    journal.write_text("{invalid", encoding="utf-8")
+
+    with pytest.raises(InstallRuntimeError):
+        runtime.install(_v3_request(tmp_path))
+
+    assert journal.read_text(encoding="utf-8") == "{invalid"
+    assert not roots.claude.exists()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda document: document.update(phase="unknown"),
+        lambda document: document.update(operation="unknown"),
+        lambda document: document["actions"].append({
+            "root": "project",
+            "path": "../data",
+            "operation": "delete",
+            "old_hash": None,
+            "new_hash": None,
+            "staged_path": None,
+            "backup_path": "backup",
+            "executable": False,
+            "applied": False,
+        }),
+    ],
+)
+def test_v3_transaction_rejects_invalid_state_fields(v3_runtime, tmp_path, mutation):
+    runtime, roots = v3_runtime
+    journal = roots.remy / "install" / "transaction.json"
+    journal.parent.mkdir(parents=True)
+    document = {
+        "schema_version": 1,
+        "transaction_id": "test",
+        "operation": "install",
+        "phase": "prepared",
+        "old_manifest_hash": None,
+        "new_manifest_hash": None,
+        "actions": [],
+    }
+    mutation(document)
+    original = json.dumps(document, sort_keys=True)
+    journal.write_text(original, encoding="utf-8")
+
+    with pytest.raises(InstallRuntimeError):
+        runtime.install(_v3_request(tmp_path))
+
+    assert journal.read_text(encoding="utf-8") == original
+    assert not roots.claude.exists()
+
+
+def test_v3_modified_settings_claim_rejects_reinstall(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    request = _v3_request(tmp_path)
+    runtime.install(request)
+    settings_path = roots.claude / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"] += " --user-change"
+    settings_path.write_text(json.dumps(settings), encoding="utf-8")
+
+    with pytest.raises(InstallRuntimeError, match="settings Hook"):
+        runtime.install(request)
+
+
+def test_v3_structurally_invalid_settings_are_rejected(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    request = _v3_request(tmp_path)
+    runtime.install(request)
+    settings_path = roots.claude / "settings.json"
+    settings_path.write_text(json.dumps({"hooks": []}), encoding="utf-8")
+
+    assert runtime.verify().exit_code == 1
+    with pytest.raises(InstallRuntimeError, match="settings hooks"):
+        runtime.install(request)
+
+
+def test_v3_runtime_descriptor_rejects_boolean_version(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    runtime.install(_v3_request(tmp_path))
+    descriptor_path = roots.remy / "runtime" / "python.json"
+    descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
+    descriptor["version"] = [True, 10, 0]
+    descriptor_path.write_text(json.dumps(descriptor), encoding="utf-8")
+    manifest_path = roots.remy / "install" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for record in manifest["files"]:
+        if record["root"] == "remy" and record["path"] == "runtime/python.json":
+            record["sha256"] = install.compute_sha256(descriptor_path)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    assert runtime.verify().exit_code == 1
+
+
+def test_v3_unknown_daemon_state_rejects_before_write(v3_runtime, tmp_path, monkeypatch):
+    runtime, roots = v3_runtime
+    monkeypatch.setattr(install_facade, "probe_daemon", lambda _path: DaemonProbe("unknown"))
+
+    with pytest.raises(InstallRuntimeError, match="must be stopped"):
+        runtime.install(_v3_request(tmp_path))
+
+    assert not roots.claude.exists()
+
+
+def test_v3_missing_binary_with_endpoint_residue_is_unknown(tmp_path):
+    executable = tmp_path / "remy" / "bin" / "remy-daemon.exe"
+    run_dir = executable.parent.parent / "run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "daemon.port").write_text("1234", encoding="ascii")
+
+    assert probe_daemon(executable).state == "unknown"
+
+
+def test_v3_missing_binary_with_unheld_lock_is_stopped(tmp_path):
+    executable = tmp_path / "remy" / "bin" / "remy-daemon.exe"
+    run_dir = executable.parent.parent / "run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "daemon.lock").write_bytes(b"")
+
+    assert probe_daemon(executable).state == "stopped"
+
+
+def test_v3_same_version_different_daemon_hash_is_rejected(v3_runtime, tmp_path, monkeypatch):
+    runtime, roots = v3_runtime
+    deployed = roots.remy / "bin" / ("remy-daemon.exe" if sys.platform == "win32" else "remy-daemon")
+    deployed.parent.mkdir(parents=True)
+    deployed.write_bytes(b"deployed")
+    candidate = tmp_path / deployed.name
+    candidate.write_bytes(b"candidate")
+    monkeypatch.setattr(install_facade, "probe_daemon", lambda _path: DaemonProbe("stopped"))
+    monkeypatch.setattr(install_facade, "probe_daemon_version", lambda _path: "0.2.0")
+    request = _v3_request(tmp_path)
+    request = InstallRequest(
+        suite_version=request.suite_version,
+        candidates=request.candidates,
+        settings_template=request.settings_template,
+        python_executable=request.python_executable,
+        daemon_candidate=candidate,
+    )
+
+    with pytest.raises(InstallRuntimeError, match="different hashes"):
+        runtime.install(request)
+
+    assert deployed.read_bytes() == b"deployed"
+
+
+@pytest.mark.parametrize(
+    ("category", "exit_code", "status"),
+    [
+        ("preflight", 1, "preflight_rejected"),
+        ("rollback", 2, "rolled_back"),
+        ("cleanup", 3, "committed_cleanup_pending"),
+        ("recovery", 4, "recovery_incomplete"),
+    ],
+)
+def test_v3_error_categories_have_stable_machine_results(category, exit_code, status):
+    result = result_for_error("install", InstallRuntimeError("redacted", category=category))
+
+    assert result.exit_code == exit_code
+    assert result.status == status
+    assert result.to_dict()["warnings"] == ["redacted"]
+
+
+def test_v3_uninstall_preserves_preexisting_permission(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    settings_path = roots.claude / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text(
+        json.dumps({"permissions": {"allow": ["Skill(remy-index)"]}}),
+        encoding="utf-8",
+    )
+
+    runtime.install(_v3_request(tmp_path))
+    manifest = runtime.load_manifest()
+    assert manifest["settings_claim"]["permissions"] == []
+
+    runtime.uninstall()
+
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert settings["permissions"]["allow"] == ["Skill(remy-index)"]
+
+
+def test_install_candidates_exclude_python_cache_files(tmp_path):
+    install_runtime, _ = install._load_install_runtime_module()
+    roots = RootPaths(tmp_path / "claude", tmp_path / "remy")
+
+    candidates = install._build_install_candidates(
+        tmp_path / "stage", "en", install_runtime, roots
+    )
+
+    paths = [candidate.path for candidate in candidates]
+    assert not any("__pycache__" in path for path in paths)
+    assert not any(path.endswith((".pyc", ".pyo")) for path in paths)
+
+
+def test_mcp_registration_rejects_corrupt_user_document(tmp_path):
+    claude_home = tmp_path / ".claude"
+    claude_home.mkdir()
+    claude_json = tmp_path / ".claude.json"
+    claude_json.write_text("{invalid", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid"):
+        install.register_mcp_server(claude_home)
+
+    assert claude_json.read_text(encoding="utf-8") == "{invalid"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission contract")
+def test_v3_settings_file_preserves_private_mode(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+
+    runtime.install(_v3_request(tmp_path))
+
+    assert roots.claude.joinpath("settings.json").stat().st_mode & 0o777 == 0o600
