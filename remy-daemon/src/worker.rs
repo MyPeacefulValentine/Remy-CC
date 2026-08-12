@@ -50,77 +50,11 @@ struct Captured {
 }
 
 pub fn spawn(job: Job, sender: Sender<WorkerEvent>) -> io::Result<()> {
-    let runtime = locate_runtime()?;
+    let runtime = crate::runtime::scanner_runtime()?;
     thread::Builder::new()
         .name(format!("remy-worker-{}", job.id))
         .spawn(move || supervise(job, runtime, sender))?;
     Ok(())
-}
-
-fn locate_runtime() -> io::Result<(PathBuf, PathBuf)> {
-    let python = if let Some(value) = env::var_os("REMY_PYTHON") {
-        PathBuf::from(value)
-    } else {
-        locate_python()?
-    };
-    let claude_home = env::var_os("CLAUDE_CONFIG_DIR")
-        .map(PathBuf::from)
-        .or_else(|| {
-            env::var_os("HOME")
-                .or_else(|| env::var_os("USERPROFILE"))
-                .map(|home| PathBuf::from(home).join(".claude"))
-        })
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "cannot locate Claude home"))?;
-    let configured = claude_home
-        .join("skills")
-        .join("remy-index")
-        .join("struct_scan.py");
-    let source_tree = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("remy-daemon has a repository parent")
-        .join("skills")
-        .join("remy-index")
-        .join("struct_scan.py");
-    let script = if cfg!(debug_assertions) && source_tree.is_file() {
-        source_tree
-    } else if configured.is_file() {
-        configured
-    } else if source_tree.is_file() {
-        source_tree
-    } else {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("struct_scan.py not found at {}", configured.display()),
-        ));
-    };
-    Ok((python, script))
-}
-
-fn locate_python() -> io::Result<PathBuf> {
-    let candidates: &[&str] = if cfg!(windows) {
-        &["python.exe", "python"]
-    } else {
-        &["python3", "python"]
-    };
-    for candidate in candidates {
-        if Command::new(candidate)
-            .args([
-                "-c",
-                "import sys; raise SystemExit(sys.version_info < (3, 10))",
-            ])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
-        {
-            return Ok(PathBuf::from(candidate));
-        }
-    }
-    Err(io::Error::new(
-        io::ErrorKind::NotFound,
-        "no compatible Python 3.10+ interpreter found",
-    ))
 }
 
 fn supervise(job: Job, runtime: (PathBuf, PathBuf), sender: Sender<WorkerEvent>) {

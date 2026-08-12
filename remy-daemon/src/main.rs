@@ -8,9 +8,11 @@
 //! (`status`); 2 = unexpected error or timeout.
 
 mod clock;
+mod hook_client;
 mod logging;
 mod process;
 mod protocol;
+mod runtime;
 mod scheduler;
 mod server;
 mod single_instance;
@@ -66,10 +68,32 @@ enum DaemonCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Execute a Claude Code hook client
+    Hook {
+        #[command(subcommand)]
+        command: HookCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum HookCommand {
+    /// Record a modified source file
+    Dirty,
+    /// Emit read-time logic context
+    Enrich,
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    let command = match cli.command {
+        DaemonCommand::Hook { command } => {
+            return hook_client::run(match command {
+                HookCommand::Dirty => hook_client::HookKind::Dirty,
+                HookCommand::Enrich => hook_client::HookKind::Enrich,
+            });
+        }
+        command => command,
+    };
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let home = match remy_home() {
         Ok(home) => home,
@@ -79,11 +103,12 @@ fn main() -> ExitCode {
         }
     };
 
-    let result = match cli.command {
+    let result = match command {
         DaemonCommand::Start { foreground: true } => run_foreground(&home, &clock),
         DaemonCommand::Start { foreground: false } => start_detached(&home, &clock),
         DaemonCommand::Stop => stop(&home, &clock),
         DaemonCommand::Status { json } => status(&home, json),
+        DaemonCommand::Hook { .. } => unreachable!("hook command returned before daemon dispatch"),
     };
 
     match result {
@@ -95,7 +120,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn remy_home() -> Result<PathBuf, String> {
+pub(crate) fn remy_home() -> Result<PathBuf, String> {
     if let Some(overridden) = std::env::var_os(HOME_ENV) {
         return Ok(PathBuf::from(overridden));
     }
