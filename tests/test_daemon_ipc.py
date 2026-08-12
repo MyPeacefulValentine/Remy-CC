@@ -374,6 +374,40 @@ def test_hook_dirty_falls_back_when_daemon_is_stopped(tmp_path):
     ).split() == ["main.py"]
 
 
+def test_hook_fallback_prefers_managed_python_descriptor(tmp_path):
+    home = tmp_path / "home with 空格"
+    runtime_dir = home / "runtime"
+    runtime_dir.mkdir(parents=True)
+    runtime_dir.joinpath("python.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "executable": sys.executable,
+            "version": list(sys.version_info[:3]),
+            "implementation": "CPython",
+            "platform": sys.platform,
+            "probed_at": "2026-08-13T00:00:00Z",
+        }),
+        encoding="utf-8",
+    )
+    project = tmp_path / "project"
+    project.mkdir()
+    source = project / "main.py"
+    source.write_text("x = 1\n", encoding="utf-8")
+
+    result = run_daemon(
+        home,
+        ["hook", "dirty"],
+        input_data=_hook_payload("Write", project, source),
+        extra_env={"REMY_PYTHON": str(tmp_path / "missing-python")},
+    )
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert (project / ".claude" / "logic_index_dirty").read_text(
+        encoding="utf-8"
+    ).split() == ["main.py"]
+
+
 def test_hook_ignores_missing_path_without_creating_queue(tmp_path):
     home = tmp_path / "home"
     project = tmp_path / "project"

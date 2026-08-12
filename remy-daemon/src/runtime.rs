@@ -1,9 +1,24 @@
 //! Shared Python runtime and deployed-script discovery.
 
+use serde::Deserialize;
 use std::env;
+use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+const RUNTIME_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PythonRuntimeDescriptor {
+    schema_version: u32,
+    executable: PathBuf,
+    version: Vec<u32>,
+    implementation: String,
+    platform: String,
+    probed_at: String,
+}
 
 pub fn scanner_runtime() -> io::Result<(PathBuf, PathBuf)> {
     Ok((
@@ -57,8 +72,16 @@ fn locate_script(components: &[&str]) -> io::Result<PathBuf> {
 }
 
 fn locate_python() -> io::Result<PathBuf> {
+    if let Ok(home) = crate::remy_home() {
+        if let Some(executable) = load_managed_python(&home) {
+            return Ok(executable);
+        }
+    }
     if let Some(value) = env::var_os("REMY_PYTHON") {
-        return Ok(PathBuf::from(value));
+        let candidate = PathBuf::from(value);
+        if probe_python(&candidate) {
+            return Ok(candidate);
+        }
     }
     let candidates: &[&str] = if cfg!(windows) {
         &["python.exe", "python"]
@@ -66,18 +89,9 @@ fn locate_python() -> io::Result<PathBuf> {
         &["python3", "python"]
     };
     for candidate in candidates {
-        if Command::new(candidate)
-            .args([
-                "-c",
-                "import sys; raise SystemExit(sys.version_info < (3, 10))",
-            ])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
-        {
-            return Ok(PathBuf::from(candidate));
+        let path = PathBuf::from(candidate);
+        if probe_python(&path) {
+            return Ok(path);
         }
     }
     Err(io::Error::new(
@@ -86,9 +100,43 @@ fn locate_python() -> io::Result<PathBuf> {
     ))
 }
 
+fn load_managed_python(remy_home: &Path) -> Option<PathBuf> {
+    let path = remy_home.join("runtime").join("python.json");
+    let bytes = fs::read(path).ok()?;
+    let descriptor: PythonRuntimeDescriptor = serde_json::from_slice(&bytes).ok()?;
+    if descriptor.schema_version != RUNTIME_SCHEMA_VERSION
+        || !descriptor.executable.is_absolute()
+        || descriptor.version.len() != 3
+        || descriptor.version[0] < 3
+        || (descriptor.version[0] == 3 && descriptor.version[1] < 10)
+        || descriptor.implementation.is_empty()
+        || descriptor.platform.is_empty()
+        || descriptor.probed_at.is_empty()
+        || !probe_python(&descriptor.executable)
+    {
+        return None;
+    }
+    Some(descriptor.executable)
+}
+
+fn probe_python(executable: &Path) -> bool {
+    Command::new(executable)
+        .args([
+            "-I",
+            "-c",
+            "import sys; raise SystemExit(sys.version_info < (3, 10))",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn source_tree_scripts_are_discoverable_in_debug_builds() {
@@ -97,5 +145,38 @@ mod tests {
             .unwrap()
             .1
             .ends_with("logic_dirty_tracker.py"));
+    }
+
+    #[test]
+    fn invalid_runtime_descriptor_falls_back() {
+        let home = tempfile::tempdir().unwrap();
+        fs::create_dir_all(home.path().join("runtime")).unwrap();
+        fs::write(home.path().join("runtime/python.json"), b"{not-json").unwrap();
+        assert!(load_managed_python(home.path()).is_none());
+    }
+
+    #[test]
+    fn descriptor_rejects_unknown_fields() {
+        let home = tempfile::tempdir().unwrap();
+        fs::create_dir_all(home.path().join("runtime")).unwrap();
+        fs::write(
+            home.path().join("runtime/python.json"),
+            b"{\"schema_version\":1,\"executable\":\"C:/python.exe\",\"version\":[3,10,0],\"implementation\":\"CPython\",\"platform\":\"test\",\"probed_at\":\"now\",\"unknown\":true}",
+        )
+        .unwrap();
+        assert!(load_managed_python(home.path()).is_none());
+    }
+
+    #[test]
+    fn descriptor_requires_absolute_executable() {
+        let home = tempfile::tempdir().unwrap();
+        fs::create_dir_all(home.path().join("runtime")).unwrap();
+        let mut file = fs::File::create(home.path().join("runtime/python.json")).unwrap();
+        write!(
+            file,
+            "{{\"schema_version\":1,\"executable\":\"python\",\"version\":[3,10,0],\"implementation\":\"CPython\",\"platform\":\"test\",\"probed_at\":\"now\"}}"
+        )
+        .unwrap();
+        assert!(load_managed_python(home.path()).is_none());
     }
 }
