@@ -134,7 +134,7 @@ UI = {
         "removed_old_dir": "  [-] Removed obsolete: {name}/",
         "db_migrate_notice": "  [i] Logic Index storage upgraded: JSON → SQLite.\n      Existing projects will auto-migrate on next SessionStart.",
         "ts_installed": "  [i] tree-sitter already installed, skipping",
-        "ts_prompt": "Install tree-sitter (high-precision C/C++/TypeScript parsing)? [Y/n] ",
+        "ts_prompt": "Install tree-sitter (high-precision C/C++/TypeScript/Rust parsing)? [Y/n] ",
         "ts_installing": "  Installing tree-sitter ...",
         "j2_installed": "  [i] Jinja2 already installed, skipping",
         "j2_prompt": "Install Jinja2 (remy-inspect template rendering)? [Y/n] ",
@@ -230,7 +230,7 @@ UI = {
         "removed_old_dir": "  [-] 已删除旧目录：{name}/",
         "db_migrate_notice": "  [i] Logic Index 存储格式已升级：JSON → SQLite。\n      已有项目将在下次 SessionStart 时自动迁移。",
         "ts_installed": "  [i] tree-sitter 已安装，跳过",
-        "ts_prompt": "是否安装 tree-sitter（C/C++/TypeScript 高精度解析）？[Y/n] ",
+        "ts_prompt": "是否安装 tree-sitter（C/C++/TypeScript/Rust 高精度解析）？[Y/n] ",
         "ts_installing": "  正在安装 tree-sitter ...",
         "j2_installed": "  [i] Jinja2 已安装，跳过",
         "j2_prompt": "是否安装 Jinja2（post-verify 模板渲染增强）？[Y/n] ",
@@ -1182,6 +1182,7 @@ def do_install() -> None:
         import tree_sitter_c  # noqa: F401
         import tree_sitter_cpp  # noqa: F401
         import tree_sitter_typescript  # noqa: F401
+        import tree_sitter_rust  # noqa: F401
         ts_installed = True
     except ImportError:
         pass
@@ -1198,7 +1199,7 @@ def do_install() -> None:
             subprocess.run(
                 [sys.executable, "-m", "pip", "install", "--user",
                  "tree-sitter", "tree-sitter-c", "tree-sitter-cpp",
-                 "tree-sitter-typescript"],
+                 "tree-sitter-typescript", "tree-sitter-rust"],
                 check=False,
             )
 
@@ -1478,7 +1479,7 @@ def _prepare_dependencies(non_interactive: bool) -> bool:
     if non_interactive:
         return True
     optional = (
-        ("tree_sitter", ["tree-sitter", "tree-sitter-c", "tree-sitter-cpp", "tree-sitter-typescript"], "ts_prompt"),
+        ("tree_sitter", ["tree-sitter", "tree-sitter-c", "tree-sitter-cpp", "tree-sitter-typescript", "tree-sitter-rust"], "ts_prompt"),
         ("jinja2", ["Jinja2"], "j2_prompt"),
     )
     for module_name, packages, prompt_key in optional:

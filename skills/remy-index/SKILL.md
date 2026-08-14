@@ -1,23 +1,24 @@
 ---
 name: remy-index
-description: Scan source files (Python, C/C++, TypeScript) and generate semantic logic index via LLM. Index is injected into CLAUDE.md and used by hooks/skills for dependency analysis. Run after repo init or major changes.
+description: Scan source files (Python, C/C++, TypeScript, Rust) and generate semantic logic index via LLM. Index is injected into CLAUDE.md and used by hooks/skills for dependency analysis. Run after repo init or major changes.
 allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 disable-model-invocation: true
 ---
 
 # Update Logic Index
 
-Updates the semantic understanding of the codebase by scanning source files (Python, C, C++, TypeScript), extracting symbol signatures, and generating incremental summaries using an OpenAI-compatible LLM API.
+Updates the semantic understanding of the codebase by scanning source files (Python, C, C++, TypeScript, Rust), extracting symbol signatures, and generating incremental summaries using an OpenAI-compatible LLM API.
 
 Supports multi-language projects. Language is detected automatically by file extension:
 - Python: `.py`
 - C: `.c`, `.h`
 - C++: `.cpp`, `.hpp`, `.cc`, `.cxx`, `.hh`, `.hxx`
 - TypeScript: `.ts`, `.tsx`
+- Rust: `.rs`
 
-C/C++ and TypeScript/TSX parsing use regex-based extraction by default (zero external dependencies). Install `tree-sitter` for higher precision (optional):
+C/C++ and TypeScript/TSX parsing use regex-based extraction by default (zero external dependencies). Rust parsing requires the tree-sitter grammar (no regex fallback; without it `.rs` files fail scanning and keep previously indexed rows). Install `tree-sitter` for higher C/C++/TS precision and for Rust support:
 ```bash
-pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
+pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript tree-sitter-rust
 ```
 
 ## Process

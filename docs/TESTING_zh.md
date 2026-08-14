@@ -35,7 +35,7 @@ python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend
 python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend tree-sitter --scope product
 ```
 
-持续集成在不安装tree-sitter的Python 3.10环境和安装固定tree-sitter包的Python 3.12环境运行全部测试。两个作业分别使用可用解析后端执行固定公开TEE fixture canary。Windows Python 3.12作业运行进程锁和脏队列测试。
+持续集成在不安装tree-sitter的Python 3.10环境和安装固定tree-sitter包的Python 3.12环境运行全部测试。两个作业分别使用可用解析后端执行固定公开TEE fixture canary。Windows Python 3.12作业安装固定tree-sitter包，运行进程锁、脏队列和Rust解析器测试（同时验证pin的grammar组合在Windows可安装）。
 
 ## P1.1确定性检索基线
 

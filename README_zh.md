@@ -28,7 +28,7 @@
 Remy 针对这些局限，在 Claude Code 之上添加了一层**自动化执行机制**和**结构化工作流**。此外，它还能够提取项目的**文件结构、语义索引和调用关系**，持久化地**记录开发历史**，并将它们注入到 Claude Code 的上下文中，以实现持续的上下文感知和依赖追踪。**具体而言，Remy 提供以下能力：**
 
 - **行为规则回顾** — 行为规则在每条用户消息时重新注入，在长对话中持续生效，而非逐渐衰减直至失效。
-- **依赖感知的代码修改** — 语义逻辑索引记录了函数级调用图数据（Python AST、C/C++/TypeScript tree-sitter），并提取类继承关系、合成动态分派边。系统在修改代码前能够追踪上游调用者和下游依赖。摘要按 symbol/file/cluster 三层组织，子节点变更通过 LLM 判定是否级联到父层。自适应输出预算根据项目规模自动调整注入上下文的密度（4 级：full → compact → core_only → top_n）。
+- **依赖感知的代码修改** — 语义逻辑索引记录了函数级调用图数据（Python AST、C/C++/TypeScript/Rust tree-sitter），并提取类继承关系、合成动态分派边。系统在修改代码前能够追踪上游调用者和下游依赖。摘要按 symbol/file/cluster 三层组织，子节点变更通过 LLM 判定是否级联到父层。自适应输出预算根据项目规模自动调整注入上下文的密度（4 级：full → compact → core_only → top_n）。
 - **自动化上下文维护** — 项目文件树、语义代码索引和会话历史通过生命周期钩子自动更新。文档注入器同步维护`CLAUDE.md`中的引用。结构索引继续以`struct_scan.py`作为稳定CLI和导入入口，schema、migration和scanner职责由独立模块承担。
 - **可组合的验证流水线** — 架构预审 → 代码修改 → 测试验证 → 变更日志 → 上下文回退 → 三方一致性审计，通过 `.claude/temp_task/` 中的 JSON 任务包串联。每个步骤相互独立，按任务复杂度选用。
 - **跨会话记忆** — 里程碑系统将结构化历史报告写入时间线索引。新会话加载过滤视图，在不占满上下文窗口的前提下提供连续性。
@@ -206,7 +206,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | OpenAI 兼容的 LLM API | `/remy-index` 的语义摘要生成 |
 | Conda 或 Mamba（可选） | 存在时自动注入到 Shell 环境 |
 | `gh` CLI（可选） | `/remy-reposcout` 和 `/remy-ci` GitHub Actions 模式依赖 |
-| tree-sitter Python 包（可选） | C/C++/TypeScript 的高精度解析和调用图提取 |
+| tree-sitter Python 包（可选） | C/C++/TypeScript 的高精度解析与调用图提取；Rust 解析必需该依赖（无回退） |
 | `mcp` Python 包 | remy-index MCP 服务器所需；安装器自动安装，失败即中止；`remy-cc verify` 与 `python install.py --verify` 均将其缺失记为错误 |
 
 语言通过`~/.claude/remy-config.json`中的`REMY_LANG`或`remy-cc config`设置。
