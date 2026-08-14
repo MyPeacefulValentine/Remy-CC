@@ -25,8 +25,10 @@ FIXTURE_ROOT = TESTS_DIR / "fixtures" / "tee_canary"
 MANIFEST_PATH = FIXTURE_ROOT / "manifest.json"
 
 sys.path.insert(0, str(INDEX_DIR))
+sys.path.insert(0, str(REPO_ROOT))
 
 import parsers.c_cpp_parser as c_cpp_parser
+from oracle import normalization as oracle_normalization
 from struct_scan import StructScanner
 
 
@@ -141,48 +143,7 @@ def parser_backend(requested: str) -> Generator[str, None, None]:
 
 
 def normalized_current_state(db: sqlite3.Connection) -> dict[str, list[tuple[Any, ...]]]:
-    return {
-        "files": db.execute(
-            "SELECT path,struct_hash,language,layer,imports,kind_hint,actual_kind,"
-            "parser_contract_version,parser_backend,parser_environment "
-            "FROM files ORDER BY path"
-        ).fetchall(),
-        "symbols": db.execute(
-            "SELECT file_path,name,short_name,type,args,lineno,end_lineno,hash,bases,name_tokens "
-            "FROM symbols ORDER BY file_path,name"
-        ).fetchall(),
-        "symbol_occurrences": db.execute(
-            "SELECT file_path,name,occurrence_index,type,args,lineno,end_lineno,hash,"
-            "is_canonical,conflict_kind,selection_reason FROM symbol_occurrences "
-            "ORDER BY file_path,name,occurrence_index"
-        ).fetchall(),
-        "edges": db.execute(
-            "SELECT source_file,caller,callee,callee_file,callee_qualified,line,provenance,"
-            "synthesized_from,via FROM edges ORDER BY source_file,caller,callee,"
-            "callee_qualified,line,provenance,via"
-        ).fetchall(),
-        "edge_candidates": db.execute(
-            "SELECT e.source_file,e.caller,e.callee,e.line,ec.candidate_qualified,ec.score "
-            "FROM edge_candidates ec JOIN edges e ON e.id=ec.edge_id "
-            "ORDER BY e.source_file,e.caller,e.callee,e.line,ec.candidate_qualified"
-        ).fetchall(),
-        "patterns": db.execute(
-            "SELECT file_path,pattern_type,signal_name,handler,line,metadata FROM patterns "
-            "ORDER BY file_path,pattern_type,signal_name,handler,line,metadata"
-        ).fetchall(),
-        "clusters": db.execute(
-            "SELECT name,label,entry_symbols,file_count FROM clusters ORDER BY name"
-        ).fetchall(),
-        "cluster_members": db.execute(
-            "SELECT c.name,cm.file_path FROM cluster_members cm "
-            "JOIN clusters c ON c.id=cm.cluster_id ORDER BY c.name,cm.file_path"
-        ).fetchall(),
-        "retrieval_documents": db.execute(
-            "SELECT node_kind,node_ref,language,symbol_type,file_path,name,name_tokens,"
-            "signature,summary_short,summary_full,content_hash FROM retrieval_documents "
-            "ORDER BY node_kind,node_ref"
-        ).fetchall(),
-    }
+    return oracle_normalization.canary_state(db)
 
 
 def assert_required_facts(

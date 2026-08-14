@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
+import sqlite3
 import sys
 
 import pytest
@@ -12,6 +13,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tee_project_canary as canary
+from oracle import comparator as oracle_comparator
+from oracle import manifest as oracle_manifest
+from oracle import normalization as oracle_normalization
+from struct_scan import SCHEMA_SQL
 
 
 @pytest.fixture
@@ -280,3 +285,196 @@ def test_cli_writes_json_report(tmp_path: Path):
             -source["count"], source["file_path"], source["pattern_type"]
         ),
     )
+
+
+_CANARY_LEGACY_COLUMNS = {
+    "files": (
+        "path", "struct_hash", "language", "layer", "imports", "kind_hint",
+        "actual_kind", "parser_contract_version", "parser_backend",
+        "parser_environment",
+    ),
+    "symbols": (
+        "file_path", "name", "short_name", "type", "args", "lineno",
+        "end_lineno", "hash", "bases", "name_tokens",
+    ),
+    "symbol_occurrences": (
+        "file_path", "name", "occurrence_index", "type", "args", "lineno",
+        "end_lineno", "hash", "is_canonical", "conflict_kind",
+        "selection_reason",
+    ),
+    "edges": (
+        "source_file", "caller", "callee", "callee_file", "callee_qualified",
+        "line", "provenance", "synthesized_from", "via",
+    ),
+    "edge_candidates": (
+        "source_file", "caller", "callee", "line", "candidate_qualified",
+        "score",
+    ),
+    "patterns": (
+        "file_path", "pattern_type", "signal_name", "handler", "line",
+        "metadata",
+    ),
+    "clusters": ("name", "label", "entry_symbols", "file_count"),
+    "cluster_members": ("cluster", "file_path"),
+    "retrieval_documents": (
+        "node_kind", "node_ref", "language", "symbol_type", "file_path",
+        "name", "name_tokens", "signature", "summary_short", "summary_full",
+        "content_hash",
+    ),
+}
+
+
+def _seed_oracle_db(path: Path) -> None:
+    db = sqlite3.connect(str(path))
+    try:
+        db.executescript(SCHEMA_SQL)
+        db.execute(
+            "INSERT INTO files (path, struct_hash, language, layer, imports) "
+            "VALUES ('a.py','h1','python','Core','[\"b.py\"]')"
+        )
+        db.execute(
+            "INSERT INTO files (path, struct_hash, language, layer, imports) "
+            "VALUES ('b.py','h2','python','Util',NULL)"
+        )
+        db.execute(
+            "INSERT INTO symbols (file_path,name,short_name,type,args,lineno,end_lineno,hash,bases,name_tokens) "
+            "VALUES ('a.py','main','main','function','()',1,10,'hash-main',NULL,'main')"
+        )
+        db.execute(
+            "INSERT INTO symbols (file_path,name,short_name,type,args,lineno,end_lineno,hash,bases,name_tokens) "
+            "VALUES ('a.py','helper','helper','function','(x)',12,20,'hash-helper',NULL,'helper')"
+        )
+        db.execute(
+            "INSERT INTO edges VALUES (NULL,'a.py','main','helper',NULL,'a.py::helper',3,'definite',NULL,NULL,'name')"
+        )
+        db.execute(
+            "INSERT INTO edges VALUES (NULL,'a.py','helper','run','b.py','b.py::Util.run',14,'inferred',NULL,'interface-impl','name')"
+        )
+        db.execute(
+            "INSERT INTO patterns VALUES (NULL,'a.py','django_signal_connect','post_save','on_save',8,NULL)"
+        )
+        db.execute(
+            "INSERT INTO clusters (id,name,label,entry_symbols,file_count) "
+            "VALUES (1,'core','Core','[\"a.py::main\"]',2)"
+        )
+        db.execute("INSERT INTO cluster_members (cluster_id,file_path) VALUES (1,'a.py')")
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_canary_view_stays_byte_compatible(tmp_path: Path):
+    assert oracle_normalization.canary_columns() == _CANARY_LEGACY_COLUMNS
+    db_path = tmp_path / "state.db"
+    _seed_oracle_db(db_path)
+    db = sqlite3.connect(str(db_path))
+    try:
+        assert canary.normalized_current_state(db) == oracle_normalization.canary_state(db)
+    finally:
+        db.close()
+
+
+def test_oracle_view_extends_canary_view_as_suffix_only():
+    oracle_columns = oracle_normalization.oracle_columns()
+    for view, legacy in _CANARY_LEGACY_COLUMNS.items():
+        excluded = oracle_normalization.CANARY_EXCLUDED_COLUMNS.get(view, ())
+        assert oracle_columns[view] == legacy + tuple(excluded)
+
+
+def test_comparator_is_reflexive(tmp_path: Path):
+    db_path = tmp_path / "state.db"
+    _seed_oracle_db(db_path)
+    findings = oracle_comparator.compare_dbs(db_path, db_path)
+    assert findings == []
+
+
+def test_comparator_detects_injected_mutations(tmp_path: Path):
+    left_path = tmp_path / "left.db"
+    right_path = tmp_path / "right.db"
+    _seed_oracle_db(left_path)
+    _seed_oracle_db(right_path)
+    db = sqlite3.connect(str(right_path))
+    try:
+        db.execute("UPDATE symbols SET hash='mutated' WHERE name='main'")
+        db.execute("DELETE FROM files WHERE path='b.py'")
+        db.execute(
+            "INSERT INTO symbols (file_path,name,short_name,type,args,lineno,end_lineno,hash,bases,name_tokens) "
+            "VALUES ('a.py','extra','extra','function','()',30,32,'hash-extra',NULL,'extra')"
+        )
+        db.execute("DELETE FROM edges WHERE provenance='inferred'")
+        db.commit()
+    finally:
+        db.close()
+
+    findings = oracle_comparator.compare_dbs(left_path, right_path)
+    categories = {(finding.view, finding.category) for finding in findings}
+    assert ("symbols", oracle_comparator.CATEGORY_FIELD_MODIFIED) in categories
+    assert ("files", oracle_comparator.CATEGORY_MISSING_ROW) in categories
+    assert ("symbols", oracle_comparator.CATEGORY_EXTRA_ROW) in categories
+    assert ("edges", oracle_comparator.CATEGORY_INFERRED_EDGE) in categories
+    assert oracle_comparator.blocking(findings) == findings
+
+
+def test_comparator_allowed_diff_columns_do_not_block(tmp_path: Path):
+    left_path = tmp_path / "left.db"
+    right_path = tmp_path / "right.db"
+    for path, summary in ((left_path, "old text"), (right_path, "new text")):
+        _seed_oracle_db(path)
+        db = sqlite3.connect(str(path))
+        try:
+            db.execute(
+                "INSERT INTO retrieval_documents "
+                "(node_kind,node_ref,language,symbol_type,file_path,name,name_tokens,"
+                "signature,summary_short,summary_full,content_hash,source_version,updated_at) "
+                "VALUES ('symbol','a.py::main','python','function','a.py','main','main',"
+                "'()',?,NULL,'ch',1,'2026-01-01T00:00:00')",
+                (summary,),
+            )
+            db.commit()
+        finally:
+            db.close()
+
+    findings = oracle_comparator.compare_dbs(left_path, right_path)
+    assert [
+        (finding.view, finding.category, finding.column) for finding in findings
+    ] == [("retrieval_documents", oracle_comparator.CATEGORY_ALLOWED_DIFF, "summary_short")]
+    assert oracle_comparator.blocking(findings) == []
+
+
+def test_comparator_refuses_environment_mismatch():
+    base = {
+        "python_version": "3.12.9",
+        "packages": {"tree-sitter": "0.25.2"},
+        "registry": [{"language_id": "python", "extensions": [".py"], "cache_contract_version": "1"}],
+        "schema_version": "12.0.0",
+        "classification_version": "1",
+        "comparator_version": "1",
+    }
+    other = dict(base, python_version="3.10.0")
+    with pytest.raises(oracle_comparator.EnvironmentMismatchError, match="python_version"):
+        oracle_comparator.ensure_same_environment(base, other)
+    assert oracle_comparator.ensure_same_environment(
+        base, other, allow_env_mismatch=True
+    ) == ["python_version"]
+    assert oracle_comparator.ensure_same_environment(base, dict(base)) == []
+
+
+def test_oracle_manifest_generate_roundtrip(tmp_path: Path):
+    manifest = oracle_manifest.generate()
+    target = tmp_path / "oracle_manifest.json"
+    oracle_manifest.write(manifest, target)
+    loaded = oracle_manifest.load(target)
+    assert loaded == manifest
+    identity = oracle_manifest.environment_identity(loaded)
+    assert set(identity) == {
+        "python_version", "packages", "registry", "schema_version",
+        "classification_version", "comparator_version",
+    }
+    registry = {entry["language_id"]: entry for entry in loaded["registry"]}
+    assert set(registry) == {"PythonParser", "CCppParser", "TSParser", "RustParser"}
+    assert registry["RustParser"]["cache_contract_version"] == "2"
+    assert {gap["id"] for gap in loaded["known_gaps"]} == {
+        "cross-file-trait-impl", "python-docstring-in-hash",
+    }
+    assert loaded["fixtures"], "oracle fixture corpus must be hashed"
+
