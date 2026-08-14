@@ -19,7 +19,7 @@ import remy_config
 
 
 SOURCE_EXTENSIONS = frozenset(
-    (".py", ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx", ".ts", ".tsx")
+    (".py", ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx", ".ts", ".tsx", ".rs")
 )
 DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
 DIRTY_PROCESSING_FILE = DIRTY_FILE + ".processing"

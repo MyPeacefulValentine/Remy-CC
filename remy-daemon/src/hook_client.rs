@@ -26,7 +26,7 @@ const FALLBACK_STDERR_LIMIT: usize = 64 * 1024;
 const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const CONFIG_SCHEMA_VERSION: &str = "1.0.0";
 const SOURCE_EXTENSIONS: &[&str] = &[
-    "py", "c", "h", "cpp", "hpp", "cc", "cxx", "hh", "hxx", "ts", "tsx",
+    "py", "c", "h", "cpp", "hpp", "cc", "cxx", "hh", "hxx", "ts", "tsx", "rs",
 ];
 
 #[derive(Debug, Clone, Copy)]
@@ -1046,6 +1046,10 @@ mod tests {
         assert_eq!(
             normalize_source_path(root.path(), "sub/deleted.py").as_deref(),
             Some("sub/deleted.py")
+        );
+        assert_eq!(
+            normalize_source_path(root.path(), "src/state.rs").as_deref(),
+            Some("src/state.rs")
         );
         assert!(normalize_source_path(root.path(), "../outside.py").is_none());
         assert!(normalize_source_path(root.path(), "notes.txt").is_none());

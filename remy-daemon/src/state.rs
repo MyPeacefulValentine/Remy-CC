@@ -993,7 +993,7 @@ fn normalize_source_path(value: &str) -> StateResult<String> {
         .map(str::to_ascii_lowercase);
     if !matches!(
         extension.as_deref(),
-        Some("py" | "c" | "h" | "cpp" | "hpp" | "cc" | "cxx" | "hh" | "hxx" | "ts" | "tsx")
+        Some("py" | "c" | "h" | "cpp" | "hpp" | "cc" | "cxx" | "hh" | "hxx" | "ts" | "tsx" | "rs")
     ) {
         return Err(StateError::InvalidInput(
             "file_path has an unsupported source extension".to_string(),
@@ -1586,6 +1586,10 @@ mod tests {
         assert_eq!(
             normalize_source_path("src/deleted.py").unwrap(),
             "src/deleted.py"
+        );
+        assert_eq!(
+            normalize_source_path("src/state.rs").unwrap(),
+            "src/state.rs"
         );
         assert!(normalize_source_path("README.md").is_err());
     }
