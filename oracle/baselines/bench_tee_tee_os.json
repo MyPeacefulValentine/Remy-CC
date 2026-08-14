@@ -1,0 +1,29 @@
+{
+  "db_bytes_median": 10874880,
+  "file_count": 531,
+  "full_scan_seconds": [
+    7.816572799987625,
+    7.6516250999993645,
+    7.648667200002819,
+    8.010740199999418,
+    7.754813999985345
+  ],
+  "full_scan_seconds_median": 7.754813999985345,
+  "incremental_seconds": [
+    2.863517799996771,
+    2.8613642000127584,
+    2.7483184000011533,
+    2.751030199986417,
+    3.2443256999831647
+  ],
+  "incremental_seconds_median": 2.8613642000127584,
+  "k": 50,
+  "machine": "AMD64",
+  "measured_at": "2026-08-14T19:20:24.901890+00:00",
+  "peak_commit_bytes_median": 64049152,
+  "platform": "win32",
+  "python_version": "3.12.9",
+  "reps": 5,
+  "sample": "tee_tee_os_framework-master",
+  "seed": 20260815
+}

@@ -1,0 +1,91 @@
+{
+  "classification_version": "1",
+  "commit": "78f6c312421435603c8407f597ab6ddee61e0f6b",
+  "comparator_version": "1",
+  "config_snapshot": {
+    "REMY_CLUSTER_DENSITY_THRESHOLD": "0.5",
+    "REMY_CLUSTER_ENTRY_COUNT": "3",
+    "REMY_CLUSTER_MAX_SIZE": "15",
+    "REMY_LOGIC_INDEX_FILTER_SMALL": "False",
+    "REMY_SCAN_COMMIT_BATCH_SIZE": "100",
+    "REMY_SYNTH_EVENT_FANOUT_CAP": "20",
+    "REMY_SYNTH_INTERFACE_FANOUT_CAP": "10"
+  },
+  "fixtures": {
+    "corpus/c/main.c": "af4f10034c4bc1e9f019a4d7d62b86fa24f42aa7f080dc6a1535bf524e01544a",
+    "corpus/c/util.c": "660991fe78a8d9f1ac5f2daa286a14d5bef79eb69ec473ffe25ad2897e6302ce",
+    "corpus/c/util.h": "a16ed40ccd269e8b5bbc8e2a0dfed5c900ab57ac75aded088b4dc69c7af4656a",
+    "corpus/python/app.py": "5a86a6ee154b95ce5fd4eea9501d711ce06a602f50fb8f0c9438ea69cadd3d13",
+    "corpus/python/util.py": "dbe68e0d4a107aee58c63a3aed5d78ced47a8c85667fc2e2e1dfbdfc34a5ce31",
+    "corpus/rust/main.rs": "f2dc8a6d5cf68ed773e2b2412d6f20d96d8c49b41facc7207312cd7f9cd995f1",
+    "corpus/rust/shapes.rs": "0b6cff9c42c94d5936fb8505f5759e435e8bcfa784e4637134481e894b8f71a8",
+    "corpus/ts/index.ts": "603eee51f196ddf03bb00ee59bd8924473c26d9642dfb8314a1bac3fbfc303c8",
+    "corpus/ts/shapes.ts": "0cde88d3b3ddaefb368a9440b45d4c7da42548959757a4876743d8666decb3a2"
+  },
+  "generated_at": "2026-08-14T20:00:57.234336+00:00",
+  "known_gaps": [
+    {
+      "classification": "category-2-shared-defect",
+      "description": "Cross-file `impl Trait for Type` produces neither struct/enum bases entries nor trait-impl synthetic edges (RustParser is per-file; no cross-file merge postprocess exists).",
+      "fix_procedure": "Fix Python and Rust scanners in the same change, bump the Rust CACHE_CONTRACT_VERSION, regenerate the oracle baseline, and update this manifest's identity.",
+      "fix_window": "before R3.4",
+      "id": "cross-file-trait-impl"
+    },
+    {
+      "classification": "category-1-frozen-compat",
+      "description": "PythonParser.symbol_hash_input strips only '#' comments, so docstrings participate in the symbol hash and docstring-only edits invalidate symbol summaries. Rust must replicate this behavior until a cross-language ruling changes it.",
+      "fix_procedure": null,
+      "fix_window": null,
+      "id": "python-docstring-in-hash"
+    }
+  ],
+  "manifest_schema_version": 1,
+  "packages": {
+    "tree-sitter": "0.25.2",
+    "tree-sitter-c": "0.24.2",
+    "tree-sitter-cpp": "0.23.4",
+    "tree-sitter-rust": "0.24.2",
+    "tree-sitter-typescript": "0.23.2"
+  },
+  "platform": "win32",
+  "python_version": "3.12.9",
+  "registry": [
+    {
+      "cache_contract_version": "1",
+      "extensions": [
+        ".c",
+        ".cc",
+        ".cpp",
+        ".cxx",
+        ".h",
+        ".hh",
+        ".hpp",
+        ".hxx"
+      ],
+      "language_id": "CCppParser"
+    },
+    {
+      "cache_contract_version": "1",
+      "extensions": [
+        ".py"
+      ],
+      "language_id": "PythonParser"
+    },
+    {
+      "cache_contract_version": "2",
+      "extensions": [
+        ".rs"
+      ],
+      "language_id": "RustParser"
+    },
+    {
+      "cache_contract_version": "1",
+      "extensions": [
+        ".ts",
+        ".tsx"
+      ],
+      "language_id": "TSParser"
+    }
+  ],
+  "schema_version": "12.0.0"
+}
