@@ -13,6 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tee_project_canary as canary
+from oracle import bench as oracle_bench
 from oracle import comparator as oracle_comparator
 from oracle import manifest as oracle_manifest
 from oracle import normalization as oracle_normalization
@@ -478,3 +479,15 @@ def test_oracle_manifest_generate_roundtrip(tmp_path: Path):
     }
     assert loaded["fixtures"], "oracle fixture corpus must be hashed"
 
+
+def test_bench_smoke_on_tee_fixture(tmp_path: Path):
+    record = oracle_bench.measure_sample(
+        canary.FIXTURE_ROOT, tmp_path / "bench", reps=1, k=1
+    )
+    assert record["file_count"] > 0
+    assert record["full_scan_seconds_median"] > 0
+    assert record["incremental_seconds_median"] > 0
+    assert record["db_bytes_median"] > 0
+    assert record["reps"] == 1 and record["k"] == 1
+    if sys.platform == "win32":
+        assert record["peak_commit_bytes_median"] > 10 * 1024 * 1024
