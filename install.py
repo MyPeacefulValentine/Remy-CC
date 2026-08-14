@@ -800,6 +800,16 @@ def prompt_language() -> str:
     return "en"
 
 
+def existing_config_lang() -> str:
+    """Return REMY_LANG from the deployed remy-config.json, or "en" when the
+    file is missing, unreadable, or holds an unsupported value."""
+    remy_config = _load_remy_config_module()
+    config_path = get_claude_home() / remy_config.CONFIG_FILE_NAME
+    document = remy_config.read_document(config_path, strict=False)
+    value = document.get("values", {}).get("REMY_LANG")
+    return value if value in ("en", "zh-CN") else "en"
+
+
 def configure_api(config_path: Path) -> None:
     """Interactive LLM API configuration for Logic Index."""
     remy_config = _load_remy_config_module()
@@ -1702,6 +1712,8 @@ def main() -> None:
         _ui_lang = args.lang
     elif not args.uninstall and not args.verify and not args.non_interactive and not args.json:
         _ui_lang = prompt_language()
+    else:
+        _ui_lang = existing_config_lang()
 
     if args.uninstall:
         do_uninstall_v3(args)

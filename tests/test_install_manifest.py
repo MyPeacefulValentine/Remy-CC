@@ -1473,3 +1473,46 @@ def test_v3_settings_file_preserves_private_mode(v3_runtime, tmp_path):
 
     assert roots.claude.joinpath("settings.json").stat().st_mode & 0o777 == 0o600
 
+
+def _write_lang_config(claude_home, lang):
+    (claude_home / "remy-config.json").write_text(
+        json.dumps({"schema_version": "1.0.0", "values": {"REMY_LANG": lang}}),
+        encoding="utf-8",
+    )
+
+
+def test_existing_config_lang_reads_deployed_value(claude_home, monkeypatch):
+    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
+    _write_lang_config(claude_home, "zh-CN")
+    assert install.existing_config_lang() == "zh-CN"
+
+
+def test_existing_config_lang_missing_or_corrupt_falls_back_en(claude_home, monkeypatch):
+    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
+    assert install.existing_config_lang() == "en"
+    (claude_home / "remy-config.json").write_text("{invalid", encoding="utf-8")
+    assert install.existing_config_lang() == "en"
+    _write_lang_config(claude_home, "fr")
+    assert install.existing_config_lang() == "en"
+
+
+def test_non_interactive_install_preserves_language(claude_home, monkeypatch):
+    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
+    monkeypatch.setattr(install, "_ui_lang", install._ui_lang)
+    _write_lang_config(claude_home, "zh-CN")
+    captured = []
+    monkeypatch.setattr(install, "do_install_v3", lambda args: captured.append(install._ui_lang))
+    monkeypatch.setattr(sys, "argv", ["install.py", "--non-interactive"])
+    install.main()
+    assert captured == ["zh-CN"]
+
+
+def test_non_interactive_install_explicit_lang_overrides_config(claude_home, monkeypatch):
+    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
+    monkeypatch.setattr(install, "_ui_lang", install._ui_lang)
+    _write_lang_config(claude_home, "zh-CN")
+    captured = []
+    monkeypatch.setattr(install, "do_install_v3", lambda args: captured.append(install._ui_lang))
+    monkeypatch.setattr(sys, "argv", ["install.py", "--non-interactive", "--lang", "en"])
+    install.main()
+    assert captured == ["en"]
