@@ -1176,6 +1176,40 @@ def test_v3_migrates_legacy_manifest_and_hook_claims(v3_runtime, tmp_path):
     assert not any(command.startswith('python "') for command in commands)
 
 
+def test_v3_adopts_unrecorded_legacy_cli_shim(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    shim = roots.claude / "bin" / "remy-cc.cmd"
+    _seed_file(shim, "old shim")
+    legacy = {
+        "version": "1.7.3",
+        "files": [],
+        "injected_hooks": {},
+        "injected_permissions": [],
+    }
+    roots.claude.mkdir(parents=True, exist_ok=True)
+    (roots.claude / ".installer_manifest.json").write_text(json.dumps(legacy), encoding="utf-8")
+
+    shim_source = tmp_path / "shim-candidate.cmd"
+    shim_source.write_text("new shim", encoding="utf-8")
+    request = InstallRequest(
+        suite_version="1.7.3",
+        candidates=[
+            CandidateFile("claude", "skills/remy-test/data.txt", tmp_path / "candidate.txt", "claude_skill"),
+            CandidateFile("claude", "bin/remy-cc.cmd", shim_source, "claude_protocol"),
+        ],
+        settings_template=_v3_template(),
+        python_executable=sys.executable,
+    )
+    (tmp_path / "candidate.txt").write_text("payload", encoding="utf-8")
+
+    result = runtime.install(request)
+
+    assert result.exit_code == 0
+    assert shim.read_text(encoding="utf-8") == "new shim"
+    manifest = json.loads((roots.remy / "install" / "manifest.json").read_text(encoding="utf-8"))
+    assert ("claude", "bin/remy-cc.cmd") in {(f["root"], f["path"]) for f in manifest["files"]}
+
+
 def test_v3_corrupt_manifest_rejects_without_writes(v3_runtime, tmp_path):
     runtime, roots = v3_runtime
     manifest = roots.remy / "install" / "manifest.json"

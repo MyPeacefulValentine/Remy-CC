@@ -328,6 +328,19 @@ class InstallRuntime:
             else:
                 root, relative = "claude", normalize_relative_path(raw["path"])
             records.append(FileRecord(root, relative, digest, "remy-cc", "legacy").to_dict())
+        # Pre-dual-root installers wrote the CLI shim without recording it in
+        # their manifest; adopt the on-disk shim so install can overwrite it.
+        recorded_paths = {(record["root"], record["path"]) for record in records}
+        for shim_name in ("bin/remy-cc.cmd", "bin/remy-cc"):
+            if ("claude", shim_name) in recorded_paths:
+                continue
+            shim_target = self.roots.claude / shim_name
+            if shim_target.is_file():
+                records.append(
+                    FileRecord(
+                        "claude", shim_name, sha256_file(shim_target), "remy-cc", "legacy"
+                    ).to_dict()
+                )
         claim = _legacy_settings_claim(
             value.get("injected_hooks"), value.get("injected_permissions"), self.roots
         )
