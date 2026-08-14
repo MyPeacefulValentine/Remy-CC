@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skills", "remy
 
 from parsers.base import LanguageParser, ParserCacheIdentity
 from parsers.registry import ParserRegistry
-from parsers import build_default_registry, PythonParser, CCppParser, TSParser
+from parsers import build_default_registry, PythonParser, CCppParser, TSParser, RustParser
 
 
 class _FakeParser(LanguageParser):
@@ -134,14 +134,14 @@ class TestAll:
 
 
 class TestDefaultRegistry:
-    def test_build_default_contains_three_parsers(self):
+    def test_build_default_contains_four_parsers(self):
         registry = build_default_registry()
-        assert len(registry.all()) == 3
+        assert len(registry.all()) == 4
 
     def test_default_registry_language_ids(self):
         registry = build_default_registry()
         ids = {p.language_id for p in registry.all()}
-        assert ids == {"PythonParser", "CCppParser", "TSParser"}
+        assert ids == {"PythonParser", "CCppParser", "TSParser", "RustParser"}
 
     def test_default_resolves_py(self):
         registry = build_default_registry()
@@ -159,9 +159,13 @@ class TestDefaultRegistry:
         registry = build_default_registry()
         assert isinstance(registry.resolve("view.tsx"), TSParser)
 
+    def test_default_resolves_rs(self):
+        registry = build_default_registry()
+        assert isinstance(registry.resolve("state.rs"), RustParser)
+
     def test_fake_parser_extends_without_modifying_consumer(self):
         fake = _FakeParser()
         registry = ParserRegistry((*build_default_registry().all(), fake))
-        assert len(registry.all()) == 4
+        assert len(registry.all()) == 5
         assert registry.resolve("test.fake") is fake
         assert isinstance(registry.resolve("main.py"), PythonParser)
