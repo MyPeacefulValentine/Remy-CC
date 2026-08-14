@@ -1387,6 +1387,30 @@ def test_install_candidates_exclude_python_cache_files(tmp_path):
     assert not any(path.endswith((".pyc", ".pyo")) for path in paths)
 
 
+def test_install_candidates_exclude_claude_dir_and_db_artifacts(tmp_path):
+    install_runtime, _ = install._load_install_runtime_module()
+    roots = RootPaths(tmp_path / "claude", tmp_path / "remy")
+
+    stage = tmp_path / "stage"
+    skill_claude = stage / "skills" / "remy-index" / ".claude"
+    skill_claude.mkdir(parents=True)
+    (skill_claude / "logic_index_dirty").write_text("", encoding="utf-8")
+    (skill_claude / "logic_index_dirty.lock").write_text("", encoding="utf-8")
+    (stage / "skills" / "remy-index" / "test.db").write_text("", encoding="utf-8")
+    (stage / "skills" / "remy-index" / "test.db-wal").write_text("", encoding="utf-8")
+    (stage / "skills" / "remy-index" / "test.db-shm").write_text("", encoding="utf-8")
+    (stage / "skills" / "remy-index" / "test.lock").write_text("", encoding="utf-8")
+
+    candidates = install._build_install_candidates(stage, "en", install_runtime, roots)
+
+    paths = [candidate.path for candidate in candidates]
+    assert not any(".claude" in path for path in paths)
+    assert not any(path.endswith(".db") for path in paths)
+    assert not any(path.endswith(".db-wal") for path in paths)
+    assert not any(path.endswith(".db-shm") for path in paths)
+    assert not any(path.endswith(".lock") for path in paths)
+
+
 def test_mcp_registration_rejects_corrupt_user_document(tmp_path):
     claude_home = tmp_path / ".claude"
     claude_home.mkdir()
