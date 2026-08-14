@@ -103,12 +103,34 @@ def probe_daemon(executable: Path) -> DaemonProbe:
     try:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError:
+        if result.returncode == 2:
+            # Daemons predating `status --json` reject the flag with exit 2
+            # and usage text; fall back to the plain-text tri-state probe.
+            return _probe_daemon_plain_status(executable)
         return DaemonProbe("unknown")
     if not isinstance(payload, dict) or not isinstance(payload.get("running"), bool):
         return DaemonProbe("unknown")
     if payload["running"]:
         version = payload.get("daemon_version")
         return DaemonProbe("running", version if isinstance(version, str) else None)
+    if result.returncode == 1:
+        return DaemonProbe("stopped")
+    return DaemonProbe("unknown")
+
+
+def _probe_daemon_plain_status(executable: Path) -> DaemonProbe:
+    try:
+        result = subprocess.run(
+            [str(executable), "status"],
+            capture_output=True,
+            text=True,
+            timeout=PROBE_TIMEOUT_SECONDS,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return DaemonProbe("unknown")
+    if result.returncode == 0:
+        return DaemonProbe("running", probe_daemon_version(executable))
     if result.returncode == 1:
         return DaemonProbe("stopped")
     return DaemonProbe("unknown")

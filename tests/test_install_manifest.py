@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "remy-src"))
 import install
 from install_runtime import CandidateFile, InstallRequest, InstallRuntime, InstallRuntimeError, RootPaths
 from install_runtime.probes import DaemonProbe, probe_daemon
+import install_runtime.probes as probes_module
 from install_runtime.transaction import FileTransaction
 import install_runtime.facade as install_facade
 from install_runtime.facade import result_for_error
@@ -1472,6 +1473,66 @@ def test_v3_settings_file_preserves_private_mode(v3_runtime, tmp_path):
     runtime.install(_v3_request(tmp_path))
 
     assert roots.claude.joinpath("settings.json").stat().st_mode & 0o777 == 0o600
+
+
+class _LegacyDaemonRun:
+    """Stands in for subprocess.run against a daemon binary that predates
+    `status --json`: the flag is rejected with exit 2 and usage text, plain
+    `status` returns plain_rc, and `--version` prints a version line."""
+
+    def __init__(self, plain_rc):
+        self.plain_rc = plain_rc
+        self.calls = []
+
+    def __call__(self, cmd, **kwargs):
+        self.calls.append(list(cmd))
+        if cmd[-1] == "--json":
+            return types.SimpleNamespace(
+                returncode=2, stdout="", stderr="error: unexpected argument '--json'"
+            )
+        if cmd[-1] == "--version":
+            return types.SimpleNamespace(returncode=0, stdout="remy-daemon 0.1.0\n", stderr="")
+        return types.SimpleNamespace(returncode=self.plain_rc, stdout="", stderr="")
+
+
+def _legacy_probe(tmp_path, monkeypatch, plain_rc):
+    executable = tmp_path / "remy-daemon.exe"
+    executable.write_bytes(b"legacy-daemon")
+    fake = _LegacyDaemonRun(plain_rc)
+    monkeypatch.setattr(probes_module.subprocess, "run", fake)
+    return probe_daemon(executable), fake
+
+
+def test_probe_daemon_legacy_binary_running_via_plain_fallback(tmp_path, monkeypatch):
+    probe, fake = _legacy_probe(tmp_path, monkeypatch, plain_rc=0)
+    assert probe.state == "running"
+    assert probe.version == "0.1.0"
+    assert fake.calls[0][-1] == "--json"
+    assert fake.calls[1][-1] == "status"
+
+
+def test_probe_daemon_legacy_binary_stopped_via_plain_fallback(tmp_path, monkeypatch):
+    probe, _fake = _legacy_probe(tmp_path, monkeypatch, plain_rc=1)
+    assert probe.state == "stopped"
+
+
+def test_probe_daemon_legacy_binary_odd_exit_stays_unknown(tmp_path, monkeypatch):
+    probe, _fake = _legacy_probe(tmp_path, monkeypatch, plain_rc=3)
+    assert probe.state == "unknown"
+
+
+def test_probe_daemon_non_json_without_exit_two_stays_unknown(tmp_path, monkeypatch):
+    executable = tmp_path / "remy-daemon.exe"
+    executable.write_bytes(b"broken-daemon")
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        return types.SimpleNamespace(returncode=0, stdout="not json", stderr="")
+
+    monkeypatch.setattr(probes_module.subprocess, "run", fake_run)
+    assert probe_daemon(executable).state == "unknown"
+    assert len(calls) == 1
 
 
 def _write_lang_config(claude_home, lang):
