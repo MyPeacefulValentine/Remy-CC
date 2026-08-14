@@ -17,6 +17,14 @@ import cli
 from install_runtime import CandidateFile, InstallRequest, InstallRuntime, RootPaths
 
 
+@pytest.fixture(autouse=True)
+def _isolated_remy_cc_home(tmp_path, monkeypatch):
+    """Point REMY_CC_HOME at a per-test directory so cmd_uninstall never
+    probes the real ~/.remy-cc daemon; tests seeding their own daemon
+    override the variable afterwards."""
+    monkeypatch.setenv("REMY_CC_HOME", str(tmp_path / "isolated-remy-cc-home"))
+
+
 @pytest.fixture
 def claude_home(tmp_path, monkeypatch):
     home = tmp_path / "claude_home"

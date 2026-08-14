@@ -19,6 +19,14 @@ import install_runtime.facade as install_facade
 from install_runtime.facade import result_for_error
 
 
+@pytest.fixture(autouse=True)
+def _isolated_remy_cc_home(tmp_path, monkeypatch):
+    """Point REMY_CC_HOME at a per-test directory so uninstall paths never
+    probe the real ~/.remy-cc daemon (autouse runs first; daemon_env's own
+    setenv still overrides it)."""
+    monkeypatch.setenv("REMY_CC_HOME", str(tmp_path / "isolated-remy-cc-home"))
+
+
 @pytest.fixture
 def claude_home(tmp_path):
     home = tmp_path / "claude_home"
@@ -1464,3 +1472,4 @@ def test_v3_settings_file_preserves_private_mode(v3_runtime, tmp_path):
     runtime.install(_v3_request(tmp_path))
 
     assert roots.claude.joinpath("settings.json").stat().st_mode & 0o777 == 0o600
+
