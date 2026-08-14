@@ -4,7 +4,6 @@ import fnmatch
 import hashlib
 import json
 import os
-import re
 import sqlite3
 import subprocess
 import sys
@@ -17,9 +16,7 @@ from index_state import (
     project_scan_lock,
 )
 from migrations import initialize_database
-from parsers.c_cpp_parser import CCppParser
-from parsers.python_parser import PythonParser
-from parsers.ts_parser import TSParser
+from parsers import build_default_registry
 from retrieval_projection import (
     delete_file_nodes,
     delete_node,
@@ -102,7 +99,7 @@ def _resolve_git_head(root_dir, db=None):
     return None, None
 
 class StructScanner:
-    def __init__(self, root_dir):
+    def __init__(self, root_dir, registry=None):
         self.root_dir = os.path.abspath(root_dir)
         self.exclusions = []
         self.layers = []
@@ -110,21 +107,14 @@ class StructScanner:
         self.config = remy_config.load_config(self.root_dir, strict=True)
 
         self.filter_small = self.config.get_bool("REMY_LOGIC_INDEX_FILTER_SMALL")
-        self.parsers = [PythonParser(), CCppParser(), TSParser()]
-        self._extension_map = {}
-        for parser in self.parsers:
-            for ext in parser.get_extensions():
-                self._extension_map[ext] = parser
+        self._registry = registry if registry is not None else build_default_registry()
 
         self.db_path = str(self.config.get("REMY_LOGIC_INDEX_DB_PATH"))
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self.db = initialize_database(self.root_dir, self.db_path)
 
     def _get_parser_for_file(self, filename):
-        for ext, parser in self._extension_map.items():
-            if filename.endswith(ext):
-                return parser
-        return None
+        return self._registry.resolve(filename)
 
     def _load_config(self):
         config_path = os.path.join(self.root_dir, CONFIG_FILE)
@@ -214,19 +204,6 @@ class StructScanner:
                     if segment == pattern or segment == pattern + "s":
                         return layer_def["name"]
         return "Core"
-
-    @staticmethod
-    def _strip_comments(source, parser):
-        try:
-            if isinstance(parser, PythonParser):
-                return re.sub(r'#[^\n]*', '', source)
-            elif isinstance(parser, (CCppParser, TSParser)):
-                source = re.sub(r'//[^\n]*', '', source)
-                source = re.sub(r'/\*[\s\S]*?\*/', '', source)
-                return source
-        except Exception:
-            pass
-        return source
 
     @staticmethod
     def _calculate_symbol_hash(source_code):
@@ -324,7 +301,7 @@ class StructScanner:
 
         file_values = (
             struct_hash,
-            parser.__class__.__name__,
+            parser.language_id,
             layer,
             json.dumps(list(imports.keys())),
             identity.contract_version,
@@ -357,22 +334,22 @@ class StructScanner:
 
         for occurrence in selection.occurrences:
             sym_info = occurrence.symbol
-            stripped = self._strip_comments(sym_info.source_segment, parser)
+            hash_input = parser.symbol_hash_input(sym_info.source_segment)
             self.db.execute(
                 "INSERT INTO symbol_occurrences "
                 "(file_path, name, occurrence_index, type, args, lineno, end_lineno, hash, "
                 "is_canonical, conflict_kind, selection_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (rel_path, sym_info.name, occurrence.occurrence_index, sym_info.type,
                  sym_info.args, sym_info.lineno, sym_info.end_lineno,
-                 self._calculate_symbol_hash(stripped), int(occurrence.is_canonical),
+                 self._calculate_symbol_hash(hash_input), int(occurrence.is_canonical),
                  occurrence.conflict_kind, occurrence.selection_reason)
             )
 
         now_iso = datetime.now().isoformat(timespec='seconds')
         new_symbol_refs = set()
         for sym_info in symbols:
-            stripped = self._strip_comments(sym_info.source_segment, parser)
-            symbol_hash = self._calculate_symbol_hash(stripped)
+            hash_input = parser.symbol_hash_input(sym_info.source_segment)
+            symbol_hash = self._calculate_symbol_hash(hash_input)
             short_name = sym_info.name.split(".")[-1] if "." in sym_info.name else sym_info.name
             bases_json = json.dumps(sym_info.bases) if sym_info.bases else None
             tokens = tokenize_symbol(sym_info.name)

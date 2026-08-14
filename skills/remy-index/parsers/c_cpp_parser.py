@@ -416,6 +416,7 @@ def _ts_declarator_name(node):
 class CCppParser(LanguageParser):
     """Parser for C and C++ source files. Uses tree-sitter when available, regex otherwise."""
 
+    language_id = "CCppParser"
     CACHE_CONTRACT_VERSION = "1"
     _CPP_EXTENSIONS = frozenset((".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx"))
     _CPP_HEADER_INDICATORS = (
@@ -469,19 +470,16 @@ class CCppParser(LanguageParser):
     def get_extensions(self):
         return [".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx"]
 
-    def get_complexity_indicators(self):
-        return [
-            "template<", "template <",
-            "#define", "##",
-            "reinterpret_cast", "dynamic_cast",
-            "decltype", "constexpr if",
-            "va_list", "va_start",
-            "__attribute__", "__declspec",
-            "asm(", "__asm",
-        ]
-
     def get_prompt_template_path(self):
         return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts", "summarize_symbol_c.md")
+
+    def symbol_hash_input(self, source_segment):
+        try:
+            result = re.sub(r'//[^\n]*', '', source_segment)
+            result = re.sub(r'/\*[\s\S]*?\*/', '', result)
+            return result
+        except Exception:
+            return source_segment
 
     def resolve_imports(self, source, file_path, root_dir):
         imports = {}
@@ -502,17 +500,6 @@ class CCppParser(LanguageParser):
                 imports[rel] = False
 
         return imports
-
-    def collect_used_names(self, source):
-        names = set()
-        cleaned = re.sub(r'//[^\n]*', '', source)
-        cleaned = re.sub(r'/\*.*?\*/', '', cleaned, flags=re.DOTALL)
-        cleaned = re.sub(r'"(?:[^"\\]|\\.)*"', '""', cleaned)
-        cleaned = re.sub(r"'(?:[^'\\]|\\.)*'", "''", cleaned)
-
-        for m in re.finditer(r'\b([a-zA-Z_]\w*)\b', cleaned):
-            names.add(m.group(1))
-        return names
 
     def parse_symbols(self, source, file_path):
         if TREE_SITTER_AVAILABLE:

@@ -21,9 +21,7 @@ if _REMY_SRC not in sys.path:
     sys.path.insert(0, _REMY_SRC)
 import remy_config
 
-from parsers.python_parser import PythonParser
-from parsers.c_cpp_parser import CCppParser
-from parsers.ts_parser import TSParser
+from parsers import build_default_registry
 from llm_client import LlmClient, FatalError, TruncatedResponseError
 import propagation
 from struct_scan import StructScanner
@@ -58,20 +56,13 @@ class LogicIndexer:
         self.dirty_nodes = []
         self.summary_errors = []
 
-        self.parsers = [PythonParser(), CCppParser(), TSParser()]
-        self._extension_map = {}
-        for parser in self.parsers:
-            for ext in parser.get_extensions():
-                self._extension_map[ext] = parser
+        self._registry = build_default_registry()
 
         self.stats = {"start_time": time.time()}
 
     def _get_parser_for_file(self, filename):
         """Return the appropriate parser for a file, or None."""
-        for ext, parser in self._extension_map.items():
-            if filename.endswith(ext):
-                return parser
-        return None
+        return self._registry.resolve(filename)
 
     def _load_prompt_template(self, parser):
         """Loads the prompt template for the given parser's language."""
@@ -330,7 +321,7 @@ class LogicIndexer:
         try:
             lock.acquire()
             claim = queue.claim()
-            scanner = StructScanner(self.root_dir)
+            scanner = StructScanner(self.root_dir, registry=self._registry)
             scan_result = scanner.scan_all()
             self.db = scanner.db
             errors.extend(scan_result.errors)

@@ -83,25 +83,10 @@ class ImportVisitor(ast.NodeVisitor):
         return False
 
 
-class UsageVisitor(ast.NodeVisitor):
-    """AST visitor to collect used identifiers (names and attributes)."""
-
-    def __init__(self):
-        self.used_names = set()
-
-    def visit_Name(self, node):
-        if isinstance(node.ctx, ast.Load):
-            self.used_names.add(node.id)
-        self.generic_visit(node)
-
-    def visit_Attribute(self, node):
-        self.used_names.add(node.attr)
-        self.generic_visit(node)
-
-
 class PythonParser(LanguageParser):
     """Parser for Python source files using the standard library ast module."""
 
+    language_id = "PythonParser"
     CACHE_CONTRACT_VERSION = "1"
 
     def __init__(self):
@@ -118,13 +103,6 @@ class PythonParser(LanguageParser):
 
     def get_extensions(self):
         return [".py"]
-
-    def get_complexity_indicators(self):
-        return [
-            "yield", "__metaclass__", "getattr", "setattr", "eval", "exec",
-            "ast.", "compile(", "locals(", "globals(", "importlib", "__import__",
-            "sys.modules", "pickle", "dill"
-        ]
 
     def get_prompt_template_path(self):
         return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts", "summarize_symbol_python.md")
@@ -157,14 +135,11 @@ class PythonParser(LanguageParser):
         visitor.visit(tree)
         return visitor.unresolved_bindings
 
-    def collect_used_names(self, source):
+    def symbol_hash_input(self, source_segment):
         try:
-            tree = self._get_tree(source)
-        except SyntaxError:
-            return set()
-        visitor = UsageVisitor()
-        visitor.visit(tree)
-        return visitor.used_names
+            return re.sub(r'#[^\n]*', '', source_segment)
+        except Exception:
+            return source_segment
 
     def parse_symbols(self, source, file_path):
         try:

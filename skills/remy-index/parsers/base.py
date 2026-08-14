@@ -75,6 +75,8 @@ class EdgeInfo:
 class LanguageParser(ABC):
     """Abstract interface for language-specific code parsing."""
 
+    language_id: str
+
     @abstractmethod
     def get_extensions(self) -> list:
         """Return file extensions this parser handles, e.g. ['.py'] or ['.c', '.h']."""
@@ -94,14 +96,6 @@ class LanguageParser(ABC):
         """
 
     @abstractmethod
-    def collect_used_names(self, source: str) -> set:
-        """Collect identifiers referenced in the source."""
-
-    @abstractmethod
-    def get_complexity_indicators(self) -> list:
-        """Return substrings that indicate complex/dynamic code patterns."""
-
-    @abstractmethod
     def get_prompt_template_path(self) -> str:
         """Return absolute path to the LLM prompt template for this language."""
 
@@ -116,6 +110,12 @@ class LanguageParser(ABC):
     def matches(self, filename: str) -> bool:
         """Check if this parser handles the given filename."""
         return any(filename.endswith(ext) for ext in self.get_extensions())
+
+    def symbol_hash_input(self, source_segment: str) -> str:
+        """Return normalized source for symbol hash computation.
+        Override to strip language-specific comments before hashing.
+        """
+        return source_segment
 
     def extract_patterns(self, source: str, file_path: str) -> list:
         """Extract event/callback registration patterns from source.

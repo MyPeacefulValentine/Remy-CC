@@ -224,7 +224,8 @@ python -m pytest Remy-CC/tests/test_llm_judge.py -k PromptExampleFieldContract -
 里有426次被当前hash判定为变化。把两侧都经`ast.unparse`重新归一化后匹配0/426，再把
 局部变量与参数重写为位置占位符后同样匹配0。对照实验确认探针有效：纯局部重命名、参
 数重命名、引号风格变化、冗余括号变化各自都被识别，而`+1`改为`+2`的真实变化未被识
-别。`_calculate_symbol_hash`已移除全部空白、`_strip_comments`已移除注释，因此不存
+别。`_calculate_symbol_hash`已移除全部空白、`_strip_comments`（R3.0a 起由
+`LanguageParser.symbol_hash_input`替代）已移除注释，因此不存
 在只含格式差异的变化类别能到达hash。
 
 ## P1.2.1扫描范围与解析器缓存身份

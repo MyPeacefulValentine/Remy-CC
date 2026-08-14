@@ -291,7 +291,8 @@ and parameters to positional placeholders also matched 0. Controls confirm the
 probe: a pure local rename, a parameter rename, a quote-style change and a
 redundant-parens change were each detected, and a genuine `+1`-to-`+2` change was
 not. `_calculate_symbol_hash` already strips all whitespace and `_strip_comments`
-already removes comments, so no formatting-only class of change reaches the hash.
+(replaced by `LanguageParser.symbol_hash_input` in R3.0a) already removes
+comments, so no formatting-only class of change reaches the hash.
 
 ## P1.2.1 scan scope and parser cache identity
 

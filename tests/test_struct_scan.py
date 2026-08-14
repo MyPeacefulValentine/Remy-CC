@@ -2255,3 +2255,24 @@ class TestSummaryInvalidationScope:
         self._rescan(scanner, temp_project, self._BASE.replace('"world"', '"universe"'))
         assert self._status(scanner.db, "cluster", row[0]) == "ok"
 
+
+class TestRegistrySharing:
+    """LogicIndexer and StructScanner share the same registry instance."""
+
+    def test_indexer_and_scanner_resolve_same_parser_instance(self, temp_project):
+        import run
+        indexer = run.LogicIndexer(str(temp_project))
+        scanner = StructScanner(str(temp_project), registry=indexer._registry)
+        py_from_indexer = indexer._get_parser_for_file("main.py")
+        py_from_scanner = scanner._get_parser_for_file("main.py")
+        assert py_from_indexer is py_from_scanner
+        scanner.db.close()
+
+    def test_language_column_preserves_class_name_values(self, scanner, temp_project):
+        scanner.scan_all()
+        languages = {
+            row[0]
+            for row in scanner.db.execute("SELECT DISTINCT language FROM files")
+        }
+        assert languages == {"PythonParser"}
+

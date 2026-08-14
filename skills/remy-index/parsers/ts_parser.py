@@ -219,6 +219,7 @@ def _ts_extract_jsdoc(source_bytes, node):
 class TSParser(LanguageParser):
     """Parser for TypeScript and TSX source files. Uses tree-sitter when available, regex otherwise."""
 
+    language_id = "TSParser"
     CACHE_CONTRACT_VERSION = "1"
 
     @staticmethod
@@ -248,21 +249,20 @@ class TSParser(LanguageParser):
     def get_extensions(self):
         return [".ts", ".tsx"]
 
-    def get_complexity_indicators(self):
-        return [
-            'eval(', 'Function(', 'new Function(',
-            'Proxy', 'Reflect.',
-            'typeof ', 'keyof ', 'infer ',
-            'as unknown', 'as any',
-            'satisfies ',
-        ]
-
     def get_prompt_template_path(self):
         return os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "prompts",
             "summarize_symbol_ts.md",
         )
+
+    def symbol_hash_input(self, source_segment):
+        try:
+            result = re.sub(r'//[^\n]*', '', source_segment)
+            result = re.sub(r'/\*[\s\S]*?\*/', '', result)
+            return result
+        except Exception:
+            return source_segment
 
     def resolve_imports(self, source, file_path, root_dir):
         imports = {}
@@ -290,17 +290,6 @@ class TSParser(LanguageParser):
                     break
 
         return imports
-
-    def collect_used_names(self, source):
-        names = set()
-        cleaned = re.sub(r'//[^\n]*', '', source)
-        cleaned = re.sub(r'/\*.*?\*/', '', cleaned, flags=re.DOTALL)
-        cleaned = re.sub(r'"(?:[^"\\]|\\.)*"', '""', cleaned)
-        cleaned = re.sub(r"'(?:[^'\\]|\\.)*'", "''", cleaned)
-        cleaned = re.sub(r'`(?:[^`\\]|\\.)*`', '``', cleaned)
-        for m in re.finditer(r'\b([a-zA-Z_$][\w$]*)\b', cleaned):
-            names.add(m.group(1))
-        return names
 
     def parse_symbols(self, source, file_path):
         if TREE_SITTER_AVAILABLE:
