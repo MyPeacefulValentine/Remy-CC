@@ -123,6 +123,15 @@
             "command": "python \"~/.claude/hooks/tree_system/lifecycle_hook.py\" --resume-only"
           }
         ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"~/.claude/hooks/env_system/enforcer_hook.py\""
+          }
+        ]
       }
     ],
     "PostToolUse": [
