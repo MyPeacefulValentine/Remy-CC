@@ -1,0 +1,29 @@
+{
+  "db_bytes_median": 103460864,
+  "file_count": 1437,
+  "full_scan_seconds": [
+    113.32749250001507,
+    111.61942970001837,
+    111.9011360000004,
+    111.6176438999828,
+    109.81269230000908
+  ],
+  "full_scan_seconds_median": 111.61942970001837,
+  "incremental_seconds": [
+    25.218066000030376,
+    25.277521200012416,
+    25.156664999958593,
+    23.236735699989367,
+    24.82821420003893
+  ],
+  "incremental_seconds_median": 25.156664999958593,
+  "k": 50,
+  "machine": "AMD64",
+  "measured_at": "2026-08-15T11:39:26.294233+00:00",
+  "peak_commit_bytes_median": 73859072,
+  "platform": "win32",
+  "python_version": "3.12.9",
+  "reps": 5,
+  "sample": "rust-analyzer",
+  "seed": 20260815
+}

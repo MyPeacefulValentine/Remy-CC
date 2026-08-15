@@ -1,0 +1,29 @@
+{
+  "db_bytes_median": 242384896,
+  "file_count": 6722,
+  "full_scan_seconds": [
+    2028.185390300001,
+    2032.937557700032,
+    2005.0709665999748,
+    1980.8736003999948,
+    1969.8807998999837
+  ],
+  "full_scan_seconds_median": 2005.0709665999748,
+  "incremental_seconds": [
+    62.25439800001914,
+    65.337693199981,
+    66.67551789997378,
+    99.60490540001774,
+    51.09737849998055
+  ],
+  "incremental_seconds_median": 65.337693199981,
+  "k": 50,
+  "machine": "AMD64",
+  "measured_at": "2026-08-15T18:48:29.899970+00:00",
+  "peak_commit_bytes_median": 240488448,
+  "platform": "win32",
+  "python_version": "3.12.9",
+  "reps": 5,
+  "sample": "linux-v6.12/drivers/gpu",
+  "seed": 20260815
+}
