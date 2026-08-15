@@ -24,6 +24,14 @@ if _REMY_SRC not in sys.path:
     sys.path.insert(0, _REMY_SRC)
 import remy_config
 
+_HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOKS_DIR not in sys.path:
+    sys.path.insert(0, _HOOKS_DIR)
+try:
+    import session_anchor
+except Exception:
+    session_anchor = None
+
 # Tools that are allowed to use absolute paths (Read-only tools)
 READ_ONLY_TOOLS = {"Read", "Glob", "Grep"}
 
@@ -80,6 +88,10 @@ MESSAGES = {
     "naming_enforce": {
         "zh-CN": "命名规范强制：试图创建非 snake_case 文件 '{original}'。\n请使用 '{snake}' 重试。",
         "en": "Naming convention enforced: Attempted to create non-snake_case file '{original}'.\nRetry with '{snake}'.",
+    },
+    "cwd_drift": {
+        "zh-CN": "⚠️ CWD 漂移：当前工作目录 {cwd} 已偏离会话根 {anchor}。请尽快 cd 回会话根，避免 .claude/、CLAUDE.md 等工件在错误目录生成。",
+        "en": "⚠️ CWD drift: working directory {cwd} has left the session root {anchor}. cd back to the session root soon so .claude/ and CLAUDE.md artifacts are not created in the wrong directory.",
     },
 }
 
@@ -243,6 +255,12 @@ def main():
         tool_input = input_data.get("tool_input", {})
         cwd = input_data.get("cwd", os.getcwd())
 
+        drift_note = ""
+        if session_anchor is not None:
+            drift_root = session_anchor.drift(input_data.get("session_id", ""), cwd)
+            if drift_root:
+                drift_note = _msg("cwd_drift", cwd=cwd, anchor=drift_root)
+
         # ---------------------------------------------------------
         # Logic 0: Bash Environment Auto-Correction
         # ---------------------------------------------------------
@@ -250,11 +268,14 @@ def main():
             command = tool_input.get("command", "")
             new_command = inject_bash_env(command)
 
+            bash_context = "<system_reminder>Bash Constraint: Use POSIX syntax. Ensure all paths are relative.</system_reminder>"
+            if drift_note:
+                bash_context += "<system_reminder>" + drift_note + "</system_reminder>"
             response = {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "allow",
-                    "additionalContext": "<system_reminder>Bash Constraint: Use POSIX syntax. Ensure all paths are relative.</system_reminder>"
+                    "additionalContext": bash_context
                 }
             }
 
@@ -272,21 +293,24 @@ def main():
             if is_python_related(command) and "PYTHONIOENCODING" not in command:
                 new_input = tool_input.copy()
                 new_input["command"] = "$env:PYTHONIOENCODING='utf-8'; " + command
-                print(json.dumps({
+                response = {
                     "hookSpecificOutput": {
                         "hookEventName": "PreToolUse",
                         "permissionDecision": "allow",
                         "updatedInput": new_input,
                         "permissionDecisionReason": _msg("env_auto_fix", cmd=command[:20])
                     }
-                }))
+                }
             else:
-                print(json.dumps({
+                response = {
                     "hookSpecificOutput": {
                         "hookEventName": "PreToolUse",
                         "permissionDecision": "allow",
                     }
-                }))
+                }
+            if drift_note:
+                response["hookSpecificOutput"]["additionalContext"] = "<system_reminder>" + drift_note + "</system_reminder>"
+            print(json.dumps(response))
             sys.exit(0)
 
         # ---------------------------------------------------------
@@ -321,6 +345,8 @@ def main():
         # Logic 0.6: Edit/Write Safety Context (Accumulator)
         # ---------------------------------------------------------
         additional_context_buffer = []
+        if drift_note:
+            additional_context_buffer.append(drift_note)
 
         if tool_name in ["Edit", "Write", "NotebookEdit"]:
             target_path = tool_input.get("file_path") or tool_input.get("notebook_path", "")

@@ -21,6 +21,14 @@ if _REMY_SRC not in sys.path:
     sys.path.insert(0, _REMY_SRC)
 import remy_config
 
+_HOOKS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _HOOKS_DIR not in sys.path:
+    sys.path.insert(0, _HOOKS_DIR)
+try:
+    import session_anchor
+except Exception:
+    session_anchor = None
+
 GENERATOR_SCRIPT = "generate_smart_tree.py"
 STRUCT_SCAN_SCRIPT = os.path.join(
     os.path.expanduser("~"), ".claude",
@@ -203,10 +211,18 @@ def main():
              event_name = input_data.get("hookName", "")
 
         cwd = input_data.get("cwd", os.getcwd())
+        session_id = input_data.get("session_id", "")
 
         # Trigger update on specific lifecycle events
         if event_name == "SessionStart":
             resume_only = "--resume-only" in sys.argv
+            source = input_data.get("source", "")
+
+            if session_anchor is not None:
+                if source in ("startup", "clear", ""):
+                    session_anchor.record(session_id, cwd)
+                else:
+                    cwd = session_anchor.resolve_root(session_id, cwd)
 
             config = remy_config.load_config(cwd, strict=False)
 
@@ -232,12 +248,16 @@ def main():
             sys.exit(0)
 
         if event_name == "PreCompact":
+            if session_anchor is not None:
+                cwd = session_anchor.resolve_root(session_id, cwd)
             update_tree(cwd, max_depth=2)
             run_struct_scan(cwd)
             print(json.dumps({}))
             sys.exit(0)
 
         if event_name == "SessionEnd":
+            if session_anchor is not None:
+                cwd = session_anchor.resolve_root(session_id, cwd)
             update_tree(cwd)
             print(json.dumps({}))
             sys.exit(0)

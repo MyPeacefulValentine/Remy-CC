@@ -145,6 +145,16 @@
         ]
       }
     ],
+    "CwdChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"~/.claude/hooks/cwd_guard.py\""
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",

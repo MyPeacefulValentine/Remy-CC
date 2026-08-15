@@ -18,6 +18,14 @@ if _REMY_SRC not in sys.path:
     sys.path.insert(0, _REMY_SRC)
 import remy_config
 
+_HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOKS_DIR not in sys.path:
+    sys.path.insert(0, _HOOKS_DIR)
+try:
+    import session_anchor
+except Exception:
+    session_anchor = None
+
 
 def _load_index_state():
     skill_dir = os.path.join(os.path.expanduser("~"), ".claude", "skills", "remy-index")
@@ -249,6 +257,8 @@ def main():
         tool_name = input_data.get("tool_name", "")
         tool_input = input_data.get("tool_input", {})
         cwd = input_data.get("cwd", os.getcwd())
+        if session_anchor is not None:
+            cwd = session_anchor.resolve_root(input_data.get("session_id", ""), cwd)
 
         if tool_name not in ("Read", "Glob", "Grep"):
             sys.exit(0)
