@@ -330,8 +330,8 @@ def main():
                 }))
                 sys.exit(0)
 
-            # Intercept high-level agents (Explore, general-purpose)
-            if subagent in ["Explore", "general-purpose"]:
+            # Intercept high-cost modifying agents; read-only Explore passes freely
+            if subagent in ["general-purpose"]:
                  print(json.dumps({
                     "hookSpecificOutput": {
                         "hookEventName": "PreToolUse",

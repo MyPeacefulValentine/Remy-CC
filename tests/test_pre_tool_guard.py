@@ -328,7 +328,7 @@ class TestMainAgentGate:
         assert payload["permissionDecision"] == "allow"
         assert "additionalContext" in payload
 
-    @pytest.mark.parametrize("subagent", ["Explore", "general-purpose"])
+    @pytest.mark.parametrize("subagent", ["general-purpose"])
     def test_high_cost_agents_require_confirmation(self, tmp_path, subagent):
         proc = _run_hook(
             {"tool_name": "Agent", "tool_input": {"subagent_type": subagent},
@@ -336,6 +336,15 @@ class TestMainAgentGate:
             tmp_path / "home",
         )
         assert _decision(proc) == "ask"
+
+    def test_explore_agent_passes_without_confirmation(self, tmp_path):
+        proc = _run_hook(
+            {"tool_name": "Agent", "tool_input": {"subagent_type": "Explore"},
+             "cwd": str(tmp_path)},
+            tmp_path / "home",
+        )
+        assert _output(proc) is None
+        assert proc.returncode == 0
 
     def test_other_agent_types_fall_through_silently(self, tmp_path):
         proc = _run_hook(
