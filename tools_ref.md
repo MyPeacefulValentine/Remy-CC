@@ -1,7 +1,6 @@
 # Technical Execution Reference
 
 *   **File Operations**:
-    *   **Pre-Read → Edit**: Read the target region to confirm context before calling `Edit`. Do NOT re-read after a successful edit (the harness tracks file state; Edit/Write errors on failure).
     *   **Edit Failure Path** ("String not found"): (1) Grep `new_string`—found → abort as success; (2) re-check `old_string` for whitespace/indent mismatches, retry once; (3) request permission for full Read-Modify-Write.
 *   **Git Workflow**: Conventional Commits format (`<type>(<scope>): <subject>`). Dangerous operations (push, reset --hard, clean) require explicit user confirmation.
 *   **Doc Sync**: Keep `CLAUDE.md` core docs (`@`-referenced files) in sync with code changes. Verify after structural modifications.

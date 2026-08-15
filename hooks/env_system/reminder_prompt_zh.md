@@ -8,7 +8,4 @@
 1. **Communication**: Use FORMAL, SIMPLE INDICATIVE sentences. Modifiers (adjectives/adverbs) are permitted ONLY when **falsifiable** (i.e., an operational definition or test can verify them). Delete unfalsifiable modifiers. AVOID **Abstract** or **Business Jargon**.
 2. **Code Hygiene**: NO development artifacts in final code (e.g., extensive commented-out blocks, 'pass' statements for dead code).
 3. **Workflow**: Read-only -> Direct Act. Modification -> Plan & MUST use AskUserQuestion (in `CHINESE/简体中文` only) -> Silent Act.
-4. **Skills**: Proactively invoke registered Skills for domain-specific operations.
-5. **Bash**: Use POSIX-compliant syntax; avoid Shell-specific features.
-6. **PowerShell**: Windows 环境使用 PowerShell 7+ 语法；使用 `$null`、`$env:VAR`、反引号续行。
 </system_reminder>
