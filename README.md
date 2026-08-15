@@ -70,12 +70,14 @@ These layers are coupled by design. Hooks maintain the context that skills depen
 
 | Hook | Trigger | Function |
 | :--- | :--- | :--- |
-| Protocol Enforcer | Every user message | Re-injects concise rules to counteract instruction decay in long conversations |
-| Pre-Tool Guard | Before each tool use | Converts absolute paths to relative; injects Conda/Mamba activation and UTF-8 encoding into shell commands; enforces snake_case file naming |
+| Protocol Enforcer | Every user message; session restart after compaction | Re-injects concise rules to counteract instruction decay in long conversations and after context compaction |
+| Pre-Tool Guard | Before each tool use | Converts absolute paths to relative; injects Conda/Mamba activation and UTF-8 encoding into shell commands; enforces snake_case file naming; reminds the model to return to the session root after cwd drift |
 | Logic Enrichment | Before Read/Grep/Glob | Consumes dirty file entries for incremental re-parsing; appends caller/callee relationships and architecture layer for the target file (requires logic index) |
 | Dirty File Tracker | After Edit/Write | Records modified file paths for incremental logic index updates on the next Read |
-| Permission Gate | On Edit/Write permission prompts | Auto-approves writes to project-level `.claude/` system artifacts (temp dirs, history, generated trees and indexes); settings files always prompt; disable via `REMY_PERMISSION_GATE` |
-| Lifecycle Manager | Session start/end, pre-compaction | Regenerates the project tree snapshot and language directive; triggers full structural scan to refresh symbol line numbers and call graph |
+| Permission Gate | On Edit/Write permission prompts | Auto-approves writes to project-level `.claude/` system artifacts (temp dirs, history, generated trees and indexes) and per-project auto-memory files under `~/.claude/projects/<slug>/memory/`; settings files always prompt; disable via `REMY_PERMISSION_GATE` |
+| Lifecycle Manager | Session start/end, pre-compaction | Regenerates the project tree snapshot and language directive; triggers full structural scan to refresh symbol line numbers and call graph; records the session root anchor that keeps `.claude/` artifacts in place when the cwd drifts |
+| Subagent Language Injector | On subagent start | Injects the configured response language directive into every subagent's context |
+| Cwd Guard | On working-directory change | Notifies the user when the cwd drifts away from the anchored session root; artifact writes stay anchored regardless |
 | Document Injector | On demand | Injects project tree, logic index, and timeline references into `CLAUDE.md` |
 
 ### MCP Server [📖](remy-src/MCP_README.md)
