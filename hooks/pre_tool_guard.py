@@ -93,6 +93,10 @@ MESSAGES = {
         "zh-CN": "⚠️ CWD 漂移：当前工作目录 {cwd} 已偏离会话根 {anchor}。请尽快 cd 回会话根，避免 .claude/、CLAUDE.md 等工件在错误目录生成。",
         "en": "⚠️ CWD drift: working directory {cwd} has left the session root {anchor}. cd back to the session root soon so .claude/ and CLAUDE.md artifacts are not created in the wrong directory.",
     },
+    "subagent_l4": {
+        "zh-CN": "子代理结论默认按 L4（假设）采信。将被消费的结论（驱动修改、设计裁定或 L5 表述）须先在主会话抽查其引用锚点（Read 其 file:line 或用 query_symbol/query_callers 核对）。否定性结论（\"不存在 X\"）未经独立复查不得升为 L5。",
+        "en": "Treat subagent conclusions as Level 4 (Hypothesis) by default. Before a conclusion is consumed (drives a modification, a design decision, or a Level 5 claim), spot-check its cited anchor in the main conversation (Read the file:line or verify via query_symbol/query_callers). Negative claims (\"X does not exist\") stay Level 4 unless independently re-checked.",
+    },
 }
 
 
@@ -318,6 +322,7 @@ def main():
         # ---------------------------------------------------------
         if tool_name == "Agent":
             subagent = tool_input.get("subagent_type", "")
+            l4_note = "<system_reminder>" + _msg("subagent_l4") + "</system_reminder>"
 
             # Enforce configured language for Plan agent
             if subagent == "Plan":
@@ -325,7 +330,7 @@ def main():
                     "hookSpecificOutput": {
                         "hookEventName": "PreToolUse",
                         "permissionDecision": "allow",
-                        "additionalContext": _msg("plan_agent_lang")
+                        "additionalContext": _msg("plan_agent_lang") + l4_note
                     }
                 }))
                 sys.exit(0)
@@ -336,10 +341,19 @@ def main():
                     "hookSpecificOutput": {
                         "hookEventName": "PreToolUse",
                         "permissionDecision": "ask",
-                        "permissionDecisionReason": _msg("agent_intercept", subagent=subagent)
+                        "permissionDecisionReason": _msg("agent_intercept", subagent=subagent),
+                        "additionalContext": l4_note
                     }
                 }))
                  sys.exit(0)
+
+            print(json.dumps({
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "additionalContext": l4_note
+                }
+            }))
+            sys.exit(0)
 
         # ---------------------------------------------------------
         # Logic 0.6: Edit/Write Safety Context (Accumulator)

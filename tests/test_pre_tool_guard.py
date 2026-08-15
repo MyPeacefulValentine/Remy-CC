@@ -343,16 +343,21 @@ class TestMainAgentGate:
              "cwd": str(tmp_path)},
             tmp_path / "home",
         )
-        assert _output(proc) is None
-        assert proc.returncode == 0
+        payload = _output(proc)
+        assert payload is not None
+        assert "permissionDecision" not in payload
+        assert "additionalContext" in payload
 
-    def test_other_agent_types_fall_through_silently(self, tmp_path):
+    def test_other_agent_types_get_l4_context_without_decision(self, tmp_path):
         proc = _run_hook(
             {"tool_name": "Agent", "tool_input": {"subagent_type": "statusline-setup"},
              "cwd": str(tmp_path)},
             tmp_path / "home",
         )
-        assert _output(proc) is None
+        payload = _output(proc)
+        assert payload is not None
+        assert "permissionDecision" not in payload
+        assert "additionalContext" in payload
         assert proc.returncode == 0
 
 
