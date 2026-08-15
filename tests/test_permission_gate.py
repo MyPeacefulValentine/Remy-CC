@@ -126,6 +126,53 @@ class TestDecide:
         assert results == {"allow"}
 
 
+class TestMemoryDecide:
+    @pytest.fixture(autouse=True)
+    def fake_home(self, tmp_path, monkeypatch):
+        home = tmp_path / "home"
+        home.mkdir(exist_ok=True)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        self.projects = home / ".claude" / "projects"
+        yield
+
+    def test_memory_file_allowed(self, tmp_path):
+        target = self.projects / "D--some-project" / "memory" / "MEMORY.md"
+        assert gate.decide(str(tmp_path), "Write", str(target)) == "allow"
+
+    def test_memory_nested_file_allowed(self, tmp_path):
+        target = self.projects / "D--some-project" / "memory" / "sub" / "note.md"
+        assert gate.decide(str(tmp_path), "Edit", str(target)) == "allow"
+
+    def test_any_project_slug_allowed(self, tmp_path):
+        target = self.projects / "C--another-project" / "memory" / "fact.md"
+        assert gate.decide(str(tmp_path), "Write", str(target)) == "allow"
+
+    def test_non_memory_sibling_skipped(self, tmp_path):
+        target = self.projects / "D--some-project" / "other" / "x.json"
+        assert gate.decide(str(tmp_path), "Write", str(target)) == "skip:outside"
+
+    def test_project_slug_root_file_skipped(self, tmp_path):
+        target = self.projects / "D--some-project" / "memory.md"
+        assert gate.decide(str(tmp_path), "Write", str(target)) == "skip:outside"
+
+    def test_memory_dir_itself_skipped(self, tmp_path):
+        target = self.projects / "D--some-project" / "memory"
+        assert gate.decide(str(tmp_path), "Write", str(target)) == "skip:outside"
+
+    def test_projects_root_file_skipped(self, tmp_path):
+        target = self.projects / "stray.md"
+        assert gate.decide(str(tmp_path), "Write", str(target)) == "skip:outside"
+
+    def test_traversal_out_of_memory_skipped(self, tmp_path):
+        target = self.projects / "D--some-project" / "memory" / ".." / ".." / "escape.md"
+        assert gate.decide(str(tmp_path), "Write", str(target)) == "skip:outside"
+
+    def test_other_tools_still_skipped(self, tmp_path):
+        target = self.projects / "D--some-project" / "memory" / "MEMORY.md"
+        assert gate.decide(str(tmp_path), "Bash", str(target)) == "skip:tool"
+
+
 class TestGateEnabled:
     def test_default_is_enabled(self, tmp_path):
         assert gate.gate_enabled(str(tmp_path)) is True

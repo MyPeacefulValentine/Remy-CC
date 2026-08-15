@@ -1,10 +1,19 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-PermissionRequest hook that auto-approves Edit/Write targeting project-level
-.claude/ system artifacts (temp_* directories, history/, generated tree and
-index files). Settings files are never approved: paths whose first component
-under .claude/ starts with "settings" or "remy-config" produce no decision.
+PermissionRequest hook that auto-approves Edit/Write targeting two classes of
+model-managed artifacts:
+
+1. Project-level .claude/ system artifacts (temp_* directories, history/,
+   generated tree and index files). Settings files are never approved: paths
+   whose first component under .claude/ starts with "settings" or
+   "remy-config" produce no decision.
+2. Per-project auto-memory files under ~/.claude/projects/<slug>/memory/.
+   The rule matches on path shape (any <slug>), not on the current project's
+   slug: the slug encoding is an undocumented Claude Code internal, and every
+   file in a memory/ directory belongs to the same model-authored content
+   class.
+
 On any miss, disabled gate, or internal error the hook exits 0 with empty
 stdout, which Claude Code treats as "no decision" and falls back to the
 normal permission prompt (fail-open). Exit code 2 would deny the permission
@@ -21,6 +30,7 @@ ALLOWED_DIR_PREFIXES = ("temp_",)
 ALLOWED_DIRS = ("history",)
 ALLOWED_ROOT_FILE_PREFIXES = ("project_tree", "logic_tree", "logic_index", "tree_config")
 DENIED_PREFIXES = ("settings", "remy-config")
+MEMORY_DIR_NAME = "memory"
 
 ALLOW_DECISION = {
     "hookSpecificOutput": {
@@ -44,6 +54,35 @@ def gate_enabled(cwd):
         return False
 
 
+def _contains(root, target):
+    """True when target is root itself or lies under root."""
+    try:
+        return os.path.commonpath([root, target]) == root
+    except ValueError:
+        # Different drives on Windows.
+        return False
+
+
+def _decide_memory(target):
+    """Allow files inside any per-project auto-memory directory.
+
+    Matches ~/.claude/projects/<slug>/memory/<...>; returns "allow" on match
+    and None otherwise. Shape-based on purpose: the <slug> encoding is an
+    undocumented Claude Code internal, so the rule does not try to bind the
+    slug to the current project.
+    """
+    projects_root = os.path.realpath(
+        os.path.join(os.path.expanduser("~"), ".claude", "projects")
+    )
+    if not _contains(projects_root, target):
+        return None
+    rel = os.path.relpath(target, projects_root)
+    parts = rel.replace("\\", "/").split("/")
+    if len(parts) >= 3 and parts[1].lower() == MEMORY_DIR_NAME:
+        return "allow"
+    return None
+
+
 def decide(cwd, tool_name, file_path):
     """Classify one permission request.
 
@@ -59,11 +98,9 @@ def decide(cwd, tool_name, file_path):
     target = file_path if os.path.isabs(file_path) else os.path.join(cwd, file_path)
     target = os.path.realpath(target)
 
-    try:
-        if os.path.commonpath([claude_dir, target]) != claude_dir:
-            return "skip:outside"
-    except ValueError:
-        # Different drives on Windows.
+    if not _contains(claude_dir, target):
+        if _decide_memory(target) == "allow":
+            return "allow"
         return "skip:outside"
 
     rel = os.path.relpath(target, claude_dir)
