@@ -220,7 +220,7 @@ class TSParser(LanguageParser):
     """Parser for TypeScript and TSX source files. Uses tree-sitter when available, regex otherwise."""
 
     language_id = "TSParser"
-    CACHE_CONTRACT_VERSION = "1"
+    CACHE_CONTRACT_VERSION = "2"
 
     @staticmethod
     def _tree_sitter_environment():
@@ -267,12 +267,17 @@ class TSParser(LanguageParser):
     def resolve_imports(self, source, file_path, root_dir):
         imports = {}
         current_dir = os.path.dirname(file_path)
-        raw_paths = set()
+        # Source-order deduplication: a set here would leak the process's
+        # string-hash randomization into the files.imports column order.
+        raw_paths = []
+        seen_raw = set()
 
-        for m in RE_IMPORT_FROM.finditer(source):
-            raw_paths.add(m.group(1))
-        for m in RE_REQUIRE.finditer(source):
-            raw_paths.add(m.group(1))
+        for regex in (RE_IMPORT_FROM, RE_REQUIRE):
+            for m in regex.finditer(source):
+                raw = m.group(1)
+                if raw not in seen_raw:
+                    seen_raw.add(raw)
+                    raw_paths.append(raw)
 
         for raw in raw_paths:
             if not (raw.startswith('./') or raw.startswith('../')):

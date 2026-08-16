@@ -1020,7 +1020,7 @@ class TestScanFiles:
         rows = scanner.db.execute(
             "SELECT path,parser_contract_version FROM files ORDER BY path"
         ).fetchall()
-        assert dict(rows)["entry.ts"] == "1"
+        assert dict(rows)["entry.ts"] == "2"
         assert dict(rows)["src/main.py"] == "3"
         monkeypatch.setattr(ts_parser, "parse_symbols", original_ts)
 
@@ -1293,12 +1293,16 @@ class TestScanFiles:
             scanner.scan_all()
             changed_parser = scanner._get_parser_for_file(changed_file)
             unchanged_parser = scanner._get_parser_for_file(unchanged_file)
+            unchanged_version = scanner.db.execute(
+                "SELECT parser_contract_version FROM files WHERE path=?",
+                (unchanged_file,),
+            ).fetchone()[0]
             row = scanner.db.execute(
                 "SELECT parser_backend,parser_environment FROM files WHERE path=?",
                 (changed_file,),
             ).fetchone()
             next_identity = ParserCacheIdentity.create(
-                "2", row[0], json.loads(row[1])
+                "99", row[0], json.loads(row[1])
             )
             calls = []
             original_changed = changed_parser.parse_symbols
@@ -1329,8 +1333,8 @@ class TestScanFiles:
             versions = dict(scanner.db.execute(
                 "SELECT path,parser_contract_version FROM files"
             ).fetchall())
-            assert versions[changed_file] == "2"
-            assert versions[unchanged_file] == "1"
+            assert versions[changed_file] == "99"
+            assert versions[unchanged_file] == unchanged_version
         finally:
             scanner.db.close()
 
