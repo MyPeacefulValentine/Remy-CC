@@ -35,7 +35,7 @@ python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend
 python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend tree-sitter --scope product
 ```
 
-CI runs the full suite on Python 3.10 without tree-sitter and Python 3.12 with the pinned tree-sitter packages. Both jobs run the fixed public TEE fixture canary with their available parser backend. A Windows Python 3.12 job executes the process-lock and dirty-queue tests.
+CI runs the full suite on Python 3.10 without tree-sitter and Python 3.12 with the pinned tree-sitter packages. Both jobs run the fixed public TEE fixture canary with their available parser backend. A Windows Python 3.12 job executes the process-lock and dirty-queue tests. Both arms of the Rust job install the pinned tree-sitter packages and run `tests/test_scanner_core_diff.py`, the cross-implementation diff suite (per-language fixture corpora, a mixed-language project, and the Python failure mapping; skipped without a cargo binary or tree-sitter).
 
 ## P1.1 deterministic retrieval baseline
 

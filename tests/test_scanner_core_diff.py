@@ -23,7 +23,9 @@ from oracle import comparator as oracle_comparator
 from oracle import normalization as oracle_normalization
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-C_CORPUS = REPO_ROOT / "oracle" / "fixtures" / "corpus" / "c"
+CORPUS_ROOT = REPO_ROOT / "oracle" / "fixtures" / "corpus"
+C_CORPUS = CORPUS_ROOT / "c"
+LANGUAGE_CORPORA = ("c", "python", "ts", "rust")
 TARGET_DIR = REPO_ROOT / "remy-daemon" / "target"
 
 try:
@@ -160,5 +162,66 @@ def test_rust_db_is_readable_with_python_schema_expectations(c_project: Path):
             for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         assert {"files", "symbols", "symbol_occurrences", "edges", "patterns"} <= tables
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize("corpus", LANGUAGE_CORPORA)
+def test_language_corpus_diff_has_zero_blocking_findings(tmp_path: Path, corpus: str):
+    destination = tmp_path / corpus
+    shutil.copytree(CORPUS_ROOT / corpus, destination)
+    python_db = _python_scan(destination)
+    rust_db = tmp_path / f"rust_{corpus}.db"
+    report = _rust_scan(destination, rust_db)
+    assert report["outcome"] == "success"
+
+    findings = _phase1_findings(python_db, rust_db)
+    blocking = oracle_comparator.blocking(findings)
+    assert blocking == [], [
+        (f.view, f.category, f.key, f.column) for f in blocking
+    ]
+    informational = {(f.view, f.column) for f in findings}
+    assert informational <= {("files", "parser_backend"), ("files", "parser_environment")}
+
+
+def test_mixed_language_project_diff_and_jobs_commute(tmp_path: Path):
+    destination = tmp_path / "mixed"
+    destination.mkdir()
+    for corpus in LANGUAGE_CORPORA:
+        shutil.copytree(CORPUS_ROOT / corpus, destination / corpus)
+    python_db = _python_scan(destination)
+    rust_db = tmp_path / "rust_mixed.db"
+    report = _rust_scan(destination, rust_db)
+    assert report["outcome"] == "success"
+    assert oracle_comparator.blocking(_phase1_findings(python_db, rust_db)) == []
+
+    states = []
+    for jobs in ("1", "8"):
+        db = tmp_path / f"rust_mixed_jobs_{jobs}.db"
+        assert _rust_scan(destination, db, "--jobs", jobs)["outcome"] == "success"
+        states.append(_phase1_state(db))
+    assert states[0] == states[1]
+
+
+def test_python_failure_mapping_matches_oracle(tmp_path: Path):
+    destination = tmp_path / "pyfail"
+    shutil.copytree(CORPUS_ROOT / "python", destination)
+    python_db = _python_scan(destination)
+    rust_db = tmp_path / "rust_pyfail.db"
+    report = _rust_scan(destination, rust_db)
+    assert report["outcome"] == "success"
+    assert oracle_comparator.blocking(_phase1_findings(python_db, rust_db)) == []
+
+    db = sqlite3.connect(str(rust_db))
+    try:
+        for path in ("broken_syntax.py", "bom_prefixed.py"):
+            row = db.execute(
+                "SELECT COUNT(*) FROM files WHERE path=?", (path,)
+            ).fetchone()
+            assert row == (1,), path
+            symbols = db.execute(
+                "SELECT COUNT(*) FROM symbols WHERE file_path=?", (path,)
+            ).fetchone()
+            assert symbols == (0,), path
     finally:
         db.close()

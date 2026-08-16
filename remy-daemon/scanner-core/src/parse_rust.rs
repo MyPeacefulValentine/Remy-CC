@@ -442,7 +442,10 @@ fn walk_calls(
         "call_expression" => {
             if let Some(caller) = current_fn {
                 let func_node = node.child_by_field_name("function");
-                if let Some(callee) = callee_name(func_node, source) {
+                // The oracle's `if callee:` truthiness also rejects the
+                // empty string a zero-width field node yields on
+                // error-recovery input like `foo.`.
+                if let Some(callee) = callee_name(func_node, source).filter(|c| !c.is_empty()) {
                     edges.push(EdgeInfo {
                         caller: caller.to_string(),
                         callee,
@@ -836,6 +839,15 @@ impl Widget {
                 ("Widget.draw", "render", "attribute"),
             ]
         );
+    }
+
+    #[test]
+    fn zero_width_field_on_error_recovery_makes_no_edge() {
+        // rust-analyzer parser fixture `foo.` — the field node is
+        // zero-width, the oracle's `if callee:` truthiness drops it.
+        let source = "fn main() { foo.; }\n";
+        let edges = extract_call_graph(source);
+        assert!(edges.iter().all(|e| !e.callee.is_empty()), "{edges:?}");
     }
 
     #[test]

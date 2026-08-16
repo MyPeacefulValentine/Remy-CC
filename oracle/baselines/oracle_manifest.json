@@ -1,6 +1,6 @@
 {
   "classification_version": "2",
-  "commit": "868833c179daa2ea717d5fc7a2ea36a35352c61b",
+  "commit": "71038c4f457a538a028b08fcdd90c08a287473a0",
   "comparator_version": "1",
   "config_snapshot": {
     "REMY_CLUSTER_DENSITY_THRESHOLD": "0.5",
@@ -16,13 +16,18 @@
     "corpus/c/util.c": "660991fe78a8d9f1ac5f2daa286a14d5bef79eb69ec473ffe25ad2897e6302ce",
     "corpus/c/util.h": "a16ed40ccd269e8b5bbc8e2a0dfed5c900ab57ac75aded088b4dc69c7af4656a",
     "corpus/python/app.py": "5a86a6ee154b95ce5fd4eea9501d711ce06a602f50fb8f0c9438ea69cadd3d13",
+    "corpus/python/bom_prefixed.py": "c5ba92d581796de4ae29b1556a9b00ce4a000ac92a20d93d79cf0f27d797e4cd",
+    "corpus/python/broken_syntax.py": "6b8c8a725c23dc076d9a2c185ce4e02435746bc3b4f99906d13de360e56898c7",
+    "corpus/python/edge_cases.py": "438398af79b84621d32ac210a00fb7bf8cf845ec4e64fb807e94a81f09472706",
     "corpus/python/util.py": "dbe68e0d4a107aee58c63a3aed5d78ced47a8c85667fc2e2e1dfbdfc34a5ce31",
+    "corpus/rust/edge_cases.rs": "50e3762bc53ff258a03894ba6f03b7b691b1c8ab55afff0a5f76fd0ae3fa45d7",
     "corpus/rust/main.rs": "f2dc8a6d5cf68ed773e2b2412d6f20d96d8c49b41facc7207312cd7f9cd995f1",
     "corpus/rust/shapes.rs": "0b6cff9c42c94d5936fb8505f5759e435e8bcfa784e4637134481e894b8f71a8",
+    "corpus/ts/edge_cases.tsx": "217731ff52e631ce8aa1f5d5b166e5e8d97590c6cc3873e24ac28bd05d3bb5fb",
     "corpus/ts/index.ts": "603eee51f196ddf03bb00ee59bd8924473c26d9642dfb8314a1bac3fbfc303c8",
     "corpus/ts/shapes.ts": "0cde88d3b3ddaefb368a9440b45d4c7da42548959757a4876743d8666decb3a2"
   },
-  "generated_at": "2026-08-16T10:47:02.589065+00:00",
+  "generated_at": "2026-08-16T18:58:45.262868+00:00",
   "known_gaps": [
     {
       "classification": "category-2-shared-defect",
@@ -75,7 +80,7 @@
       "language_id": "CCppParser"
     },
     {
-      "cache_contract_version": "1",
+      "cache_contract_version": "2",
       "extensions": [
         ".py"
       ],
@@ -89,7 +94,7 @@
       "language_id": "RustParser"
     },
     {
-      "cache_contract_version": "1",
+      "cache_contract_version": "2",
       "extensions": [
         ".ts",
         ".tsx"
