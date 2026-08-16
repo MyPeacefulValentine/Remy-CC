@@ -6,11 +6,11 @@
 use crate::config::ScanConfig;
 use crate::discovery::{self, DiscoveredFile};
 use crate::facts::{EdgeRow, FileFacts, FileOutcome, OccurrenceRow};
-use crate::parse_c_cpp;
+use crate::hashes;
+use crate::language::Language;
 use crate::result::{RunStatus, ScanResult, StageError};
 use crate::selection;
 use crate::writer;
-use crate::{hashes, patterns_c};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -51,24 +51,34 @@ pub fn parse_one(
 
     let struct_hash = hashes::struct_hash(&source);
     let file_path_str = full_path.to_string_lossy();
-    let identity = parse_c_cpp::cache_identity(&source, &file_path_str);
-    let imports = parse_c_cpp::resolve_imports(&source, full_path, root_dir);
-    let selection = selection::select_symbols(parse_c_cpp::parse_symbols(&source, &file_path_str));
-    let call_edges = parse_c_cpp::extract_call_graph(&source, &file_path_str);
-    let patterns = patterns_c::extract_patterns(&source);
+    let file_name = full_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let Some(language) = Language::resolve(&file_name) else {
+        return FileOutcome::Failed {
+            rel_path: rel_path.to_string(),
+            message: format!("No parser handles source file: {rel_path}"),
+        };
+    };
+    let parsed = language.parse_file(&source, full_path, &file_path_str, root_dir);
+    let selection = selection::select_symbols(parsed.symbols);
     let layer = config.match_file_to_layer(rel_path);
 
     let imports_json = crate::pyjson::dumps_default(&serde_json::Value::Array(
-        imports.into_iter().map(serde_json::Value::String).collect(),
+        parsed
+            .imports
+            .into_iter()
+            .map(serde_json::Value::String)
+            .collect(),
     ));
 
     let occurrences: Vec<OccurrenceRow> = selection
         .occurrences
         .into_iter()
         .map(|occurrence| {
-            let hash = hashes::symbol_hash(&parse_c_cpp::symbol_hash_input(
-                &occurrence.symbol.source_segment,
-            ));
+            let hash =
+                hashes::symbol_hash(&language.symbol_hash_input(&occurrence.symbol.source_segment));
             OccurrenceRow {
                 symbol: occurrence.symbol,
                 occurrence_index: occurrence.occurrence_index,
@@ -81,14 +91,17 @@ pub fn parse_one(
         .collect();
 
     // scan_file's seen_edges dedup: (caller, callee) keyed, minimum line,
-    // call_form locks to "name" once seen (C/C++ edges are always "name").
+    // call_form locks to "name" once any duplicate reports "name".
     let mut edge_index: HashMap<(String, String), usize> = HashMap::new();
     let mut edges: Vec<EdgeRow> = Vec::new();
-    for edge in call_edges {
+    for edge in parsed.edges {
         let key = (edge.caller.clone(), edge.callee.clone());
         if let Some(&i) = edge_index.get(&key) {
             if edge.line < edges[i].line {
                 edges[i].line = edge.line;
+            }
+            if edge.call_form == "name" {
+                edges[i].call_form = "name".to_string();
             }
             continue;
         }
@@ -97,22 +110,22 @@ pub fn parse_one(
             caller: edge.caller,
             callee: edge.callee,
             line: edge.line,
-            call_form: "name".to_string(),
+            call_form: edge.call_form.to_string(),
         });
     }
 
     FileOutcome::Facts(Box::new(FileFacts {
         rel_path: rel_path.to_string(),
         struct_hash,
-        language_id: parse_c_cpp::LANGUAGE_ID.to_string(),
+        language_id: language.language_id().to_string(),
         layer,
         imports_json,
-        import_bindings_json: "[]".to_string(),
-        identity,
+        import_bindings_json: parsed.import_bindings_json,
+        identity: parsed.identity,
         canonical_symbols: selection.canonical_symbols,
         occurrences,
         edges,
-        patterns,
+        patterns: parsed.patterns,
     }))
 }
 
@@ -288,7 +301,7 @@ pub fn scan_files(
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        if !parse_c_cpp::handles(&file_name) {
+        if Language::resolve(&file_name).is_none() {
             successful.push(rel);
             continue;
         }

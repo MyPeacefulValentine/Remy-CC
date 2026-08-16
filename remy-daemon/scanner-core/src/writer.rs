@@ -155,10 +155,10 @@ pub fn write_file_facts(tx: &Transaction, facts: &FileFacts) -> rusqlite::Result
         )?;
     }
 
+    let language = crate::language::Language::from_language_id(&facts.language_id)
+        .expect("language_id written by scan is always registered");
     for symbol in &facts.canonical_symbols {
-        let hash = crate::hashes::symbol_hash(&crate::parse_c_cpp::symbol_hash_input(
-            &symbol.source_segment,
-        ));
+        let hash = crate::hashes::symbol_hash(&language.symbol_hash_input(&symbol.source_segment));
         let short_name = symbol
             .name
             .rsplit('.')

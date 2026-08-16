@@ -564,6 +564,7 @@ fn walk_calls(
                     caller: function_stack.last().unwrap().clone(),
                     callee,
                     line: node.start_position().row as i64 + 1,
+                    call_form: "name",
                 });
             }
         }

@@ -2,6 +2,7 @@
 //! (StructScanner.scan_all's discovery loop).
 
 use crate::config::ScanConfig;
+use crate::language::Language;
 use crate::parse_c_cpp;
 use std::path::{Path, PathBuf};
 
@@ -17,9 +18,9 @@ pub fn rel_path_slash(full_path: &Path, root_dir: &Path) -> String {
     parse_c_cpp::relpath_slash(full_path, root_dir)
 }
 
-/// Walk `root_dir`, pruning excluded directories, and collect files the
-/// C/C++ parser handles. Order is not significant: rows are keyed by path
-/// and the comparison projections sort deterministically.
+/// Walk `root_dir`, pruning excluded directories, and collect files a
+/// registered language parser handles. Order is not significant: rows are
+/// keyed by path and the comparison projections sort deterministically.
 pub fn discover(root_dir: &Path, config: &ScanConfig) -> std::io::Result<Vec<DiscoveredFile>> {
     let mut discovered = Vec::new();
     let mut stack = vec![root_dir.to_path_buf()];
@@ -41,7 +42,7 @@ pub fn discover(root_dir: &Path, config: &ScanConfig) -> std::io::Result<Vec<Dis
             }
             let file_name = entry.file_name();
             let file_name = file_name.to_string_lossy();
-            if !parse_c_cpp::handles(&file_name) {
+            if Language::resolve(&file_name).is_none() {
                 continue;
             }
             discovered.push(DiscoveredFile {

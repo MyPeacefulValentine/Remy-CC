@@ -14,13 +14,14 @@ pub struct SymbolInfo {
     pub bases: Option<Vec<String>>,
 }
 
-/// parsers/base.py EdgeInfo — C/C++ direct edges only carry the defaults
-/// (provenance/synthesized_from/via = NULL, call_form = "name").
+/// parsers/base.py EdgeInfo — direct edges carry provenance/synthesized_from/
+/// via = NULL; call_form is "name" or "attribute" (Python/Rust method calls).
 #[derive(Debug, Clone, PartialEq)]
 pub struct EdgeInfo {
     pub caller: String,
     pub callee: String,
     pub line: i64,
+    pub call_form: &'static str,
 }
 
 /// One extract_patterns dict; metadata is pre-encoded with the Python
