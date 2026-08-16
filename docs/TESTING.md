@@ -592,8 +592,8 @@ permissions, stable JSON results, and exit codes 0 through 4.
 python -m pytest Remy-CC/tests/test_install_manifest.py Remy-CC/tests/test_cli_manifest.py Remy-CC/tests/test_cli_daemon.py Remy-CC/tests/test_daemon_ipc.py -q -p no:cacheprovider
 pyright -p Remy-CC/pyrightconfig.json
 cargo fmt --check --manifest-path Remy-CC/remy-daemon/Cargo.toml
-cargo clippy --manifest-path Remy-CC/remy-daemon/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path Remy-CC/remy-daemon/Cargo.toml
+cargo clippy --workspace --manifest-path Remy-CC/remy-daemon/Cargo.toml --all-targets -- -D warnings
+cargo test --workspace --manifest-path Remy-CC/remy-daemon/Cargo.toml
 ```
 
 The 2026-08-13 Windows verification passed 130 targeted Python tests with 1
