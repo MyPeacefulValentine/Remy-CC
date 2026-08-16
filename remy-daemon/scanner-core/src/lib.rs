@@ -28,6 +28,7 @@ pub mod hashes;
 pub mod language;
 pub mod parse_c_cpp;
 pub mod parse_python;
+pub mod parse_ts;
 pub mod patterns_c;
 pub mod py_repr;
 pub mod py_unparse;
