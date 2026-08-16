@@ -215,40 +215,27 @@ fn dispatch(node: Node, source: &str, symbols: &mut Vec<SymbolInfo>, prefix: Opt
     }
 }
 
-fn push_symbol(
-    symbols: &mut Vec<SymbolInfo>,
-    node: Node,
-    source: &str,
-    name: String,
-    sym_type: &str,
-    args: String,
-    docstring: Option<String>,
-    bases: Option<Vec<String>>,
-) {
-    symbols.push(SymbolInfo {
+/// Symbol skeleton for a declaration node: position/segment/JSDoc from the
+/// node itself, empty args and no bases. Callers override the fields that
+/// differ (function params, class bases, the arrow-function doc quirk).
+fn base_symbol(node: Node, source: &str, name: String, sym_type: &str) -> SymbolInfo {
+    SymbolInfo {
         name,
-        args,
+        args: String::new(),
         sym_type: sym_type.to_string(),
         lineno: node.start_position().row as i64 + 1,
         source_segment: text(node, source).to_string(),
         end_lineno: Some(node.end_position().row as i64 + 1),
-        docstring,
-        bases,
-    });
+        docstring: extract_jsdoc(node, source),
+        bases: None,
+    }
 }
 
 fn extract_function(node: Node, source: &str, symbols: &mut Vec<SymbolInfo>, prefix: Option<&str>) {
     let name = field_text(node, "name", source).unwrap_or_else(|| "<default>".to_string());
-    push_symbol(
-        symbols,
-        node,
-        source,
-        qualified(prefix, &name),
-        "function",
-        params_str(node, source),
-        extract_jsdoc(node, source),
-        None,
-    );
+    let mut symbol = base_symbol(node, source, qualified(prefix, &name), "function");
+    symbol.args = params_str(node, source);
+    symbols.push(symbol);
 }
 
 fn extract_class(node: Node, source: &str, symbols: &mut Vec<SymbolInfo>, prefix: Option<&str>) {
@@ -266,20 +253,13 @@ fn extract_class(node: Node, source: &str, symbols: &mut Vec<SymbolInfo>, prefix
         }
     }
 
-    push_symbol(
-        symbols,
-        node,
-        source,
-        full_name.clone(),
-        "class",
-        String::new(),
-        extract_jsdoc(node, source),
-        if bases_list.is_empty() {
-            None
-        } else {
-            Some(bases_list)
-        },
-    );
+    let mut symbol = base_symbol(node, source, full_name.clone(), "class");
+    symbol.bases = if bases_list.is_empty() {
+        None
+    } else {
+        Some(bases_list)
+    };
+    symbols.push(symbol);
 
     if let Some(body) = node.child_by_field_name("body") {
         let mut body_cursor = body.walk();
@@ -289,16 +269,14 @@ fn extract_class(node: Node, source: &str, symbols: &mut Vec<SymbolInfo>, prefix
                 "method_definition" | "abstract_method_signature"
             ) {
                 if let Some(method_name) = field_text(member, "name", source) {
-                    push_symbol(
-                        symbols,
+                    let mut method = base_symbol(
                         member,
                         source,
                         format!("{full_name}.{method_name}"),
                         "function",
-                        params_str(member, source),
-                        extract_jsdoc(member, source),
-                        None,
                     );
+                    method.args = params_str(member, source);
+                    symbols.push(method);
                 }
             }
         }
@@ -315,31 +293,20 @@ fn extract_interface(
         return;
     };
     let full_name = qualified(prefix, &name);
-    push_symbol(
-        symbols,
-        node,
-        source,
-        full_name.clone(),
-        "interface",
-        String::new(),
-        extract_jsdoc(node, source),
-        None,
-    );
+    symbols.push(base_symbol(node, source, full_name.clone(), "interface"));
     if let Some(body) = node.child_by_field_name("body") {
         let mut body_cursor = body.walk();
         for member in body.children(&mut body_cursor) {
             if member.kind() == "method_signature" {
                 if let Some(method_name) = field_text(member, "name", source) {
-                    push_symbol(
-                        symbols,
+                    let mut method = base_symbol(
                         member,
                         source,
                         format!("{full_name}.{method_name}"),
                         "function",
-                        params_str(member, source),
-                        extract_jsdoc(member, source),
-                        None,
                     );
+                    method.args = params_str(member, source);
+                    symbols.push(method);
                 }
             }
         }
@@ -356,16 +323,12 @@ fn extract_named(
     let Some(name) = field_text(node, "name", source) else {
         return;
     };
-    push_symbol(
-        symbols,
+    symbols.push(base_symbol(
         node,
         source,
         qualified(prefix, &name),
         sym_type,
-        String::new(),
-        extract_jsdoc(node, source),
-        None,
-    );
+    ));
 }
 
 fn extract_namespace(
@@ -378,16 +341,7 @@ fn extract_namespace(
         return;
     };
     let full_name = qualified(prefix, &name);
-    push_symbol(
-        symbols,
-        node,
-        source,
-        full_name.clone(),
-        "namespace",
-        String::new(),
-        extract_jsdoc(node, source),
-        None,
-    );
+    symbols.push(base_symbol(node, source, full_name.clone(), "namespace"));
     if let Some(body) = node.child_by_field_name("body") {
         walk_declarations(body, source, symbols, Some(&full_name));
     }
@@ -413,18 +367,12 @@ fn extract_arrow_functions(
         let Some(name) = field_text(child, "name", source) else {
             continue;
         };
+        let mut symbol = base_symbol(child, source, qualified(prefix, &name), "function");
+        symbol.args = params_str(value, source);
         // Oracle quirk: the JSDoc lookup runs on the declaration statement
         // (`node`), not the declarator.
-        push_symbol(
-            symbols,
-            child,
-            source,
-            qualified(prefix, &name),
-            "function",
-            params_str(value, source),
-            extract_jsdoc(node, source),
-            None,
-        );
+        symbol.docstring = extract_jsdoc(node, source);
+        symbols.push(symbol);
     }
 }
 
