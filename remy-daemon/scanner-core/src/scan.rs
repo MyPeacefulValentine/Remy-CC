@@ -61,7 +61,15 @@ pub fn parse_one(
             message: format!("No parser handles source file: {rel_path}"),
         };
     };
-    let parsed = language.parse_file(&source, full_path, &file_path_str, root_dir);
+    let parsed = match language.parse_file(&source, full_path, &file_path_str, root_dir) {
+        Ok(parsed) => parsed,
+        Err(message) => {
+            return FileOutcome::Failed {
+                rel_path: rel_path.to_string(),
+                message,
+            }
+        }
+    };
     let selection = selection::select_symbols(parsed.symbols);
     let layer = config.match_file_to_layer(rel_path);
 
@@ -559,6 +567,109 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    fn write_python_corpus(root: &Path) {
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
+        std::fs::write(root.join("pkg/__init__.py"), "").unwrap();
+        std::fs::write(
+            root.join("pkg/util.py"),
+            "import os\n\n\ndef helper(a: int=1) -> str:\n    return os.sep * a\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("app.py"),
+            "from pkg.util import helper\nimport functools\n\n\n\
+             @functools.lru_cache(maxsize=None)\n\
+             def run(n: 'Count'=0):\n    return helper(n)\n\n\n\
+             class Service:\n    \"\"\"Docs.\"\"\"\n\n    def start(self):\n        \
+             self.hooks.append(run)\n        for cb in self.hooks:\n            cb()\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn python_corpus_full_incremental_and_jobs_agree() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_python_corpus(root);
+
+        let full_db = root.join("full.db");
+        let report = scan_full(root, &full_db, 4, false).unwrap();
+        assert_eq!(report.status, RunStatus::Success);
+        assert_eq!(
+            report.successful_paths,
+            vec!["app.py", "pkg/__init__.py", "pkg/util.py"]
+        );
+
+        let single_db = root.join("single.db");
+        scan_full(root, &single_db, 1, false).unwrap();
+        assert_eq!(phase1_projection(&full_db), phase1_projection(&single_db));
+
+        let incremental_db = root.join("incremental.db");
+        for rel in &report.successful_paths {
+            let result = scan_files(root, &incremental_db, std::slice::from_ref(rel), 1).unwrap();
+            assert_eq!(result.status, RunStatus::Success);
+        }
+        assert_eq!(
+            phase1_projection(&full_db),
+            phase1_projection(&incremental_db)
+        );
+
+        let conn = Connection::open(&full_db).unwrap();
+        let language: String = conn
+            .query_row(
+                "SELECT language FROM files WHERE path='app.py'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(language, "PythonParser");
+        let args: String = conn
+            .query_row(
+                "SELECT args FROM symbols WHERE file_path='app.py' AND name='run'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(args, "(n: 'Count'=0)");
+        let decorator_edge: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM edges WHERE source_file='app.py' \
+                 AND caller='run' AND callee='lru_cache' AND call_form='attribute'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(decorator_edge, 1);
+        let imports: String = conn
+            .query_row("SELECT imports FROM files WHERE path='app.py'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(imports, r#"["pkg/util.py"]"#);
+        let bindings: String = conn
+            .query_row(
+                "SELECT import_bindings FROM files WHERE path='app.py'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            bindings,
+            r#"[{"module": "functools", "names": ["functools"]}]"#
+        );
+        let patterns: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT pattern_type FROM patterns WHERE file_path='app.py' \
+                     ORDER BY pattern_type",
+                )
+                .unwrap();
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0)).unwrap();
+            rows.map(|row| row.unwrap()).collect()
+        };
+        assert_eq!(patterns, vec!["observer_emit", "observer_register"]);
     }
 
     #[test]
