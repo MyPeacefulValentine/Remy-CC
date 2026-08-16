@@ -11,11 +11,14 @@
 //!   `class` (decorators excluded) and ends at the last statement. tree-sitter
 //!   includes trailing comments inside the block, so the effective end skips
 //!   them.
-//! - **Failure mapping**: a `SyntaxError` from `ast.parse` leaves the `files`
-//!   row in place with empty symbols/imports/bindings/edges, while patterns
-//!   are still extracted (the oracle's `extract_patterns` runs its regexes on
-//!   the raw source regardless). A NUL byte raises `ValueError` instead, which
-//!   `_scan_one_file` turns into a `StageError` — the whole file fails.
+//! - **Failure mapping**: `ast.parse` raises `SyntaxError` for broken
+//!   grammar, a leading BOM, and NUL bytes (CPython 3.12). Every extraction
+//!   channel catches it, so the `files` row stays in place with empty
+//!   symbols/imports/bindings/edges, while patterns are still extracted (the
+//!   oracle's `extract_patterns` runs its regexes on the raw source
+//!   regardless). Deterministic only since the parser's R3.3 cache fix
+//!   (contract version 2): the frozen v1 tree cache handed later channels a
+//!   stale tree from the previously parsed file.
 //! - **Hash input**: `re.sub(r'#[^\n]*', '', segment)`, which also strips from
 //!   a `#` inside a string literal. That is a frozen oracle quirk, not an
 //!   accident, so it is reproduced verbatim.
@@ -31,7 +34,7 @@ use std::sync::OnceLock;
 use tree_sitter::{Node, Parser, Tree};
 
 pub const LANGUAGE_ID: &str = "PythonParser";
-pub const CACHE_CONTRACT_VERSION: &str = "1";
+pub const CACHE_CONTRACT_VERSION: &str = "2";
 pub const EXTENSIONS: &[&str] = &[".py"];
 
 /// Crate versions pinned in Cargo.toml, recorded in `parser_environment`
@@ -85,18 +88,15 @@ fn parse_tree(source: &str) -> Tree {
         .expect("parsing without a cancellation flag always yields a tree")
 }
 
-/// Extract every per-file fact. `Err` reproduces the oracle's file-level
-/// failure (a `StageError`, no `files` row).
-pub fn parse_file(source: &str, full_path: &Path, root_dir: &Path) -> Result<PythonFacts, String> {
-    if source.contains('\0') {
-        return Err("source code string cannot contain null bytes".to_string());
-    }
-
+/// Extract every per-file fact. Never fails: files CPython would reject
+/// (grammar error / BOM / NUL) keep their `files` row and yield empty
+/// parsed facts, matching the oracle's per-channel `except SyntaxError`.
+pub fn parse_file(source: &str, full_path: &Path, root_dir: &Path) -> PythonFacts {
     let tree = parse_tree(source);
     let root = tree.root_node();
-    // A leading BOM is a printable-character SyntaxError for CPython while
-    // tree-sitter accepts it, so it is checked explicitly.
-    let syntax_ok = !root.has_error() && !source.starts_with('\u{feff}');
+    // A leading BOM and NUL bytes are SyntaxErrors for CPython while
+    // tree-sitter accepts them, so both are checked explicitly.
+    let syntax_ok = !root.has_error() && !source.starts_with('\u{feff}') && !source.contains('\0');
 
     let symbols = if syntax_ok {
         collect_symbols(root, source)
@@ -127,13 +127,13 @@ pub fn parse_file(source: &str, full_path: &Path, root_dir: &Path) -> Result<Pyt
             .collect(),
     ));
 
-    Ok(PythonFacts {
+    PythonFacts {
         imports,
         import_bindings_json: bindings_json,
         symbols,
         edges,
         patterns,
-    })
+    }
 }
 
 fn text<'a>(node: Node, source: &'a str) -> &'a str {
@@ -834,7 +834,7 @@ mod tests {
     use super::*;
 
     fn facts(source: &str) -> PythonFacts {
-        parse_file(source, Path::new("/proj/mod.py"), Path::new("/proj")).unwrap()
+        parse_file(source, Path::new("/proj/mod.py"), Path::new("/proj"))
     }
 
     #[test]
@@ -1019,16 +1019,18 @@ class A:
     }
 
     #[test]
-    fn null_byte_fails_the_file() {
-        let error =
-            parse_file("x = 1\0\n", Path::new("/proj/mod.py"), Path::new("/proj")).unwrap_err();
-        assert_eq!(error, "source code string cannot contain null bytes");
+    fn null_bytes_are_a_syntax_error_for_the_oracle() {
+        let parsed = facts("x = 1\0\ndef f(): pass\n");
+        assert!(parsed.symbols.is_empty());
+        assert!(parsed.edges.is_empty());
+        assert!(parsed.imports.is_empty());
+        assert_eq!(parsed.import_bindings_json, "[]");
     }
 
     #[test]
     fn unresolved_bindings_are_sorted_by_module() {
         let source = "from __future__ import annotations\nimport os\nimport pkg.mod as pm\nfrom . import sibling\nfrom ..up import thing as t\nfrom json import loads\n";
-        let parsed = parse_file(source, Path::new("/proj/sub/x.py"), Path::new("/proj")).unwrap();
+        let parsed = parse_file(source, Path::new("/proj/sub/x.py"), Path::new("/proj"));
         assert_eq!(
             parsed.import_bindings_json,
             "[{\"module\": \"__future__\", \"names\": [\"annotations\"]}, \
@@ -1044,8 +1046,7 @@ class A:
             "from mod import *\n",
             Path::new("/proj/x.py"),
             Path::new("/proj"),
-        )
-        .unwrap();
+        );
         assert_eq!(
             parsed.import_bindings_json,
             "[{\"module\": \"mod\", \"names\": [\"*\"]}]"

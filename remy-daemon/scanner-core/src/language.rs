@@ -83,35 +83,36 @@ impl Language {
         }
     }
 
-    /// Full per-file fact extraction for one decoded source. `Err` carries a
-    /// file-level failure message: the oracle turns those into a `StageError`
-    /// that leaves previously indexed rows untouched.
+    /// Full per-file fact extraction for one decoded source. Infallible:
+    /// every language module maps oracle-side parse failures to empty facts
+    /// (grammars are compiled into the binary and tree-sitter always yields
+    /// a tree); unreadable/undecodable files fail upstream in parse_one.
     pub fn parse_file(
         self,
         source: &str,
         full_path: &Path,
         file_path_str: &str,
         root_dir: &Path,
-    ) -> Result<ParsedFile, String> {
+    ) -> ParsedFile {
         match self {
-            Language::CCpp => Ok(ParsedFile {
+            Language::CCpp => ParsedFile {
                 identity: parse_c_cpp::cache_identity(source, file_path_str),
                 imports: parse_c_cpp::resolve_imports(source, full_path, root_dir),
                 import_bindings_json: "[]".to_string(),
                 symbols: parse_c_cpp::parse_symbols(source, file_path_str),
                 edges: parse_c_cpp::extract_call_graph(source, file_path_str),
                 patterns: crate::patterns_c::extract_patterns(source),
-            }),
+            },
             Language::Python => {
-                let facts = parse_python::parse_file(source, full_path, root_dir)?;
-                Ok(ParsedFile {
+                let facts = parse_python::parse_file(source, full_path, root_dir);
+                ParsedFile {
                     identity: parse_python::cache_identity(),
                     imports: facts.imports,
                     import_bindings_json: facts.import_bindings_json,
                     symbols: facts.symbols,
                     edges: facts.edges,
                     patterns: facts.patterns,
-                })
+                }
             }
         }
     }

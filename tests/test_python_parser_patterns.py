@@ -124,3 +124,33 @@ class Printer:
         patterns = parser.extract_patterns(source, "printer.py")
         emits = [p for p in patterns if p["pattern_type"] == "observer_emit"]
         assert len(emits) == 0
+
+
+class TestTreeCacheOnSyntaxError:
+    """Regression: the tree cache must never serve a stale AST.
+
+    Before the R3.3 fix, _get_tree stored the source hash before ast.parse
+    could raise, so every later channel call for the same broken source hit
+    the cache and received the previously parsed file's tree (scan order
+    dependent facts) or None (AttributeError on the first file).
+    """
+
+    BAD = "def broken(:\n"
+
+    def test_broken_source_yields_empty_facts_after_a_good_file(self, parser):
+        good = "def good_fn():\n    good_call()\n"
+        assert [s.name for s in parser.parse_symbols(good, "good.py")] == ["good_fn"]
+        assert parser.resolve_imports(self.BAD, "bad.py", ".") == {}
+        assert parser.collect_import_bindings(self.BAD, "bad.py", ".") == []
+        assert parser.parse_symbols(self.BAD, "bad.py") == []
+        assert parser.extract_call_graph(self.BAD, "bad.py") == []
+
+    def test_broken_source_on_fresh_parser_does_not_raise(self, parser):
+        assert parser.resolve_imports(self.BAD, "bad.py", ".") == {}
+        assert parser.collect_import_bindings(self.BAD, "bad.py", ".") == []
+
+    def test_good_source_still_parses_after_a_broken_file(self, parser):
+        assert parser.parse_symbols(self.BAD, "bad.py") == []
+        good = "def after_fn():\n    pass\n"
+        assert [s.name for s in parser.parse_symbols(good, "good.py")] == ["after_fn"]
+

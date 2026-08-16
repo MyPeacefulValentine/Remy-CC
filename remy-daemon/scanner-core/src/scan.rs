@@ -61,15 +61,7 @@ pub fn parse_one(
             message: format!("No parser handles source file: {rel_path}"),
         };
     };
-    let parsed = match language.parse_file(&source, full_path, &file_path_str, root_dir) {
-        Ok(parsed) => parsed,
-        Err(message) => {
-            return FileOutcome::Failed {
-                rel_path: rel_path.to_string(),
-                message,
-            }
-        }
-    };
+    let parsed = language.parse_file(&source, full_path, &file_path_str, root_dir);
     let selection = selection::select_symbols(parsed.symbols);
     let layer = config.match_file_to_layer(rel_path);
 

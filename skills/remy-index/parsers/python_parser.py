@@ -87,18 +87,23 @@ class PythonParser(LanguageParser):
     """Parser for Python source files using the standard library ast module."""
 
     language_id = "PythonParser"
-    CACHE_CONTRACT_VERSION = "1"
+    CACHE_CONTRACT_VERSION = "2"
 
     def __init__(self):
         self._cached_hash = None
         self._cached_tree = None
 
     def _get_tree(self, source):
-        """Return cached AST tree, re-parsing only if source changed."""
+        """Return cached AST tree, re-parsing only if source changed.
+
+        The cache key is updated only after a successful parse: a SyntaxError
+        must propagate on every call, never hand back a stale tree from a
+        previously parsed source (cache-poisoning defect fixed in R3.3).
+        """
         h = hashlib.md5(source.encode('utf-8')).hexdigest()
         if h != self._cached_hash:
-            self._cached_hash = h
             self._cached_tree = ast.parse(source)
+            self._cached_hash = h
         return self._cached_tree
 
     def get_extensions(self):

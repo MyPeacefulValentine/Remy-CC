@@ -971,7 +971,7 @@ class TestScanFiles:
             "FROM files WHERE path='src/main.py'"
         ).fetchone()
         assert row is not None
-        assert row[0] == "1"
+        assert row[0] == "2"
         assert row[1] == "python-ast"
         assert json.loads(row[2])["python"] == f"{sys.version_info.major}.{sys.version_info.minor}"
 
@@ -992,14 +992,14 @@ class TestScanFiles:
         monkeypatch.setattr(
             python_parser,
             "cache_identity_candidates",
-            lambda _path: (ParserCacheIdentity.create("2", "python-ast", {
+            lambda _path: (ParserCacheIdentity.create("3", "python-ast", {
                 "python": f"{sys.version_info.major}.{sys.version_info.minor}"
             }),),
         )
         monkeypatch.setattr(
             python_parser,
             "cache_identity",
-            lambda _source, _path: ParserCacheIdentity.create("2", "python-ast", {
+            lambda _source, _path: ParserCacheIdentity.create("3", "python-ast", {
                 "python": f"{sys.version_info.major}.{sys.version_info.minor}"
             }),
         )
@@ -1021,7 +1021,7 @@ class TestScanFiles:
             "SELECT path,parser_contract_version FROM files ORDER BY path"
         ).fetchall()
         assert dict(rows)["entry.ts"] == "1"
-        assert dict(rows)["src/main.py"] == "2"
+        assert dict(rows)["src/main.py"] == "3"
         monkeypatch.setattr(ts_parser, "parse_symbols", original_ts)
 
     def test_failed_contract_reparse_preserves_old_fact_and_identity(
@@ -1040,12 +1040,12 @@ class TestScanFiles:
         monkeypatch.setattr(
             parser,
             "cache_identity_candidates",
-            lambda _path: (ParserCacheIdentity.create("2", "python-ast", environment),),
+            lambda _path: (ParserCacheIdentity.create("3", "python-ast", environment),),
         )
         monkeypatch.setattr(
             parser,
             "cache_identity",
-            lambda _source, _path: ParserCacheIdentity.create("2", "python-ast", environment),
+            lambda _source, _path: ParserCacheIdentity.create("3", "python-ast", environment),
         )
         original_parse = parser.parse_symbols
 
@@ -1486,7 +1486,7 @@ class TestScanFiles:
         ).fetchone() == ("",)
         assert scanner.db.execute(
             "SELECT parser_contract_version FROM files WHERE path='src/utils.py'"
-        ).fetchone() == ("1",)
+        ).fetchone() == ("2",)
         assert scanner.db.execute(
             "SELECT name,hash FROM symbols WHERE file_path='src/main.py' ORDER BY name"
         ).fetchall() == before_main
