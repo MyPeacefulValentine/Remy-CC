@@ -73,6 +73,28 @@ enum DaemonCommand {
         #[command(subcommand)]
         command: HookCommand,
     },
+    /// Scan a source tree into an isolated logic index database (R3.2:
+    /// C/C++ per-file facts only; no global postprocessing)
+    Scan {
+        /// Project root to scan
+        #[arg(long)]
+        root: PathBuf,
+        /// Target SQLite database path
+        #[arg(long)]
+        db: PathBuf,
+        /// Incremental mode: only scan these files (relative to root)
+        #[arg(long, num_args = 1..)]
+        files: Vec<String>,
+        /// Parse worker count (default: logical CPU count; 1 = serial baseline)
+        #[arg(long)]
+        jobs: Option<usize>,
+        /// Emit the worker JSON Lines scan_result contract
+        #[arg(long)]
+        result_json: bool,
+        /// Emit PROGRESS lines to stderr every 250 files (full scans only)
+        #[arg(long)]
+        progress: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -92,6 +114,25 @@ fn main() -> ExitCode {
                 HookCommand::Enrich => hook_client::HookKind::Enrich,
             });
         }
+        DaemonCommand::Scan {
+            root,
+            db,
+            files,
+            jobs,
+            result_json,
+            progress,
+        } => {
+            return ExitCode::from(scanner_core::scan::run_scan(
+                &scanner_core::scan::ScanArgs {
+                    root,
+                    db,
+                    files,
+                    jobs,
+                    result_json,
+                    progress,
+                },
+            ));
+        }
         command => command,
     };
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
@@ -108,7 +149,9 @@ fn main() -> ExitCode {
         DaemonCommand::Start { foreground: false } => start_detached(&home, &clock),
         DaemonCommand::Stop => stop(&home, &clock),
         DaemonCommand::Status { json } => status(&home, json),
-        DaemonCommand::Hook { .. } => unreachable!("hook command returned before daemon dispatch"),
+        DaemonCommand::Hook { .. } | DaemonCommand::Scan { .. } => {
+            unreachable!("dispatched before daemon home resolution")
+        }
     };
 
     match result {
