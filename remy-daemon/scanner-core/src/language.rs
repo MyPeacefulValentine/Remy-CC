@@ -6,7 +6,7 @@
 //! error.
 
 use crate::facts::{CacheIdentity, EdgeInfo, PatternFact, SymbolInfo};
-use crate::{parse_c_cpp, parse_python, parse_ts};
+use crate::{parse_c_cpp, parse_python, parse_rust, parse_ts};
 use std::path::Path;
 
 /// Everything a language module extracts from one decoded source file
@@ -29,6 +29,7 @@ pub enum Language {
     CCpp,
     Python,
     Ts,
+    Rust,
 }
 
 /// Extension table shared by resolve(); kept sorted by suffix length at
@@ -46,6 +47,7 @@ const EXTENSIONS: &[(&str, Language)] = &[
     (".py", Language::Python),
     (".ts", Language::Ts),
     (".tsx", Language::Ts),
+    (".rs", Language::Rust),
 ];
 
 impl Language {
@@ -67,6 +69,7 @@ impl Language {
             parse_c_cpp::LANGUAGE_ID => Some(Language::CCpp),
             parse_python::LANGUAGE_ID => Some(Language::Python),
             parse_ts::LANGUAGE_ID => Some(Language::Ts),
+            parse_rust::LANGUAGE_ID => Some(Language::Rust),
             _ => None,
         }
     }
@@ -76,6 +79,7 @@ impl Language {
             Language::CCpp => parse_c_cpp::LANGUAGE_ID,
             Language::Python => parse_python::LANGUAGE_ID,
             Language::Ts => parse_ts::LANGUAGE_ID,
+            Language::Rust => parse_rust::LANGUAGE_ID,
         }
     }
 
@@ -86,6 +90,7 @@ impl Language {
             Language::CCpp => parse_c_cpp::symbol_hash_input(source_segment),
             Language::Python => parse_python::symbol_hash_input(source_segment),
             Language::Ts => parse_ts::symbol_hash_input(source_segment),
+            Language::Rust => parse_rust::symbol_hash_input(source_segment),
         }
     }
 
@@ -128,6 +133,14 @@ impl Language {
                 edges: parse_ts::extract_call_graph(source, file_path_str),
                 patterns: Vec::new(),
             },
+            Language::Rust => ParsedFile {
+                identity: parse_rust::cache_identity(),
+                imports: parse_rust::resolve_imports(source, full_path, root_dir),
+                import_bindings_json: "[]".to_string(),
+                symbols: parse_rust::parse_symbols(source),
+                edges: parse_rust::extract_call_graph(source),
+                patterns: Vec::new(),
+            },
         }
     }
 }
@@ -146,13 +159,19 @@ mod tests {
         assert_eq!(Language::resolve("a.py"), Some(Language::Python));
         assert_eq!(Language::resolve("a.ts"), Some(Language::Ts));
         assert_eq!(Language::resolve("a.tsx"), Some(Language::Ts));
+        assert_eq!(Language::resolve("a.rs"), Some(Language::Rust));
         assert_eq!(Language::resolve("a.txt"), None);
         assert_eq!(Language::resolve("noext"), None);
     }
 
     #[test]
     fn language_id_round_trips() {
-        for language in [Language::CCpp, Language::Python, Language::Ts] {
+        for language in [
+            Language::CCpp,
+            Language::Python,
+            Language::Ts,
+            Language::Rust,
+        ] {
             assert_eq!(
                 Language::from_language_id(language.language_id()),
                 Some(language)
