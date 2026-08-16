@@ -74,7 +74,7 @@ def ensure_same_environment(
 
 
 def _edge_category(view: str, columns: tuple, row: tuple, base_category: str) -> str:
-    if view != "edges":
+    if view != "edges" or "provenance" not in columns:
         return base_category
     provenance = row[columns.index("provenance")]
     synthesized_from = row[columns.index("synthesized_from")]
@@ -83,9 +83,11 @@ def _edge_category(view: str, columns: tuple, row: tuple, base_category: str) ->
     return base_category
 
 
-def compare_states(left: dict, right: dict) -> list[Finding]:
+def compare_states(
+    left: dict, right: dict, views: Optional[dict] = None
+) -> list[Finding]:
     findings: list[Finding] = []
-    for view, spec in classification.VIEWS.items():
+    for view, spec in (views or classification.VIEWS).items():
         columns = tuple(column for column, _cls in spec["columns"])
         classes = classification.column_classes(view)
         key = spec["key"]
@@ -151,20 +153,26 @@ def compare_dbs(
     left_manifest: Optional[dict] = None,
     right_manifest: Optional[dict] = None,
     allow_env_mismatch: bool = False,
+    views: Optional[dict] = None,
+    row_filters: Optional[dict] = None,
 ) -> list[Finding]:
     if left_manifest is not None and right_manifest is not None:
         ensure_same_environment(left_manifest, right_manifest, allow_env_mismatch)
+    view_columns = {
+        view: tuple(column for column, _cls in spec["columns"])
+        for view, spec in (views or classification.VIEWS).items()
+    }
     left_db = _open_readonly(left_path)
     try:
-        left_state = normalization.oracle_state(left_db)
+        left_state = normalization.state(left_db, view_columns, row_filters)
     finally:
         left_db.close()
     right_db = _open_readonly(right_path)
     try:
-        right_state = normalization.oracle_state(right_db)
+        right_state = normalization.state(right_db, view_columns, row_filters)
     finally:
         right_db.close()
-    return compare_states(left_state, right_state)
+    return compare_states(left_state, right_state, views)
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -174,10 +182,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--manifest-left", type=Path)
     parser.add_argument("--manifest-right", type=Path)
     parser.add_argument("--allow-env-mismatch", action="store_true")
+    parser.add_argument(
+        "--phase1",
+        action="store_true",
+        help="compare only the phase-1 per-file fact subset "
+        "(classification.PHASE1_VIEWS, synthesized edges excluded)",
+    )
     args = parser.parse_args(argv)
 
     left_manifest = manifest.load(args.manifest_left) if args.manifest_left else None
     right_manifest = manifest.load(args.manifest_right) if args.manifest_right else None
+    views = classification.PHASE1_VIEWS if args.phase1 else None
+    row_filters = normalization.PHASE1_ROW_FILTERS if args.phase1 else None
     try:
         findings = compare_dbs(
             args.left,
@@ -185,6 +201,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             left_manifest,
             right_manifest,
             allow_env_mismatch=args.allow_env_mismatch,
+            views=views,
+            row_filters=row_filters,
         )
     except EnvironmentMismatchError as exc:
         print(f"ORACLE_COMPARE status=env_mismatch error={exc}", file=sys.stderr)
@@ -193,6 +211,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     blocked = blocking(findings)
     print(
         f"ORACLE_COMPARE status={'diff' if blocked else 'equal'} "
+        f"views={'phase1' if args.phase1 else 'full'} "
         f"blocking={len(blocked)} total={len(findings)}"
     )
     return 1 if blocked else 0

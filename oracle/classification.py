@@ -11,7 +11,7 @@ Any change to this module is a change of the oracle identity and MUST
 bump CLASSIFICATION_VERSION.
 """
 
-CLASSIFICATION_VERSION = "1"
+CLASSIFICATION_VERSION = "2"
 
 EXACT = "exact"
 ALLOWED_DIFF = "allowed_diff"
@@ -41,8 +41,8 @@ VIEWS = {
             ("kind_hint", EXACT),
             ("actual_kind", EXACT),
             ("parser_contract_version", EXACT),
-            ("parser_backend", EXACT),
-            ("parser_environment", EXACT),
+            ("parser_backend", ALLOWED_DIFF),
+            ("parser_environment", ALLOWED_DIFF),
             ("import_bindings", EXACT),
         ),
     },
@@ -152,3 +152,46 @@ VIEWS = {
 def column_classes(view: str) -> dict:
     """Return {column: class} for one view."""
     return dict(VIEWS[view]["columns"])
+
+
+def _subset(view: str, columns: tuple) -> tuple:
+    classes = dict(VIEWS[view]["columns"])
+    return tuple((column, classes[column]) for column in columns)
+
+
+# Phase-1 per-file fact subset (R3.2): the views and columns a per-file
+# scanner produces before global postprocessing. files loses the
+# postprocess-derived kind columns; edges keeps only per-file extraction
+# columns (disambiguation columns are written by _resolve_call_edges).
+# Postprocess-only tables (edge_candidates, clusters, cluster_members,
+# retrieval_documents) are absent. Rows synthesized by postprocessing
+# (edges.provenance='inferred') are excluded by normalization's
+# PHASE1_ROW_FILTERS, not by this column declaration.
+PHASE1_VIEWS = {
+    "files": {
+        "key": ("path",),
+        "columns": _subset(
+            "files",
+            (
+                "path",
+                "struct_hash",
+                "language",
+                "layer",
+                "imports",
+                "parser_contract_version",
+                "parser_backend",
+                "parser_environment",
+                "import_bindings",
+            ),
+        ),
+    },
+    "symbols": VIEWS["symbols"],
+    "symbol_occurrences": VIEWS["symbol_occurrences"],
+    "edges": {
+        "key": None,
+        "columns": _subset(
+            "edges", ("source_file", "caller", "callee", "line", "call_form")
+        ),
+    },
+    "patterns": VIEWS["patterns"],
+}

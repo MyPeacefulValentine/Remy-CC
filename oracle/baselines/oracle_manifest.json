@@ -1,6 +1,6 @@
 {
-  "classification_version": "1",
-  "commit": "78f6c312421435603c8407f597ab6ddee61e0f6b",
+  "classification_version": "2",
+  "commit": "868833c179daa2ea717d5fc7a2ea36a35352c61b",
   "comparator_version": "1",
   "config_snapshot": {
     "REMY_CLUSTER_DENSITY_THRESHOLD": "0.5",
@@ -22,7 +22,7 @@
     "corpus/ts/index.ts": "603eee51f196ddf03bb00ee59bd8924473c26d9642dfb8314a1bac3fbfc303c8",
     "corpus/ts/shapes.ts": "0cde88d3b3ddaefb368a9440b45d4c7da42548959757a4876743d8666decb3a2"
   },
-  "generated_at": "2026-08-14T20:00:57.234336+00:00",
+  "generated_at": "2026-08-16T10:47:02.589065+00:00",
   "known_gaps": [
     {
       "classification": "category-2-shared-defect",
@@ -39,7 +39,7 @@
       "id": "python-docstring-in-hash"
     }
   ],
-  "manifest_schema_version": 1,
+  "manifest_schema_version": 2,
   "packages": {
     "tree-sitter": "0.25.2",
     "tree-sitter-c": "0.24.2",
@@ -48,6 +48,16 @@
     "tree-sitter-typescript": "0.23.2"
   },
   "platform": "win32",
+  "producer": {
+    "backend_versions": {
+      "tree-sitter": "0.25.2",
+      "tree-sitter-c": "0.24.2",
+      "tree-sitter-cpp": "0.23.4",
+      "tree-sitter-rust": "0.24.2",
+      "tree-sitter-typescript": "0.23.2"
+    },
+    "implementation": "python-oracle"
+  },
   "python_version": "3.12.9",
   "registry": [
     {

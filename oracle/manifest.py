@@ -22,7 +22,7 @@ from typing import Optional
 
 from . import classification
 
-MANIFEST_SCHEMA_VERSION = 1
+MANIFEST_SCHEMA_VERSION = 2
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _INDEX_DIR = _REPO_ROOT / "skills" / "remy-index"
@@ -79,22 +79,42 @@ KNOWN_GAPS = (
     },
 )
 
+# Identity anchors gating cross-database comparison: the fields that define
+# the fact-semantics contract shared by every scanner implementation.
+# Producer-private details (interpreter, package versions) are recorded in
+# the manifest but do not gate comparison — schema v2 moved python_version
+# and packages out of this set so a Rust scanner's output can be compared
+# against the frozen Python oracle.
 _ENVIRONMENT_IDENTITY_FIELDS = (
-    "python_version",
-    "packages",
     "registry",
     "schema_version",
     "classification_version",
     "comparator_version",
+    "fixtures",
 )
 
-_REQUIRED_FIELDS = (
+_REQUIRED_FIELDS_V1 = (
     "manifest_schema_version",
     "generated_at",
     "commit",
     "python_version",
     "platform",
     "packages",
+    "registry",
+    "schema_version",
+    "classification_version",
+    "comparator_version",
+    "config_snapshot",
+    "fixtures",
+    "known_gaps",
+)
+
+_REQUIRED_FIELDS_V2 = (
+    "manifest_schema_version",
+    "generated_at",
+    "commit",
+    "producer",
+    "platform",
     "registry",
     "schema_version",
     "classification_version",
@@ -176,13 +196,18 @@ def generate(
 
     from . import comparator
 
+    packages = _package_versions()
     return {
         "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "commit": _git_commit(repo_root),
+        "producer": {
+            "implementation": "python-oracle",
+            "backend_versions": packages,
+        },
         "python_version": platform.python_version(),
         "platform": sys.platform,
-        "packages": _package_versions(),
+        "packages": packages,
         "registry": _registry_identity(),
         "schema_version": index_schema.VERSION,
         "classification_version": classification.CLASSIFICATION_VERSION,
@@ -197,15 +222,35 @@ def environment_identity(manifest: dict) -> dict:
     return {field: manifest.get(field) for field in _ENVIRONMENT_IDENTITY_FIELDS}
 
 
+def upgrade(manifest: dict) -> dict:
+    """Return the in-memory v2 form of a manifest loaded from disk.
+
+    v1 manifests predate the producer field and were only ever written by
+    the Python oracle, so the upgrade is unambiguous. The on-disk file is
+    left untouched.
+    """
+    if manifest["manifest_schema_version"] == MANIFEST_SCHEMA_VERSION:
+        return manifest
+    upgraded = dict(manifest)
+    upgraded["manifest_schema_version"] = MANIFEST_SCHEMA_VERSION
+    upgraded["producer"] = {
+        "implementation": "python-oracle",
+        "backend_versions": dict(manifest["packages"]),
+    }
+    return upgraded
+
+
 def validate(manifest: dict) -> dict:
-    missing = [field for field in _REQUIRED_FIELDS if field not in manifest]
+    version = manifest.get("manifest_schema_version")
+    if version == 1:
+        required = _REQUIRED_FIELDS_V1
+    elif version == 2:
+        required = _REQUIRED_FIELDS_V2
+    else:
+        raise ValueError(f"unsupported oracle manifest schema version: {version}")
+    missing = [field for field in required if field not in manifest]
     if missing:
         raise ValueError(f"oracle manifest lacks required fields: {missing}")
-    if manifest["manifest_schema_version"] != MANIFEST_SCHEMA_VERSION:
-        raise ValueError(
-            "unsupported oracle manifest schema version: "
-            f"{manifest['manifest_schema_version']}"
-        )
     return manifest
 
 
@@ -219,7 +264,7 @@ def write(manifest: dict, path: Path) -> None:
 
 
 def load(path: Path) -> dict:
-    return validate(json.loads(Path(path).read_text(encoding="utf-8")))
+    return upgrade(validate(json.loads(Path(path).read_text(encoding="utf-8"))))
 
 
 def main(argv: Optional[list[str]] = None) -> int:

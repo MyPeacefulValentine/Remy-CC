@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tee_project_canary as canary
 from oracle import bench as oracle_bench
+from oracle import classification as oracle_classification
 from oracle import comparator as oracle_comparator
 from oracle import manifest as oracle_manifest
 from oracle import normalization as oracle_normalization
@@ -448,16 +449,38 @@ def test_comparator_refuses_environment_mismatch():
         "packages": {"tree-sitter": "0.25.2"},
         "registry": [{"language_id": "python", "extensions": [".py"], "cache_contract_version": "1"}],
         "schema_version": "12.0.0",
-        "classification_version": "1",
+        "classification_version": "2",
         "comparator_version": "1",
+        "fixtures": {"corpus/c/sample.c": "aa"},
     }
-    other = dict(base, python_version="3.10.0")
-    with pytest.raises(oracle_comparator.EnvironmentMismatchError, match="python_version"):
+    other = dict(base, classification_version="1")
+    with pytest.raises(oracle_comparator.EnvironmentMismatchError, match="classification_version"):
         oracle_comparator.ensure_same_environment(base, other)
     assert oracle_comparator.ensure_same_environment(
         base, other, allow_env_mismatch=True
-    ) == ["python_version"]
+    ) == ["classification_version"]
+    with pytest.raises(oracle_comparator.EnvironmentMismatchError, match="fixtures"):
+        oracle_comparator.ensure_same_environment(base, dict(base, fixtures={}))
     assert oracle_comparator.ensure_same_environment(base, dict(base)) == []
+
+
+def test_environment_identity_ignores_producer_private_fields():
+    base = {
+        "registry": [],
+        "schema_version": "12.0.0",
+        "classification_version": "2",
+        "comparator_version": "1",
+        "fixtures": {},
+        "python_version": "3.12.9",
+        "packages": {"tree-sitter": "0.25.2"},
+    }
+    other = dict(
+        base,
+        python_version="3.10.0",
+        packages={},
+        producer={"implementation": "rust-scanner", "backend_versions": {}},
+    )
+    assert oracle_comparator.ensure_same_environment(base, other) == []
 
 
 def test_oracle_manifest_generate_roundtrip(tmp_path: Path):
@@ -466,10 +489,15 @@ def test_oracle_manifest_generate_roundtrip(tmp_path: Path):
     oracle_manifest.write(manifest, target)
     loaded = oracle_manifest.load(target)
     assert loaded == manifest
+    assert loaded["manifest_schema_version"] == 2
+    assert loaded["producer"] == {
+        "implementation": "python-oracle",
+        "backend_versions": loaded["packages"],
+    }
     identity = oracle_manifest.environment_identity(loaded)
     assert set(identity) == {
-        "python_version", "packages", "registry", "schema_version",
-        "classification_version", "comparator_version",
+        "registry", "schema_version", "classification_version",
+        "comparator_version", "fixtures",
     }
     registry = {entry["language_id"]: entry for entry in loaded["registry"]}
     assert set(registry) == {"PythonParser", "CCppParser", "TSParser", "RustParser"}
@@ -478,6 +506,107 @@ def test_oracle_manifest_generate_roundtrip(tmp_path: Path):
         "cross-file-trait-impl", "python-docstring-in-hash",
     }
     assert loaded["fixtures"], "oracle fixture corpus must be hashed"
+
+
+def test_oracle_manifest_v1_upgrades_in_memory(tmp_path: Path):
+    v1 = {
+        "manifest_schema_version": 1,
+        "generated_at": "2026-08-15T00:00:00+00:00",
+        "commit": "78f6c312421435603c8407f597ab6ddee61e0f6b",
+        "python_version": "3.12.9",
+        "platform": "win32",
+        "packages": {"tree-sitter": "0.25.2"},
+        "registry": [],
+        "schema_version": "12.0.0",
+        "classification_version": "1",
+        "comparator_version": "1",
+        "config_snapshot": {},
+        "fixtures": {},
+        "known_gaps": [],
+    }
+    target = tmp_path / "v1_manifest.json"
+    target.write_text(json.dumps(v1), encoding="utf-8")
+    loaded = oracle_manifest.load(target)
+    assert loaded["manifest_schema_version"] == 2
+    assert loaded["producer"] == {
+        "implementation": "python-oracle",
+        "backend_versions": {"tree-sitter": "0.25.2"},
+    }
+    assert loaded["python_version"] == "3.12.9"
+    with pytest.raises(ValueError, match="unsupported oracle manifest schema version"):
+        oracle_manifest.validate(dict(v1, manifest_schema_version=3))
+
+
+def test_phase1_views_are_ordered_column_subsets():
+    assert set(oracle_classification.PHASE1_VIEWS) == {
+        "files", "symbols", "symbol_occurrences", "edges", "patterns",
+    }
+    for view, spec in oracle_classification.PHASE1_VIEWS.items():
+        full_spec = oracle_classification.VIEWS[view]
+        full_columns = [column for column, _cls in full_spec["columns"]]
+        subset = [column for column, _cls in spec["columns"]]
+        positions = [full_columns.index(column) for column in subset]
+        assert positions == sorted(positions)
+        full_classes = dict(full_spec["columns"])
+        assert all(cls == full_classes[column] for column, cls in spec["columns"])
+    phase1_files = [c for c, _cls in oracle_classification.PHASE1_VIEWS["files"]["columns"]]
+    assert "kind_hint" not in phase1_files
+    assert "actual_kind" not in phase1_files
+    phase1_edges = [c for c, _cls in oracle_classification.PHASE1_VIEWS["edges"]["columns"]]
+    assert phase1_edges == ["source_file", "caller", "callee", "line", "call_form"]
+
+
+def test_phase1_comparison_ignores_postprocess_differences(tmp_path: Path):
+    left_path = tmp_path / "left.db"
+    right_path = tmp_path / "right.db"
+    _seed_oracle_db(left_path)
+    _seed_oracle_db(right_path)
+    db = sqlite3.connect(str(right_path))
+    try:
+        db.execute("DELETE FROM edges WHERE provenance='inferred'")
+        db.execute("UPDATE files SET kind_hint='utility', actual_kind='utility' WHERE path='a.py'")
+        db.execute("UPDATE edges SET callee_file=NULL, callee_qualified=NULL, provenance=NULL")
+        db.execute("DELETE FROM cluster_members")
+        db.execute("DELETE FROM clusters")
+        db.commit()
+    finally:
+        db.close()
+
+    full = oracle_comparator.compare_dbs(left_path, right_path)
+    assert oracle_comparator.blocking(full) != []
+    phase1 = oracle_comparator.compare_dbs(
+        left_path,
+        right_path,
+        views=oracle_classification.PHASE1_VIEWS,
+        row_filters=oracle_normalization.PHASE1_ROW_FILTERS,
+    )
+    assert phase1 == []
+
+
+def test_phase1_comparison_still_detects_per_file_differences(tmp_path: Path):
+    left_path = tmp_path / "left.db"
+    right_path = tmp_path / "right.db"
+    _seed_oracle_db(left_path)
+    _seed_oracle_db(right_path)
+    db = sqlite3.connect(str(right_path))
+    try:
+        db.execute("UPDATE symbols SET hash='mutated' WHERE name='main'")
+        db.execute("UPDATE edges SET line=99 WHERE provenance='definite'")
+        db.commit()
+    finally:
+        db.close()
+
+    phase1 = oracle_comparator.compare_dbs(
+        left_path,
+        right_path,
+        views=oracle_classification.PHASE1_VIEWS,
+        row_filters=oracle_normalization.PHASE1_ROW_FILTERS,
+    )
+    categories = {(finding.view, finding.category) for finding in phase1}
+    assert ("symbols", oracle_comparator.CATEGORY_FIELD_MODIFIED) in categories
+    assert ("edges", oracle_comparator.CATEGORY_MISSING_ROW) in categories
+    assert ("edges", oracle_comparator.CATEGORY_EXTRA_ROW) in categories
+    assert oracle_comparator.blocking(phase1) == phase1
 
 
 def test_bench_smoke_on_tee_fixture(tmp_path: Path):

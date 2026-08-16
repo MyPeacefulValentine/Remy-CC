@@ -13,7 +13,7 @@ tables. Two views are published:
 from __future__ import annotations
 
 import sqlite3
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 from . import classification
 
@@ -60,15 +60,24 @@ CANARY_EXCLUDED_COLUMNS = {
     "edges": ("call_form",),
 }
 
+# Row filters for the phase-1 per-file subset: edges synthesized by global
+# postprocessing carry provenance='inferred' and are absent from a per-file
+# scanner's output. Direct edges may carry NULL provenance before
+# postprocessing, hence IS NOT.
+PHASE1_ROW_FILTERS = {
+    "edges": "provenance IS NOT 'inferred'",
+}
+
 
 def _expr(view: str, column: str) -> str:
     return _COLUMN_SQL.get((view, column), column)
 
 
-def view_sql(view: str, columns: Sequence[str]) -> str:
+def view_sql(view: str, columns: Sequence[str], where: str = "") -> str:
     select = ",".join(_expr(view, column) for column in columns)
     order = ",".join(_expr(view, column) for column in _ORDER_BY[view])
-    return f"SELECT {select} FROM {_FROM[view]} ORDER BY {order}"
+    where_clause = f" WHERE {where}" if where else ""
+    return f"SELECT {select} FROM {_FROM[view]}{where_clause} ORDER BY {order}"
 
 
 def oracle_columns() -> dict[str, tuple[str, ...]]:
@@ -90,11 +99,23 @@ def canary_columns() -> dict[str, tuple[str, ...]]:
     }
 
 
-def state(
-    db: sqlite3.Connection, view_columns: Mapping[str, Sequence[str]]
-) -> dict[str, list[tuple[Any, ...]]]:
+def phase1_columns() -> dict[str, tuple[str, ...]]:
     return {
-        view: db.execute(view_sql(view, columns)).fetchall()
+        view: tuple(column for column, _cls in spec["columns"])
+        for view, spec in classification.PHASE1_VIEWS.items()
+    }
+
+
+def state(
+    db: sqlite3.Connection,
+    view_columns: Mapping[str, Sequence[str]],
+    row_filters: Optional[Mapping[str, str]] = None,
+) -> dict[str, list[tuple[Any, ...]]]:
+    filters = row_filters or {}
+    return {
+        view: db.execute(
+            view_sql(view, columns, filters.get(view, ""))
+        ).fetchall()
         for view, columns in view_columns.items()
     }
 
@@ -105,3 +126,7 @@ def oracle_state(db: sqlite3.Connection) -> dict[str, list[tuple[Any, ...]]]:
 
 def canary_state(db: sqlite3.Connection) -> dict[str, list[tuple[Any, ...]]]:
     return state(db, canary_columns())
+
+
+def phase1_state(db: sqlite3.Connection) -> dict[str, list[tuple[Any, ...]]]:
+    return state(db, phase1_columns(), PHASE1_ROW_FILTERS)
