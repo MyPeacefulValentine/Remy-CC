@@ -51,21 +51,6 @@ CONFIG_SNAPSHOT_KEYS = (
 # classified per R3 dev-plan §7.3.
 KNOWN_GAPS = (
     {
-        "id": "cross-file-trait-impl",
-        "classification": "category-2-shared-defect",
-        "description": (
-            "Cross-file `impl Trait for Type` produces neither struct/enum "
-            "bases entries nor trait-impl synthetic edges (RustParser is "
-            "per-file; no cross-file merge postprocess exists)."
-        ),
-        "fix_window": "before R3.4",
-        "fix_procedure": (
-            "Fix Python and Rust scanners in the same change, bump the Rust "
-            "CACHE_CONTRACT_VERSION, regenerate the oracle baseline, and "
-            "update this manifest's identity."
-        ),
-    },
-    {
         "id": "python-docstring-in-hash",
         "classification": "category-1-frozen-compat",
         "description": (
