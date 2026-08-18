@@ -1,11 +1,8 @@
-//! scanner-core — Rust replication of the frozen Python oracle's per-file
-//! fact extraction (R3.2 scope: C/C++ only).
-//!
-//! Every byte written to the fact tables replicates the Python scanner's
-//! output for the phase-1 per-file subset (files without kind columns,
-//! symbols, symbol_occurrences, direct edges, patterns). Global
-//! postprocessing (edge disambiguation, clusters, retrieval projection)
-//! is out of scope until R3.4.
+//! scanner-core — Rust replication of the frozen Python oracle: per-file
+//! fact extraction for all four languages (R3.2/R3.3) plus the global
+//! postprocess (R3.4: direct-edge disambiguation, import-binding
+//! derivation, inferred-edge synthesis, file kinds, clusters, summary
+//! invalidation, and the retrieval projection).
 //!
 //! Cross-implementation contracts replicated here:
 //! - JSON column encoding: Python `json.dumps` default format
@@ -20,6 +17,7 @@
 //! - Exclusion matching: Python `fnmatch` semantics, case-insensitive on
 //!   Windows.
 
+pub mod clusters;
 pub mod config;
 pub mod discovery;
 pub mod facts;
@@ -31,12 +29,16 @@ pub mod parse_python;
 pub mod parse_rust;
 pub mod parse_ts;
 pub mod patterns_c;
+pub mod postprocess;
+pub mod projection;
 pub mod py_repr;
 pub mod py_unparse;
 pub mod pyjson;
+pub mod rconfig;
 pub mod result;
 pub mod scan;
 pub mod selection;
+pub mod synth;
 pub mod writer;
 
 /// Logic index DDL — the shared single source (skills/remy-index/schema.sql).

@@ -7,6 +7,9 @@
 //! - `dumps_identity`: `json.dumps(value, ensure_ascii=False,
 //!   sort_keys=True, separators=(",", ":"))` — parser cache identity
 //!   environment encoding (parsers/base.py ParserCacheIdentity.create).
+//! - `dumps_summary`: `json.dumps(value, ensure_ascii=False)` — initial
+//!   summary payloads written by scan_file (spaced separators, insertion
+//!   order, non-ASCII passed through).
 
 use serde_json::Value;
 
@@ -19,6 +22,12 @@ pub fn dumps_default(value: &Value) -> String {
 pub fn dumps_identity(value: &Value) -> String {
     let mut out = String::new();
     write_value(&mut out, value, ",", ":", false, true);
+    out
+}
+
+pub fn dumps_summary(value: &Value) -> String {
+    let mut out = String::new();
+    write_value(&mut out, value, ", ", ": ", false, false);
     out
 }
 
@@ -126,6 +135,19 @@ mod tests {
             r#"{"tree-sitter":"0.25.2","tree-sitter-c":"0.24.2"}"#
         );
         assert_eq!(dumps_identity(&json!({})), "{}");
+    }
+
+    #[test]
+    fn summary_format_matches_python_probe_vectors() {
+        // Probe 2026-08-19: json.dumps({...}, ensure_ascii=False).
+        assert_eq!(
+            dumps_summary(&json!({"short": "[Doc] 中文摘要 é", "full": null})),
+            "{\"short\": \"[Doc] 中文摘要 é\", \"full\": null}"
+        );
+        assert_eq!(
+            dumps_summary(&json!({"short": "Small utility function.", "full": null})),
+            "{\"short\": \"Small utility function.\", \"full\": null}"
+        );
     }
 
     #[test]

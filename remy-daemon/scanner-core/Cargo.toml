@@ -8,6 +8,7 @@ license = "MIT"
 [dependencies]
 md-5 = "0.10"
 regex = "1"
+sha2 = "0.10"
 rusqlite = { version = "0.37", features = ["bundled", "backup"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

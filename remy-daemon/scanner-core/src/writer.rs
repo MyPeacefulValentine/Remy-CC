@@ -1,26 +1,72 @@
-//! Single-writer SQLite primitives: schema creation, index lifecycle for
-//! bulk loads, per-file fact writes, and meta bookkeeping. All functions
-//! take the caller's transaction; transaction boundaries (single
-//! transaction per scan, rollback on pipeline failure) live in scan.rs.
+//! Single-writer SQLite primitives: schema creation with the
+//! initialize_database version guard, index lifecycle for bulk loads,
+//! per-file fact writes with the scan_file summary/projection semantics,
+//! and meta bookkeeping. All functions take the caller's transaction;
+//! transaction boundaries (single transaction per scan, rollback on
+//! pipeline failure) live in scan.rs.
 
 use crate::facts::FileFacts;
+use crate::projection;
 use crate::pyjson;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
-use serde_json::Value;
+use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet};
 
-pub fn open_db(path: &std::path::Path) -> rusqlite::Result<Connection> {
+/// migrations.initialize_database guard, fail-closed: a fresh (or empty)
+/// database gets the schema and version stamp; an existing database with a
+/// missing or non-current version is refused unchanged — the migration
+/// ladder stays a Python-side single owner (run the Python scanner once to
+/// migrate, then rescan here).
+pub fn open_db(path: &std::path::Path) -> Result<Connection, String> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             let _ = std::fs::create_dir_all(parent);
         }
     }
-    let conn = Connection::open(path)?;
-    conn.execute_batch(crate::SCHEMA_SQL)?;
-    conn.execute(
-        "INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?1)",
-        params![crate::SCHEMA_VERSION],
-    )?;
-    Ok(conn)
+    let db_existed = path.exists();
+    let conn = Connection::open(path).map_err(|e| format!("open failed: {e}"))?;
+    let table_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("schema probe failed: {e}"))?;
+    if !db_existed || table_count == 0 {
+        conn.execute_batch(crate::SCHEMA_SQL)
+            .map_err(|e| format!("schema create failed: {e}"))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?1)",
+            params![crate::SCHEMA_VERSION],
+        )
+        .map_err(|e| format!("version stamp failed: {e}"))?;
+        return Ok(conn);
+    }
+    let version: Option<String> = conn
+        .query_row("SELECT value FROM meta WHERE key='version'", [], |row| {
+            row.get(0)
+        })
+        .optional()
+        .unwrap_or(None);
+    match version {
+        None => Err(format!(
+            "Existing logic_index.db at {} has no schema version. \
+             The database is preserved unchanged.",
+            path.display()
+        )),
+        Some(version) if version != crate::SCHEMA_VERSION => Err(format!(
+            "logic_index.db at {} has schema version {version}, expected {}. \
+             The database is preserved unchanged; migrate it with the Python \
+             scanner first.",
+            path.display(),
+            crate::SCHEMA_VERSION
+        )),
+        Some(_) => {
+            conn.execute_batch(crate::SCHEMA_SQL)
+                .map_err(|e| format!("schema replay failed: {e}"))?;
+            Ok(conn)
+        }
+    }
 }
 
 /// Drop every secondary index so a bulk load writes plain tables first;
@@ -66,11 +112,45 @@ pub fn file_unchanged(tx: &Transaction, facts: &FileFacts) -> rusqlite::Result<b
 }
 
 /// scan_file's write path: upsert the files row, then replace the file's
-/// symbols, symbol_occurrences, edges, and patterns.
-pub fn write_file_facts(tx: &Transaction, facts: &FileFacts) -> rusqlite::Result<()> {
+/// symbols, symbol_occurrences, edges, and patterns, carrying the
+/// summary-invalidation and retrieval-projection side effects (symbol hash
+/// change marks the symbol summary stale, symbol-set change marks the file
+/// summary stale, initial summaries from docstrings / the small-function
+/// filter, refresh_node per symbol and file).
+pub fn write_file_facts(
+    tx: &Transaction,
+    facts: &FileFacts,
+    filter_small: bool,
+) -> rusqlite::Result<()> {
     if file_unchanged(tx, facts)? {
         return Ok(());
     }
+
+    let old_hashes: HashMap<String, Option<String>> = {
+        let mut stmt = tx.prepare("SELECT name, hash FROM symbols WHERE file_path = ?1")?;
+        let rows: Vec<(String, Option<String>)> = stmt
+            .query_map(params![facts.rel_path], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?
+            .collect::<Result<_, _>>()?;
+        rows.into_iter().collect()
+    };
+    let old_symbol_refs: HashSet<String> = old_hashes
+        .keys()
+        .map(|name| format!("{}::{}", facts.rel_path, name))
+        .collect();
+    let existing_versions: HashMap<String, i64> = {
+        let mut stmt = tx.prepare(
+            "SELECT node_ref, MAX(version) FROM summary_versions \
+             WHERE node_kind = 'symbol' AND node_ref LIKE ?1 GROUP BY node_ref",
+        )?;
+        let rows: Vec<(String, i64)> = stmt
+            .query_map(params![format!("{}::%", facts.rel_path)], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?
+            .collect::<Result<_, _>>()?;
+        rows.into_iter().collect()
+    };
 
     let exists: Option<i64> = tx
         .query_row(
@@ -157,6 +237,8 @@ pub fn write_file_facts(tx: &Transaction, facts: &FileFacts) -> rusqlite::Result
 
     let language = crate::language::Language::from_language_id(&facts.language_id)
         .expect("language_id written by scan is always registered");
+    let now_iso = projection::now_local_iso(tx)?;
+    let mut new_symbol_refs: HashSet<String> = HashSet::new();
     for symbol in &facts.canonical_symbols {
         let hash = crate::hashes::symbol_hash(&language.symbol_hash_input(&symbol.source_segment));
         let short_name = symbol
@@ -191,7 +273,52 @@ pub fn write_file_facts(tx: &Transaction, facts: &FileFacts) -> rusqlite::Result
                 tokens,
             ],
         )?;
+
+        let node_ref = format!("{}::{}", facts.rel_path, symbol.name);
+        new_symbol_refs.insert(node_ref.clone());
+        let hash_unchanged = old_hashes.get(&symbol.name) == Some(&Some(hash));
+        let has_existing_version = existing_versions.contains_key(&node_ref);
+        if hash_unchanged && has_existing_version {
+            projection::refresh_node(tx, "symbol", &node_ref)?;
+            continue;
+        }
+        if has_existing_version {
+            projection::mark_current_summary_stale(tx, "symbol", &node_ref)?;
+        }
+
+        let mut initial_summary: Option<String> = None;
+        if let Some(docstring) = &symbol.docstring {
+            let lines: Vec<&str> = docstring
+                .split('\n')
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .collect();
+            if !lines.is_empty() {
+                initial_summary = Some(format!("[Doc] {}", lines[..lines.len().min(3)].join(" ")));
+            }
+        } else if filter_small && symbol.source_segment.lines().count() < 3 {
+            initial_summary = Some("Small utility function.".to_string());
+        }
+
+        if let Some(short) = initial_summary {
+            let new_version = existing_versions.get(&node_ref).copied().unwrap_or(0) + 1;
+            let payload = pyjson::dumps_summary(&json!({"short": short, "full": null}));
+            tx.execute(
+                "INSERT INTO summary_versions (node_kind, node_ref, version, summary, status, created_at) \
+                 VALUES ('symbol', ?1, ?2, ?3, 'ok', ?4)",
+                params![node_ref, new_version, payload, now_iso],
+            )?;
+        }
+        projection::refresh_node(tx, "symbol", &node_ref)?;
     }
+
+    for removed_ref in old_symbol_refs.difference(&new_symbol_refs) {
+        projection::delete_node(tx, "symbol", removed_ref)?;
+    }
+    if exists.is_some() && old_symbol_refs != new_symbol_refs {
+        projection::mark_current_summary_stale(tx, "file", &facts.rel_path)?;
+    }
+    projection::refresh_node(tx, "file", &facts.rel_path)?;
 
     for edge in &facts.edges {
         tx.execute(
@@ -225,8 +352,21 @@ pub fn write_file_facts(tx: &Transaction, facts: &FileFacts) -> rusqlite::Result
     Ok(())
 }
 
-/// StructScanner._delete_file, phase-1 tables only.
+/// StructScanner._delete_file: retrieval-projection cascade first, then
+/// the fact rows (manual per-table deletes replicate the oracle's
+/// foreign-key cascade — this connection never enables foreign_keys).
 pub fn delete_file(tx: &Transaction, rel_path: &str) -> rusqlite::Result<bool> {
+    let symbol_refs: Vec<String> = {
+        let mut stmt = tx.prepare(
+            "SELECT file_path || '::' || name FROM symbols \
+             WHERE file_path = ?1 ORDER BY name",
+        )?;
+        let collected = stmt
+            .query_map(params![rel_path], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+        collected
+    };
+    projection::delete_file_nodes(tx, rel_path, &symbol_refs)?;
     tx.execute(
         "DELETE FROM symbols WHERE file_path = ?1",
         params![rel_path],
@@ -264,6 +404,48 @@ pub fn write_meta(tx: &Transaction, file_count: Option<usize>) -> rusqlite::Resu
     Ok(())
 }
 
+/// `scanner._resolve_git_head` + the meta source_commit write on the full
+/// scan's success path: try the scan root, then the directory inferred
+/// from the first indexed file (multi-repo workspaces); silently skip when
+/// no git context resolves.
+pub fn write_source_commit(tx: &Transaction, root_dir: &std::path::Path) -> rusqlite::Result<()> {
+    let mut candidates = vec![root_dir.to_path_buf()];
+    let first_file: Option<String> = tx
+        .query_row("SELECT path FROM files LIMIT 1", [], |row| row.get(0))
+        .optional()?;
+    if let Some(rel) = first_file {
+        let joined = root_dir.join(rel);
+        if let Some(parent) = joined.parent() {
+            candidates.push(parent.to_path_buf());
+        }
+    }
+    for candidate in candidates {
+        if !candidate.is_dir() {
+            continue;
+        }
+        let output = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&candidate)
+            .output();
+        let Ok(output) = output else {
+            continue;
+        };
+        if !output.status.success() {
+            continue;
+        }
+        let head = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if head.is_empty() {
+            continue;
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('source_commit', ?1)",
+            params![head],
+        )?;
+        return Ok(());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,7 +479,7 @@ mod tests {
         {
             let tx = conn.transaction().unwrap();
             drop_secondary_indexes(&tx).unwrap();
-            write_file_facts(&tx, &sample_facts("a.c")).unwrap();
+            write_file_facts(&tx, &sample_facts("a.c"), false).unwrap();
             // Simulated pipeline failure: the transaction is dropped
             // without commit.
         }
@@ -326,7 +508,7 @@ mod tests {
         {
             let tx = conn.transaction().unwrap();
             drop_secondary_indexes(&tx).unwrap();
-            write_file_facts(&tx, &sample_facts("a.c")).unwrap();
+            write_file_facts(&tx, &sample_facts("a.c"), false).unwrap();
             rebuild_indexes(&tx).unwrap();
             write_meta(&tx, Some(1)).unwrap();
             tx.commit().unwrap();
@@ -359,7 +541,7 @@ mod tests {
         let facts = sample_facts("a.c");
         {
             let tx = conn.transaction().unwrap();
-            write_file_facts(&tx, &facts).unwrap();
+            write_file_facts(&tx, &facts, false).unwrap();
             tx.commit().unwrap();
         }
         {

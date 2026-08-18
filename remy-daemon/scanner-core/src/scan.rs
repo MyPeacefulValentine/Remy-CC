@@ -1,7 +1,9 @@
 //! Scan orchestration: discovery → parallel parse workers → bounded
 //! channel → single writer thread owning the connection, one transaction
 //! per scan (R3.2 decision: parse pool + mpsc + single writer; full scans
-//! write tables first and rebuild indexes afterwards).
+//! write tables first and rebuild indexes afterwards). The global
+//! postprocess (R3.4) runs inside the same transaction, so any failure
+//! rolls the database back to its pre-scan state.
 
 use crate::config::ScanConfig;
 use crate::discovery::{self, DiscoveredFile};
@@ -190,11 +192,12 @@ pub fn scan_full(
     progress: bool,
 ) -> Result<ScanResult, String> {
     let config = ScanConfig::load(root_dir);
+    let pconfig = crate::rconfig::load(root_dir)?;
     let files =
         discovery::discover(root_dir, &config).map_err(|e| format!("discovery failed: {e}"))?;
     let discovered: Vec<String> = files.iter().map(|f| f.rel_path.clone()).collect();
 
-    let mut conn = writer::open_db(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    let mut conn = writer::open_db(db_path)?;
     let pool = spawn_parse_pool(root_dir, &config, files, jobs);
 
     let started = std::time::Instant::now();
@@ -210,7 +213,7 @@ pub fn scan_full(
         for outcome in pool.receiver.iter() {
             match outcome {
                 FileOutcome::Facts(facts) => {
-                    writer::write_file_facts(&tx, &facts)
+                    writer::write_file_facts(&tx, &facts, pconfig.filter_small)
                         .map_err(|e| format!("write failed for {}: {e}", facts.rel_path))?;
                     successful.push(facts.rel_path.clone());
                 }
@@ -241,8 +244,11 @@ pub fn scan_full(
             );
         }
         writer::rebuild_indexes(&tx).map_err(|e| format!("index rebuild failed: {e}"))?;
+        crate::postprocess::run(&tx, &pconfig).map_err(|e| format!("postprocess failed: {e}"))?;
         writer::write_meta(&tx, Some(discovered.len()))
             .map_err(|e| format!("meta write failed: {e}"))?;
+        writer::write_source_commit(&tx, root_dir)
+            .map_err(|e| format!("source commit write failed: {e}"))?;
         tx.commit().map_err(|e| format!("commit failed: {e}"))?;
     }
 
@@ -311,7 +317,8 @@ pub fn scan_files(
         });
     }
 
-    let mut conn = writer::open_db(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    let pconfig = crate::rconfig::load(root_dir)?;
+    let mut conn = writer::open_db(db_path)?;
     let pool = spawn_parse_pool(root_dir, &config, to_parse, jobs);
     {
         let tx = conn
@@ -326,7 +333,7 @@ pub fn scan_files(
         for outcome in pool.receiver.iter() {
             match outcome {
                 FileOutcome::Facts(facts) => {
-                    writer::write_file_facts(&tx, &facts)
+                    writer::write_file_facts(&tx, &facts, pconfig.filter_small)
                         .map_err(|e| format!("write failed for {}: {e}", facts.rel_path))?;
                     successful.push(facts.rel_path.clone());
                 }
@@ -341,6 +348,7 @@ pub fn scan_files(
             }
         }
         join_pool(pool.handles)?;
+        crate::postprocess::run(&tx, &pconfig).map_err(|e| format!("postprocess failed: {e}"))?;
         writer::write_meta(&tx, None).map_err(|e| format!("meta write failed: {e}"))?;
         tx.commit().map_err(|e| format!("commit failed: {e}"))?;
     }
