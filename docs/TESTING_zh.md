@@ -35,7 +35,7 @@ python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend
 python tests/tee_project_canary.py tests/fixtures/tee_canary --fixture --backend tree-sitter --scope product
 ```
 
-持续集成在不安装tree-sitter的Python 3.10环境和安装固定tree-sitter包的Python 3.12环境运行全部测试。两个作业分别使用可用解析后端执行固定公开TEE fixture canary。Windows Python 3.12作业安装固定tree-sitter包，运行进程锁、脏队列和Rust解析器测试（同时验证pin的grammar组合在Windows可安装）。Rust作业的Linux与Windows两臂均安装固定tree-sitter包并运行`tests/test_scanner_core_diff.py`跨实现差分测试（四语言fixture语料、混合项目、Python失败映射；无cargo二进制或无tree-sitter时跳过）。
+持续集成在不安装tree-sitter的Python 3.10环境和安装固定tree-sitter包的Python 3.12环境运行全部测试。两个作业分别使用可用解析后端执行固定公开TEE fixture canary。Windows Python 3.12作业安装固定tree-sitter包，运行进程锁、脏队列和Rust解析器测试（同时验证pin的grammar组合在Windows可安装）。Rust作业的Linux与Windows两臂均安装固定tree-sitter包并运行`tests/test_scanner_core_diff.py`跨实现差分测试（四语言fixture语料、混合项目、Python失败映射；R3.4起增加全量视图差分——含后处理产物edge_candidates/clusters/retrieval_documents与推断边、跨文件trait-impl一致性、旧schema版本fail-closed守卫——以及`tests/test_postprocess_parity.py`的摘要失效状态机双侧逐值断言、后处理失败注入与窄配置默认值契约；无cargo二进制或无tree-sitter时跳过）。
 
 ## P1.1确定性检索基线
 

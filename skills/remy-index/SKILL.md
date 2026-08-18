@@ -16,7 +16,7 @@ Supports multi-language projects. Language is detected automatically by file ext
 - TypeScript: `.ts`, `.tsx`
 - Rust: `.rs`
 
-C/C++ and TypeScript/TSX parsing use regex-based extraction by default (zero external dependencies). Rust parsing requires the tree-sitter grammar (no regex fallback; without it `.rs` files fail scanning and keep previously indexed rows). Install `tree-sitter` for higher C/C++/TS precision and for Rust support:
+C/C++ and TypeScript/TSX parsing use regex-based extraction by default (zero external dependencies). Rust parsing requires the tree-sitter grammar (no regex fallback; without it `.rs` files fail scanning and keep previously indexed rows). Rust `impl Trait for Type` blocks are recorded as per-file `rust_trait_impl` facts; the global postprocess derives struct/enum `bases` from them (cross-file impls included, ambiguous short-name targets merge nothing) and synthesizes `trait-impl` edges at the impl site. Install `tree-sitter` for higher C/C++/TS precision and for Rust support:
 ```bash
 pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript tree-sitter-rust
 ```

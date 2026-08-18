@@ -101,6 +101,29 @@ def _phase1_findings(left_db: Path, right_db: Path):
     )
 
 
+def _full_findings(left_db: Path, right_db: Path):
+    return oracle_comparator.compare_dbs(left_db, right_db)
+
+
+def _full_state(db_path: Path):
+    db = sqlite3.connect(str(db_path))
+    try:
+        return oracle_normalization.oracle_state(db)
+    finally:
+        db.close()
+
+
+# Full-view informational findings may also cover the ALLOWED_DIFF summary
+# columns; fact columns stay EXACT and would surface as blocking instead.
+FULL_VIEW_ALLOWED_INFO = {
+    ("files", "parser_backend"),
+    ("files", "parser_environment"),
+    ("retrieval_documents", "summary_short"),
+    ("retrieval_documents", "summary_full"),
+    ("retrieval_documents", "content_hash"),
+}
+
+
 def test_fixture_diff_has_zero_blocking_findings(c_project: Path):
     python_db = _python_scan(c_project)
     rust_db = c_project.parent / "rust.db"
@@ -201,6 +224,111 @@ def test_mixed_language_project_diff_and_jobs_commute(tmp_path: Path):
         assert _rust_scan(destination, db, "--jobs", jobs)["outcome"] == "success"
         states.append(_phase1_state(db))
     assert states[0] == states[1]
+
+
+@pytest.mark.parametrize("corpus", LANGUAGE_CORPORA)
+def test_full_view_language_corpus_diff_has_zero_blocking(tmp_path: Path, corpus: str):
+    destination = tmp_path / corpus
+    shutil.copytree(CORPUS_ROOT / corpus, destination)
+    python_db = _python_scan(destination)
+    rust_db = tmp_path / f"rust_full_{corpus}.db"
+    report = _rust_scan(destination, rust_db)
+    assert report["outcome"] == "success"
+
+    findings = _full_findings(python_db, rust_db)
+    blocking = oracle_comparator.blocking(findings)
+    assert blocking == [], [
+        (f.view, f.category, f.key, f.column, f.left, f.right) for f in blocking
+    ]
+    informational = {(f.view, f.column) for f in findings}
+    assert informational <= FULL_VIEW_ALLOWED_INFO
+
+
+def test_full_view_mixed_project_diff_and_jobs_commute(tmp_path: Path):
+    destination = tmp_path / "mixed"
+    destination.mkdir()
+    for corpus in LANGUAGE_CORPORA:
+        shutil.copytree(CORPUS_ROOT / corpus, destination / corpus)
+    python_db = _python_scan(destination)
+    rust_db = tmp_path / "rust_full_mixed.db"
+    report = _rust_scan(destination, rust_db)
+    assert report["outcome"] == "success"
+    blocking = oracle_comparator.blocking(_full_findings(python_db, rust_db))
+    assert blocking == [], [
+        (f.view, f.category, f.key, f.column) for f in blocking
+    ]
+
+    states = []
+    for jobs in ("1", "8"):
+        db = tmp_path / f"rust_full_jobs_{jobs}.db"
+        assert _rust_scan(destination, db, "--jobs", jobs)["outcome"] == "success"
+        states.append(_full_state(db))
+    assert states[0] == states[1]
+
+
+def test_full_view_incremental_equals_full_scan(tmp_path: Path):
+    destination = tmp_path / "rust"
+    shutil.copytree(CORPUS_ROOT / "rust", destination)
+    _python_scan(destination)
+    full_db = tmp_path / "rust_full.db"
+    incremental_db = tmp_path / "rust_incremental.db"
+    full_report = _rust_scan(destination, full_db)
+    assert full_report["outcome"] == "success"
+    for rel in full_report["successful_paths"]:
+        report = _rust_scan(destination, incremental_db, "--files", rel)
+        assert report["outcome"] == "success"
+    assert _full_state(full_db) == _full_state(incremental_db)
+
+
+def test_cross_file_trait_impl_agrees_across_implementations(tmp_path: Path):
+    destination = tmp_path / "rust"
+    shutil.copytree(CORPUS_ROOT / "rust", destination)
+    python_db = _python_scan(destination)
+    rust_db = tmp_path / "rust_traits.db"
+    assert _rust_scan(destination, rust_db)["outcome"] == "success"
+
+    for db_path in (python_db, rust_db):
+        db = sqlite3.connect(str(db_path))
+        try:
+            kind_bases = db.execute(
+                "SELECT bases FROM symbols WHERE name='Kind'"
+            ).fetchone()
+            assert kind_bases == ('["HasArea"]',), db_path
+            gauges = db.execute(
+                "SELECT file_path, bases FROM symbols WHERE short_name='Gauge' "
+                "ORDER BY file_path"
+            ).fetchall()
+            assert gauges == [("impls.rs", None), ("widgets.rs", None)], db_path
+            cross_edge = db.execute(
+                "SELECT COUNT(*) FROM edges WHERE via='trait-impl' "
+                "AND callee_qualified='impls.rs::Kind.area'"
+            ).fetchone()
+            assert cross_edge == (1,), db_path
+        finally:
+            db.close()
+
+
+def test_rust_scan_refuses_non_current_schema_version(tmp_path: Path):
+    destination = tmp_path / "rust"
+    shutil.copytree(CORPUS_ROOT / "rust", destination)
+    _python_scan(destination)
+    stale_db = tmp_path / "stale.db"
+    db = sqlite3.connect(str(stale_db))
+    db.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+    db.execute("INSERT INTO meta VALUES ('version', '11.0.0')")
+    db.commit()
+    before = stale_db.read_bytes()
+    db.close()
+    completed = subprocess.run(
+        [str(BINARY), "scan", "--root", str(destination), "--db", str(stale_db), "--result-json"],
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 1
+    report = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert report["outcome"] == "failed"
+    assert "11.0.0" in report["errors"][0]["message"]
+    assert stale_db.read_bytes() == before
 
 
 def test_python_failure_mapping_matches_oracle(tmp_path: Path):
