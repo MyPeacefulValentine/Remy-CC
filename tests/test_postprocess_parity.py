@@ -249,6 +249,58 @@ class TestPostprocessFailureInjection:
         assert rust_db.read_bytes() == before
 
 
+@pytest.mark.skipif(not PYTHON_PARSER_AVAILABLE, reason="python parser unavailable")
+class TestMcpReadsRustDatabase:
+    def test_mcp_queries_agree_between_databases(self, twin_projects):
+        _root, python_db, rust_db = twin_projects
+        sys.path.insert(0, str(REPO_ROOT / "remy-src"))
+        import index_mcp_common
+        import index_mcp_facts
+        import index_mcp_graph
+
+        results = []
+        for db_path in (python_db, rust_db):
+            with index_mcp_common.database_override(db_path):
+                results.append(
+                    (
+                        index_mcp_facts.query_symbol_impl("documented"),
+                        index_mcp_graph.query_callers_impl(
+                            "documented", depth=2, include_ambiguous=False, static_only=False
+                        ),
+                        index_mcp_facts.query_cluster_summary_impl(),
+                        index_mcp_facts.query_file_summary_impl("pkg/a.py"),
+                    )
+                )
+        assert results[0] == results[1]
+        assert "documented" in str(results[1][0])
+
+    def test_full_scan_records_source_commit_in_git_repo(self, tmp_path):
+        root = tmp_path / "repo"
+        (root / ".claude").mkdir(parents=True)
+        (root / ".claude" / "logic_index_config").write_text("!.claude/\n", encoding="utf-8")
+        (root / "lib.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(
+            ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"],
+            cwd=root,
+            check=True,
+        )
+        head = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=root, text=True
+        ).strip()
+        rust_db = tmp_path / "rust_git.db"
+        assert _rust_scan(root, rust_db)["outcome"] == "success"
+        db = sqlite3.connect(str(rust_db))
+        try:
+            stored = db.execute(
+                "SELECT value FROM meta WHERE key='source_commit'"
+            ).fetchone()
+        finally:
+            db.close()
+        assert stored == (head,)
+
+
 class TestNarrowConfigContract:
     """Locks the Python registry values replicated by scanner-core's
     rconfig.rs; a drift on either side must update both and this snapshot."""
