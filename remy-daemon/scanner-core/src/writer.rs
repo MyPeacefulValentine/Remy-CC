@@ -287,7 +287,9 @@ pub fn write_file_facts(
         }
 
         let mut initial_summary: Option<String> = None;
-        if let Some(docstring) = &symbol.docstring {
+        // Python truthiness: an empty docstring falls through to the
+        // small-function branch, exactly like a missing one.
+        if let Some(docstring) = symbol.docstring.as_deref().filter(|d| !d.is_empty()) {
             let lines: Vec<&str> = docstring
                 .split('\n')
                 .map(str::trim)
