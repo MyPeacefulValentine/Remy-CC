@@ -394,6 +394,97 @@ class TestRustScanIntegration:
         finally:
             scanner.db.close()
 
+    def test_trait_impl_patterns_extracted(self):
+        patterns = RustParser().extract_patterns(
+            "mod inner {\n"
+            "    impl fmt::Display for Gadget {}\n"
+            "}\n"
+            "impl Shape for Point {}\n",
+            "demo.rs",
+        )
+        assert patterns == [
+            {
+                "pattern_type": "rust_trait_impl",
+                "signal_name": "Display",
+                "handler": "inner.Gadget",
+                "line": 2,
+                "metadata": {"trait_path": "fmt::Display"},
+            },
+            {
+                "pattern_type": "rust_trait_impl",
+                "signal_name": "Shape",
+                "handler": "Point",
+                "line": 4,
+                "metadata": {"trait_path": "Shape"},
+            },
+        ]
+
+    def _cross_file_project(self, tmp_path):
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        (claude_dir / "logic_index_config").write_text("!.claude/\n", encoding="utf-8")
+        (tmp_path / "traits.rs").write_text(
+            "pub trait Persist {\n    fn persist(&self);\n}\n\npub struct Store;\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "backend.rs").write_text(
+            "impl crate::traits::Persist for Store {\n"
+            "    fn persist(&self) {}\n"
+            "}\n"
+            "\n"
+            "impl crate::traits::Persist for Widget {\n"
+            "    fn persist(&self) {}\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "dup_a.rs").write_text("pub struct Widget;\n", encoding="utf-8")
+        (tmp_path / "dup_b.rs").write_text("pub struct Widget;\n", encoding="utf-8")
+        return tmp_path
+
+    def test_cross_file_trait_impl_merges_bases_and_synthesizes_edges(self, tmp_path):
+        project = self._cross_file_project(tmp_path)
+        scanner = StructScanner(str(project))
+        try:
+            scanner.scan_all()
+            store_bases = scanner.db.execute(
+                "SELECT bases FROM symbols WHERE file_path='traits.rs' AND name='Store'"
+            ).fetchone()
+            assert store_bases == ('["Persist"]',)
+            widget_bases = scanner.db.execute(
+                "SELECT file_path, bases FROM symbols WHERE short_name='Widget' "
+                "ORDER BY file_path"
+            ).fetchall()
+            assert widget_bases == [("dup_a.rs", None), ("dup_b.rs", None)]
+            edges = scanner.db.execute(
+                "SELECT caller, callee_qualified FROM edges WHERE via='trait-impl' "
+                "ORDER BY callee_qualified"
+            ).fetchall()
+            assert edges == [
+                ("Persist.persist", "backend.rs::Store.persist"),
+                ("Persist.persist", "backend.rs::Widget.persist"),
+            ]
+        finally:
+            scanner.db.close()
+
+    def test_cross_file_impl_removal_shrinks_bases_incrementally(self, tmp_path):
+        project = self._cross_file_project(tmp_path)
+        scanner = StructScanner(str(project))
+        try:
+            scanner.scan_all()
+            (project / "backend.rs").unlink()
+            result = scanner.scan_files(["backend.rs"])
+            assert result.status.value == "success"
+            store_bases = scanner.db.execute(
+                "SELECT bases FROM symbols WHERE file_path='traits.rs' AND name='Store'"
+            ).fetchone()
+            assert store_bases == (None,)
+            remaining = scanner.db.execute(
+                "SELECT COUNT(*) FROM edges WHERE via='trait-impl'"
+            ).fetchone()
+            assert remaining == (0,)
+        finally:
+            scanner.db.close()
+
     def test_full_and_incremental_scans_produce_same_projection(self, tmp_path):
         project = _rust_project(tmp_path)
         incremental = StructScanner(str(project))

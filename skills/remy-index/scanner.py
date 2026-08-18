@@ -582,10 +582,79 @@ class StructScanner:
         self._reset_direct_edge_resolution()
         self._resolve_call_edges()
         self._purge_heuristic_edges()
+        self._overwrite_rust_trait_bases()
         synth_counts = self._run_synthesizers()
         self._compute_file_kinds()
         self._detect_clusters()
         return synth_counts
+
+    def _resolve_rust_impl_target(self, impl_file, full_type):
+        exact = self.db.execute(
+            "SELECT file_path, name FROM symbols WHERE file_path = ? AND name = ? "
+            "AND type IN ('struct', 'enum')",
+            (impl_file, full_type)
+        ).fetchall()
+        if len(exact) == 1:
+            return exact[0]
+        short = full_type.split(".")[-1]
+        same_file = self.db.execute(
+            "SELECT file_path, name FROM symbols WHERE file_path = ? AND short_name = ? "
+            "AND type IN ('struct', 'enum') ORDER BY name",
+            (impl_file, short)
+        ).fetchall()
+        if len(same_file) == 1:
+            return same_file[0]
+        if same_file:
+            return None
+        global_rows = self.db.execute(
+            "SELECT file_path, name FROM symbols WHERE short_name = ? "
+            "AND type IN ('struct', 'enum') AND file_path LIKE '%.rs' "
+            "ORDER BY file_path, name",
+            (short,)
+        ).fetchall()
+        if len(global_rows) == 1:
+            return global_rows[0]
+        return None
+
+    def _overwrite_rust_trait_bases(self):
+        """Re-derive .rs struct/enum bases from rust_trait_impl facts.
+
+        Rust type bases exist only through trait impls, so a full overwrite
+        from the global patterns table is idempotent and covers cross-file
+        ``impl Trait for Type`` blocks the per-file parser merge cannot see.
+        Target resolution mirrors the parser rule: same-file exact name,
+        then same-file unique short name, then global unique short name;
+        ambiguous targets merge nothing.
+        """
+        impls = self.db.execute(
+            "SELECT file_path, signal_name, handler FROM patterns "
+            "WHERE pattern_type = 'rust_trait_impl' "
+            "AND signal_name IS NOT NULL AND handler IS NOT NULL "
+            "ORDER BY file_path, COALESCE(line, 0), signal_name, handler"
+        ).fetchall()
+
+        merged = {}
+        for impl_file, trait_name, full_type in impls:
+            target = self._resolve_rust_impl_target(impl_file, full_type)
+            if target is None:
+                continue
+            traits = merged.setdefault(target, [])
+            if trait_name not in traits:
+                traits.append(trait_name)
+
+        rust_types = self.db.execute(
+            "SELECT file_path, name, bases FROM symbols "
+            "WHERE type IN ('struct', 'enum') AND file_path LIKE '%.rs' "
+            "ORDER BY file_path, name"
+        ).fetchall()
+        for file_path, name, old_bases in rust_types:
+            traits = merged.get((file_path, name))
+            new_bases = json.dumps(traits) if traits else None
+            if new_bases != old_bases:
+                self.db.execute(
+                    "UPDATE symbols SET bases = ? WHERE file_path = ? AND name = ?",
+                    (new_bases, file_path, name)
+                )
 
     def _compute_file_kinds(self):
         rows = self.db.execute(

@@ -16,14 +16,16 @@
 //!   comments are single tokens; regex cannot express that).
 //! - **Trait bases**: same-file `impl Trait for Type` merges the trait's
 //!   short name into the type's bases (exact full-name match first, then a
-//!   unique short-name fallback). Cross-file impls stay a known gap until
-//!   R3.4.
+//!   unique short-name fallback). Every impl block additionally emits a
+//!   `rust_trait_impl` pattern fact; the global postprocess re-derives
+//!   bases from those facts and the synthesizer resolves cross-file impls
+//!   through them (R3.4).
 //! - **Imports**: `mod x;` file-existence mapping plus deterministic `use`
 //!   resolution — `crate::` anchors at the nearest lib.rs/main.rs ancestor,
 //!   `self`/`super` walk module directories, and bare heads are external
 //!   crates unless the file declares that module itself.
 
-use crate::facts::{CacheIdentity, EdgeInfo, SymbolInfo};
+use crate::facts::{CacheIdentity, EdgeInfo, PatternFact, SymbolInfo};
 use crate::parse_c_cpp::{normpath, relpath_slash};
 use crate::pyjson;
 use serde_json::json;
@@ -32,7 +34,7 @@ use std::path::{Path, PathBuf};
 use tree_sitter::{Node, Parser};
 
 pub const LANGUAGE_ID: &str = "RustParser";
-pub const CACHE_CONTRACT_VERSION: &str = "2";
+pub const CACHE_CONTRACT_VERSION: &str = "3";
 pub const EXTENSIONS: &[&str] = &[".rs"];
 
 /// Crate versions pinned in Cargo.toml, recorded in `parser_environment`
@@ -369,6 +371,65 @@ fn merge_trait_bases(symbols: &mut [SymbolInfo], trait_impls: &BTreeMap<String, 
         } else {
             Some(merged)
         };
+    }
+}
+
+/// `RustParser.extract_patterns`: one `rust_trait_impl` fact per
+/// `impl Trait for Type` block (impl-site view, recursive through inline
+/// modules), metadata carrying the full trait path text.
+pub fn extract_patterns(source: &str) -> Vec<PatternFact> {
+    let mut parser = make_parser();
+    let Some(tree) = parser.parse(source.as_bytes(), None) else {
+        return Vec::new();
+    };
+    let mut patterns = Vec::new();
+    walk_trait_impls(tree.root_node(), source, None, &mut patterns);
+    patterns
+}
+
+fn walk_trait_impls(
+    node: Node,
+    source: &str,
+    prefix: Option<&str>,
+    patterns: &mut Vec<PatternFact>,
+) {
+    let mut cursor = node.walk();
+    let children: Vec<Node> = node.children(&mut cursor).collect();
+    for child in children {
+        match child.kind() {
+            "impl_item" => {
+                let Some(impl_type) = type_name(child.child_by_field_name("type"), source) else {
+                    continue;
+                };
+                let trait_node = child.child_by_field_name("trait");
+                let Some(trait_name) = type_name(trait_node, source) else {
+                    continue;
+                };
+                if impl_type.is_empty() || trait_name.is_empty() {
+                    continue;
+                }
+                let full_type = qualified(prefix, &impl_type);
+                let trait_path = trait_node.map(|n| text(n, source)).unwrap_or("");
+                patterns.push(PatternFact {
+                    pattern_type: "rust_trait_impl".to_string(),
+                    signal_name: Some(trait_name),
+                    handler: Some(full_type),
+                    line: Some(child.start_position().row as i64 + 1),
+                    metadata_json: Some(pyjson::dumps_default(&json!({"trait_path": trait_path}))),
+                });
+            }
+            "mod_item" => {
+                let Some(name) = field_text(child, "name", source) else {
+                    continue;
+                };
+                let Some(body) = child.child_by_field_name("body") else {
+                    continue;
+                };
+                let full_mod = qualified(prefix, &name);
+                walk_trait_impls(body, source, Some(&full_mod), patterns);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -904,9 +965,50 @@ use util::paths::helper_fn;
     }
 
     #[test]
+    fn trait_impl_patterns_cover_same_file_cross_file_and_mod_scopes() {
+        let source = "\
+struct Point;
+trait Shape {}
+impl Shape for Point {}
+impl fmt::Display for Point {}
+mod inner {
+    pub struct Gadget;
+    impl super::Shape for Gadget {}
+}
+impl Plain for external::Widget {}
+";
+        let patterns = extract_patterns(source);
+        let rows: Vec<(&str, &str, i64, &str)> = patterns
+            .iter()
+            .map(|p| {
+                (
+                    p.signal_name.as_deref().unwrap_or(""),
+                    p.handler.as_deref().unwrap_or(""),
+                    p.line.unwrap_or(0),
+                    p.metadata_json.as_deref().unwrap_or(""),
+                )
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("Shape", "Point", 3, "{\"trait_path\": \"Shape\"}"),
+                ("Display", "Point", 4, "{\"trait_path\": \"fmt::Display\"}"),
+                (
+                    "Shape",
+                    "inner.Gadget",
+                    7,
+                    "{\"trait_path\": \"super::Shape\"}"
+                ),
+                ("Plain", "Widget", 9, "{\"trait_path\": \"Plain\"}"),
+            ]
+        );
+    }
+
+    #[test]
     fn cache_identity_is_the_rust_producer() {
         let identity = cache_identity();
-        assert_eq!(identity.contract_version, "2");
+        assert_eq!(identity.contract_version, "3");
         assert_eq!(identity.backend, "rust-tree-sitter");
         assert!(identity.environment.contains("tree-sitter-rust"));
     }

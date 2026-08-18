@@ -501,9 +501,9 @@ def test_oracle_manifest_generate_roundtrip(tmp_path: Path):
     }
     registry = {entry["language_id"]: entry for entry in loaded["registry"]}
     assert set(registry) == {"PythonParser", "CCppParser", "TSParser", "RustParser"}
-    assert registry["RustParser"]["cache_contract_version"] == "2"
+    assert registry["RustParser"]["cache_contract_version"] == "3"
     assert {gap["id"] for gap in loaded["known_gaps"]} == {
-        "cross-file-trait-impl", "python-docstring-in-hash",
+        "python-docstring-in-hash",
     }
     assert loaded["fixtures"], "oracle fixture corpus must be hashed"
 

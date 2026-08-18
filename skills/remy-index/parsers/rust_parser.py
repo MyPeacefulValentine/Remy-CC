@@ -122,7 +122,7 @@ class RustParser(LanguageParser):
     """Parser for Rust source files. Requires tree-sitter-rust; no fallback."""
 
     language_id = "RustParser"
-    CACHE_CONTRACT_VERSION = "2"
+    CACHE_CONTRACT_VERSION = "3"
 
     def get_extensions(self):
         return [".rs"]
@@ -331,6 +331,52 @@ class RustParser(LanguageParser):
                 if trait not in merged:
                     merged.append(trait)
             target.bases = merged or None
+
+    # ------------------------------------------------------------------
+    # Patterns (trait-impl facts)
+    # ------------------------------------------------------------------
+
+    def extract_patterns(self, source, file_path):
+        """Emit one ``rust_trait_impl`` fact per ``impl Trait for Type`` block.
+
+        Carries the impl site (file + impl-site qualified type name) so the
+        global postprocess can overwrite struct/enum bases and the
+        rust_trait_dispatch synthesizer can resolve methods in the impl
+        file — closing the cross-file impl gap a per-file bases merge
+        cannot see.
+        """
+        self._require_backend()
+        source_bytes = source.encode("utf-8")
+        tree = self._parse(source_bytes)
+        patterns = []
+        self._walk_trait_impls(tree.root_node, None, patterns)
+        return patterns
+
+    def _walk_trait_impls(self, node, prefix, patterns):
+        for child in node.children:
+            t = child.type
+            if t == "impl_item":
+                type_name = _type_name(child.child_by_field_name("type"))
+                trait_node = child.child_by_field_name("trait")
+                trait_name = _type_name(trait_node)
+                if not type_name or not trait_name:
+                    continue
+                full_type = f"{prefix}.{type_name}" if prefix else type_name
+                patterns.append({
+                    "pattern_type": "rust_trait_impl",
+                    "signal_name": trait_name,
+                    "handler": full_type,
+                    "line": child.start_point[0] + 1,
+                    "metadata": {"trait_path": _node_text(trait_node)},
+                })
+            elif t == "mod_item":
+                name_node = child.child_by_field_name("name")
+                body = child.child_by_field_name("body")
+                if name_node is None or body is None:
+                    continue
+                name = _node_text(name_node)
+                full_mod = f"{prefix}.{name}" if prefix else name
+                self._walk_trait_impls(body, full_mod, patterns)
 
     # ------------------------------------------------------------------
     # Call graph

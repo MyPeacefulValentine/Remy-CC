@@ -139,7 +139,7 @@ impl Language {
                 import_bindings_json: "[]".to_string(),
                 symbols: parse_rust::parse_symbols(source),
                 edges: parse_rust::extract_call_graph(source),
-                patterns: Vec::new(),
+                patterns: parse_rust::extract_patterns(source),
             },
         }
     }
