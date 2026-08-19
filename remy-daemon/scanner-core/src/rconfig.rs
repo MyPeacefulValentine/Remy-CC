@@ -1,4 +1,4 @@
-//! Narrow four-level replication of remy_config for the postprocess
+//! Narrow four-level replication of remy_config for the scanner-consumed
 //! parameters (environment > project > user > default, per-field range
 //! validation). Strict semantics: StructScanner.__init__ loads the full
 //! registry with strict=True, so an invalid value fails the Python scan
@@ -29,6 +29,10 @@ pub struct PostprocessConfig {
     pub resolve_score_global: i64,
     pub file_kind_min_symbols: i64,
     pub file_kind_low_cohesion_threshold: f64,
+    pub scan_lock_timeout: f64,
+    /// Parsed for contract parity with PARAM_REGISTRY; the consumer is the
+    /// R3.5b daemon worker (scan-job timeout), not the scanner itself.
+    pub struct_scan_timeout: i64,
 }
 
 pub fn user_home() -> Option<PathBuf> {
@@ -211,6 +215,15 @@ fn load_from(root: &Path, home: Option<PathBuf>) -> Result<PostprocessConfig, St
             0.0,
             Some(1.0),
         )?,
+        scan_lock_timeout: float_setting(
+            "REMY_INDEX_SCAN_LOCK_TIMEOUT",
+            p,
+            u,
+            "30",
+            0.0,
+            Some(300.0),
+        )?,
+        struct_scan_timeout: int_setting("REMY_STRUCT_SCAN_TIMEOUT", p, u, "60", 10, 300)?,
     })
 }
 
@@ -249,6 +262,25 @@ mod tests {
         assert_eq!(config.resolve_score_global, 0);
         assert_eq!(config.file_kind_min_symbols, 5);
         assert_eq!(config.file_kind_low_cohesion_threshold, 0.25);
+        assert_eq!(config.scan_lock_timeout, 30.0);
+        assert_eq!(config.struct_scan_timeout, 60);
+    }
+
+    #[test]
+    fn scan_timeout_keys_fail_strict_out_of_range() {
+        let (dir, home) = isolated();
+        write_config(
+            dir.path(),
+            r#"{"schema_version": "1.0.0", "values": {"REMY_STRUCT_SCAN_TIMEOUT": "5"}}"#,
+        );
+        let error = load_from(dir.path(), Some(home.clone())).unwrap_err();
+        assert!(error.contains("REMY_STRUCT_SCAN_TIMEOUT"), "{error}");
+        write_config(
+            dir.path(),
+            r#"{"schema_version": "1.0.0", "values": {"REMY_INDEX_SCAN_LOCK_TIMEOUT": "301"}}"#,
+        );
+        let error = load_from(dir.path(), Some(home)).unwrap_err();
+        assert!(error.contains("REMY_INDEX_SCAN_LOCK_TIMEOUT"), "{error}");
     }
 
     #[test]
