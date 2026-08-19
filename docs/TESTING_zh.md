@@ -467,6 +467,31 @@ MCP依赖已有的`IncompleteFieldDefinitionWarning`保持不变。`crt-static` 
 `remy-daemon 0.2.0`，二进制不含`VCRUNTIME140`字节串。系统临时目录中的端到端探针
 验证了Rust模式安装、verify、默认卸载、重装、`--purge-state`和项目索引保留；未修改的浏览器UI套件通过8项Chromium测试。
 
+## R3.5a scanner-core 生产化测试
+
+R3.5a 修复双侧检索投影谓词（`(file_path, name)` 列等值 + concat 回退），为 Rust 批量
+写入保留 `idx_edges_source_file`/`idx_patterns_file` 两个 DELETE 索引，补齐 Rust 增量
+语义（排除清扫、identity-invalid 并入、请求排除剔除），并把项目扫描锁
+（`.claude/logic_index_scan.lock`，std `File::try_lock`）移入 scanner-core。
+
+- `tests/test_fts_three_layer.py::TestFactLookupPredicateEquivalence`：随机化 node_ref
+  （含名称与路径中的`::`碰撞）下拆分查询与原表达式谓词的结果集等价。
+- `scanner-core/src/projection.rs` 内联测试覆盖表达式回退路径；`writer.rs` 内联测试
+  断言白名单索引在 drop 后存活；`lock.rs` 内联测试覆盖获取、超时与释放。
+- `tests/test_index_state.py::TestScanLockInterop`：Python 字节锁与 Rust 整文件锁在同
+  一锁文件上的双向互斥（Rust 持有方向经 `REMY_SCAN_LOCK_HOLD_MS` 测试缝隙与
+  `lock_acquired` 进度行同步）；二进制未构建时 skip，CI rust 双臂执行。
+- `tests/test_scanner_core_diff.py`：新增排除清扫对齐、identity-invalid 重扫对齐与
+  `--progress-json` JSON Lines 契约（首条 progress 为 `lock_acquired`，末行仍为
+  scan_result v1）三组差分用例。
+- `REMY_INDEX_SCAN_LOCK_TIMEOUT`/`REMY_STRUCT_SCAN_TIMEOUT` 进入 rconfig 四级解析，
+  默认值由 `tests/test_postprocess_parity.py::TestNarrowConfigContract` 双侧锁定。
+
+```bash
+python -m pytest Remy-CC/tests/test_scanner_core_diff.py Remy-CC/tests/test_index_state.py Remy-CC/tests/test_fts_three_layer.py Remy-CC/tests/test_postprocess_parity.py -q -p no:cacheprovider
+cargo test --workspace --manifest-path Remy-CC/remy-daemon/Cargo.toml
+```
+
 ## 边界
 
 已提交测试使用合成源码或固定的MulanPSL-2.0 TEE fixture、临时目录和临时SQLite数据库，不需要LLM API key或网络。P0.3比较全量与增量扫描的规范化状态。P0.4增加固定版本符号和关系、重复全量幂等性、handler重命名/删除比较、解析后端报告及本地完整项目测量命令。P0.5将结构扫描实现拆分到`schema.py`、`symbol_names.py`、`migrations.py`和`scanner.py`，`struct_scan.py`继续作为稳定CLI和导入入口。P0.6在生成位置注册事实前拒绝普通标量和字节数组，拒绝数值与表达式handler，保留Unicode单词标识符，报告pattern类型与来源，并检查固定完整项目中的三个已知图片数组。固定项目没有发现省略内层聚合花括号的已知函数指针结构体表，该C形式不属于当前已验证的解析契约。migration测试验证导入时不加载parser模块；完整测试、Pyright、兼容再导出、两种fixture后端和三次固定完整项目扫描验证当前行为。
