@@ -242,12 +242,26 @@ def _document_hash(document):
 
 def _load_fact_document(db, node_kind, node_ref):
     if node_kind == "symbol":
-        row = db.execute(
-            "SELECT s.file_path, s.name, s.name_tokens, s.args, s.type, "
-            "f.language FROM symbols s JOIN files f ON f.path = s.file_path "
-            "WHERE s.file_path || '::' || s.name = ?",
-            (node_ref,),
-        ).fetchone()
+        # The first "::" is the separator for every real on-disk path, so
+        # the UNIQUE(file_path, name) index serves this lookup.
+        file_path, sep, name = node_ref.partition("::")
+        row = None
+        if sep:
+            row = db.execute(
+                "SELECT s.file_path, s.name, s.name_tokens, s.args, s.type, "
+                "f.language FROM symbols s JOIN files f ON f.path = s.file_path "
+                "WHERE s.file_path = ? AND s.name = ?",
+                (file_path, name),
+            ).fetchone()
+        if row is None:
+            # Fallback for a stored file path containing "::": the original
+            # expression predicate stays authoritative.
+            row = db.execute(
+                "SELECT s.file_path, s.name, s.name_tokens, s.args, s.type, "
+                "f.language FROM symbols s JOIN files f ON f.path = s.file_path "
+                "WHERE s.file_path || '::' || s.name = ?",
+                (node_ref,),
+            ).fetchone()
         if row is None:
             return None
         file_path, name, name_tokens, signature, symbol_type, language = row

@@ -233,3 +233,70 @@ class TestCurrentSummarySync:
             "SELECT COUNT(*) FROM retrieval_documents "
             "WHERE node_ref='a.py::parse_input'"
         ).fetchone()[0] == 0
+
+
+class TestFactLookupPredicateEquivalence:
+    """The split (file_path, name) lookup plus the expression fallback must
+    resolve exactly the rows the original concat predicate resolved,
+    including "::" collisions inside names and stored paths."""
+
+    _EXPRESSION_QUERY = (
+        "SELECT s.file_path, s.name FROM symbols s "
+        "JOIN files f ON f.path = s.file_path "
+        "WHERE s.file_path || '::' || s.name = ?"
+    )
+
+    def _seed(self, db, pairs):
+        for file_path, name in pairs:
+            db.execute(
+                "INSERT OR IGNORE INTO files (path, struct_hash) VALUES (?, 'h')",
+                (file_path,),
+            )
+            db.execute(
+                "INSERT OR IGNORE INTO symbols (file_path, name, type, name_tokens) "
+                "VALUES (?, ?, 'function', '')",
+                (file_path, name),
+            )
+
+    def test_randomized_refs_match_expression_predicate(self, db):
+        import random
+
+        rng = random.Random(20260820)
+        segments = ["a", "b", "src/x", "n::s", "p::q/r", "m.py", "impl::T"]
+        pairs = set()
+        while len(pairs) < 60:
+            file_path = rng.choice(segments) + rng.choice(["", ".py", ".rs"])
+            name = rng.choice(segments).replace("/", ".")
+            pairs.add((file_path, name))
+        self._seed(db, pairs)
+        db.commit()
+
+        refs = {f"{fp}::{name}" for fp, name in pairs}
+        refs.add("missing.py::nope")
+        refs.add("a")
+        for node_ref in sorted(refs):
+            document = retrieval_projection._load_fact_document(
+                db, "symbol", node_ref
+            )
+            # An ambiguous ref (several rows concatenating to the same
+            # string) never had a specified row order under fetchone, so
+            # equivalence is membership in the expression result set.
+            expected = {
+                tuple(row)
+                for row in db.execute(self._EXPRESSION_QUERY, (node_ref,)).fetchall()
+            }
+            if not expected:
+                assert document is None, node_ref
+            else:
+                assert document is not None, node_ref
+                assert (document["file_path"], document["name"]) in expected, node_ref
+
+    def test_pathological_path_containing_separator_uses_fallback(self, db):
+        self._seed(db, [("weird::dir/f.py", "run")])
+        db.commit()
+        document = retrieval_projection._load_fact_document(
+            db, "symbol", "weird::dir/f.py::run"
+        )
+        assert document is not None
+        assert document["file_path"] == "weird::dir/f.py"
+        assert document["name"] == "run"

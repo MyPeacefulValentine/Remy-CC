@@ -110,31 +110,53 @@ struct FactDocument {
     signature: Option<String>,
 }
 
+fn symbol_fact_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FactDocument> {
+    Ok(FactDocument {
+        file_path: row.get(0)?,
+        name: row.get(1)?,
+        name_tokens: row.get(2)?,
+        signature: row.get(3)?,
+        symbol_type: row.get(4)?,
+        language: row.get(5)?,
+    })
+}
+
 fn load_fact_document(
     tx: &Transaction,
     node_kind: &str,
     node_ref: &str,
 ) -> rusqlite::Result<Option<FactDocument>> {
     match node_kind {
-        "symbol" => tx
-            .query_row(
+        "symbol" => {
+            // The first "::" is the separator for every real on-disk path,
+            // so the UNIQUE(file_path, name) index serves this lookup.
+            if let Some((file_path, name)) = node_ref.split_once("::") {
+                let row = tx
+                    .query_row(
+                        "SELECT s.file_path, s.name, s.name_tokens, s.args, s.type, \
+                         f.language FROM symbols s JOIN files f ON f.path = s.file_path \
+                         WHERE s.file_path = ?1 AND s.name = ?2",
+                        params![file_path, name],
+                        symbol_fact_row,
+                    )
+                    .map(Some)
+                    .or_else(ignore_missing_row)?;
+                if row.is_some() {
+                    return Ok(row);
+                }
+            }
+            // Fallback for a stored file path containing "::": the original
+            // expression predicate stays authoritative.
+            tx.query_row(
                 "SELECT s.file_path, s.name, s.name_tokens, s.args, s.type, \
                  f.language FROM symbols s JOIN files f ON f.path = s.file_path \
                  WHERE s.file_path || '::' || s.name = ?1",
                 params![node_ref],
-                |row| {
-                    Ok(FactDocument {
-                        file_path: row.get(0)?,
-                        name: row.get(1)?,
-                        name_tokens: row.get(2)?,
-                        signature: row.get(3)?,
-                        symbol_type: row.get(4)?,
-                        language: row.get(5)?,
-                    })
-                },
+                symbol_fact_row,
             )
             .map(Some)
-            .or_else(ignore_missing_row),
+            .or_else(ignore_missing_row)
+        }
         "file" => tx
             .query_row(
                 "SELECT path, language FROM files WHERE path = ?1",
@@ -339,6 +361,51 @@ mod tests {
             [],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn symbol_lookup_covers_separator_collisions_via_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap();
+        let tx = conn.transaction().unwrap();
+        // Name containing "::" resolves through the column-equality split.
+        tx.execute(
+            "INSERT INTO files (path, struct_hash, language) VALUES ('f.cpp', 'h', 'CCppParser')",
+            [],
+        )
+        .unwrap();
+        tx.execute(
+            "INSERT INTO symbols (file_path, name, short_name, type, args, lineno, hash, name_tokens) \
+             VALUES ('f.cpp', 'ns::run', 'run', 'function', '()', 1, 'x', 'ns run')",
+            [],
+        )
+        .unwrap();
+        // Pathological stored path containing "::" resolves via the
+        // expression fallback (the first-"::" split misses).
+        tx.execute(
+            "INSERT INTO files (path, struct_hash, language) VALUES ('a::b.rs', 'h', 'RustParser')",
+            [],
+        )
+        .unwrap();
+        tx.execute(
+            "INSERT INTO symbols (file_path, name, short_name, type, args, lineno, hash, name_tokens) \
+             VALUES ('a::b.rs', 'save', 'save', 'function', '()', 1, 'x', 'save')",
+            [],
+        )
+        .unwrap();
+
+        for (node_ref, file_path) in [("f.cpp::ns::run", "f.cpp"), ("a::b.rs::save", "a::b.rs")] {
+            refresh_node(&tx, "symbol", node_ref).unwrap();
+            let stored: String = tx
+                .query_row(
+                    "SELECT file_path FROM retrieval_documents \
+                     WHERE node_kind='symbol' AND node_ref=?1",
+                    params![node_ref],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(stored, file_path, "{node_ref}");
+        }
     }
 
     #[test]
