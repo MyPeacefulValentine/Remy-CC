@@ -17,8 +17,10 @@ use serde_json::{json, Value};
 use crate::protocol::{Request, Response, MAX_LINE_BYTES, PROTOCOL_VERSION};
 use crate::state::{Job, JobPriority, JobStatus, STATE_SCHEMA_VERSION};
 
-const CONNECT_TIMEOUT: Duration = Duration::from_millis(5);
-const READ_TIMEOUT: Duration = Duration::from_millis(25);
+// Windows scheduler-quantum floor (15.625 ms): connect needs >= 2 quanta,
+// read needs >= 3 quanta to cover one round-trip plus the submit fsync.
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(35);
+const READ_TIMEOUT: Duration = Duration::from_millis(50);
 const DIRTY_FALLBACK_TIMEOUT: Duration = Duration::from_secs(5);
 const ENRICH_FALLBACK_TIMEOUT: Duration = Duration::from_secs(35);
 const FALLBACK_STDOUT_LIMIT: usize = 1024 * 1024;
