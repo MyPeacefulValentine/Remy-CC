@@ -73,8 +73,9 @@ enum DaemonCommand {
         #[command(subcommand)]
         command: HookCommand,
     },
-    /// Scan a source tree into an isolated logic index database (R3.2:
-    /// C/C++ per-file facts only; no global postprocessing)
+    /// Scan a source tree into a logic index database (R3.4+: four-language
+    /// per-file facts plus the single-transaction global postprocess;
+    /// R3.5a: project scan lock, incremental exclusion/identity semantics)
     Scan {
         /// Project root to scan
         #[arg(long)]
@@ -94,6 +95,13 @@ enum DaemonCommand {
         /// Emit PROGRESS lines to stderr every 250 files (full scans only)
         #[arg(long)]
         progress: bool,
+        /// Emit JSON Lines progress events (type=progress) to stdout
+        #[arg(long)]
+        progress_json: bool,
+        /// Seconds to wait for the project scan lock
+        /// (default: REMY_INDEX_SCAN_LOCK_TIMEOUT, 30)
+        #[arg(long)]
+        lock_timeout: Option<f64>,
     },
 }
 
@@ -121,6 +129,8 @@ fn main() -> ExitCode {
             jobs,
             result_json,
             progress,
+            progress_json,
+            lock_timeout,
         } => {
             return ExitCode::from(scanner_core::scan::run_scan(
                 &scanner_core::scan::ScanArgs {
@@ -130,6 +140,8 @@ fn main() -> ExitCode {
                     jobs,
                     result_json,
                     progress,
+                    progress_json,
+                    lock_timeout,
                 },
             ));
         }

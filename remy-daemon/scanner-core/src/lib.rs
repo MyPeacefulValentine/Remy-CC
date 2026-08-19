@@ -24,6 +24,7 @@ pub mod facts;
 pub mod fnmatch;
 pub mod hashes;
 pub mod language;
+pub mod lock;
 pub mod parse_c_cpp;
 pub mod parse_python;
 pub mod parse_rust;

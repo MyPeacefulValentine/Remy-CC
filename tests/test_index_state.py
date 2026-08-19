@@ -1,7 +1,9 @@
 """Tests for index run results, process locks, and dirty queue recovery."""
 
+import json
 import multiprocessing
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -10,6 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "remy-index"))
 from index_state import (
+    SCAN_LOCK_FILE,
     DirtyQueue,
     InterProcessFileLock,
     LockTimeoutError,
@@ -18,6 +21,20 @@ from index_state import (
     StageError,
     normalize_source_path,
 )
+
+_TARGET_DIR = Path(__file__).resolve().parent.parent / "remy-daemon" / "target"
+
+
+def _daemon_binary():
+    name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    candidates = [_TARGET_DIR / profile / name for profile in ("release", "debug")]
+    existing = [path for path in candidates if path.is_file()]
+    if not existing:
+        return None
+    return max(existing, key=lambda path: path.stat().st_mtime)
+
+
+BINARY = _daemon_binary()
 
 
 def _hold_lock(path, ready):
@@ -142,3 +159,65 @@ def test_tracker_fallback_pending_on_queue_lock(tmp_path, monkeypatch):
     pending = list(Path(tmp_path / ".claude").glob("logic_index_dirty.pending.*"))
     assert len(pending) == 1
     assert pending[0].read_text(encoding="utf-8") == "a.py\n"
+
+
+@pytest.mark.skipif(BINARY is None, reason="remy-daemon binary not built")
+class TestScanLockInterop:
+    """Python msvcrt/flock byte lock vs Rust std File::try_lock on the same
+    `.claude/logic_index_scan.lock` must exclude each other both ways."""
+
+    @staticmethod
+    def _write_corpus(root):
+        (root / "a.c").write_text("int a(void) { return 1; }\n", encoding="utf-8")
+
+    def test_python_holder_blocks_rust_scanner(self, tmp_path):
+        self._write_corpus(tmp_path)
+        lock_path = tmp_path / SCAN_LOCK_FILE
+        with InterProcessFileLock(str(lock_path), 1):
+            completed = subprocess.run(
+                [
+                    str(BINARY), "scan",
+                    "--root", str(tmp_path),
+                    "--db", str(tmp_path / "out.db"),
+                    "--result-json",
+                    "--lock-timeout", "0",
+                ],
+                capture_output=True,
+                text=True,
+            )
+        assert completed.returncode == 1, completed.stderr
+        report = json.loads(completed.stdout.strip().splitlines()[-1])
+        assert report["outcome"] == "failed"
+        assert "scan lock" in report["errors"][0]["message"].lower()
+
+    def test_rust_holder_blocks_python(self, tmp_path):
+        self._write_corpus(tmp_path)
+        lock_path = tmp_path / SCAN_LOCK_FILE
+        env = dict(os.environ, REMY_SCAN_LOCK_HOLD_MS="5000")
+        process = subprocess.Popen(
+            [
+                str(BINARY), "scan",
+                "--root", str(tmp_path),
+                "--db", str(tmp_path / "out.db"),
+                "--result-json",
+                "--progress-json",
+            ],
+            stdout=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+        try:
+            assert process.stdout is not None
+            first = json.loads(process.stdout.readline())
+            assert first == {
+                "type": "progress",
+                "stage": "lock_acquired",
+                "elapsed_ms": first["elapsed_ms"],
+            }
+            with pytest.raises(LockTimeoutError):
+                InterProcessFileLock(str(lock_path), 0).acquire()
+        finally:
+            process.kill()
+            process.wait(10)
+        with InterProcessFileLock(str(lock_path), 5):
+            pass

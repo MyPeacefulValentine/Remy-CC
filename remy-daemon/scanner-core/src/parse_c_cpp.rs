@@ -54,7 +54,10 @@ pub const GRAMMAR_CPP_CRATE_VERSION: &str = "0.23.4";
 /// environment records this producer's own backend versions (the column is
 /// ALLOWED_DIFF under classification v2).
 pub fn cache_identity(source: &str, file_path: &str) -> CacheIdentity {
-    let use_cpp = uses_cpp_grammar(source, file_path);
+    tree_sitter_identity(uses_cpp_grammar(source, file_path))
+}
+
+fn tree_sitter_identity(use_cpp: bool) -> CacheIdentity {
     let (backend, grammar_name, grammar_version) = if use_cpp {
         (
             "cpp-tree-sitter",
@@ -72,6 +75,19 @@ pub fn cache_identity(source: &str, file_path: &str) -> CacheIdentity {
         contract_version: CACHE_CONTRACT_VERSION.to_string(),
         backend: backend.to_string(),
         environment,
+    }
+}
+
+/// CCppParser.cache_identity_candidates (tree-sitter arm): a `.h` header
+/// may parse under either grammar depending on content, every other
+/// extension pins one grammar.
+pub fn cache_identity_candidates(file_path: &str) -> Vec<CacheIdentity> {
+    if file_path.ends_with(".h") {
+        vec![tree_sitter_identity(false), tree_sitter_identity(true)]
+    } else {
+        vec![tree_sitter_identity(
+            CPP_EXTENSIONS.iter().any(|ext| file_path.ends_with(ext)),
+        )]
     }
 }
 

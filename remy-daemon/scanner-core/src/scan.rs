@@ -7,16 +7,17 @@
 
 use crate::config::ScanConfig;
 use crate::discovery::{self, DiscoveredFile};
-use crate::facts::{EdgeRow, FileFacts, FileOutcome, OccurrenceRow};
+use crate::facts::{CacheIdentity, EdgeRow, FileFacts, FileOutcome, OccurrenceRow};
 use crate::hashes;
 use crate::language::Language;
 use crate::result::{RunStatus, ScanResult, StageError};
 use crate::selection;
 use crate::writer;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 pub fn default_jobs() -> usize {
     std::thread::available_parallelism()
@@ -181,18 +182,57 @@ fn join_pool(handles: Vec<std::thread::JoinHandle<()>>) -> Result<(), String> {
     }
 }
 
-/// Full scan: discover, parse in parallel, write everything in one
-/// transaction with indexes rebuilt after the bulk load. `progress`
-/// emits a PROGRESS line to stderr every 250 written files (throughput
-/// curve measurements).
+/// Opt-in JSON Lines progress event (`--progress-json`); the scan_result
+/// v1 line stays the last stdout line.
+fn emit_progress_json(enabled: bool, stage: &str, files: Option<u64>, started: Instant) {
+    if !enabled {
+        return;
+    }
+    let mut event = serde_json::json!({
+        "type": "progress",
+        "stage": stage,
+        "elapsed_ms": started.elapsed().as_millis() as u64,
+    });
+    if let Some(files) = files {
+        event["files"] = files.into();
+    }
+    println!("{event}");
+}
+
+/// Test seam: hold the freshly acquired scan lock so cross-process
+/// mutual-exclusion tests can synchronize on the `lock_acquired` event.
+fn test_hold_lock_window() {
+    if let Some(ms) = std::env::var("REMY_SCAN_LOCK_HOLD_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        std::thread::sleep(std::time::Duration::from_millis(ms.min(30_000)));
+    }
+}
+
+/// Full scan: acquire the project scan lock, discover, parse in parallel,
+/// write everything in one transaction with indexes rebuilt after the bulk
+/// load. `progress` emits a PROGRESS line to stderr every 250 written files
+/// (throughput curve measurements); `progress_json` emits the JSON Lines
+/// progress events; `lock_timeout` overrides REMY_INDEX_SCAN_LOCK_TIMEOUT.
 pub fn scan_full(
     root_dir: &Path,
     db_path: &Path,
     jobs: usize,
     progress: bool,
+    progress_json: bool,
+    lock_timeout: Option<f64>,
 ) -> Result<ScanResult, String> {
+    let scan_started = Instant::now();
     let config = ScanConfig::load(root_dir);
     let pconfig = crate::rconfig::load(root_dir)?;
+    let _lock = crate::lock::acquire_project_scan_lock(
+        root_dir,
+        lock_timeout.unwrap_or(pconfig.scan_lock_timeout),
+    )?;
+    emit_progress_json(progress_json, "lock_acquired", None, scan_started);
+    test_hold_lock_window();
+
     let files =
         discovery::discover(root_dir, &config).map_err(|e| format!("discovery failed: {e}"))?;
     let discovered: Vec<String> = files.iter().map(|f| f.rel_path.clone()).collect();
@@ -227,12 +267,15 @@ pub fn scan_full(
                 }
             }
             written += 1;
-            if progress && written.is_multiple_of(250) {
-                eprintln!(
-                    "PROGRESS files={} elapsed_ms={}",
-                    written,
-                    started.elapsed().as_millis()
-                );
+            if written.is_multiple_of(250) {
+                if progress {
+                    eprintln!(
+                        "PROGRESS files={} elapsed_ms={}",
+                        written,
+                        started.elapsed().as_millis()
+                    );
+                }
+                emit_progress_json(progress_json, "write", Some(written), scan_started);
             }
         }
         join_pool(pool.handles)?;
@@ -243,8 +286,10 @@ pub fn scan_full(
                 started.elapsed().as_millis()
             );
         }
+        emit_progress_json(progress_json, "parse_done", Some(written), scan_started);
         writer::rebuild_indexes(&tx).map_err(|e| format!("index rebuild failed: {e}"))?;
         crate::postprocess::run(&tx, &pconfig).map_err(|e| format!("postprocess failed: {e}"))?;
+        emit_progress_json(progress_json, "postprocess_done", None, scan_started);
         writer::write_meta(&tx, Some(discovered.len()))
             .map_err(|e| format!("meta write failed: {e}"))?;
         writer::write_source_commit(&tx, root_dir)
@@ -262,16 +307,71 @@ pub fn scan_full(
     ))
 }
 
-/// Incremental scan of explicit paths (struct_scan --files semantics for
-/// an isolated DB): excluded paths are acknowledged untouched, missing
-/// files delete their rows, everything happens in one transaction.
+/// scanner.StructScanner._identity_invalid_paths: stored files rows no
+/// current identity candidate reproduces re-enter the incremental targets.
+fn identity_invalid_paths(
+    tx: &rusqlite::Transaction,
+    config: &ScanConfig,
+) -> Result<Vec<String>, String> {
+    let rows: Vec<(String, String, String, String)> = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT path, parser_contract_version, parser_backend, \
+                 parser_environment FROM files ORDER BY path",
+            )
+            .map_err(|e| format!("identity query failed: {e}"))?;
+        let mapped = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .map_err(|e| format!("identity query failed: {e}"))?;
+        mapped
+            .collect::<Result<_, _>>()
+            .map_err(|e| format!("identity query failed: {e}"))?
+    };
+    let mut invalid = Vec::new();
+    for (path, contract_version, backend, environment) in rows {
+        if config.is_path_excluded(&path) {
+            continue;
+        }
+        let filename = path.rsplit('/').next().unwrap_or(&path);
+        let Some(language) = Language::resolve(filename) else {
+            continue;
+        };
+        let stored = CacheIdentity {
+            contract_version,
+            backend,
+            environment,
+        };
+        if !language.identity_candidates(filename).contains(&stored) {
+            invalid.push(path);
+        }
+    }
+    Ok(invalid)
+}
+
+/// Incremental scan of explicit paths (scanner.scan_files semantics):
+/// stored rows under now-excluded paths are swept, identity-invalid rows
+/// join the target set, requested-but-excluded paths are acknowledged
+/// untouched, missing files delete their rows — all in one transaction
+/// under the project scan lock.
 pub fn scan_files(
     root_dir: &Path,
     db_path: &Path,
     file_paths: &[String],
     jobs: usize,
+    progress_json: bool,
+    lock_timeout: Option<f64>,
 ) -> Result<ScanResult, String> {
+    let scan_started = Instant::now();
     let config = ScanConfig::load(root_dir);
+    let pconfig = crate::rconfig::load(root_dir)?;
+    let _lock = crate::lock::acquire_project_scan_lock(
+        root_dir,
+        lock_timeout.unwrap_or(pconfig.scan_lock_timeout),
+    )?;
+    emit_progress_json(progress_json, "lock_acquired", None, scan_started);
+    test_hold_lock_window();
 
     let mut requested: Vec<(String, PathBuf)> = Vec::new();
     for file_path in file_paths {
@@ -291,39 +391,68 @@ pub fn scan_files(
     let mut deleted = Vec::new();
     let mut errors = Vec::new();
 
-    let mut to_parse = Vec::new();
-    let mut to_delete = Vec::new();
-    for (rel, full_path) in requested {
-        if config.is_path_excluded(&rel) {
-            successful.push(rel);
-            continue;
-        }
-        discovered.push(rel.clone());
-        if !full_path.exists() {
-            to_delete.push(rel);
-            continue;
-        }
-        let file_name = full_path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        if Language::resolve(&file_name).is_none() {
-            successful.push(rel);
-            continue;
-        }
-        to_parse.push(DiscoveredFile {
-            full_path,
-            rel_path: rel,
-        });
-    }
-
-    let pconfig = crate::rconfig::load(root_dir)?;
     let mut conn = writer::open_db(db_path)?;
-    let pool = spawn_parse_pool(root_dir, &config, to_parse, jobs);
     {
         let tx = conn
             .transaction()
             .map_err(|e| format!("begin failed: {e}"))?;
+
+        let db_paths: Vec<String> = {
+            let mut stmt = tx
+                .prepare("SELECT path FROM files ORDER BY path")
+                .map_err(|e| format!("path query failed: {e}"))?;
+            let mapped = stmt
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| format!("path query failed: {e}"))?;
+            mapped
+                .collect::<Result<_, _>>()
+                .map_err(|e| format!("path query failed: {e}"))?
+        };
+        for rel in &db_paths {
+            if !config.is_path_excluded(rel) {
+                continue;
+            }
+            if writer::delete_file(&tx, rel).map_err(|e| format!("delete failed: {e}"))? {
+                deleted.push(rel.clone());
+            }
+        }
+
+        let mut targets: BTreeMap<String, PathBuf> = requested.iter().cloned().collect();
+        for rel in identity_invalid_paths(&tx, &config)? {
+            let full_path = root_dir.join(&rel);
+            targets.entry(rel).or_insert(full_path);
+        }
+        for (rel, _) in &requested {
+            if !config.is_path_excluded(rel) {
+                continue;
+            }
+            successful.push(rel.clone());
+            targets.remove(rel);
+        }
+
+        let mut to_parse = Vec::new();
+        let mut to_delete = Vec::new();
+        for (rel, full_path) in targets {
+            discovered.push(rel.clone());
+            if !full_path.exists() {
+                to_delete.push(rel);
+                continue;
+            }
+            let file_name = full_path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if Language::resolve(&file_name).is_none() {
+                successful.push(rel);
+                continue;
+            }
+            to_parse.push(DiscoveredFile {
+                full_path,
+                rel_path: rel,
+            });
+        }
+
+        let pool = spawn_parse_pool(root_dir, &config, to_parse, jobs);
         for rel in to_delete {
             if writer::delete_file(&tx, &rel).map_err(|e| format!("delete failed: {e}"))? {
                 deleted.push(rel.clone());
@@ -348,7 +477,9 @@ pub fn scan_files(
             }
         }
         join_pool(pool.handles)?;
+        emit_progress_json(progress_json, "parse_done", None, scan_started);
         crate::postprocess::run(&tx, &pconfig).map_err(|e| format!("postprocess failed: {e}"))?;
+        emit_progress_json(progress_json, "postprocess_done", None, scan_started);
         writer::write_meta(&tx, None).map_err(|e| format!("meta write failed: {e}"))?;
         tx.commit().map_err(|e| format!("commit failed: {e}"))?;
     }
@@ -366,14 +497,30 @@ pub struct ScanArgs {
     pub jobs: Option<usize>,
     pub result_json: bool,
     pub progress: bool,
+    pub progress_json: bool,
+    pub lock_timeout: Option<f64>,
 }
 
 pub fn run_scan(args: &ScanArgs) -> u8 {
     let jobs = args.jobs.unwrap_or_else(default_jobs);
     let outcome = if args.files.is_empty() {
-        scan_full(&args.root, &args.db, jobs, args.progress)
+        scan_full(
+            &args.root,
+            &args.db,
+            jobs,
+            args.progress,
+            args.progress_json,
+            args.lock_timeout,
+        )
     } else {
-        scan_files(&args.root, &args.db, &args.files, jobs)
+        scan_files(
+            &args.root,
+            &args.db,
+            &args.files,
+            jobs,
+            args.progress_json,
+            args.lock_timeout,
+        )
     };
     match outcome {
         Ok(result) => {
@@ -470,7 +617,7 @@ mod tests {
         let root = dir.path();
         write_corpus(root);
         let db_path = root.join("state.db");
-        let result = scan_full(root, &db_path, 1, false).unwrap();
+        let result = scan_full(root, &db_path, 1, false, false, None).unwrap();
         assert_eq!(result.status, RunStatus::Success);
         assert_eq!(result.successful_paths, vec!["src/util.c", "src/util.h"]);
 
@@ -524,9 +671,9 @@ mod tests {
         let db1 = root.join("one.db");
         let db2 = root.join("two.db");
         let db8 = root.join("eight.db");
-        scan_full(root, &db1, 1, false).unwrap();
-        scan_full(root, &db2, 2, false).unwrap();
-        scan_full(root, &db8, 8, false).unwrap();
+        scan_full(root, &db1, 1, false, false, None).unwrap();
+        scan_full(root, &db2, 2, false, false, None).unwrap();
+        scan_full(root, &db8, 8, false, false, None).unwrap();
         let p1 = phase1_projection(&db1);
         assert!(!p1.is_empty());
         assert_eq!(p1, phase1_projection(&db2));
@@ -540,9 +687,9 @@ mod tests {
         write_corpus(root);
         let full_db = root.join("full.db");
         let inc_db = root.join("inc.db");
-        scan_full(root, &full_db, 2, false).unwrap();
+        scan_full(root, &full_db, 2, false, false, None).unwrap();
         for rel in ["src/util.c", "src/util.h"] {
-            let result = scan_files(root, &inc_db, &[rel.to_string()], 1).unwrap();
+            let result = scan_files(root, &inc_db, &[rel.to_string()], 1, false, None).unwrap();
             assert_eq!(result.status, RunStatus::Success);
         }
         assert_eq!(phase1_projection(&full_db), phase1_projection(&inc_db));
@@ -554,9 +701,9 @@ mod tests {
         let root = dir.path();
         write_corpus(root);
         let db = root.join("state.db");
-        scan_full(root, &db, 1, false).unwrap();
+        scan_full(root, &db, 1, false, false, None).unwrap();
         std::fs::remove_file(root.join("src/util.h")).unwrap();
-        let result = scan_files(root, &db, &["src/util.h".to_string()], 1).unwrap();
+        let result = scan_files(root, &db, &["src/util.h".to_string()], 1, false, None).unwrap();
         assert_eq!(result.deleted_paths, vec!["src/util.h"]);
         let conn = Connection::open(&db).unwrap();
         let count: i64 = conn
@@ -595,7 +742,7 @@ mod tests {
         write_python_corpus(root);
 
         let full_db = root.join("full.db");
-        let report = scan_full(root, &full_db, 4, false).unwrap();
+        let report = scan_full(root, &full_db, 4, false, false, None).unwrap();
         assert_eq!(report.status, RunStatus::Success);
         assert_eq!(
             report.successful_paths,
@@ -603,12 +750,20 @@ mod tests {
         );
 
         let single_db = root.join("single.db");
-        scan_full(root, &single_db, 1, false).unwrap();
+        scan_full(root, &single_db, 1, false, false, None).unwrap();
         assert_eq!(phase1_projection(&full_db), phase1_projection(&single_db));
 
         let incremental_db = root.join("incremental.db");
         for rel in &report.successful_paths {
-            let result = scan_files(root, &incremental_db, std::slice::from_ref(rel), 1).unwrap();
+            let result = scan_files(
+                root,
+                &incremental_db,
+                std::slice::from_ref(rel),
+                1,
+                false,
+                None,
+            )
+            .unwrap();
             assert_eq!(result.status, RunStatus::Success);
         }
         assert_eq!(
@@ -679,11 +834,69 @@ mod tests {
         write_corpus(root);
         std::fs::write(root.join("src/bad.c"), [0xff, 0xfe, 0x00, 0x41]).unwrap();
         let db = root.join("state.db");
-        let result = scan_full(root, &db, 2, false).unwrap();
+        let result = scan_full(root, &db, 2, false, false, None).unwrap();
         assert_eq!(result.status, RunStatus::Partial);
         assert_eq!(result.failed_paths, vec!["src/bad.c"]);
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].stage, "file_scan");
         assert_eq!(result.successful_paths.len(), 2);
+    }
+
+    #[test]
+    fn incremental_sweeps_newly_excluded_stored_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_corpus(root);
+        let db = root.join("state.db");
+        scan_full(root, &db, 1, false, false, None).unwrap();
+
+        std::fs::create_dir_all(root.join(".claude")).unwrap();
+        std::fs::write(root.join(".claude/logic_index_config"), "!src/\n").unwrap();
+        let result = scan_files(root, &db, &["src/util.c".to_string()], 1, false, None).unwrap();
+        assert_eq!(result.status, RunStatus::Success);
+        assert_eq!(result.deleted_paths, vec!["src/util.c", "src/util.h"]);
+        assert_eq!(result.successful_paths, vec!["src/util.c"]);
+        assert_eq!(result.discovered_paths, Vec::<String>::new());
+
+        let conn = Connection::open(&db).unwrap();
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(remaining, 0);
+    }
+
+    #[test]
+    fn incremental_reparses_identity_invalid_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_corpus(root);
+        let db = root.join("state.db");
+        scan_full(root, &db, 1, false, false, None).unwrap();
+
+        let conn = Connection::open(&db).unwrap();
+        conn.execute(
+            "UPDATE files SET parser_contract_version='0', struct_hash='tampered' \
+             WHERE path='src/util.h'",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let result = scan_files(root, &db, &["src/util.c".to_string()], 1, false, None).unwrap();
+        assert_eq!(result.status, RunStatus::Success);
+        assert_eq!(result.discovered_paths, vec!["src/util.c", "src/util.h"]);
+        assert_eq!(result.successful_paths, vec!["src/util.c", "src/util.h"]);
+
+        let conn = Connection::open(&db).unwrap();
+        let (contract, struct_hash): (String, String) = conn
+            .query_row(
+                "SELECT parser_contract_version, struct_hash FROM files \
+                 WHERE path='src/util.h'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(contract, crate::parse_c_cpp::CACHE_CONTRACT_VERSION);
+        assert_ne!(struct_hash, "tampered");
     }
 }

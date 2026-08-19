@@ -94,6 +94,18 @@ impl Language {
         }
     }
 
+    /// LanguageParser.cache_identity_candidates: every identity this
+    /// producer could stamp for the path without reading source content;
+    /// scan_files re-parses stored rows outside this set (identity-invalid).
+    pub fn identity_candidates(self, filename: &str) -> Vec<CacheIdentity> {
+        match self {
+            Language::CCpp => parse_c_cpp::cache_identity_candidates(filename),
+            Language::Python => vec![parse_python::cache_identity()],
+            Language::Ts => vec![parse_ts::cache_identity(filename)],
+            Language::Rust => vec![parse_rust::cache_identity()],
+        }
+    }
+
     /// Full per-file fact extraction for one decoded source. Infallible:
     /// every language module maps oracle-side parse failures to empty facts
     /// (grammars are compiled into the binary and tree-sitter always yields

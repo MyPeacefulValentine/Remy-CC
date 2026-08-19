@@ -105,7 +105,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install pytest
-      - run: python -m pytest tests/test_daemon_integration.py tests/test_daemon_ipc.py -q -p no:cacheprovider -s
+      - run: python -m pytest tests/test_daemon_integration.py tests/test_daemon_ipc.py tests/test_index_state.py -q -p no:cacheprovider -s
       - name: cross-implementation scanner diff
         run: |
           python -m pip install -r requirements-tree-sitter.txt

@@ -353,3 +353,105 @@ def test_python_failure_mapping_matches_oracle(tmp_path: Path):
             assert symbols == (0,), path
     finally:
         db.close()
+
+
+def _python_scan_files(root: Path, files: list[str]):
+    from struct_scan import StructScanner
+
+    scanner = StructScanner(str(root))
+    try:
+        return scanner.scan_files(files)
+    finally:
+        scanner.db.close()
+
+
+def test_rust_incremental_exclusion_sweep_matches_python(tmp_path: Path):
+    destination = tmp_path / "corpus"
+    shutil.copytree(C_CORPUS, destination)
+    (destination / "legacy").mkdir()
+    (destination / "legacy" / "old.c").write_text(
+        "int legacy_fn(void) { return 1; }\n", encoding="utf-8"
+    )
+    python_db = _python_scan(destination)
+    rust_db = tmp_path / "rust.db"
+    assert _rust_scan(destination, rust_db)["outcome"] == "success"
+
+    config_path = destination / ".claude" / "logic_index_config"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8") + "!legacy/\n", encoding="utf-8"
+    )
+    python_result = _python_scan_files(destination, ["legacy/old.c"])
+    assert python_result.status.value == "success", python_result.errors
+    rust_report = _rust_scan(destination, rust_db, "--files", "legacy/old.c")
+    assert rust_report["outcome"] == "success"
+    assert rust_report["successful_paths"] == ["legacy/old.c"]
+    assert "legacy/old.c" in rust_report["deleted_paths"]
+
+    for db_path in (python_db, rust_db):
+        db = sqlite3.connect(str(db_path))
+        try:
+            count = db.execute(
+                "SELECT COUNT(*) FROM files WHERE path LIKE 'legacy/%'"
+            ).fetchone()
+            assert count == (0,), db_path
+        finally:
+            db.close()
+    assert oracle_comparator.blocking(_full_findings(python_db, rust_db)) == []
+
+
+def test_rust_incremental_identity_invalid_rescan_matches_python(tmp_path: Path):
+    destination = tmp_path / "corpus"
+    shutil.copytree(C_CORPUS, destination)
+    python_db = _python_scan(destination)
+    rust_db = tmp_path / "rust.db"
+    full_report = _rust_scan(destination, rust_db)
+    assert full_report["outcome"] == "success"
+    tampered, requested = full_report["successful_paths"][:2]
+
+    for db_path in (python_db, rust_db):
+        db = sqlite3.connect(str(db_path))
+        db.execute(
+            "UPDATE files SET parser_contract_version='0' WHERE path=?", (tampered,)
+        )
+        db.commit()
+        db.close()
+
+    python_result = _python_scan_files(destination, [requested])
+    assert python_result.status.value == "success", python_result.errors
+    assert tampered in python_result.discovered_paths
+    rust_report = _rust_scan(destination, rust_db, "--files", requested)
+    assert rust_report["outcome"] == "success"
+    assert tampered in rust_report["successful_paths"]
+
+    db = sqlite3.connect(str(rust_db))
+    try:
+        contract = db.execute(
+            "SELECT parser_contract_version FROM files WHERE path=?", (tampered,)
+        ).fetchone()
+        assert contract != ("0",)
+    finally:
+        db.close()
+    assert oracle_comparator.blocking(_full_findings(python_db, rust_db)) == []
+
+
+def test_rust_progress_json_lines_contract(c_project: Path):
+    _python_scan(c_project)
+    output = subprocess.check_output(
+        [
+            str(BINARY), "scan",
+            "--root", str(c_project),
+            "--db", str(c_project.parent / "rust_progress.db"),
+            "--result-json",
+            "--progress-json",
+        ],
+        text=True,
+    )
+    lines = [json.loads(line) for line in output.strip().splitlines()]
+    assert all(line["type"] in {"progress", "scan_result"} for line in lines)
+    progress = [line for line in lines if line["type"] == "progress"]
+    assert progress[0]["stage"] == "lock_acquired"
+    assert {"parse_done", "postprocess_done"} <= {line["stage"] for line in progress}
+    final = lines[-1]
+    assert final["type"] == "scan_result"
+    assert final["schema_version"] == 1
+    assert final["outcome"] == "success"

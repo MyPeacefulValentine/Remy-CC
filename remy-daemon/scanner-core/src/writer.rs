@@ -69,9 +69,15 @@ pub fn open_db(path: &std::path::Path) -> Result<Connection, String> {
     }
 }
 
-/// Drop every secondary index so a bulk load writes plain tables first;
-/// rebuild_indexes restores them from the shared DDL afterwards. Automatic
-/// (sqlite_autoindex_*) indexes carry NULL sql and are skipped.
+/// edges and patterns have no composite key covering their per-file
+/// DELETE; dropping these two would degrade those DELETEs to full-table
+/// scans (quadratic over a full scan).
+const BULK_KEPT_INDEXES: &[&str] = &["idx_edges_source_file", "idx_patterns_file"];
+
+/// Drop every secondary index (minus the DELETE-serving whitelist) so a
+/// bulk load writes plain tables first; rebuild_indexes restores them from
+/// the shared DDL afterwards. Automatic (sqlite_autoindex_*) indexes carry
+/// NULL sql and are skipped.
 pub fn drop_secondary_indexes(tx: &Transaction) -> rusqlite::Result<()> {
     let names: Vec<String> = {
         let mut stmt =
@@ -80,6 +86,9 @@ pub fn drop_secondary_indexes(tx: &Transaction) -> rusqlite::Result<()> {
         rows.collect::<Result<_, _>>()?
     };
     for name in names {
+        if BULK_KEPT_INDEXES.contains(&name.as_str()) {
+            continue;
+        }
         tx.execute_batch(&format!("DROP INDEX IF EXISTS \"{name}\""))?;
     }
     Ok(())
@@ -533,6 +542,25 @@ mod tests {
             })
             .unwrap();
         assert_eq!(version, crate::SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn bulk_kept_indexes_survive_drop() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = open_db(&dir.path().join("state.db")).unwrap();
+        let tx = conn.transaction().unwrap();
+        drop_secondary_indexes(&tx).unwrap();
+        let surviving: Vec<String> = {
+            let mut stmt = tx
+                .prepare("SELECT name FROM sqlite_master WHERE type='index' AND sql IS NOT NULL")
+                .unwrap();
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0)).unwrap();
+            rows.collect::<Result<_, _>>().unwrap()
+        };
+        for kept in BULK_KEPT_INDEXES {
+            assert!(surviving.iter().any(|name| name == kept), "{kept}");
+        }
+        assert!(!surviving.iter().any(|name| name == "idx_symbols_name"));
     }
 
     #[test]
