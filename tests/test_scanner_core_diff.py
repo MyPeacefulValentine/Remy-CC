@@ -399,6 +399,38 @@ def test_rust_incremental_exclusion_sweep_matches_python(tmp_path: Path):
     assert oracle_comparator.blocking(_full_findings(python_db, rust_db)) == []
 
 
+def test_rust_full_scan_sweep_matches_python(tmp_path: Path):
+    destination = tmp_path / "corpus"
+    shutil.copytree(C_CORPUS, destination)
+    (destination / "legacy").mkdir()
+    (destination / "legacy" / "old.c").write_text(
+        "int legacy_fn(void) { return 1; }\n", encoding="utf-8"
+    )
+    _python_scan(destination)
+    rust_db = tmp_path / "rust.db"
+    assert _rust_scan(destination, rust_db)["outcome"] == "success"
+
+    config_path = destination / ".claude" / "logic_index_config"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8") + "!legacy/\n", encoding="utf-8"
+    )
+    python_db = _python_scan(destination)
+    rust_report = _rust_scan(destination, rust_db)
+    assert rust_report["outcome"] == "success"
+    assert "legacy/old.c" in rust_report["deleted_paths"]
+
+    for db_path in (python_db, rust_db):
+        db = sqlite3.connect(str(db_path))
+        try:
+            count = db.execute(
+                "SELECT COUNT(*) FROM files WHERE path LIKE 'legacy/%'"
+            ).fetchone()
+            assert count == (0,), db_path
+        finally:
+            db.close()
+    assert oracle_comparator.blocking(_full_findings(python_db, rust_db)) == []
+
+
 def test_rust_incremental_identity_invalid_rescan_matches_python(tmp_path: Path):
     destination = tmp_path / "corpus"
     shutil.copytree(C_CORPUS, destination)

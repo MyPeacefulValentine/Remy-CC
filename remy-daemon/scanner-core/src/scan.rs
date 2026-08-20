@@ -212,7 +212,10 @@ fn test_hold_lock_window() {
 
 /// Full scan: acquire the project scan lock, discover, parse in parallel,
 /// write everything in one transaction with indexes rebuilt after the bulk
-/// load. `progress` emits a PROGRESS line to stderr every 250 written files
+/// load. Stored rows outside the discovered set are deleted before the
+/// index rebuild (StructScanner.scan_all sweep semantics), so a full scan
+/// converges the database after exclusions change or files disappear.
+/// `progress` emits a PROGRESS line to stderr every 250 written files
 /// (throughput curve measurements); `progress_json` emits the JSON Lines
 /// progress events; `lock_timeout` overrides REMY_INDEX_SCAN_LOCK_TIMEOUT.
 pub fn scan_full(
@@ -244,6 +247,7 @@ pub fn scan_full(
     let mut written: u64 = 0;
     let mut successful = Vec::new();
     let mut failed = Vec::new();
+    let mut deleted = Vec::new();
     let mut errors = Vec::new();
     {
         let tx = conn
@@ -287,6 +291,26 @@ pub fn scan_full(
             );
         }
         emit_progress_json(progress_json, "parse_done", Some(written), scan_started);
+        let discovered_set: std::collections::BTreeSet<&String> = discovered.iter().collect();
+        let db_paths: Vec<String> = {
+            let mut stmt = tx
+                .prepare("SELECT path FROM files ORDER BY path")
+                .map_err(|e| format!("path query failed: {e}"))?;
+            let mapped = stmt
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| format!("path query failed: {e}"))?;
+            mapped
+                .collect::<Result<_, _>>()
+                .map_err(|e| format!("path query failed: {e}"))?
+        };
+        for rel in &db_paths {
+            if discovered_set.contains(rel) {
+                continue;
+            }
+            if writer::delete_file(&tx, rel).map_err(|e| format!("delete failed: {e}"))? {
+                deleted.push(rel.clone());
+            }
+        }
         writer::rebuild_indexes(&tx).map_err(|e| format!("index rebuild failed: {e}"))?;
         crate::postprocess::run(&tx, &pconfig).map_err(|e| format!("postprocess failed: {e}"))?;
         emit_progress_json(progress_json, "postprocess_done", None, scan_started);
@@ -301,7 +325,7 @@ pub fn scan_full(
         discovered,
         successful,
         failed,
-        Vec::new(),
+        deleted,
         errors,
         true,
     ))
@@ -863,6 +887,32 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
             .unwrap();
         assert_eq!(remaining, 0);
+    }
+
+    #[test]
+    fn full_scan_sweeps_stored_rows_outside_the_discovered_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_corpus(root);
+        let db = root.join("state.db");
+        scan_full(root, &db, 1, false, false, None).unwrap();
+
+        std::fs::create_dir_all(root.join(".claude")).unwrap();
+        std::fs::write(root.join(".claude/logic_index_config"), "!src/\n").unwrap();
+        let result = scan_full(root, &db, 1, false, false, None).unwrap();
+        assert_eq!(result.status, RunStatus::Success);
+        assert_eq!(result.deleted_paths, vec!["src/util.c", "src/util.h"]);
+        assert_eq!(result.discovered_paths, Vec::<String>::new());
+
+        let conn = Connection::open(&db).unwrap();
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(remaining, 0);
+        let orphan_symbols: i64 = conn
+            .query_row("SELECT COUNT(*) FROM symbols", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(orphan_symbols, 0);
     }
 
     #[test]
