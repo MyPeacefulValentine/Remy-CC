@@ -27,6 +27,10 @@ pub fn scanner_runtime() -> io::Result<(PathBuf, PathBuf)> {
     ))
 }
 
+pub fn rust_scanner_binary() -> io::Result<PathBuf> {
+    env::current_exe()
+}
+
 pub fn hook_runtime(script_name: &str) -> io::Result<(PathBuf, PathBuf)> {
     Ok((locate_python()?, locate_script(&["hooks", script_name])?))
 }

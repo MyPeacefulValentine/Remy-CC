@@ -2,13 +2,14 @@
 //!
 //! PROTOCOL_VERSION history: 1 (R1.2 initial), 2 (R2.1 persistent jobs),
 //! 3 (R2.2 scheduling, job listing, and status snapshot),
-//! 4 (R2.3 file-filtered job queries for hook clients).
+//! 4 (R2.3 file-filtered job queries for hook clients),
+//! 5 (R3.5b scanner provider fields on jobs and status, full_scan job type).
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{Job, JobPriority, JobStatus, STATE_SCHEMA_VERSION};
+use crate::state::{Job, JobPriority, JobStatus, PublishedProvider, STATE_SCHEMA_VERSION};
 
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 pub const MAX_LINE_BYTES: u64 = 65536;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -130,6 +131,13 @@ pub struct JobFilters {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct ScannerStatus {
+    pub desired: String,
+    pub published: Option<PublishedProvider>,
+    pub diagnostic: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Response {
     Hello {
@@ -161,6 +169,7 @@ pub enum Response {
     Status {
         active_jobs: Vec<Job>,
         recent_errors: Vec<Job>,
+        scanner: ScannerStatus,
     },
     Error {
         code: String,
@@ -199,6 +208,7 @@ mod tests {
             job_type: "incremental_scan".to_string(),
             file_path: "src/main.py".to_string(),
             priority: JobPriority::Interactive,
+            provider: "python".to_string(),
             status: JobStatus::Pending,
             progress_current: None,
             progress_total: None,
@@ -306,6 +316,16 @@ mod tests {
             Response::Status {
                 active_jobs: vec![sample_job()],
                 recent_errors: Vec::new(),
+                scanner: ScannerStatus {
+                    desired: "rust".to_string(),
+                    published: Some(PublishedProvider {
+                        provider: "rust".to_string(),
+                        daemon_version: "0.2.0".to_string(),
+                        verified_at: 1_000,
+                        probe_summary: "{}".to_string(),
+                    }),
+                    diagnostic: None,
+                },
             },
             Response::error("not_found", "job missing"),
         ];
