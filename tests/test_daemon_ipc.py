@@ -634,7 +634,7 @@ def test_hook_timeout_distributions_are_recorded(tmp_path):
         "platform": sys.platform,
         "binary": "debug",
         "connect_timeout_ms": 35,
-        "read_timeout_ms": 50,
+        "read_timeout_ms": 100,
         "connect_fallback": _distribution(connect_samples),
         "read_fallback": _distribution(read_samples),
     }

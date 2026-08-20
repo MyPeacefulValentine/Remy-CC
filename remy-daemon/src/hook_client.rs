@@ -17,10 +17,13 @@ use serde_json::{json, Value};
 use crate::protocol::{Request, Response, MAX_LINE_BYTES, PROTOCOL_VERSION};
 use crate::state::{Job, JobPriority, JobStatus, STATE_SCHEMA_VERSION};
 
-// Windows scheduler-quantum floor (15.625 ms): connect needs >= 2 quanta,
-// read needs >= 3 quanta to cover one round-trip plus the submit fsync.
+// Windows scheduler-quantum floor (15.625 ms): connect needs >= 2 quanta.
+// Read covers one round-trip plus the submit transaction's fsyncs
+// (synchronous=FULL); 3 quanta proved insufficient under CI fsync spikes
+// (M6 recurrence, run 87812349791), so read holds the pre-declared
+// fallback budget of 6 quanta.
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(35);
-const READ_TIMEOUT: Duration = Duration::from_millis(50);
+const READ_TIMEOUT: Duration = Duration::from_millis(100);
 const DIRTY_FALLBACK_TIMEOUT: Duration = Duration::from_secs(5);
 const ENRICH_FALLBACK_TIMEOUT: Duration = Duration::from_secs(35);
 const FALLBACK_STDOUT_LIMIT: usize = 1024 * 1024;
