@@ -12,7 +12,7 @@ from index_mcp_common import (
     _query_scoped,
 )
 from impact import get_layer
-from struct_scan import tokenize_symbol
+from symbol_names import tokenize_symbol
 
 
 def _fts_available(db):

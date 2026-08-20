@@ -25,7 +25,7 @@ from impact import (
     get_layer,
     get_line_range,
 )
-from struct_scan import tokenize_symbol
+from symbol_names import tokenize_symbol
 from retrieval_projection import select_current_summary
 import remy_config
 from index_mcp_facts import (

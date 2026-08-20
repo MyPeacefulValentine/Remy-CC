@@ -30,7 +30,7 @@ _REEXPORT_SURFACE = {
         "_bfs_callers", "_bfs_callees", "collect_file_symbols",
         "get_layer", "get_line_range",
     ),
-    "struct_scan": ("tokenize_symbol",),
+    "symbol_names": ("tokenize_symbol",),
     "retrieval_projection": ("select_current_summary",),
     "index_mcp_facts": (
         "_resolve_symbol", "query_cluster_files_impl", "query_cluster_summary_impl",
