@@ -10,7 +10,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::logging::JsonLogger;
-use crate::protocol::{Request, Response, MAX_LINE_BYTES, PROTOCOL_VERSION};
+use crate::protocol::{Request, Response, ScannerStatus, MAX_LINE_BYTES, PROTOCOL_VERSION};
 use crate::scheduler::SchedulerHandle;
 use crate::state::{ListJobs, StateError, SubmitJob, STATE_SCHEMA_VERSION};
 
@@ -25,6 +25,7 @@ pub fn serve(
     daemon_version: &str,
     logger: &JsonLogger,
     scheduler: &SchedulerHandle,
+    scanner: ScannerStatus,
 ) -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
@@ -45,7 +46,7 @@ pub fn serve(
 
     loop {
         let (stream, _) = listener.accept()?;
-        match handle_connection(&stream, &token, daemon_version, logger, scheduler)? {
+        match handle_connection(&stream, &token, daemon_version, logger, scheduler, &scanner)? {
             ConnectionOutcome::Continue => {}
             ConnectionOutcome::Shutdown => {
                 logger.log("info", "ipc_shutdown_requested", serde_json::Value::Null)?;
@@ -66,6 +67,7 @@ fn handle_connection(
     daemon_version: &str,
     logger: &JsonLogger,
     scheduler: &SchedulerHandle,
+    scanner: &ScannerStatus,
 ) -> io::Result<ConnectionOutcome> {
     let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
@@ -248,6 +250,7 @@ fn handle_connection(
                     &Response::Status {
                         active_jobs,
                         recent_errors,
+                        scanner: scanner.clone(),
                     },
                 ),
                 Err(error) if error.is_fatal() => return Err(io::Error::other(error)),
@@ -365,6 +368,14 @@ mod tests {
         JsonLogger::new(dir, 1024 * 1024, clock()).unwrap()
     }
 
+    fn test_scanner_status() -> ScannerStatus {
+        ScannerStatus {
+            desired: "python".to_string(),
+            published: None,
+            diagnostic: None,
+        }
+    }
+
     fn request_line(value: serde_json::Value) -> String {
         let mut line = value.to_string();
         line.push('\n');
@@ -411,12 +422,20 @@ mod tests {
         fs::create_dir_all(&project).unwrap();
         let logger = test_logger(&dir.path().join("log"));
         let (state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
-        let (scheduler, scheduler_thread) = crate::scheduler::start(state, clock()).unwrap();
+        let (scheduler, scheduler_thread) =
+            crate::scheduler::start(state, clock(), "python".to_string()).unwrap();
 
         let run_dir_clone = run_dir.clone();
         let scheduler_clone = scheduler.clone();
         let handle = std::thread::spawn(move || {
-            serve(&run_dir_clone, "0.1.0-test", &logger, &scheduler_clone).unwrap();
+            serve(
+                &run_dir_clone,
+                "0.1.0-test",
+                &logger,
+                &scheduler_clone,
+                test_scanner_status(),
+            )
+            .unwrap();
         });
 
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
@@ -496,11 +515,19 @@ mod tests {
         let run_dir = dir.path().join("run");
         let logger = test_logger(&dir.path().join("log"));
         let (state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
-        let (scheduler, scheduler_thread) = crate::scheduler::start(state, clock()).unwrap();
+        let (scheduler, scheduler_thread) =
+            crate::scheduler::start(state, clock(), "python".to_string()).unwrap();
         let run_dir_clone = run_dir.clone();
         let scheduler_clone = scheduler.clone();
         let handle = std::thread::spawn(move || {
-            serve(&run_dir_clone, "0.1.0-test", &logger, &scheduler_clone).unwrap();
+            serve(
+                &run_dir_clone,
+                "0.1.0-test",
+                &logger,
+                &scheduler_clone,
+                test_scanner_status(),
+            )
+            .unwrap();
         });
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let port = loop {
@@ -541,11 +568,19 @@ mod tests {
         let run_dir = dir.path().join("run");
         let logger = test_logger(&dir.path().join("log"));
         let (state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
-        let (scheduler, scheduler_thread) = crate::scheduler::start(state, clock()).unwrap();
+        let (scheduler, scheduler_thread) =
+            crate::scheduler::start(state, clock(), "python".to_string()).unwrap();
         let run_dir_clone = run_dir.clone();
         let scheduler_clone = scheduler.clone();
         let handle = std::thread::spawn(move || {
-            serve(&run_dir_clone, "0.1.0-test", &logger, &scheduler_clone).unwrap();
+            serve(
+                &run_dir_clone,
+                "0.1.0-test",
+                &logger,
+                &scheduler_clone,
+                test_scanner_status(),
+            )
+            .unwrap();
         });
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let port = loop {

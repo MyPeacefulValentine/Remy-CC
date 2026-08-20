@@ -12,6 +12,7 @@ mod hook_client;
 mod logging;
 mod process;
 mod protocol;
+mod provider;
 mod runtime;
 mod scheduler;
 mod server;
@@ -205,7 +206,7 @@ fn run_foreground(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
                 logging::DEFAULT_MAX_LOG_BYTES,
                 Arc::clone(clock),
             )?;
-            let (state, recovery) =
+            let (mut state, recovery) =
                 state::StateStore::open(home, Arc::clone(clock)).map_err(io::Error::other)?;
             single_instance::write_pid(&run_dir, std::process::id())?;
             logger.log(
@@ -227,8 +228,27 @@ fn run_foreground(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
                     }),
                 )?;
             }
-            let (scheduler, _scheduler_thread) = scheduler::start(state, Arc::clone(clock))?;
-            server::serve(&run_dir, env!("CARGO_PKG_VERSION"), &logger, &scheduler)?;
+            let sync = provider::sync(&mut state, env!("CARGO_PKG_VERSION"), &logger)?;
+            let full_scan_projects = sync.full_scan_project_ids.clone();
+            let scanner_status = sync.status.clone();
+            let (scheduler, _scheduler_thread) =
+                scheduler::start(state, Arc::clone(clock), sync.published_provider)?;
+            for project_id in full_scan_projects {
+                if let Err(error) = scheduler.submit_full_scan(project_id) {
+                    logger.log(
+                        "warning",
+                        "full_scan_submit_failed",
+                        json!({"project_id": project_id, "error": error.to_string()}),
+                    )?;
+                }
+            }
+            server::serve(
+                &run_dir,
+                env!("CARGO_PKG_VERSION"),
+                &logger,
+                &scheduler,
+                scanner_status,
+            )?;
             scheduler.shutdown();
             Ok(ExitCode::SUCCESS)
         }
@@ -279,6 +299,7 @@ fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
                     None,
                     Vec::new(),
                     Vec::new(),
+                    None,
                     Some(("not_running", "daemon is not running"))
                 )
             );
@@ -303,6 +324,7 @@ fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
                     Some(protocol::Response::Status {
                         active_jobs,
                         recent_errors,
+                        scanner,
                     }) => println!(
                         "{}",
                         status_json(
@@ -311,6 +333,7 @@ fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
                             Some(daemon_version),
                             active_jobs,
                             recent_errors,
+                            Some(scanner),
                             None
                         )
                     ),
@@ -322,6 +345,7 @@ fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
                             Some(daemon_version),
                             Vec::new(),
                             Vec::new(),
+                            None,
                             Some(("invalid_response", "status response is invalid"))
                         )
                     ),
@@ -343,6 +367,7 @@ fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
                         None,
                         Vec::new(),
                         Vec::new(),
+                        None,
                         Some(("ipc_unresponsive", "daemon IPC is unresponsive"))
                     )
                 );
@@ -363,6 +388,7 @@ fn status_json(
     daemon_version: Option<String>,
     active_jobs: Vec<state::Job>,
     recent_errors: Vec<state::Job>,
+    scanner: Option<protocol::ScannerStatus>,
     diagnostic: Option<(&str, &str)>,
 ) -> serde_json::Value {
     json!({
@@ -373,6 +399,7 @@ fn status_json(
         "state_schema_version": if running && ipc_responsive { Some(state::STATE_SCHEMA_VERSION) } else { None },
         "active_jobs": active_jobs,
         "recent_errors": recent_errors,
+        "scanner": scanner,
         "diagnostic_error": diagnostic.map(|(kind, message)| json!({"kind": kind, "message": message})),
     })
 }
