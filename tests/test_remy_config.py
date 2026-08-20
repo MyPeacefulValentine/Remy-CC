@@ -51,7 +51,7 @@ def test_registry_owns_llm_defaults(config_home):
 def test_registry_ui_metadata_contract(config_home):
     _ = config_home
     registry = remy_config.registry_for_ui()
-    assert len(registry) == 56
+    assert len(registry) == 58
     group_ids = [group["id"] for group in remy_config.GROUPS]
     assert group_ids == ["llm_api", "index_generation", "injection", "mcp", "summary", "timeline", "system"]
     counts = {group_id: 0 for group_id in group_ids}
@@ -64,7 +64,7 @@ def test_registry_ui_metadata_contract(config_home):
         "mcp": 9,
         "summary": 11,
         "timeline": 2,
-        "system": 7,
+        "system": 9,
     }
     for row in registry:
         assert row["label_en"] and row["label_zh"]
@@ -127,7 +127,9 @@ def test_registry_ui_metadata_contract(config_home):
         "system": [
             "REMY_LANG", "REMY_BANNER_ENABLED", "REMY_PERMISSION_GATE",
             "REMY_REPO_AUDIT_ROOT",
-            "REMY_STRUCT_SCAN_TIMEOUT", "REMY_INDEX_SCAN_LOCK_TIMEOUT",
+            "REMY_STRUCT_SCAN_TIMEOUT", "REMY_FULL_SCAN_TIMEOUT",
+            "REMY_SCANNER_PROVIDER",
+            "REMY_INDEX_SCAN_LOCK_TIMEOUT",
             "REMY_INDEX_QUEUE_LOCK_TIMEOUT",
         ],
     }
@@ -140,6 +142,8 @@ def test_registry_ui_metadata_contract(config_home):
     assert scopes["REMY_LANG"] == "next_session"
     assert scopes["REMY_LOGIC_INDEX_AUTO_INJECT"] == "next_session"
     assert scopes["REMY_PERMISSION_GATE"] == "immediate"
+    assert scopes["REMY_SCANNER_PROVIDER"] == "next_session"
+    assert scopes["REMY_FULL_SCAN_TIMEOUT"] == "next_session"
 
 
 def test_field_spec_metadata_validation(config_home):

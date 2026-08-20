@@ -259,7 +259,10 @@ After installation, the `remy-cc` command is available system-wide:
 | `remy-cc update [--non-interactive] [--json]` | Fetch and install the latest version while preserving installer exit codes |
 | `remy-cc uninstall [--yes] [--json] [--purge-state]` | Remove managed files and settings fragments; preserve engine state unless explicitly purged |
 | `remy-cc verify [--json]` | Check manifest, file hashes, settings claims, and the managed Python runtime |
+| `remy-cc daemon start\|stop\|status [--json]` | Control the resident daemon; `status --json` reports jobs plus the scanner provider state (`desired`/`published`/`diagnostic`) |
 | `remy-cc version` | Print installed version |
+
+The daemon selects its scanner provider from `REMY_SCANNER_PROVIDER` (`python` default, `rust` opt-in). A change takes effect at the next daemon start: the candidate is validated by a two-level probe (version handshake plus an embedded micro-corpus scan) before publication, and an actual switch schedules one background full rescan per registered project. Validation failure keeps the previously published provider.
 
 The settings editor manages Python runtime Remy parameters only. Claude Code credentials and skill-protocol settings remain in Claude's settings. Project settings inherit user values and can override individual non-secret fields.
 

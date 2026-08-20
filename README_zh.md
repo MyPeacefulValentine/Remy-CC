@@ -259,7 +259,10 @@ python install.py --lang zh-CN   # 简体中文
 | `remy-cc update [--non-interactive] [--json]` | 获取并安装最新版本，同时保留安装器退出码 |
 | `remy-cc uninstall [--yes] [--json] [--purge-state]` | 删除受管理文件和 settings 片段；仅在显式指定时删除引擎状态 |
 | `remy-cc verify [--json]` | 检查 manifest、文件 hash、settings 认领和受管理 Python runtime |
+| `remy-cc daemon start\|stop\|status [--json]` | 控制常驻 daemon；`status --json` 报告作业与扫描器 provider 状态（`desired`/`published`/`diagnostic`） |
 | `remy-cc version` | 显示版本号 |
+
+daemon 从 `REMY_SCANNER_PROVIDER` 选择扫描器 provider（默认 `python`，可选 `rust`）。变更在下次 daemon 启动生效：候选先经两级探针（版本握手 + 内嵌微语料扫描）验证再发布，实际切换会对每个已注册项目提交一个后台全量重扫作业。验证失败保持先前已发布的 provider。
 
 配置编辑器只管理Python运行时Remy参数。Claude Code凭据和技能协议参数继续由Claude设置管理。项目配置继承用户值，并可覆盖单个非密钥字段。
 

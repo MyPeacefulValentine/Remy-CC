@@ -492,6 +492,34 @@ python -m pytest Remy-CC/tests/test_scanner_core_diff.py Remy-CC/tests/test_inde
 cargo test --workspace --manifest-path Remy-CC/remy-daemon/Cargo.toml
 ```
 
+## R3.5b daemon provider 切换测试
+
+R3.5b 引入 state schema v2（`jobs.provider` claim 快照列、`full_scan` job_type、
+`published_provider` 表）、`provider.rs` 两级候选探针（`--version` 握手 + 编译期
+四语言微语料扫描临时 DB 校验 scan_result v1 与 schema 12.0.0）、worker 双 provider
+分派（Rust 臂 `current_exe()` re-exec `scan`、rconfig 自读参数、kill 取消；Python 臂
+增量路径逐字节不变）、发布后逐项目 background full_scan 与队列级 superseded 归并
+（pending full_scan 吸收同项目增量作业），以及 IPC PROTOCOL_VERSION 4→5
+（status 追加 `scanner.desired/published/diagnostic`，Job 序列化含 `provider`）。
+
+- `src/state.rs` 内联测试：v1→v2 迁移保留作业并默认 provider=python、备份存在、
+  外键零违例；claim 快照 provider；full_scan 归并/吸收/去重；published_provider
+  单行 upsert；Pending→Superseded 转换合法性。
+- `src/scheduler.rs` 内联测试（M3 固化）：迟到 Complete 对终态零覆写、
+  CancelRequested 优先于 worker 结果、终态后 Progress 静默丢弃、单槽不重派后继。
+- `src/provider.rs` 内联测试：bootstrap 不探针不扫全量、验证失败保持已发布
+  provider、无效 desired 值只出诊断、缺失二进制探针报错。
+- `tests/test_daemon_provider.py`：e2e python→rust 切换（发布、full_scan 成功、
+  `parser_backend='python-tree-sitter'` 作为 Rust 写库指纹、增量按 rust 快照执行、
+  taskkill 硬杀后重启发布状态存续且不重复提交 full_scan）与无效 desired 保持
+  python 两用例；`REMY_SCANNER_PROVIDER`/`REMY_FULL_SCAN_TIMEOUT`（60–86400，默认
+  1800）进入 PARAM_REGISTRY 与 rconfig 双侧契约锁定。
+
+```bash
+python -m pytest Remy-CC/tests/test_daemon_provider.py Remy-CC/tests/test_daemon_ipc.py Remy-CC/tests/test_remy_config.py Remy-CC/tests/test_postprocess_parity.py -q -p no:cacheprovider
+cargo test --workspace --manifest-path Remy-CC/remy-daemon/Cargo.toml
+```
+
 ## 边界
 
 已提交测试使用合成源码或固定的MulanPSL-2.0 TEE fixture、临时目录和临时SQLite数据库，不需要LLM API key或网络。P0.3比较全量与增量扫描的规范化状态。P0.4增加固定版本符号和关系、重复全量幂等性、handler重命名/删除比较、解析后端报告及本地完整项目测量命令。P0.5将结构扫描实现拆分到`schema.py`、`symbol_names.py`、`migrations.py`和`scanner.py`，`struct_scan.py`继续作为稳定CLI和导入入口。P0.6在生成位置注册事实前拒绝普通标量和字节数组，拒绝数值与表达式handler，保留Unicode单词标识符，报告pattern类型与来源，并检查固定完整项目中的三个已知图片数组。固定项目没有发现省略内层聚合花括号的已知函数指针结构体表，该C形式不属于当前已验证的解析契约。migration测试验证导入时不加载parser模块；完整测试、Pyright、兼容再导出、两种fixture后端和三次固定完整项目扫描验证当前行为。

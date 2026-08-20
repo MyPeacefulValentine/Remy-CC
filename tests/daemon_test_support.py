@@ -11,8 +11,8 @@ import time
 from pathlib import Path
 
 DAEMON_SOURCE = Path(__file__).resolve().parent.parent / "remy-daemon"
-PROTOCOL_VERSION = 4
-STATE_SCHEMA_VERSION = 1
+PROTOCOL_VERSION = 5
+STATE_SCHEMA_VERSION = 2
 
 
 def has_rust_toolchain():

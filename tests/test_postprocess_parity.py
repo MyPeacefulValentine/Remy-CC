@@ -320,6 +320,7 @@ class TestNarrowConfigContract:
         "REMY_FILE_KIND_LOW_COHESION_THRESHOLD": ("float", "0.25", 0.0, 1.0),
         "REMY_INDEX_SCAN_LOCK_TIMEOUT": ("float", "30", 0, 300),
         "REMY_STRUCT_SCAN_TIMEOUT": ("int", "60", 10, 300),
+        "REMY_FULL_SCAN_TIMEOUT": ("int", "1800", 60, 86400),
     }
 
     def test_registry_matches_rust_replication_snapshot(self):

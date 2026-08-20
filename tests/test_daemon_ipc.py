@@ -1,4 +1,4 @@
-"""Integration tests for the remy-daemon protocol v4 and Hook clients."""
+"""Integration tests for the remy-daemon protocol v5 and Hook clients."""
 
 import json
 import shutil
@@ -304,6 +304,10 @@ def test_list_jobs_file_filter_and_status_json_contract(daemon_home, tmp_path):
     assert payload["running"] is True
     assert payload["protocol_version"] == PROTOCOL_VERSION
     assert payload["state_schema_version"] == STATE_SCHEMA_VERSION
+    assert payload["scanner"]["desired"] == "python"
+    assert payload["scanner"]["published"]["provider"] == "python"
+    assert payload["scanner"]["diagnostic"] is None
+    assert response["jobs"][0]["provider"] == "python"
 
 
 def test_invalid_paths_and_unknown_jobs_have_stable_error_codes(daemon_home, tmp_path):
