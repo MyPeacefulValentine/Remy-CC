@@ -520,6 +520,24 @@ python -m pytest Remy-CC/tests/test_daemon_provider.py Remy-CC/tests/test_daemon
 cargo test --workspace --manifest-path Remy-CC/remy-daemon/Cargo.toml
 ```
 
+## state.db WAL 备份约束
+
+`~/.remy-cc/state.db` 以 WAL 日志模式运行。未 checkpoint 的行只存在于
+`state.db-wal` 中，仅复制主数据库文件会静默丢弃这些行。2026-08-21 的工作区
+实测确认了该失效形态：真实状态库含 47 个作业且全部仍在 WAL 中，裸拷
+`state.db` 得到的数据库为 0 作业。
+
+对运行中状态库做快照必须使用以下方式之一：
+
+- SQLite backup API（`rusqlite` 的 `backup` feature、`sqlite3 ".backup"` 或
+  Python `sqlite3.Connection.backup`），备份时自动并入 WAL 内容；或
+- 文件级复制时连带 `state.db-wal` 与 `state.db-shm`，且复制期间无写入者持有
+  数据库。
+
+daemon 内置的 v1→v2 迁移使用 backup API 生成迁移前的 `state.db.bak`，交付
+路径不受影响。该约束适用于手工快照、测试 fixture 以及未来任何复制运行中
+状态库的工具。
+
 ## 边界
 
 已提交测试使用合成源码或固定的MulanPSL-2.0 TEE fixture、临时目录和临时SQLite数据库，不需要LLM API key或网络。P0.3比较全量与增量扫描的规范化状态。P0.4增加固定版本符号和关系、重复全量幂等性、handler重命名/删除比较、解析后端报告及本地完整项目测量命令。P0.5将结构扫描实现拆分到`schema.py`、`symbol_names.py`、`migrations.py`和`scanner.py`，`struct_scan.py`继续作为稳定CLI和导入入口。P0.6在生成位置注册事实前拒绝普通标量和字节数组，拒绝数值与表达式handler，保留Unicode单词标识符，报告pattern类型与来源，并检查固定完整项目中的三个已知图片数组。固定项目没有发现省略内层聚合花括号的已知函数指针结构体表，该C形式不属于当前已验证的解析契约。migration测试验证导入时不加载parser模块；完整测试、Pyright、兼容再导出、两种fixture后端和三次固定完整项目扫描验证当前行为。

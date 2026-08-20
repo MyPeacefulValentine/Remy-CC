@@ -605,6 +605,26 @@ A `crt-static` release build reported `remy-daemon 0.2.0` and contained no
 Rust-mode install, verify, default uninstall, reinstall, `--purge-state`, and
 project-index preservation. The unchanged browser UI suite passed 8 Chromium tests.
 
+## state.db WAL backup constraint
+
+`~/.remy-cc/state.db` runs in WAL journal mode. Rows not yet checkpointed live
+only in `state.db-wal`, so copying the main database file alone silently drops
+them. A workspace probe on 2026-08-21 confirmed the failure mode: the real
+state database held 47 jobs, all of them still in the WAL, and a bare copy of
+`state.db` produced a database with 0 jobs.
+
+Any snapshot of a live state database must therefore use one of:
+
+- the SQLite backup API (`rusqlite` `backup` feature, `sqlite3 ".backup"`, or
+  Python `sqlite3.Connection.backup`), which folds WAL content into the copy; or
+- a file-level copy that includes `state.db-wal` and `state.db-shm` alongside
+  the main file, taken while no writer holds the database.
+
+The daemon's built-in v1→v2 migration uses the backup API for its pre-migration
+`state.db.bak`, so the shipped path is unaffected. The constraint applies to
+manual snapshots, test fixtures, and any future tooling that copies a live
+state database.
+
 ## Boundaries
 
 Committed tests use synthetic source or the fixed MulanPSL-2.0 TEE fixture, temporary directories, and temporary SQLite databases. They do not require an LLM API key or network access. P0.3 compares normalized full and incremental states. P0.4 adds fixed-revision symbols and relationships, repeated full-scan idempotency, handler rename/delete comparisons, parser-backend reporting, and local full-project measurement commands. P0.5 moves the structural implementation into `schema.py`, `symbol_names.py`, `migrations.py`, and `scanner.py`; `struct_scan.py` remains the stable CLI/import entry point. P0.6 rejects scalar and byte arrays before emitting positional registration facts, rejects numeric and expression handler values, preserves Unicode word identifiers, reports pattern types and sources, and checks the three known image arrays in the fixed full project. The fixed project has no known function-pointer struct table that omits inner aggregate braces; that C form remains outside the verified parser contract. Migration tests import without parser modules, while the full suite, Pyright, compatibility exports, both fixture backends, and the three fixed full-project scans verify the current behavior.
