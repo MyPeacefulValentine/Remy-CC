@@ -54,6 +54,7 @@ impl ForegroundDaemon {
         let child = Command::new(bin())
             .args(["start", "--foreground"])
             .env("REMY_CC_HOME", home)
+            .env("REMY_SCANNER_PROVIDER", "python")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
