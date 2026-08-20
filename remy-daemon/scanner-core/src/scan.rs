@@ -322,12 +322,7 @@ pub fn scan_full(
     }
 
     Ok(ScanResult::from_parts(
-        discovered,
-        successful,
-        failed,
-        deleted,
-        errors,
-        true,
+        discovered, successful, failed, deleted, errors, true,
     ))
 }
 
