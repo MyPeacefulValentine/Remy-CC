@@ -83,21 +83,22 @@ def _scan_result_json(result):
 
 
 def _run_machine_scan(args):
-    if not args.files:
-        raise ValueError("--result-json requires one or more --files")
     lock = project_scan_lock(args.cwd, timeout=args.lock_timeout)
     try:
         lock.acquire()
         _print_json({"type": "progress", "stage": "lock_acquired"})
-        result = scan_files(
-            args.cwd,
-            args.files,
-            acquire_lock=False,
-            manage_dirty=False,
-        )
+        if args.files:
+            result = scan_files(
+                args.cwd,
+                args.files,
+                acquire_lock=False,
+                manage_dirty=False,
+            )
+        else:
+            result = scan_all(args.cwd, acquire_lock=False, manage_dirty=False)
     except LockTimeoutError as exc:
         result = ScanResult.from_parts(
-            failed_paths=args.files,
+            failed_paths=args.files or (),
             errors=(StageError("scan_lock", str(exc)),),
             postprocess_complete=False,
         )

@@ -33,6 +33,8 @@ pub struct PostprocessConfig {
     /// Parsed for contract parity with PARAM_REGISTRY; the consumer is the
     /// R3.5b daemon worker (scan-job timeout), not the scanner itself.
     pub struct_scan_timeout: i64,
+    /// Full-scan job timeout (R3.5b daemon worker consumer).
+    pub full_scan_timeout: i64,
 }
 
 pub fn user_home() -> Option<PathBuf> {
@@ -224,6 +226,7 @@ fn load_from(root: &Path, home: Option<PathBuf>) -> Result<PostprocessConfig, St
             Some(300.0),
         )?,
         struct_scan_timeout: int_setting("REMY_STRUCT_SCAN_TIMEOUT", p, u, "60", 10, 300)?,
+        full_scan_timeout: int_setting("REMY_FULL_SCAN_TIMEOUT", p, u, "1800", 60, 86400)?,
     })
 }
 
@@ -264,6 +267,7 @@ mod tests {
         assert_eq!(config.file_kind_low_cohesion_threshold, 0.25);
         assert_eq!(config.scan_lock_timeout, 30.0);
         assert_eq!(config.struct_scan_timeout, 60);
+        assert_eq!(config.full_scan_timeout, 1800);
     }
 
     #[test]

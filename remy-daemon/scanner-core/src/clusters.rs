@@ -267,6 +267,7 @@ mod tests {
             file_kind_low_cohesion_threshold: 0.25,
             scan_lock_timeout: 30.0,
             struct_scan_timeout: 60,
+            full_scan_timeout: 1800,
         }
     }
 
