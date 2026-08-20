@@ -16,9 +16,15 @@ use crate::clock::Clock;
 
 pub const STATE_DB_FILE: &str = "state.db";
 pub const STATE_BACKUP_FILE: &str = "state.db.bak";
-pub const STATE_SCHEMA_VERSION: u32 = 1;
+pub const STATE_SCHEMA_VERSION: u32 = 2;
+pub const PROVIDER_PYTHON: &str = "python";
+pub const PROVIDER_RUST: &str = "rust";
+pub const JOB_TYPE_INCREMENTAL: &str = "incremental_scan";
+pub const JOB_TYPE_FULL_SCAN: &str = "full_scan";
+const FULL_SCAN_DEDUPE_KEY: &str = "full_scan";
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[cfg(test)]
 const SCHEMA_V1: &str = r#"
 CREATE TABLE projects (
     id INTEGER PRIMARY KEY,
@@ -78,6 +84,83 @@ ON jobs(project_id, job_type, dedupe_key)
 WHERE status IN ('running', 'cancel_requested');
 CREATE INDEX jobs_project_status ON jobs(project_id, status, priority DESC, created_at, id);
 PRAGMA user_version = 1;
+"#;
+
+const JOBS_DDL_V2: &str = r#"
+CREATE TABLE jobs (
+    id INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id),
+    job_type TEXT NOT NULL CHECK (job_type IN ('incremental_scan', 'full_scan')),
+    target_db_path TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    priority INTEGER NOT NULL CHECK (priority IN (0, 1)),
+    provider TEXT NOT NULL DEFAULT 'python' CHECK (provider IN ('python', 'rust')),
+    status TEXT NOT NULL CHECK (status IN (
+        'pending', 'running', 'cancel_requested', 'succeeded', 'failed',
+        'cancelled', 'superseded'
+    )),
+    progress_current INTEGER CHECK (progress_current IS NULL OR progress_current >= 0),
+    progress_total INTEGER CHECK (progress_total IS NULL OR progress_total >= 0),
+    progress_message TEXT,
+    result_json TEXT,
+    error_json TEXT,
+    created_at INTEGER NOT NULL CHECK (created_at >= 0),
+    started_at INTEGER,
+    finished_at INTEGER,
+    dedupe_key TEXT NOT NULL,
+    superseded_by_job_id INTEGER REFERENCES jobs(id),
+    CHECK (
+        progress_total IS NULL OR
+        (progress_current IS NOT NULL AND progress_current <= progress_total)
+    ),
+    CHECK (NOT (result_json IS NOT NULL AND error_json IS NOT NULL)),
+    CHECK (
+        (status = 'pending' AND started_at IS NULL AND finished_at IS NULL) OR
+        (status IN ('running', 'cancel_requested') AND started_at IS NOT NULL AND finished_at IS NULL) OR
+        (status IN ('succeeded', 'failed') AND started_at IS NOT NULL AND finished_at IS NOT NULL) OR
+        (status IN ('cancelled', 'superseded') AND finished_at IS NOT NULL)
+    ),
+    CHECK (
+        (status = 'succeeded' AND result_json IS NOT NULL AND error_json IS NULL) OR
+        (status = 'failed' AND result_json IS NULL AND error_json IS NOT NULL) OR
+        (status NOT IN ('succeeded', 'failed') AND result_json IS NULL AND error_json IS NULL)
+    ),
+    CHECK (
+        (status = 'superseded' AND superseded_by_job_id IS NOT NULL) OR
+        (status <> 'superseded' AND superseded_by_job_id IS NULL)
+    )
+);
+"#;
+
+const JOBS_INDEXES: &str = r#"
+CREATE UNIQUE INDEX jobs_one_pending
+ON jobs(project_id, job_type, dedupe_key)
+WHERE status = 'pending';
+CREATE UNIQUE INDEX jobs_one_executing
+ON jobs(project_id, job_type, dedupe_key)
+WHERE status IN ('running', 'cancel_requested');
+CREATE INDEX jobs_project_status ON jobs(project_id, status, priority DESC, created_at, id);
+"#;
+
+const PUBLISHED_PROVIDER_DDL: &str = r#"
+CREATE TABLE published_provider (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    provider TEXT NOT NULL CHECK (provider IN ('python', 'rust')),
+    daemon_version TEXT NOT NULL,
+    verified_at INTEGER NOT NULL CHECK (verified_at >= 0),
+    probe_summary TEXT NOT NULL
+);
+"#;
+
+const PROJECTS_DDL: &str = r#"
+CREATE TABLE projects (
+    id INTEGER PRIMARY KEY,
+    project_key TEXT NOT NULL UNIQUE,
+    project_path TEXT NOT NULL,
+    db_path TEXT NOT NULL,
+    created_at INTEGER NOT NULL CHECK (created_at >= 0),
+    last_seen_at INTEGER NOT NULL CHECK (last_seen_at >= created_at)
+);
 "#;
 
 #[derive(Debug)]
@@ -221,6 +304,7 @@ pub struct Job {
     pub job_type: String,
     pub file_path: String,
     pub priority: JobPriority,
+    pub provider: String,
     pub status: JobStatus,
     pub progress_current: Option<i64>,
     pub progress_total: Option<i64>,
@@ -273,6 +357,14 @@ pub struct ProgressUpdate {
 pub struct CancelResult {
     pub job: Job,
     pub changed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct PublishedProvider {
+    pub provider: String,
+    pub daemon_version: String,
+    pub verified_at: i64,
+    pub probe_summary: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -331,6 +423,35 @@ impl StateStore {
             |row| row.get(0),
         )?;
 
+        let absorbing_full_scan: Option<i64> = tx
+            .query_row(
+                "SELECT id FROM jobs \
+                 WHERE project_id = ?1 AND job_type = 'full_scan' AND status = 'pending'",
+                params![project_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(full_scan_id) = absorbing_full_scan {
+            tx.execute(
+                "INSERT INTO jobs( \
+                    project_id, job_type, target_db_path, file_path, priority, status, \
+                    created_at, finished_at, dedupe_key, superseded_by_job_id \
+                 ) VALUES (?1, 'incremental_scan', ?2, ?3, ?4, 'superseded', ?5, ?5, ?6, ?7)",
+                params![
+                    project_id,
+                    db_path,
+                    file_path,
+                    request.priority.as_db(),
+                    now,
+                    dedupe_key,
+                    full_scan_id
+                ],
+            )?;
+            let job = load_job(&tx, tx.last_insert_rowid())?;
+            tx.commit()?;
+            return Ok(SubmitResult { job, created: true });
+        }
+
         let existing_id: Option<i64> = tx
             .query_row(
                 "SELECT id FROM jobs \
@@ -373,6 +494,123 @@ impl StateStore {
         load_job(&self.connection, job_id)
     }
 
+    /// Queue-level supersede fold: a pending full_scan absorbs every pending
+    /// incremental job of the project, and later incremental submissions are
+    /// recorded as superseded by it (see submit).
+    pub fn submit_full_scan(&mut self, project_id: i64) -> StateResult<SubmitResult> {
+        let now = self.now_millis()?;
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let project: Option<(String, String)> = tx
+            .query_row(
+                "SELECT project_path, db_path FROM projects WHERE id = ?1",
+                params![project_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((_, db_path)) = project else {
+            return Err(StateError::InvalidInput(format!(
+                "project {project_id} is not registered"
+            )));
+        };
+
+        let existing_id: Option<i64> = tx
+            .query_row(
+                "SELECT id FROM jobs \
+                 WHERE project_id = ?1 AND job_type = 'full_scan' \
+                   AND status IN ('pending', 'running', 'cancel_requested')",
+                params![project_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(job_id) = existing_id {
+            let job = load_job(&tx, job_id)?;
+            tx.commit()?;
+            return Ok(SubmitResult {
+                job,
+                created: false,
+            });
+        }
+
+        tx.execute(
+            "INSERT INTO jobs( \
+                project_id, job_type, target_db_path, file_path, priority, status, \
+                created_at, dedupe_key \
+             ) VALUES (?1, 'full_scan', ?2, '.', 0, 'pending', ?3, ?4)",
+            params![project_id, db_path, now, FULL_SCAN_DEDUPE_KEY],
+        )?;
+        let full_scan_id = tx.last_insert_rowid();
+        tx.execute(
+            "UPDATE jobs SET status = 'superseded', finished_at = ?1, \
+                 superseded_by_job_id = ?2 \
+             WHERE project_id = ?3 AND job_type = 'incremental_scan' AND status = 'pending'",
+            params![now, full_scan_id, project_id],
+        )?;
+        let job = load_job(&tx, full_scan_id)?;
+        tx.commit()?;
+        Ok(SubmitResult { job, created: true })
+    }
+
+    pub fn project_ids(&self) -> StateResult<Vec<i64>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT id FROM projects ORDER BY id")?;
+        let ids = statement
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<i64>, _>>()?;
+        Ok(ids)
+    }
+
+    pub fn published_provider(&self) -> StateResult<Option<PublishedProvider>> {
+        self.connection
+            .query_row(
+                "SELECT provider, daemon_version, verified_at, probe_summary \
+                 FROM published_provider WHERE id = 1",
+                [],
+                |row| {
+                    Ok(PublishedProvider {
+                        provider: row.get(0)?,
+                        daemon_version: row.get(1)?,
+                        verified_at: row.get(2)?,
+                        probe_summary: row.get(3)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(StateError::from)
+    }
+
+    pub fn publish_provider(
+        &mut self,
+        provider: &str,
+        daemon_version: &str,
+        probe_summary: &str,
+    ) -> StateResult<PublishedProvider> {
+        if !matches!(provider, PROVIDER_PYTHON | PROVIDER_RUST) {
+            return Err(StateError::InvalidInput(format!(
+                "unsupported provider {provider}"
+            )));
+        }
+        let now = self.now_millis()?;
+        self.connection.execute(
+            "INSERT INTO published_provider(id, provider, daemon_version, verified_at, probe_summary) \
+             VALUES (1, ?1, ?2, ?3, ?4) \
+             ON CONFLICT(id) DO UPDATE SET \
+                 provider = excluded.provider, \
+                 daemon_version = excluded.daemon_version, \
+                 verified_at = excluded.verified_at, \
+                 probe_summary = excluded.probe_summary",
+            params![provider, daemon_version, now, probe_summary],
+        )?;
+        Ok(PublishedProvider {
+            provider: provider.to_string(),
+            daemon_version: daemon_version.to_string(),
+            verified_at: now,
+            probe_summary: probe_summary.to_string(),
+        })
+    }
+
     pub fn promote(&mut self, job_id: i64, priority: JobPriority) -> StateResult<PromoteResult> {
         let changed = self.connection.execute(
             "UPDATE jobs SET priority = MAX(priority, ?1) \
@@ -385,7 +623,12 @@ impl StateStore {
         })
     }
 
-    pub fn claim_next_pending(&mut self) -> StateResult<Option<Job>> {
+    pub fn claim_next_pending(&mut self, provider: &str) -> StateResult<Option<Job>> {
+        if !matches!(provider, PROVIDER_PYTHON | PROVIDER_RUST) {
+            return Err(StateError::InvalidInput(format!(
+                "unsupported provider {provider}"
+            )));
+        }
         let now = self.now_millis()?;
         let tx = self
             .connection
@@ -423,9 +666,9 @@ impl StateStore {
             )));
         }
         tx.execute(
-            "UPDATE jobs SET progress_current = 0, progress_total = 3, \
-                 progress_message = 'runtime_validation' WHERE id = ?1",
-            params![job_id],
+            "UPDATE jobs SET provider = ?1, progress_current = 0, progress_total = 3, \
+                 progress_message = 'runtime_validation' WHERE id = ?2",
+            params![provider, job_id],
         )?;
         let job = load_job(&tx, job_id)?;
         tx.commit()?;
@@ -503,7 +746,7 @@ impl StateStore {
         let status = filter.status.map(JobStatus::as_db);
         let job_type = filter.job_type.as_deref();
         if let Some(value) = job_type {
-            if value != "incremental_scan" {
+            if !matches!(value, JOB_TYPE_INCREMENTAL | JOB_TYPE_FULL_SCAN) {
                 return Err(StateError::InvalidInput(format!(
                     "unsupported job_type {value}"
                 )));
@@ -741,12 +984,64 @@ fn initialize_or_migrate(
     if existed_before_open {
         backup_database(connection, &path.with_file_name(STATE_BACKUP_FILE))?;
     }
-    let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    if let Err(error) = tx.execute_batch(SCHEMA_V1) {
-        return Err(error.into());
+    match version {
+        0 => {
+            let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            tx.execute_batch(PROJECTS_DDL)?;
+            tx.execute_batch(JOBS_DDL_V2)?;
+            tx.execute_batch(JOBS_INDEXES)?;
+            tx.execute_batch(PUBLISHED_PROVIDER_DDL)?;
+            tx.pragma_update(None, "user_version", STATE_SCHEMA_VERSION)?;
+            tx.commit()?;
+            Ok(())
+        }
+        1 => migrate_v1_to_v2(connection),
+        _ => Err(StateError::Corrupt(format!(
+            "state schema {version} has no migration handler"
+        ))),
     }
-    tx.commit()?;
-    Ok(())
+}
+
+/// v1 -> v2: jobs gains the provider claim-snapshot column and the
+/// full_scan job_type (table rebuild), plus the published_provider table.
+/// Runs with foreign_keys off around a single transaction; row ids are
+/// preserved so a foreign_key_check afterwards must stay empty.
+fn migrate_v1_to_v2(connection: &mut Connection) -> StateResult<()> {
+    connection.pragma_update(None, "foreign_keys", "OFF")?;
+    let result = (|| -> StateResult<()> {
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute("ALTER TABLE jobs RENAME TO jobs_v1", [])?;
+        tx.execute_batch(JOBS_DDL_V2)?;
+        tx.execute(
+            "INSERT INTO jobs( \
+                id, project_id, job_type, target_db_path, file_path, priority, \
+                provider, status, progress_current, progress_total, progress_message, \
+                result_json, error_json, created_at, started_at, finished_at, \
+                dedupe_key, superseded_by_job_id) \
+             SELECT id, project_id, job_type, target_db_path, file_path, priority, \
+                'python', status, progress_current, progress_total, progress_message, \
+                result_json, error_json, created_at, started_at, finished_at, \
+                dedupe_key, superseded_by_job_id FROM jobs_v1",
+            [],
+        )?;
+        tx.execute("DROP TABLE jobs_v1", [])?;
+        tx.execute_batch(JOBS_INDEXES)?;
+        tx.execute_batch(PUBLISHED_PROVIDER_DDL)?;
+        let violations: i64 =
+            tx.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get(0)
+            })?;
+        if violations != 0 {
+            return Err(StateError::Corrupt(format!(
+                "v1 to v2 migration produced {violations} foreign key violations"
+            )));
+        }
+        tx.pragma_update(None, "user_version", STATE_SCHEMA_VERSION)?;
+        tx.commit()?;
+        Ok(())
+    })();
+    connection.pragma_update(None, "foreign_keys", "ON")?;
+    result
 }
 
 fn backup_database(source: &mut Connection, backup_path: &Path) -> StateResult<()> {
@@ -795,7 +1090,8 @@ fn transition_job(
              WHERE id = ?3 AND status = ?4",
             params![to.as_db(), now, job_id, from.as_db()],
         )?,
-        (JobStatus::Running, JobStatus::Superseded) => tx.execute(
+        (JobStatus::Pending, JobStatus::Superseded)
+        | (JobStatus::Running, JobStatus::Superseded) => tx.execute(
             "UPDATE jobs SET status = ?1, finished_at = ?2, superseded_by_job_id = ?3 \
              WHERE id = ?4 AND status = ?5",
             params![to.as_db(), now, superseded_by, job_id, from.as_db()],
@@ -820,6 +1116,7 @@ fn allowed_transition(from: JobStatus, to: JobStatus) -> bool {
         (from, to),
         (JobStatus::Pending, JobStatus::Running)
             | (JobStatus::Pending, JobStatus::Cancelled)
+            | (JobStatus::Pending, JobStatus::Superseded)
             | (JobStatus::Running, JobStatus::Pending)
             | (JobStatus::Running, JobStatus::Succeeded)
             | (JobStatus::Running, JobStatus::Failed)
@@ -833,9 +1130,9 @@ fn load_job(connection: &Connection, job_id: i64) -> StateResult<Job> {
     let row = connection
         .query_row(
             "SELECT j.id, j.project_id, p.project_path, j.target_db_path, j.job_type, \
-                    j.file_path, j.priority, j.status, j.progress_current, j.progress_total, \
-                    j.progress_message, j.result_json, j.error_json, j.created_at, \
-                    j.started_at, j.finished_at, j.superseded_by_job_id \
+                    j.file_path, j.priority, j.provider, j.status, j.progress_current, \
+                    j.progress_total, j.progress_message, j.result_json, j.error_json, \
+                    j.created_at, j.started_at, j.finished_at, j.superseded_by_job_id \
              FROM jobs j JOIN projects p ON p.id = j.project_id WHERE j.id = ?1",
             params![job_id],
             |row| {
@@ -848,15 +1145,16 @@ fn load_job(connection: &Connection, job_id: i64) -> StateResult<Job> {
                     row.get::<_, String>(5)?,
                     row.get::<_, i64>(6)?,
                     row.get::<_, String>(7)?,
-                    row.get::<_, Option<i64>>(8)?,
+                    row.get::<_, String>(8)?,
                     row.get::<_, Option<i64>>(9)?,
-                    row.get::<_, Option<String>>(10)?,
+                    row.get::<_, Option<i64>>(10)?,
                     row.get::<_, Option<String>>(11)?,
                     row.get::<_, Option<String>>(12)?,
-                    row.get::<_, i64>(13)?,
-                    row.get::<_, Option<i64>>(14)?,
+                    row.get::<_, Option<String>>(13)?,
+                    row.get::<_, i64>(14)?,
                     row.get::<_, Option<i64>>(15)?,
                     row.get::<_, Option<i64>>(16)?,
+                    row.get::<_, Option<i64>>(17)?,
                 ))
             },
         )
@@ -870,16 +1168,17 @@ fn load_job(connection: &Connection, job_id: i64) -> StateResult<Job> {
         job_type: row.4,
         file_path: row.5,
         priority: JobPriority::from_db(row.6)?,
-        status: JobStatus::from_db(&row.7)?,
-        progress_current: row.8,
-        progress_total: row.9,
-        progress_message: row.10,
-        result: parse_json(row.11, "result_json")?,
-        error: parse_json(row.12, "error_json")?,
-        created_at: row.13,
-        started_at: row.14,
-        finished_at: row.15,
-        superseded_by_job_id: row.16,
+        provider: row.7,
+        status: JobStatus::from_db(&row.8)?,
+        progress_current: row.9,
+        progress_total: row.10,
+        progress_message: row.11,
+        result: parse_json(row.12, "result_json")?,
+        error: parse_json(row.13, "error_json")?,
+        created_at: row.14,
+        started_at: row.15,
+        finished_at: row.16,
+        superseded_by_job_id: row.17,
     })
 }
 
@@ -1439,21 +1738,33 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            store.claim_next_pending().unwrap().unwrap().id,
+            store
+                .claim_next_pending(PROVIDER_PYTHON)
+                .unwrap()
+                .unwrap()
+                .id,
             first_interactive.job.id
         );
         store
             .complete_success(first_interactive.job.id, serde_json::json!({"ok": true}))
             .unwrap();
         assert_eq!(
-            store.claim_next_pending().unwrap().unwrap().id,
+            store
+                .claim_next_pending(PROVIDER_PYTHON)
+                .unwrap()
+                .unwrap()
+                .id,
             second_interactive.job.id
         );
         store
             .complete_success(second_interactive.job.id, serde_json::json!({"ok": true}))
             .unwrap();
         assert_eq!(
-            store.claim_next_pending().unwrap().unwrap().id,
+            store
+                .claim_next_pending(PROVIDER_PYTHON)
+                .unwrap()
+                .unwrap()
+                .id,
             background.job.id
         );
     }
@@ -1472,7 +1783,7 @@ mod tests {
                 JobPriority::Interactive,
             ))
             .unwrap();
-        let claimed = store.claim_next_pending().unwrap().unwrap();
+        let claimed = store.claim_next_pending(PROVIDER_PYTHON).unwrap().unwrap();
         assert_eq!(claimed.progress_current, Some(0));
         assert_eq!(claimed.progress_total, Some(3));
         store
@@ -1522,7 +1833,7 @@ mod tests {
             .unwrap();
         assert!(promoted.changed);
         assert_eq!(promoted.job.priority, JobPriority::Interactive);
-        let running = store.claim_next_pending().unwrap().unwrap();
+        let running = store.claim_next_pending(PROVIDER_PYTHON).unwrap().unwrap();
         let unchanged = store.promote(running.id, JobPriority::Interactive).unwrap();
         assert!(!unchanged.changed);
         assert_eq!(unchanged.job.status, JobStatus::Running);
@@ -1592,5 +1903,153 @@ mod tests {
             "src/state.rs"
         );
         assert!(normalize_source_path("README.md").is_err());
+    }
+
+    fn v1_database(home: &Path) {
+        let connection = Connection::open(home.join(STATE_DB_FILE)).unwrap();
+        connection.execute_batch(SCHEMA_V1).unwrap();
+    }
+
+    #[test]
+    fn migration_v1_to_v2_defaults_provider_and_backs_up() {
+        let home = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        v1_database(home.path());
+        let connection = Connection::open(home.path().join(STATE_DB_FILE)).unwrap();
+        let project_path = fs::canonicalize(project.path()).unwrap();
+        connection
+            .execute(
+                "INSERT INTO projects(project_key, project_path, db_path, created_at, last_seen_at) \
+                 VALUES (?1, ?2, ?3, 100, 100)",
+                params![
+                    project_key(&display_path(&project_path)),
+                    display_path(&project_path),
+                    display_path(&project_path.join("logic_index.db")),
+                ],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO jobs(project_id, job_type, target_db_path, file_path, priority, \
+                     status, created_at, dedupe_key) \
+                 VALUES (1, 'incremental_scan', 'db', 'a.py', 1, 'pending', 100, \
+                     'incremental_scan:a.py')",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        let store = store_in(home.path());
+        let job = store.get(1).unwrap();
+        assert_eq!(job.provider, PROVIDER_PYTHON);
+        assert_eq!(job.status, JobStatus::Pending);
+        assert!(home.path().join(STATE_BACKUP_FILE).exists());
+        let version: u32 = store
+            .connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, STATE_SCHEMA_VERSION);
+        assert!(store.published_provider().unwrap().is_none());
+        let violations: i64 = store
+            .connection
+            .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(violations, 0);
+    }
+
+    #[test]
+    fn claim_snapshots_provider_onto_job() {
+        let home = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let db = project.path().join("logic_index.db");
+        let mut store = store_in(home.path());
+        store
+            .submit(request(
+                project.path(),
+                &db,
+                "a.py",
+                JobPriority::Interactive,
+            ))
+            .unwrap();
+        let claimed = store.claim_next_pending(PROVIDER_RUST).unwrap().unwrap();
+        assert_eq!(claimed.provider, PROVIDER_RUST);
+        assert!(store.claim_next_pending("other").is_err());
+    }
+
+    #[test]
+    fn full_scan_supersedes_pending_incrementals_and_absorbs_later_submissions() {
+        let home = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let db = project.path().join("logic_index.db");
+        let mut store = store_in(home.path());
+        let pending = store
+            .submit(request(
+                project.path(),
+                &db,
+                "a.py",
+                JobPriority::Interactive,
+            ))
+            .unwrap();
+        let full = store.submit_full_scan(pending.job.project_id).unwrap();
+        assert!(full.created);
+        assert_eq!(full.job.job_type, JOB_TYPE_FULL_SCAN);
+
+        let old = store.get(pending.job.id).unwrap();
+        assert_eq!(old.status, JobStatus::Superseded);
+        assert_eq!(old.superseded_by_job_id, Some(full.job.id));
+
+        let absorbed = store
+            .submit(request(
+                project.path(),
+                &db,
+                "b.py",
+                JobPriority::Interactive,
+            ))
+            .unwrap();
+        assert_eq!(absorbed.job.status, JobStatus::Superseded);
+        assert_eq!(absorbed.job.superseded_by_job_id, Some(full.job.id));
+
+        let duplicate = store.submit_full_scan(pending.job.project_id).unwrap();
+        assert!(!duplicate.created);
+        assert_eq!(duplicate.job.id, full.job.id);
+
+        let claimed = store.claim_next_pending(PROVIDER_RUST).unwrap().unwrap();
+        assert_eq!(claimed.id, full.job.id);
+        let after_running = store
+            .submit(request(
+                project.path(),
+                &db,
+                "c.py",
+                JobPriority::Interactive,
+            ))
+            .unwrap();
+        assert_eq!(after_running.job.status, JobStatus::Pending);
+    }
+
+    #[test]
+    fn publish_provider_upserts_single_row() {
+        let home = tempfile::tempdir().unwrap();
+        let mut store = store_in(home.path());
+        assert!(store.published_provider().unwrap().is_none());
+        let first = store
+            .publish_provider(PROVIDER_RUST, "0.2.0", "{}")
+            .unwrap();
+        assert_eq!(first.provider, PROVIDER_RUST);
+        let second = store
+            .publish_provider(PROVIDER_PYTHON, "0.2.0", "{}")
+            .unwrap();
+        assert_eq!(second.provider, PROVIDER_PYTHON);
+        let stored = store.published_provider().unwrap().unwrap();
+        assert_eq!(stored.provider, PROVIDER_PYTHON);
+        assert!(store.publish_provider("other", "0.2.0", "{}").is_err());
+        let count: i64 = store
+            .connection
+            .query_row("SELECT COUNT(*) FROM published_provider", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 1);
     }
 }
