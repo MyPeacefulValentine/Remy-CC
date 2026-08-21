@@ -220,10 +220,7 @@ Return to 2.1 with updated evidence context.
 ```
 
 **Strict Rules:**
-- `evidence[]`: one item per file ACTUALLY READ during this session. Unread files MUST NOT appear.
-- `excerpt`: MANDATORY verbatim text. Summaries are prohibited.
-- `status`: `"confirmed"` for files read; `"suspected"` for inferred but unread files.
-- If NOT a git repo: use `"type": "filesystem"` and omit `"commit"`.
+- **Evidence Record (MUST)**: evidence[] lists only files ACTUALLY READ; excerpt is verbatim (no summaries); `confirmed` = read this session, `suspected` = inferred unread; evidence_refs points to ≥1 `confirmed` entry; non-git repos use `"type": "filesystem"` without `"commit"`. Full definition: `skills/remy-plan/evidence_record.md`.
 - If diagnosis is `inconclusive`: set `"mode": "investigate"` instead of `"write"` in the task object.
 
 4. Update `.active_packet`: `Bash("rm -f '.claude/temp_task/.active_packet' && echo 'debug_{TIMESTAMP}.json' > '.claude/temp_task/.active_packet'")`.

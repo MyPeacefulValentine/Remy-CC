@@ -66,7 +66,7 @@ Although strict schema validation is disabled, you MUST internally structure you
     -   If file does not exist: HALT. Report error. Do NOT proceed.
 2.  **Extract constraints**: parse `evidence_packet.proposed_changes[]` as the authoritative change scope.
     -   MUST NOT make changes outside the described scope.
-    -   For any `evidence[]` item with `status: "suspected"`: re-read the referenced `path` and `range` and confirm before proceeding. After confirming, `Edit` the packet file to promote that item's `status` to `"confirmed"` — the PreToolUse guard exempts writes under `.claude/temp_task/`, so this edit is always permitted.
+    -   For any `evidence[]` item with `status: "suspected"`: re-read the referenced `path` and `range` and confirm before proceeding. After confirming, `Edit` the packet file to promote that item's `status` to `"confirmed"` — the PreToolUse guard exempts writes under `.claude/temp_task/`, so this edit is always permitted. Status semantics and state machine: `skills/remy-plan/evidence_record.md`.
 3.  Proceed to Phase 1.
 
 **If NO argument provided:**
@@ -110,7 +110,7 @@ For each file to be modified, execute the following sub-steps in order. Maintain
 | # | Condition | Trigger |
 | :--- | :--- | :--- |
 | H1 | The file about to be edited is NOT listed in any `proposed_changes[].description` or referenced `evidence[].path` | Scope overflow |
-| H2 | The target function's signature or structure has changed since the audit's `evidence[].excerpt` | Stale plan |
+| H2 | The target function's signature or structure has changed since the audit's `evidence[].excerpt` (staleness per `skills/remy-plan/evidence_record.md`) | Stale plan |
 | H3 | The edit would violate a constraint stated in `sender_payload.analysis` | Constraint conflict |
 
 **If ANY condition is TRUE → Hard Interrupt:**

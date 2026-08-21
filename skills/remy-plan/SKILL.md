@@ -395,13 +395,9 @@ After generating the 5 analysis tables (Phase 5.2), you MUST produce and write a
 5.  **Update .active_packet** (Bash): `rm -f ".claude/temp_task/.active_packet" && echo "task_{TIMESTAMP}.json" > ".claude/temp_task/.active_packet"`
 
 **Strict Rules:**
--   `evidence[]`: one item per file you ACTUALLY READ during this audit. Unread files MUST NOT appear.
--   `excerpt`: MANDATORY verbatim text. Summaries are prohibited.
--   `status`: use `"confirmed"` only for files read in this session; use `"suspected"` for inferred but unread files.
--   `proposed_changes[].evidence_refs`: MUST reference at least one evidence ID with `status: "confirmed"`.
+-   **Evidence Record (MUST)**: evidence[] lists only files ACTUALLY READ; excerpt is verbatim (no summaries); `confirmed` = read this session, `suspected` = inferred unread; every change's evidence_refs points to ≥1 `confirmed` entry; non-git repos use `"type": "filesystem"` without `"commit"`. Full definition: `skills/remy-plan/evidence_record.md`.
 -   `proposed_changes[].action`: Required; must match Table 4's `操作` column (Create / Modify / Delete).
 -   `proposed_changes[].caller_refs`: Required when `action == "Create"` and the target is executable code (function, class, module — not pure data / config / template files). Each entry MUST reference an existing-tree caller via `caller_file` + `caller_function` + `evidence_ref`. See Phase 4.5.
--   If NOT a git repo: use `"type": "filesystem"` and omit `"commit"`.
 -   In the stop prompt (Phase 7), include: `📦 Packet: task_{TIMESTAMP}.json | 执行: /remy-patch task_{TIMESTAMP}.json`
 
 ## Phase 7: Explicit Stop Protocol (MANDATORY)
