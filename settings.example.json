@@ -175,6 +175,15 @@
             "command": "python \"~/.claude/hooks/permission_gate.py\""
           }
         ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"~/.claude/hooks/permission_gate.py\""
+          }
+        ]
       }
     ]
   },

@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-PermissionRequest hook that auto-approves Edit/Write targeting two classes of
-model-managed artifacts:
+PermissionRequest hook that auto-approves Edit/Write/Read targeting three
+classes of model-managed artifacts:
 
 1. Project-level .claude/ system artifacts (temp_* directories, history/,
    generated tree and index files). Settings files are never approved: paths
@@ -22,6 +22,11 @@ On any miss, disabled gate, or internal error the hook exits 0 with empty
 stdout, which Claude Code treats as "no decision" and falls back to the
 normal permission prompt (fail-open). Exit code 2 would deny the permission
 and is never used.
+
+Normative reference: the Exemptions list in style.md §1.2 (Authorization Gate
+owner). This hook is the mechanism-layer counterpart of that list; the three
+target classes above are approved uniformly for Edit, Write, and Read prompts,
+and settings-class paths always fall through to the normal prompt.
 """
 
 import json
@@ -30,7 +35,7 @@ import sys
 import tempfile
 import time
 
-ALLOWED_TOOLS = ("Edit", "Write")
+ALLOWED_TOOLS = ("Edit", "Write", "Read")
 ALLOWED_DIR_PREFIXES = ("temp_",)
 ALLOWED_DIRS = ("history",)
 ALLOWED_ROOT_FILE_PREFIXES = ("project_tree", "logic_tree", "logic_index", "tree_config")

@@ -92,6 +92,18 @@ class TestDecide:
         target = tmp_path / ".claude" / "temp_task" / "x.json"
         assert gate.decide(str(tmp_path), "Edit", str(target)) == "allow"
 
+    def test_artifact_read_allowed(self, tmp_path):
+        assert gate.decide(str(tmp_path), "Read", ".claude/temp_task/x.json") == "allow"
+
+    @pytest.mark.parametrize("path", [
+        ".claude/temp_task/x.json",
+        ".claude/settings.json",
+        ".claude/unknown.md",
+        "src/main.py",
+    ])
+    def test_read_write_symmetry(self, tmp_path, path):
+        assert gate.decide(str(tmp_path), "Read", path) == gate.decide(str(tmp_path), "Write", path)
+
     @pytest.mark.parametrize("path", [
         ".claude/settings.json",
         ".claude/settings.local.json",
@@ -101,6 +113,14 @@ class TestDecide:
     ])
     def test_settings_denied(self, tmp_path, path):
         assert gate.decide(str(tmp_path), "Edit", path) == "skip:denied"
+
+    @pytest.mark.parametrize("path", [
+        ".claude/settings.json",
+        ".claude/settings.local.json",
+        ".claude/remy-config.json",
+    ])
+    def test_settings_read_denied(self, tmp_path, path):
+        assert gate.decide(str(tmp_path), "Read", path) == "skip:denied"
 
     @pytest.mark.parametrize("path", [
         "src/main.py",
@@ -159,6 +179,10 @@ class TestMemoryDecide:
         target = self.projects / "C--another-project" / "memory" / "fact.md"
         assert gate.decide(str(tmp_path), "Write", str(target)) == "allow"
 
+    def test_memory_read_allowed(self, tmp_path):
+        target = self.projects / "D--some-project" / "memory" / "MEMORY.md"
+        assert gate.decide(str(tmp_path), "Read", str(target)) == "allow"
+
     def test_non_memory_sibling_skipped(self, tmp_path):
         target = self.projects / "D--some-project" / "other" / "x.json"
         assert gate.decide(str(tmp_path), "Write", str(target)) == "skip:outside"
@@ -193,6 +217,10 @@ class TestTempDecide:
         target = isolated_temp_root / "a" / "b" / "data.json"
         assert gate.decide(str(tmp_path), "Edit", str(target)) == "allow"
 
+    def test_temp_read_allowed(self, tmp_path, isolated_temp_root):
+        target = isolated_temp_root / "tasks" / "agent.output"
+        assert gate.decide(str(tmp_path), "Read", str(target)) == "allow"
+
     def test_traversal_out_of_temp_skipped(self, tmp_path, isolated_temp_root):
         target = isolated_temp_root / ".." / "escape.py"
         assert gate.decide(str(tmp_path), "Write", str(target)) == "skip:outside"
@@ -223,6 +251,11 @@ class TestGateEnabled:
 class TestMainIO:
     def test_allow_emits_documented_decision(self, tmp_path):
         rc, out = _run_hook(_payload(tmp_path), tmp_path / "home")
+        assert rc == 0
+        assert json.loads(out) == gate.ALLOW_DECISION
+
+    def test_read_allow_emits_documented_decision(self, tmp_path):
+        rc, out = _run_hook(_payload(tmp_path, "Read"), tmp_path / "home")
         assert rc == 0
         assert json.loads(out) == gate.ALLOW_DECISION
 
