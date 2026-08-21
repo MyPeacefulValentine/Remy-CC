@@ -794,7 +794,7 @@ def prompt_language() -> str:
     try:
         choice = input("Choice / 选择 [1]: ").strip()
     except EOFError:
-        return "en"
+        return existing_config_lang()
     if choice == "2":
         return "zh-CN"
     return "en"
@@ -1710,7 +1710,8 @@ def main() -> None:
         parser.error("--purge-state requires --uninstall")
     if args.lang:
         _ui_lang = args.lang
-    elif not args.uninstall and not args.verify and not args.non_interactive and not args.json:
+    elif (not args.uninstall and not args.verify and not args.non_interactive
+          and not args.json and sys.stdin is not None and sys.stdin.isatty()):
         _ui_lang = prompt_language()
     else:
         _ui_lang = existing_config_lang()

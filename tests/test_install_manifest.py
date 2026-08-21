@@ -1577,3 +1577,30 @@ def test_non_interactive_install_explicit_lang_overrides_config(claude_home, mon
     monkeypatch.setattr(sys, "argv", ["install.py", "--non-interactive", "--lang", "en"])
     install.main()
     assert captured == ["en"]
+
+
+def test_interactive_install_non_tty_stdin_preserves_language(claude_home, monkeypatch):
+    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
+    monkeypatch.setattr(install, "_ui_lang", install._ui_lang)
+    _write_lang_config(claude_home, "zh-CN")
+    captured = []
+    monkeypatch.setattr(install, "do_install_v3", lambda args: captured.append(install._ui_lang))
+    monkeypatch.setattr(
+        install, "prompt_language",
+        lambda: pytest.fail("prompt_language must not be called without a tty"),
+    )
+    monkeypatch.setattr(sys, "stdin", types.SimpleNamespace(isatty=lambda: False))
+    monkeypatch.setattr(sys, "argv", ["install.py"])
+    install.main()
+    assert captured == ["zh-CN"]
+
+
+def test_prompt_language_eof_falls_back_to_existing_config(claude_home, monkeypatch):
+    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
+    _write_lang_config(claude_home, "zh-CN")
+
+    def raise_eof(prompt):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", raise_eof)
+    assert install.prompt_language() == "zh-CN"
