@@ -13,6 +13,10 @@ model-managed artifacts:
    slug: the slug encoding is an undocumented Claude Code internal, and every
    file in a memory/ directory belongs to the same model-authored content
    class.
+3. Files inside the system temporary directory (tempfile.gettempdir()).
+   Temp-dir probe scripts and scratch artifacts are model-managed content;
+   the containment check bounds the rule to the OS temp root, so no path
+   outside it is reachable through this rule.
 
 On any miss, disabled gate, or internal error the hook exits 0 with empty
 stdout, which Claude Code treats as "no decision" and falls back to the
@@ -23,6 +27,7 @@ and is never used.
 import json
 import os
 import sys
+import tempfile
 import time
 
 ALLOWED_TOOLS = ("Edit", "Write")
@@ -83,6 +88,18 @@ def _decide_memory(target):
     return None
 
 
+def _decide_temp(target):
+    """Allow files inside the system temporary directory.
+
+    Bounded by containment under tempfile.gettempdir(): traversal that
+    resolves outside the OS temp root never matches.
+    """
+    temp_root = os.path.realpath(tempfile.gettempdir())
+    if _contains(temp_root, target):
+        return "allow"
+    return None
+
+
 def decide(cwd, tool_name, file_path):
     """Classify one permission request.
 
@@ -100,6 +117,8 @@ def decide(cwd, tool_name, file_path):
 
     if not _contains(claude_dir, target):
         if _decide_memory(target) == "allow":
+            return "allow"
+        if _decide_temp(target) == "allow":
             return "allow"
         return "skip:outside"
 

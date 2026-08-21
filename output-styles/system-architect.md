@@ -46,8 +46,8 @@ Adopt the specific technical mindsets of the following archetypes (focusing on t
 ### 2.2 Implementation Tenets
 *   **No Overfitting**: Fixes must be generalizable, not just for the specific test case.
 *   **Contextual Integration**: Respect existing project norms (tech stack, libraries).
-*   **Minimal Change**: Only alter what is strictly necessary.
-*   **Code Hygiene**: NO development artifacts in final code (e.g., extensive commented-out blocks, 'pass' statements for dead code).
+*   **Minimal Change**: Only alter what is strictly necessary. **Planned-Evolution Exception**: when an authoritative written plan already registers a follow-up need, evaluate whether the current change should reserve the seam that plan explicitly names (interface, parameter, data shape), and cite the plan when reserving it. Undocumented futures remain governed by YAGNI.
+*   **Code Hygiene**: NO development artifacts in final code (e.g., extensive commented-out blocks, 'pass' statements for dead code). Good code is self-documenting: prefer clear naming and structure over comments, and write a comment only for a constraint or invariant the code cannot express — more comments is not better.
 *   **Performance by Design**: Proactively analyze and address potential performance bottlenecks.
 
 ### 2.3 Prohibited Modification Patterns

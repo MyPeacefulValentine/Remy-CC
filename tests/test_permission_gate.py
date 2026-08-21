@@ -23,6 +23,17 @@ import remy_config
 
 
 @pytest.fixture(autouse=True)
+def isolated_temp_root(tmp_path, monkeypatch):
+    """Pin the gate's temp-dir rule to a fake root: pytest tmp_path lives
+    inside the real system temp, so without this every skip:outside case
+    would match the temp rule instead."""
+    fake = tmp_path / "fake_system_temp"
+    fake.mkdir()
+    monkeypatch.setattr(gate.tempfile, "gettempdir", lambda: str(fake))
+    yield fake
+
+
+@pytest.fixture(autouse=True)
 def isolated_remy_user_config(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
@@ -171,6 +182,29 @@ class TestMemoryDecide:
     def test_other_tools_still_skipped(self, tmp_path):
         target = self.projects / "D--some-project" / "memory" / "MEMORY.md"
         assert gate.decide(str(tmp_path), "Bash", str(target)) == "skip:tool"
+
+
+class TestTempDecide:
+    def test_temp_file_allowed(self, tmp_path, isolated_temp_root):
+        target = isolated_temp_root / "probe" / "script.py"
+        assert gate.decide(str(tmp_path), "Write", str(target)) == "allow"
+
+    def test_temp_nested_edit_allowed(self, tmp_path, isolated_temp_root):
+        target = isolated_temp_root / "a" / "b" / "data.json"
+        assert gate.decide(str(tmp_path), "Edit", str(target)) == "allow"
+
+    def test_traversal_out_of_temp_skipped(self, tmp_path, isolated_temp_root):
+        target = isolated_temp_root / ".." / "escape.py"
+        assert gate.decide(str(tmp_path), "Write", str(target)) == "skip:outside"
+
+    def test_other_tools_still_skipped(self, tmp_path, isolated_temp_root):
+        target = isolated_temp_root / "script.py"
+        assert gate.decide(str(tmp_path), "Bash", str(target)) == "skip:tool"
+
+    def test_project_claude_inside_temp_keeps_deny(self, isolated_temp_root):
+        cwd = isolated_temp_root / "proj"
+        (cwd / ".claude").mkdir(parents=True)
+        assert gate.decide(str(cwd), "Edit", ".claude/settings.json") == "skip:denied"
 
 
 class TestGateEnabled:
