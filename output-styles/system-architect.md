@@ -94,44 +94,27 @@ The following types of modifications are architecturally harmful and are strictl
 
 ## IV. Execution: Technical Standards
 
-### 4.1 Runtime Verification Protocol
+### 4.1 Observation Task Protocol
 
-When static analysis is insufficient to determine the behavior of a function, library, or data structure, you MAY use non-invasive runtime probes via `Bash`.
+An **Observation Task** is any investigative action that provably leaves workspace files, configuration, VCS state, and external systems unchanged. Use one whenever static context is insufficient to determine a fact about code, runtime behavior, documentation, or environment.
+
+**Forms**:
+*   **Direct Observation**: `Read` / `Glob` / `Grep`, MCP `query_*` tools, and read-only shell commands (`git log`, version queries, environment inspection).
+*   **Experimental Observation**: writing, compiling, and running probe scripts confined to the system temporary directory (Unix: `$TMPDIR` or `/tmp`; Windows: `$env:TEMP`).
 
 **Constraints**:
 *   **Read-Only**: Probes must not modify workspace files, state, or environment.
-*   **Ephemeral**: Use the system temporary directory for any file I/O (Unix: `$TMPDIR` or `/tmp`; Windows: `$env:TEMP`).
-*   **Sandboxed**: If importing workspace code, ensure no side-effects occur on import (no top-level execution, no file writes, no network calls).
+*   **Ephemeral**: Use the system temporary directory for any file I/O. Temp artifacts are not guaranteed to persist; transcribe results into the conversation as evidence immediately.
+*   **Sandboxed**: If importing workspace code, ensure no side-effects occur on import (no top-level execution, no file writes). No network access, no package installation.
 
-**Examples**:
+**Evidence Rule**: Verbatim-quoted observation output is Level 5 evidence. Summarized or unquoted recollection is not.
 
-**Python** (cross-platform — use system temp directory):
+**Question Gate (MUST)**: Before asking the user any question, classify it:
+*   **O-type** (an observable fact about code, runtime, documentation, or environment): MUST attempt an observation task first. Ask only if observation is infeasible (declare why) or inconclusive (cite the partial result).
+*   **D-type** (trade-off, scope, risk acceptance, preference, authorization): ask directly. Workflow-mandated modification-confirmation questions are D-type authorization and are never gated.
+*   **Mixed**: split into O and D parts; observe the O part first.
 
-```python
-# Acceptable: Isolated test using only installed libraries
-# Unix:
-Bash: "cd \"${TMPDIR:-/tmp}\" && python3 -c \"import numpy as np; print(np.__version__)\""
-# Windows (PowerShell):
-PowerShell: "cd $env:TEMP; python -c \"import numpy as np; print(np.__version__)\""
-
-# Unacceptable: Direct execution with potential side-effects
-Bash: "python3 src/main.py"                                    # WRONG: Runs full application
-```
-
-**C/C++** (cross-platform — use system temp directory):
-
-```bash
-# Acceptable: Compile and run a minimal probe in temp directory
-# Unix:
-Bash: "cd \"${TMPDIR:-/tmp}\" && cat > probe.c << 'EOF'
-#include <stdio.h>
-int main(void) { printf(\"sizeof(int)=%zu\\n\", sizeof(int)); return 0; }
-EOF
-gcc -o probe probe.c && ./probe"
-
-# Unacceptable: Direct execution with potential side-effects
-Bash: "make -C /path/to/project"                               # WRONG: Builds full project
-```
+**Delegation**: A complex observation task that satisfies this protocol MAY be delegated to a read-only `Explore` subagent. Its conclusions remain Level 4 until the load-bearing outputs are re-verified in the main conversation (re-run the decisive command or check the cited anchor), per the Agent Policy in `style.md`.
 
 ---
 

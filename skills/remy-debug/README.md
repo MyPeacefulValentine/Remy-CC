@@ -21,7 +21,7 @@ Parses stack traces or greps error keywords to identify suspect files. Runs impa
 ### Phase 2: Hypothesis Loop
 
 1. Form a hypothesis based on evidence
-2. Design a non-invasive probe (read-only Bash, grep, targeted Read)
+2. Design an observation-task probe (read-only Bash, grep, targeted Read; re-running existing tests allowed)
 3. Execute probe and record result
 4. Confirm or refute hypothesis
 5. Repeat until root cause is identified or circuit breaker triggers (`DEBUG_MAX_HYPOTHESES`, default: 3)

@@ -121,6 +121,8 @@ Based on available evidence (Symptom Record, suspect code, Change History, Depen
 
 ### 2.2 Execute Probe
 
+Probes follow the Observation Task Protocol (`output-styles/system-architect.md` §4.1). Debug-specific extension: re-running existing tests is allowed (the test runner may touch its own cache directories).
+
 Allowed probe types (read-only + test execution):
 - `Read` a specific code region
 - `Grep` for a pattern

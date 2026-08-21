@@ -68,7 +68,7 @@ Execute the following four sub-tasks in order:
 4.  **Supplementary Actions** (still mandatory):
     1.  Apply all **Saturation Principles** listed above.
     2.  **Reuse Scan**: For any planned new function or utility, `Grep` the project for existing implementations with similar names or purposes. If a reusable function exists, the plan MUST reference it (Modify/extend) rather than proposing a new one.
-    3.  **Runtime Probe (Optional)**: When static analysis is insufficient to verify a technical claim, execute a non-invasive probe per the constraints defined in Phase 4.1 step 2 (**Read-Only**, **Ephemeral** — system temp directory only, **Sandboxed** — no side-effects, no network, no package installation). Cite probe output as evidence in Table 1 or Table 3; probe results do NOT enter the Evidence Packet.
+    3.  **Observation Task (Optional)**: When static analysis is insufficient to verify a technical claim, execute an observation task per `output-styles/system-architect.md` §4.1 (**Read-Only**, **Ephemeral** — system temp directory only, **Sandboxed** — no side-effects, no network, no package installation). Cite observation output as evidence in Table 1 or Table 3; observation results do NOT enter the Evidence Packet.
 
 After completing Phase 1.2, proceed to **Phase 2: Requirement Restatement Gate**.
 
@@ -126,6 +126,15 @@ You MUST execute the following loop until NO ambiguities remain.
 
 When the loaded `language.md` directive selects Chinese, output the 中文 label; otherwise output the English label.
 
+**Observation Task Reference** (used by Phase 3.1 tagging and the Phase 3.3 Observation Gate):
+
+*   **Compact definitions** — `[O]`: an assertion about code, runtime behavior, documentation, or environment that can be settled by a side-effect-free observation (Read/Grep/MCP query, or a probe script confined to the system temp directory). `[D]`: a trade-off, scope, risk-acceptance, preference, or authorization decision that belongs to the user. `[O+D]`: split into an O part (observe first) and a D part (ask). Full protocol: `output-styles/system-architect.md` §4.1 (Observation Task Protocol).
+*   **Ordering method**: before executing the observations of an iteration, list them in a task table `# | Target assertion | Form (direct/experimental) | Depends on | Cost`, then schedule:
+    *   **Evidence dependency** (task B interprets task A's output): topological serial order.
+    *   **Fixture dependency** (tasks share a probe fixture): build the fixture once, run the group consecutively.
+    *   **Adjudication dependency** (a cheap task can refute the premise of expensive ones): run the cheapest falsifier first; prune dependents whose premise is refuted.
+    *   Independent low-cost direct observations run first (parallel where tools allow); experimental observations run in ascending cost order.
+
 ### 3.1 Scan
 
 Identify current architectural decision points based on *saturated* context. You MUST explicitly check each of the following 5 categories and mark each as either "ambiguity identified" or "N/A (no decision needed)":
@@ -138,13 +147,13 @@ Identify current architectural decision points based on *saturated* context. You
 **MANDATORY FORMAT** — Output the scan result as a fenced block BEFORE any `AskUserQuestion` call:
 ```
 **Ambiguity Scan:**
-1. Interface Contract — ambiguity identified: <brief description>
-2. Resource & Dependency — ambiguity identified: <brief description>
+1. Interface Contract — ambiguity identified [D]: <brief description>
+2. Resource & Dependency — ambiguity identified [O]: <brief description>
 3. Behavioral Boundary — N/A (no decision needed)
-4. Execution Order — ambiguity identified: <brief description>
+4. Execution Order — ambiguity identified [O+D]: <brief description>
 5. Change Boundary — N/A (no decision needed)
 ```
-Skipping this output block is a protocol violation.
+Skipping this output block is a protocol violation. Each identified ambiguity MUST carry an `[O]` / `[D]` / `[O+D]` tag per the **Observation Task Reference**; omitting the tag is a protocol violation.
 
 ### 3.2 Check
 
@@ -155,6 +164,7 @@ Are there unresolved ambiguities?
 ### 3.3 Ask
 
 Use `AskUserQuestion` to resolve *current layer* ambiguities.
+*   **Observation Gate (MUST)**: Items tagged `[O]` (and the O part of `[O+D]`) MUST be resolved by observation tasks — ordered per the **Observation Task Reference** — before this step. An `[O]` item may enter `AskUserQuestion` ONLY if observation is infeasible (declare why in the question) or inconclusive (cite the partial result in the question). Presenting an unobserved `[O]` item is a protocol violation.
 *   **Multi-Question Batching**: Present all currently visible ambiguities that have NO dependency between them. If question B's options depend on question A's answer, present A first; present B in the next iteration after A is resolved.
 *   **Pagination Loop (Mandatory)**: `AskUserQuestion` accepts at most 4 questions per call (`questions: maxItems=4`). If the count of independent ambiguities in this iteration exceeds 4, you MUST iterate:
     ```
@@ -177,7 +187,7 @@ Use `AskUserQuestion` to resolve *current layer* ambiguities.
 *   **Mandate**: You **MUST** invoke `Grep`/`Glob` targeting the specific keywords of the choice (e.g., if user selected "Redis", grep for "redis", "cache", "sentinel").
 *   **Read**: You **MUST** read any newly discovered configuration/utility files.
 *   **Cross-Constraint Validation**: Compare the newly locked decision against ALL previously locked decisions. If a logical contradiction exists (e.g., "use Redis" vs. prior "no new runtime dependencies"), mark the conflicting prior decision as `invalidated` and re-present it in the next loop iteration.
-*   **Runtime Probe (Optional)**: If the chosen option involves a verifiable technical claim (e.g., "library X supports feature Y"), a runtime probe (per Phase 4.1 step 2 constraints) may be used here to confirm feasibility before proceeding.
+*   **Observation Task (Optional)**: If the chosen option involves a verifiable technical claim (e.g., "library X supports feature Y"), an observation task (per `output-styles/system-architect.md` §4.1) may be used here to confirm feasibility before proceeding.
 *   **Blocker**: Do NOT proceed to **Phase 3.5** until these new tool outputs are visible in the context AND no contradictions remain unresolved.
 
 ### 3.5 Repeat
@@ -209,9 +219,9 @@ This step targets **unknown unknowns** — assumptions Claude considers obvious 
     *   **Probe-feasible**: The assumption asserts a technical fact testable by a self-contained script with no project-specific runtime state, no production credentials, and no destructive side-effects. Examples: "library X version Y exposes function Z", "encoding A maps to bytes B as documented".
     *   **Probe-infeasible**: Intent / domain / business-rule assumptions. Examples: "user wants fallback over hard fail", "production peak is N RPS".
 
-    **Probe Constraints (Read-Only, Ephemeral, Sandboxed)**: Run probes via `Bash("python -c '...'")` or compile-and-run in the system temp directory. No project side-effects, no network calls, no package installation. Cite probe output as evidence in Table 1 or Table 3 — probe results do NOT enter the Evidence Packet.
+    **Probe Constraints**: probes are observation tasks per `output-styles/system-architect.md` §4.1 (**Read-Only**, **Ephemeral** — system temp directory only, **Sandboxed** — no side-effects, no network, no package installation). Cite probe output as evidence in Table 1 or Table 3 — probe results do NOT enter the Evidence Packet.
 
-    For probe-feasible assumptions, a runtime probe is **mandatory**. If the probe confirms, elevate the assumption to Level 5 and remove it from the manifest. If the probe refutes, convert it to a new ambiguity and route to Phase 3 re-entry. Probe-infeasible assumptions are retained for user confirmation in step 3.
+    For probe-feasible assumptions, an observation-task probe is **mandatory**. If the probe confirms, elevate the assumption to Level 5 and remove it from the manifest. If the probe refutes, convert it to a new ambiguity and route to Phase 3 re-entry. Probe-infeasible assumptions are retained for user confirmation in step 3.
 
 3.  **Scenario & Present (Pagination Loop — Mandatory)**: For each remaining probe-infeasible assumption with confidence ≤ Level 4, construct a concrete scenario illustrating the behavioral consequence (embed inline in the `AskUserQuestion` option description).
 
