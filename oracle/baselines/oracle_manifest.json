@@ -1,6 +1,6 @@
 {
   "classification_version": "2",
-  "commit": "4361a283be74f5ff1c8bd7a1da30d8c356d8c152",
+  "commit": "d1723fa5f34d7cd886d9c96eb87179752e42ccfd",
   "comparator_version": "1",
   "config_snapshot": {
     "REMY_CLUSTER_DENSITY_THRESHOLD": "0.5",
@@ -29,13 +29,13 @@
     "corpus/ts/index.ts": "603eee51f196ddf03bb00ee59bd8924473c26d9642dfb8314a1bac3fbfc303c8",
     "corpus/ts/shapes.ts": "0cde88d3b3ddaefb368a9440b45d4c7da42548959757a4876743d8666decb3a2"
   },
-  "generated_at": "2026-08-18T17:41:03.467577+00:00",
+  "generated_at": "2026-08-22T19:45:52.952753+00:00",
   "known_gaps": [
     {
-      "classification": "category-1-frozen-compat",
-      "description": "PythonParser.symbol_hash_input strips only '#' comments, so docstrings participate in the symbol hash and docstring-only edits invalidate symbol summaries. Rust must replicate this behavior until a cross-language ruling changes it.",
-      "fix_procedure": null,
-      "fix_window": null,
+      "classification": "category-2-fixed-both-sides",
+      "description": "PythonParser.symbol_hash_input used to strip only '#' comments, so docstrings participated in the symbol hash and docstring-only edits invalidated symbol summaries. Fixed by the C2 ruling: both implementations splice the docstring literal out of the hash input (parser-span based; cache contract version 2 -> 3).",
+      "fix_procedure": "Docstring span located on the AST/tree-sitter node and removed from the hash segment before '#' stripping; oracle identity bumped via PythonParser cache_contract_version 3 and baseline regeneration. See docs/RETIREMENT.md section 4.",
+      "fix_window": "R3.6 retirement audit (2026-08-23)",
       "id": "python-docstring-in-hash"
     }
   ],
@@ -75,7 +75,7 @@
       "language_id": "CCppParser"
     },
     {
-      "cache_contract_version": "2",
+      "cache_contract_version": "3",
       "extensions": [
         ".py"
       ],
