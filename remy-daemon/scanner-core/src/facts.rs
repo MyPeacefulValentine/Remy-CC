@@ -12,6 +12,20 @@ pub struct SymbolInfo {
     pub end_lineno: Option<i64>,
     pub docstring: Option<String>,
     pub bases: Option<Vec<String>>,
+    /// Segment variant fed to the symbol hash when the language excludes
+    /// some source text from hashing (Python: docstring literal spliced
+    /// out). `None` means the hash uses `source_segment` unchanged. Never
+    /// used for summarization or line counting.
+    pub hash_source_segment: Option<String>,
+}
+
+impl SymbolInfo {
+    /// Text the symbol hash is computed from (base.py SymbolInfo.hash_segment).
+    pub fn hash_segment(&self) -> &str {
+        self.hash_source_segment
+            .as_deref()
+            .unwrap_or(&self.source_segment)
+    }
 }
 
 /// parsers/base.py EdgeInfo — direct edges carry provenance/synthesized_from/

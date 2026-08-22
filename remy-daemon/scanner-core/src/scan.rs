@@ -81,7 +81,7 @@ pub fn parse_one(
         .into_iter()
         .map(|occurrence| {
             let hash =
-                hashes::symbol_hash(&language.symbol_hash_input(&occurrence.symbol.source_segment));
+                hashes::symbol_hash(&language.symbol_hash_input(occurrence.symbol.hash_segment()));
             OccurrenceRow {
                 symbol: occurrence.symbol,
                 occurrence_index: occurrence.occurrence_index,

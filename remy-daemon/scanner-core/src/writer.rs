@@ -278,7 +278,7 @@ pub fn write_file_facts(
     let now_iso = projection::now_local_iso(tx)?;
     let mut new_symbol_refs: HashSet<String> = HashSet::new();
     for symbol in &facts.canonical_symbols {
-        let hash = crate::hashes::symbol_hash(&language.symbol_hash_input(&symbol.source_segment));
+        let hash = crate::hashes::symbol_hash(&language.symbol_hash_input(symbol.hash_segment()));
         let short_name = symbol
             .name
             .rsplit('.')

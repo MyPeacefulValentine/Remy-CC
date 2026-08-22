@@ -334,7 +334,7 @@ class StructScanner:
 
         for occurrence in selection.occurrences:
             sym_info = occurrence.symbol
-            hash_input = parser.symbol_hash_input(sym_info.source_segment)
+            hash_input = parser.symbol_hash_input(sym_info.hash_segment())
             self.db.execute(
                 "INSERT INTO symbol_occurrences "
                 "(file_path, name, occurrence_index, type, args, lineno, end_lineno, hash, "
@@ -348,7 +348,7 @@ class StructScanner:
         now_iso = datetime.now().isoformat(timespec='seconds')
         new_symbol_refs = set()
         for sym_info in symbols:
-            hash_input = parser.symbol_hash_input(sym_info.source_segment)
+            hash_input = parser.symbol_hash_input(sym_info.hash_segment())
             symbol_hash = self._calculate_symbol_hash(hash_input)
             short_name = sym_info.name.split(".")[-1] if "." in sym_info.name else sym_info.name
             bases_json = json.dumps(sym_info.bases) if sym_info.bases else None

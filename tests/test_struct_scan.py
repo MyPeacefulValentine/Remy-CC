@@ -971,7 +971,7 @@ class TestScanFiles:
             "FROM files WHERE path='src/main.py'"
         ).fetchone()
         assert row is not None
-        assert row[0] == "2"
+        assert row[0] == "3"
         assert row[1] == "python-ast"
         assert json.loads(row[2])["python"] == f"{sys.version_info.major}.{sys.version_info.minor}"
 
@@ -992,14 +992,14 @@ class TestScanFiles:
         monkeypatch.setattr(
             python_parser,
             "cache_identity_candidates",
-            lambda _path: (ParserCacheIdentity.create("3", "python-ast", {
+            lambda _path: (ParserCacheIdentity.create("4", "python-ast", {
                 "python": f"{sys.version_info.major}.{sys.version_info.minor}"
             }),),
         )
         monkeypatch.setattr(
             python_parser,
             "cache_identity",
-            lambda _source, _path: ParserCacheIdentity.create("3", "python-ast", {
+            lambda _source, _path: ParserCacheIdentity.create("4", "python-ast", {
                 "python": f"{sys.version_info.major}.{sys.version_info.minor}"
             }),
         )
@@ -1021,7 +1021,7 @@ class TestScanFiles:
             "SELECT path,parser_contract_version FROM files ORDER BY path"
         ).fetchall()
         assert dict(rows)["entry.ts"] == "2"
-        assert dict(rows)["src/main.py"] == "3"
+        assert dict(rows)["src/main.py"] == "4"
         monkeypatch.setattr(ts_parser, "parse_symbols", original_ts)
 
     def test_failed_contract_reparse_preserves_old_fact_and_identity(
@@ -1040,12 +1040,12 @@ class TestScanFiles:
         monkeypatch.setattr(
             parser,
             "cache_identity_candidates",
-            lambda _path: (ParserCacheIdentity.create("3", "python-ast", environment),),
+            lambda _path: (ParserCacheIdentity.create("4", "python-ast", environment),),
         )
         monkeypatch.setattr(
             parser,
             "cache_identity",
-            lambda _source, _path: ParserCacheIdentity.create("3", "python-ast", environment),
+            lambda _source, _path: ParserCacheIdentity.create("4", "python-ast", environment),
         )
         original_parse = parser.parse_symbols
 
@@ -1446,7 +1446,7 @@ class TestScanFiles:
             "SELECT parser_backend,parser_environment FROM files "
             "WHERE path='src/main.py'"
         ).fetchone()
-        identity = ParserCacheIdentity.create("2", row[0], json.loads(row[1]))
+        identity = ParserCacheIdentity.create("3", row[0], json.loads(row[1]))
         monkeypatch.setattr(
             parser, "cache_identity_candidates", lambda _path: (identity,)
         )
@@ -1490,7 +1490,7 @@ class TestScanFiles:
         ).fetchone() == ("",)
         assert scanner.db.execute(
             "SELECT parser_contract_version FROM files WHERE path='src/utils.py'"
-        ).fetchone() == ("2",)
+        ).fetchone() == ("3",)
         assert scanner.db.execute(
             "SELECT name,hash FROM symbols WHERE file_path='src/main.py' ORDER BY name"
         ).fetchall() == before_main
@@ -2280,3 +2280,95 @@ class TestRegistrySharing:
         }
         assert languages == {"PythonParser"}
 
+
+
+class TestDocstringExcludedFromHash:
+    """C2 ruling: the docstring literal never participates in the symbol hash."""
+
+    CASES = [
+        (
+            "plain",
+            'def f(a):\n    """Doc."""\n    return a\n',
+            'def f(a):\n    """Changed doc entirely."""\n    return a\n',
+            'def f(a):\n    return a + 1\n',
+        ),
+        (
+            "hash_inside_docstring",
+            'def f(a):\n    """Doc with # not a comment."""\n    return a\n',
+            'def f(a):\n    """Other # text."""\n    return a\n',
+            'def f(a):\n    return a - 1\n',
+        ),
+        (
+            "single_quotes_raw",
+            "def f(a):\n    r'''Raw\ndoc.'''\n    return a\n",
+            'def f(a):\n    """Different style."""\n    return a\n',
+            "def f(a):\n    return a * 2\n",
+        ),
+        (
+            "class_docstring",
+            'class C:\n    """Class doc."""\n    def m(self):\n        return 1\n',
+            'class C:\n    """New class doc."""\n    def m(self):\n        return 1\n',
+            'class C:\n    def m(self):\n        return 2\n',
+        ),
+    ]
+
+    def _scan_hashes(self, tmp_path, name, source):
+        project = tmp_path / name
+        (project / ".claude").mkdir(parents=True)
+        (project / ".claude" / "logic_index_config").write_text(
+            "!.git/\n!.claude/\n", encoding="utf-8")
+        (project / "mod.py").write_text(source, encoding="utf-8")
+        scanner = StructScanner(str(project))
+        try:
+            result = scanner.scan_all()
+            assert result.status.value == "success", result.errors
+            return dict(scanner.db.execute(
+                "SELECT name, hash FROM symbols ORDER BY name").fetchall())
+        finally:
+            scanner.db.close()
+
+    @pytest.mark.parametrize("label,base,doc_edit,body_edit",
+                             CASES, ids=[c[0] for c in CASES])
+    def test_docstring_only_edit_keeps_hash_body_edit_changes_it(
+            self, tmp_path, label, base, doc_edit, body_edit):
+        h_base = self._scan_hashes(tmp_path, "base", base)
+        h_doc = self._scan_hashes(tmp_path, "doc", doc_edit)
+        h_body = self._scan_hashes(tmp_path, "body", body_edit)
+        top = sorted(h_base)[0]
+        assert h_base[top] == h_doc[top], "docstring-only edit must keep the hash"
+        assert h_base[top] != h_body[top], "body edit must change the hash"
+
+    def test_non_docstring_triple_quote_still_hashes(self, tmp_path):
+        base = 'def f(a):\n    s = """not a docstring"""\n    return s\n'
+        edited = 'def f(a):\n    s = """changed literal"""\n    return s\n'
+        h_base = self._scan_hashes(tmp_path, "tq_base", base)
+        h_edit = self._scan_hashes(tmp_path, "tq_edit", edited)
+        assert h_base["f"] != h_edit["f"], (
+            "a triple-quoted assignment value is not a docstring "
+            "and must stay inside the hash")
+
+    def test_no_docstring_symbol_hash_unchanged_by_ruling(self, tmp_path):
+        source = 'def f(a):\n    return a\n'
+        from parsers.python_parser import PythonParser
+        parser = PythonParser()
+        symbols = parser.parse_symbols(source, "mod.py")
+        assert symbols[0].hash_source_segment is None
+        assert symbols[0].hash_segment() == symbols[0].source_segment
+
+    def test_hash_segment_splices_exact_docstring_span(self):
+        from parsers.python_parser import PythonParser
+        source = 'def f(a):\n    """Doc."""\n    return a  # tail\n'
+        parser = PythonParser()
+        symbols = parser.parse_symbols(source, "mod.py")
+        seg = symbols[0].hash_segment()
+        assert '"""Doc."""' not in seg
+        assert "return a" in seg
+        assert seg != symbols[0].source_segment
+
+    def test_source_segment_stays_complete_for_summaries(self):
+        from parsers.python_parser import PythonParser
+        source = 'def f(a):\n    """Doc."""\n    return a\n'
+        parser = PythonParser()
+        symbols = parser.parse_symbols(source, "mod.py")
+        assert '"""Doc."""' in symbols[0].source_segment
+        assert symbols[0].docstring == "Doc."

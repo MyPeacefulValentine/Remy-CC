@@ -262,6 +262,7 @@ fn walk_node(node: Node, source: &str, symbols: &mut Vec<SymbolInfo>, parent_nam
                         end_lineno: Some(child.end_position().row as i64 + 1),
                         docstring: extract_doxygen(source, child),
                         bases: None,
+                        hash_source_segment: None,
                     });
                 }
             }
@@ -281,6 +282,7 @@ fn walk_node(node: Node, source: &str, symbols: &mut Vec<SymbolInfo>, parent_nam
                         end_lineno: Some(child.end_position().row as i64 + 1),
                         docstring: extract_doxygen(source, child),
                         bases: None,
+                        hash_source_segment: None,
                     });
                     if let Some(body) = child.child_by_field_name("body") {
                         walk_node(body, source, symbols, Some(&full_ns));
@@ -317,6 +319,7 @@ fn walk_node(node: Node, source: &str, symbols: &mut Vec<SymbolInfo>, parent_nam
                         end_lineno: Some(child.end_position().row as i64 + 1),
                         docstring: None,
                         bases: None,
+                        hash_source_segment: None,
                     });
                 }
             }
@@ -352,6 +355,7 @@ fn extract_typedef(
         end_lineno: Some(node.end_position().row as i64 + 1),
         docstring: extract_doxygen(source, node),
         bases: None,
+        hash_source_segment: None,
     });
 }
 
@@ -373,6 +377,7 @@ fn extract_function(
         end_lineno: Some(node.end_position().row as i64 + 1),
         docstring: extract_doxygen(source, node),
         bases: None,
+        hash_source_segment: None,
     });
 }
 
@@ -425,6 +430,7 @@ fn extract_class_or_struct(
         } else {
             Some(bases_list)
         },
+        hash_source_segment: None,
     });
 
     if let Some(body) = node.child_by_field_name("body") {

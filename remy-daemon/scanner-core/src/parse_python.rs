@@ -19,9 +19,11 @@
 //!   regardless). Deterministic only since the parser's R3.3 cache fix
 //!   (contract version 2): the frozen v1 tree cache handed later channels a
 //!   stale tree from the previously parsed file.
-//! - **Hash input**: `re.sub(r'#[^\n]*', '', segment)`, which also strips from
-//!   a `#` inside a string literal. That is a frozen oracle quirk, not an
-//!   accident, so it is reproduced verbatim.
+//! - **Hash input**: the docstring literal is spliced out of the segment
+//!   first (contract version 3, C2 ruling — see docs/RETIREMENT.md §4), then
+//!   `re.sub(r'#[^\n]*', '', segment)`, which also strips from a `#` inside
+//!   a string literal. The `#` quirk is frozen oracle behaviour, reproduced
+//!   verbatim.
 
 use crate::facts::{CacheIdentity, EdgeInfo, PatternFact, SymbolInfo};
 use crate::py_unparse;
@@ -34,7 +36,7 @@ use std::sync::OnceLock;
 use tree_sitter::{Node, Parser, Tree};
 
 pub const LANGUAGE_ID: &str = "PythonParser";
-pub const CACHE_CONTRACT_VERSION: &str = "2";
+pub const CACHE_CONTRACT_VERSION: &str = "3";
 pub const EXTENSIONS: &[&str] = &[".py"];
 
 /// Crate versions pinned in Cargo.toml, recorded in `parser_environment`
@@ -214,6 +216,7 @@ fn function_symbol(node: Node, source: &str, parent: Option<&str>) -> Option<Sym
         .map(|params| format!("({})", py_unparse::unparse_parameters(params, source)))
         .unwrap_or_default();
     let (segment, end_row) = source_extent(node, source)?;
+    let hash_source_segment = hash_segment_without_docstring(node, source, &segment);
     Some(SymbolInfo {
         name: full_name,
         args,
@@ -223,11 +226,13 @@ fn function_symbol(node: Node, source: &str, parent: Option<&str>) -> Option<Sym
         end_lineno: Some(end_row as i64 + 1),
         docstring: docstring(node, source),
         bases: None,
+        hash_source_segment,
     })
 }
 
 fn class_symbol(node: Node, source: &str, name: &str) -> Option<SymbolInfo> {
     let (segment, end_row) = source_extent(node, source)?;
+    let hash_source_segment = hash_segment_without_docstring(node, source, &segment);
     Some(SymbolInfo {
         name: name.to_string(),
         args: String::new(),
@@ -237,6 +242,7 @@ fn class_symbol(node: Node, source: &str, name: &str) -> Option<SymbolInfo> {
         end_lineno: Some(end_row as i64 + 1),
         docstring: docstring(node, source),
         bases: class_bases(node, source),
+        hash_source_segment,
     })
 }
 
@@ -300,6 +306,60 @@ fn effective_end(node: Node) -> Option<(usize, usize)> {
 
 /// `ast.get_docstring`: the first statement's string literal, cleaned with
 /// `inspect.cleandoc`.
+/// Splice the docstring literal out of `segment` for the symbol hash input
+/// (contract version 3). Detection mirrors `ast.get_docstring`'s predicate —
+/// CPython folds adjacent plain string literals into one `Constant`, so
+/// `concatenated_string` is accepted here, unlike `docstring()` below whose
+/// narrower predicate is frozen behaviour for the docstring column.
+fn hash_segment_without_docstring(node: Node, source: &str, segment: &str) -> Option<String> {
+    let (start, end) = docstring_extent(node, source)?;
+    let seg_start = node.start_byte();
+    let rel_start = start.checked_sub(seg_start)?;
+    let rel_end = end.checked_sub(seg_start)?;
+    if rel_start >= rel_end || rel_end > segment.len() {
+        return None;
+    }
+    if !segment.is_char_boundary(rel_start) || !segment.is_char_boundary(rel_end) {
+        return None;
+    }
+    Some(format!("{}{}", &segment[..rel_start], &segment[rel_end..]))
+}
+
+/// Byte extent of the docstring literal: first non-comment body statement is
+/// an expression statement holding a plain (non-bytes, non-f) string or a
+/// concatenation of such strings — the exact shape `ast.get_docstring`
+/// accepts as a `Constant[str]`.
+fn docstring_extent(node: Node, source: &str) -> Option<(usize, usize)> {
+    let body = node.child_by_field_name("body")?;
+    let first = named_children(body)
+        .into_iter()
+        .find(|child| child.kind() != "comment")?;
+    if first.kind() != "expression_statement" {
+        return None;
+    }
+    let literal = named_children(first).into_iter().next()?;
+    let plain = |raw: &str| -> Option<bool> {
+        let (prefix, _quote, _body) = crate::py_repr::split_literal(raw)?;
+        Some(!prefix.bytes && !prefix.format)
+    };
+    match literal.kind() {
+        "string" => {
+            if !plain(text(literal, source))? {
+                return None;
+            }
+        }
+        "concatenated_string" => {
+            for part in named_children(literal) {
+                if part.kind() != "string" || !plain(text(part, source))? {
+                    return None;
+                }
+            }
+        }
+        _ => return None,
+    }
+    Some((literal.start_byte(), literal.end_byte()))
+}
+
 fn docstring(node: Node, source: &str) -> Option<String> {
     let body = node.child_by_field_name("body")?;
     let first = named_children(body)
@@ -904,6 +964,57 @@ class C: pass
         );
         assert_eq!(symbols[1].bases, Some(Vec::new()));
         assert_eq!(symbols[2].bases, None);
+    }
+
+    #[test]
+    fn docstring_literal_is_spliced_out_of_the_hash_segment() {
+        let source = "def f(a):\n    \"\"\"Doc with # inside.\"\"\"\n    return a\n";
+        let symbols = facts(source).symbols;
+        let f = &symbols[0];
+        assert!(f.hash_source_segment.is_some());
+        assert!(!f.hash_segment().contains("Doc with"));
+        assert!(f.hash_segment().contains("return a"));
+        assert!(f.source_segment.contains("Doc with"));
+
+        let edited = "def f(a):\n    \"\"\"Entirely different words.\"\"\"\n    return a\n";
+        let edited_symbols = facts(edited).symbols;
+        assert_eq!(
+            symbol_hash_input(f.hash_segment()),
+            symbol_hash_input(edited_symbols[0].hash_segment()),
+        );
+    }
+
+    #[test]
+    fn concatenated_plain_docstring_is_removed_like_cpython_constant_folding() {
+        let source = "def g(a):\n    \"part one \" \"part two\"\n    return a\n";
+        let symbols = facts(source).symbols;
+        let seg = symbols[0].hash_segment();
+        assert!(!seg.contains("part one"));
+        assert!(seg.contains("return a"));
+    }
+
+    #[test]
+    fn non_docstring_first_statements_leave_the_hash_segment_unset() {
+        for source in [
+            "def f(a):\n    f\"\"\"formatted {a}\"\"\"\n    return a\n",
+            "def f(a):\n    b\"\"\"bytes literal\"\"\"\n    return a\n",
+            "def f(a):\n    s = \"\"\"assigned\"\"\"\n    return s\n",
+            "def f(a):\n    return a\n",
+        ] {
+            let symbols = facts(source).symbols;
+            assert!(symbols[0].hash_source_segment.is_none(), "{source}");
+        }
+    }
+
+    #[test]
+    fn class_and_method_docstrings_are_removed_per_symbol() {
+        let source = "class C:\n    \"\"\"Class doc.\"\"\"\n\n    def m(self):\n        \"\"\"Method doc.\"\"\"\n        return 1\n";
+        let symbols = facts(source).symbols;
+        let class_sym = symbols.iter().find(|s| s.name == "C").unwrap();
+        let method_sym = symbols.iter().find(|s| s.name == "C.m").unwrap();
+        assert!(!class_sym.hash_segment().contains("Class doc"));
+        assert!(!method_sym.hash_segment().contains("Method doc"));
+        assert!(method_sym.hash_segment().contains("return 1"));
     }
 
     #[test]

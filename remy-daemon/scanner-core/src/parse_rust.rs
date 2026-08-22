@@ -241,6 +241,7 @@ fn emit(
         end_lineno: Some(node.end_position().row as i64 + 1),
         docstring: extract_doc(node, source),
         bases: None,
+        hash_source_segment: None,
     });
     symbols.len() - 1
 }

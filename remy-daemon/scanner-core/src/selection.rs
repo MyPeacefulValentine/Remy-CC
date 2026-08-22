@@ -171,6 +171,7 @@ mod tests {
             end_lineno: Some(lineno + segment.matches('\n').count() as i64),
             docstring: None,
             bases: None,
+            hash_source_segment: None,
         }
     }
 

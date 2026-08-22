@@ -11,6 +11,43 @@ import sys
 from .base import EdgeInfo, LanguageParser, ParserCacheIdentity, SymbolInfo
 
 
+def _line_start_offsets(data):
+    starts = [0]
+    idx = data.find(b"\n")
+    while idx != -1:
+        starts.append(idx + 1)
+        idx = data.find(b"\n", idx + 1)
+    return starts
+
+
+def _segment_without_docstring(source, node, doc_node, segment):
+    """Splice the docstring literal out of the symbol's source segment.
+
+    All offsets are computed in UTF-8 bytes — the unit ast uses for
+    col_offset — so the removal is byte-identical to the tree-sitter
+    implementation in scanner-core (parse_python.rs). Returns None when the
+    computed extent is inconsistent, in which case the hash falls back to
+    the unmodified segment.
+    """
+    data = source.encode("utf-8")
+    starts = _line_start_offsets(data)
+    try:
+        seg_start = starts[node.lineno - 1] + node.col_offset
+        doc_start = starts[doc_node.lineno - 1] + doc_node.col_offset
+        doc_end = starts[doc_node.end_lineno - 1] + doc_node.end_col_offset
+    except (IndexError, TypeError):
+        return None
+    seg_bytes = segment.encode("utf-8")
+    rel_start = doc_start - seg_start
+    rel_end = doc_end - seg_start
+    if not 0 <= rel_start < rel_end <= len(seg_bytes):
+        return None
+    try:
+        return (seg_bytes[:rel_start] + seg_bytes[rel_end:]).decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
 class ImportVisitor(ast.NodeVisitor):
     """AST visitor to collect internal imports."""
 
@@ -87,7 +124,7 @@ class PythonParser(LanguageParser):
     """Parser for Python source files using the standard library ast module."""
 
     language_id = "PythonParser"
-    CACHE_CONTRACT_VERSION = "2"
+    CACHE_CONTRACT_VERSION = "3"
 
     def __init__(self):
         self._cached_hash = None
@@ -190,6 +227,14 @@ class PythonParser(LanguageParser):
 
         docstring = ast.get_docstring(node)
 
+        hash_source_segment = None
+        if node.body:
+            first = node.body[0]
+            if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+                    and isinstance(first.value.value, str)):
+                hash_source_segment = _segment_without_docstring(
+                    source, node, first.value, segment)
+
         bases_list = None
         if isinstance(node, ast.ClassDef) and node.bases:
             bases_list = []
@@ -208,6 +253,7 @@ class PythonParser(LanguageParser):
             end_lineno=node.end_lineno,
             docstring=docstring,
             bases=bases_list,
+            hash_source_segment=hash_source_segment,
         )
 
     def extract_call_graph(self, source, file_path):

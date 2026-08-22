@@ -546,6 +546,32 @@ retrieval_documents），由以下用例锁定：
 登记事项：python 回切臂对大仓增量沿用 `REMY_STRUCT_SCAN_TIMEOUT`（默认 60 s，
 gpu 语料实测 65.3 s 贴顶），回切前需按仓库规模上调该值。
 
+## C2 docstring 剥出 hash（contract version 3）
+
+C2 裁定（docs/RETIREMENT_zh.md §4）在双实现中把 Python docstring 字面量剥出
+symbol hash 输入。parser 定位 docstring 节点（ast / tree-sitter），把其字节
+span 从符号段落中挖出写入 `SymbolInfo.hash_source_segment`；hash 消费端
+（`scanner.scan_file`、Rust `parse_one` 与 `write_file_facts`）改为哈希
+`hash_segment()` 而非 `source_segment`。`source_segment` 本体不变——LLM 摘要
+与 filter-small 行数判定仍消费完整文本。双侧 `CACHE_CONTRACT_VERSION` 2 → 3；
+存量库首次扫描经 identity-invalid 路径重解析 `.py` 行。
+
+等价门槛：双实现产出逐字节一致的 hash 输入。锁定用例：
+
+- `test_struct_scan.py::TestDocstringExcludedFromHash`：四种字面量风格
+  （普通、docstring 含 `#`、raw 单引号、类 docstring）下 docstring-only
+  编辑保持 hash、函数体编辑改变 hash；三引号赋值值保留在 hash 内；无
+  docstring 符号 `hash_source_segment=None`。
+- `parse_python.rs` 内联测试：剥除正确性、拼接普通字面量与 CPython 常量
+  折叠对齐、f-string/bytes/赋值首语句的拒绝、类/方法逐符号剥除。
+- `test_scanner_core_diff.py::test_docstring_hash_exclusion_matches_across_implementations`
+  与 `::test_docstring_only_edit_is_hash_neutral_in_rust`：混合语料下双实现
+  `symbols.hash` 全等；Rust 臂 docstring-only 编辑 hash 中性。
+
+已登记非对称项（非门槛）：CPython 把相邻普通字符串字面量折叠为单个
+`Constant`，因此拼接式 docstring 双侧均被剥除（差分语料 `concat.py`）；
+f-string 与 bytes 字面量在双侧均不构成 docstring。
+
 ## state.db WAL 备份约束
 
 `~/.remy-cc/state.db` 以 WAL 日志模式运行。未 checkpoint 的行只存在于

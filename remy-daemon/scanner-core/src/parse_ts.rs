@@ -228,6 +228,7 @@ fn base_symbol(node: Node, source: &str, name: String, sym_type: &str) -> Symbol
         end_lineno: Some(node.end_position().row as i64 + 1),
         docstring: extract_jsdoc(node, source),
         bases: None,
+        hash_source_segment: None,
     }
 }
 

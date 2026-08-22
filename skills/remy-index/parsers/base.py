@@ -58,6 +58,17 @@ class SymbolInfo:
     end_lineno: Optional[int] = None
     docstring: Optional[str] = None
     bases: Optional[list] = None
+    # Segment variant fed to the symbol hash when the language excludes some
+    # source text from hashing (Python: docstring literal spliced out). None
+    # means the hash uses source_segment unchanged. Never used for LLM
+    # summarization or line counting — source_segment stays authoritative.
+    hash_source_segment: Optional[str] = None
+
+    def hash_segment(self):
+        """Text the symbol hash is computed from."""
+        if self.hash_source_segment is not None:
+            return self.hash_source_segment
+        return self.source_segment
 
 
 @dataclass

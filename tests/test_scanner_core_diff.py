@@ -674,3 +674,69 @@ def test_rust_incremental_fanout_cap_overflow_matches_full(
         assert clusters == [], "density must fall below threshold"
     finally:
         db.close()
+
+
+DOCSTRING_HASH_CORPUS = {
+    "plain.py": 'def f(a):\n    """Doc with # inside."""\n    return a\n',
+    "variants.py": (
+        "def raw(a):\n    r'''Raw doc.'''\n    return a\n\n\n"
+        'class C:\n    """Class doc."""\n\n    def m(self):\n        return 1\n'
+    ),
+    "concat.py": 'def g(a):\n    "part one " "part two"\n    return a\n',
+    "not_doc.py": 'def h(a):\n    s = """assigned, not a docstring"""\n    return s\n',
+    "plain_no_doc.py": 'def k(a):\n    return a\n',
+}
+
+
+def _write_docstring_corpus(root: Path) -> None:
+    root.mkdir()
+    claude = root / ".claude"
+    claude.mkdir()
+    (claude / "logic_index_config").write_text("!.git/\n!.claude/\n", encoding="utf-8")
+    for name, source in DOCSTRING_HASH_CORPUS.items():
+        (root / name).write_text(source, encoding="utf-8")
+
+
+def _symbol_hashes(db_path: Path) -> dict:
+    db = sqlite3.connect(str(db_path))
+    try:
+        return dict(db.execute(
+            "SELECT file_path || ':' || name, hash FROM symbols").fetchall())
+    finally:
+        db.close()
+
+
+def test_docstring_hash_exclusion_matches_across_implementations(tmp_path: Path):
+    destination = tmp_path / "docstring_corpus"
+    _write_docstring_corpus(destination)
+    python_db = _python_scan(destination)
+    python_hashes = _symbol_hashes(python_db)
+    rust_db = tmp_path / "rust_docstring.db"
+    assert _rust_scan(destination, rust_db)["outcome"] == "success"
+    assert _symbol_hashes(rust_db) == python_hashes
+    assert oracle_comparator.blocking(_phase1_findings(python_db, rust_db)) == []
+
+
+def test_docstring_only_edit_is_hash_neutral_in_rust(tmp_path: Path):
+    destination = tmp_path / "doc_edit"
+    _write_docstring_corpus(destination)
+    base_db = tmp_path / "rust_base.db"
+    assert _rust_scan(destination, base_db)["outcome"] == "success"
+    base = _symbol_hashes(base_db)
+
+    (destination / "plain.py").write_text(
+        'def f(a):\n    """Entirely new documentation."""\n    return a\n',
+        encoding="utf-8",
+    )
+    (destination / "not_doc.py").write_text(
+        'def h(a):\n    s = """changed assigned literal"""\n    return s\n',
+        encoding="utf-8",
+    )
+    edited_db = tmp_path / "rust_edited.db"
+    assert _rust_scan(destination, edited_db)["outcome"] == "success"
+    edited = _symbol_hashes(edited_db)
+
+    assert edited["plain.py:f"] == base["plain.py:f"], (
+        "docstring-only edit must keep the symbol hash")
+    assert edited["not_doc.py:h"] != base["not_doc.py:h"], (
+        "a non-docstring triple-quoted literal stays inside the hash")

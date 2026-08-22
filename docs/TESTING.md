@@ -639,6 +639,39 @@ Registered note: the python fallback arm keeps `REMY_STRUCT_SCAN_TIMEOUT`
 (default 60 s; the gpu corpus measured 65.3 s) for incremental jobs — raise
 it per repository size before switching back.
 
+## C2 docstring hash exclusion (contract version 3)
+
+The C2 ruling (docs/RETIREMENT.md §4) removes the Python docstring literal
+from the symbol hash input on both implementations. The parser locates the
+docstring node (ast / tree-sitter) and splices its byte span out of the
+symbol's segment into `SymbolInfo.hash_source_segment`; the hash consumers
+(`scanner.scan_file`, Rust `parse_one` and `write_file_facts`) hash
+`hash_segment()` instead of `source_segment`. `source_segment` itself is
+unchanged — LLM summarization and the filter-small line count still see the
+full text. `CACHE_CONTRACT_VERSION` bumped 2 → 3 on both sides; existing
+databases re-parse `.py` rows via the identity-invalid path on first scan.
+
+Equivalence gate: both implementations produce byte-identical hash inputs.
+Locked by:
+
+- `test_struct_scan.py::TestDocstringExcludedFromHash`: docstring-only edits
+  keep the hash and body edits change it across four literal styles (plain,
+  `#` inside the docstring, raw single-quoted, class docstring); a
+  triple-quoted assignment value stays inside the hash; symbols without a
+  docstring carry `hash_source_segment=None`.
+- `parse_python.rs` inline tests: splice correctness, CPython
+  constant-folding parity for concatenated plain literals, rejection of
+  f-string/bytes/assigned first statements, per-symbol class/method removal.
+- `test_scanner_core_diff.py::test_docstring_hash_exclusion_matches_across_implementations`
+  and `::test_docstring_only_edit_is_hash_neutral_in_rust`: identical
+  `symbols.hash` values across implementations over a mixed corpus, and
+  hash neutrality of docstring-only edits on the Rust arm.
+
+Known asymmetry (registered, not a gate): CPython folds adjacent plain
+string literals into one `Constant`, so a concatenated docstring is removed
+on both sides (`concat.py` in the diff corpus); f-strings and bytes
+literals are never docstrings on either side.
+
 ## state.db WAL backup constraint
 
 `~/.remy-cc/state.db` runs in WAL journal mode. Rows not yet checkpointed live

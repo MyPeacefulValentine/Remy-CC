@@ -52,15 +52,21 @@ CONFIG_SNAPSHOT_KEYS = (
 KNOWN_GAPS = (
     {
         "id": "python-docstring-in-hash",
-        "classification": "category-1-frozen-compat",
+        "classification": "category-2-fixed-both-sides",
         "description": (
-            "PythonParser.symbol_hash_input strips only '#' comments, so "
-            "docstrings participate in the symbol hash and docstring-only "
-            "edits invalidate symbol summaries. Rust must replicate this "
-            "behavior until a cross-language ruling changes it."
+            "PythonParser.symbol_hash_input used to strip only '#' comments, "
+            "so docstrings participated in the symbol hash and docstring-only "
+            "edits invalidated symbol summaries. Fixed by the C2 ruling: both "
+            "implementations splice the docstring literal out of the hash "
+            "input (parser-span based; cache contract version 2 -> 3)."
         ),
-        "fix_window": None,
-        "fix_procedure": None,
+        "fix_window": "R3.6 retirement audit (2026-08-23)",
+        "fix_procedure": (
+            "Docstring span located on the AST/tree-sitter node and removed "
+            "from the hash segment before '#' stripping; oracle identity "
+            "bumped via PythonParser cache_contract_version 3 and baseline "
+            "regeneration. See docs/RETIREMENT.md section 4."
+        ),
     },
 )
 
