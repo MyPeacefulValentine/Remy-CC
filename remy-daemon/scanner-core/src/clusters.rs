@@ -9,6 +9,14 @@ use rusqlite::{params, params_from_iter, Transaction};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 
+/// Top-level path group used by cluster detection ("_root" for bare files).
+pub fn top_group(path: &str) -> &str {
+    match path.split_once('/') {
+        Some((head, _)) => head,
+        None => "_root",
+    }
+}
+
 /// `scanner._compute_kind_hint`.
 fn compute_kind_hint(config: &PostprocessConfig, sym_count: i64, intra_edges: i64) -> &'static str {
     if sym_count < config.file_kind_min_symbols {
@@ -27,19 +35,35 @@ fn compute_kind_hint(config: &PostprocessConfig, sym_count: i64, intra_edges: i6
 
 /// `StructScanner._compute_file_kinds`.
 pub fn compute_file_kinds(tx: &Transaction, config: &PostprocessConfig) -> rusqlite::Result<()> {
-    let rows: Vec<(String, i64, i64)> = {
-        let mut stmt = tx.prepare(
-            "SELECT f.path, \
-             (SELECT COUNT(*) FROM symbols s WHERE s.file_path = f.path) AS sym_count, \
-             (SELECT COUNT(*) FROM edges e WHERE e.source_file = f.path AND e.callee_file = f.path) AS intra_edges \
-             FROM files f ORDER BY f.path",
-        )?;
+    let paths: BTreeSet<String> = {
+        let mut stmt = tx.prepare("SELECT path FROM files ORDER BY path")?;
         let collected = stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .query_map([], |row| row.get(0))?
             .collect::<Result<_, _>>()?;
         collected
     };
-    for (path, sym_count, intra_edges) in rows {
+    compute_file_kinds_for(tx, config, &paths)
+}
+
+/// Targeted variant: recompute kind_hint for `paths` only. Missing files
+/// rows (deleted paths) are no-ops; recomputation is idempotent, so a
+/// conservative superset stays equivalent to the full pass.
+pub fn compute_file_kinds_for(
+    tx: &Transaction,
+    config: &PostprocessConfig,
+    paths: &BTreeSet<String>,
+) -> rusqlite::Result<()> {
+    for path in paths {
+        let sym_count: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM symbols WHERE file_path = ?1",
+            params![path],
+            |row| row.get(0),
+        )?;
+        let intra_edges: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM edges WHERE source_file = ?1 AND callee_file = ?1",
+            params![path],
+            |row| row.get(0),
+        )?;
         let hint = compute_kind_hint(config, sym_count, intra_edges);
         tx.execute(
             "UPDATE files SET kind_hint = ?1 WHERE path = ?2",
@@ -72,33 +96,64 @@ fn group_paths<'a>(
         .collect()
 }
 
+/// A cluster's owning top-level group ("pkg" and "pkg/sub" both → "pkg").
+fn cluster_group(name: &str) -> &str {
+    name.split('/').next().unwrap_or(name)
+}
+
 /// `StructScanner._detect_clusters`.
 pub fn detect_clusters(tx: &Transaction, config: &PostprocessConfig) -> rusqlite::Result<()> {
+    let mut groups: BTreeSet<String> = {
+        let mut stmt = tx.prepare("SELECT path FROM files ORDER BY path")?;
+        let paths = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        paths
+            .map(|path| Ok(top_group(&path?).to_string()))
+            .collect::<rusqlite::Result<_>>()?
+    };
+    // Groups whose files all disappeared still need their clusters swept.
+    let mut stmt = tx.prepare("SELECT name FROM clusters ORDER BY name")?;
+    for name in stmt.query_map([], |row| row.get::<_, String>(0))? {
+        groups.insert(cluster_group(&name?).to_string());
+    }
+    detect_clusters_for(tx, config, &groups)
+}
+
+/// Targeted variant: rebuild only the clusters of `scope` top-level
+/// groups; rows of other groups are left untouched (a full rebuild would
+/// recompute them identically, so equivalence holds).
+pub fn detect_clusters_for(
+    tx: &Transaction,
+    config: &PostprocessConfig,
+    scope: &BTreeSet<String>,
+) -> rusqlite::Result<()> {
     let density_threshold = config.cluster_density_threshold;
     let max_size = config.cluster_max_size as usize;
     let entry_count = config.cluster_entry_count;
 
     let all_paths: Vec<String> = {
         let mut stmt = tx.prepare("SELECT path FROM files ORDER BY path")?;
-        let collected = stmt
-            .query_map([], |row| row.get(0))?
-            .collect::<Result<_, _>>()?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut collected = Vec::new();
+        for row in rows {
+            let path = row?;
+            if scope.contains(top_group(&path)) {
+                collected.push(path);
+            }
+        }
         collected
     };
-    let groups = group_paths(all_paths.iter(), |path| {
-        let parts: Vec<&str> = path.split('/').collect();
-        if parts.len() > 1 {
-            parts[0].to_string()
-        } else {
-            "_root".to_string()
-        }
-    });
+    let groups = group_paths(all_paths.iter(), |path| top_group(path).to_string());
 
     let existing_names: Vec<String> = {
         let mut stmt = tx.prepare("SELECT name FROM clusters ORDER BY name")?;
-        let collected = stmt
-            .query_map([], |row| row.get(0))?
-            .collect::<Result<_, _>>()?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut collected = Vec::new();
+        for row in rows {
+            let name = row?;
+            if scope.contains(cluster_group(&name)) {
+                collected.push(name);
+            }
+        }
         collected
     };
     let mut existing_members: HashMap<String, BTreeSet<String>> = HashMap::new();
@@ -114,8 +169,14 @@ pub fn detect_clusters(tx: &Transaction, config: &PostprocessConfig) -> rusqlite
         existing_members.insert(name.clone(), members);
     }
 
-    tx.execute("DELETE FROM cluster_members", [])?;
-    tx.execute("DELETE FROM clusters", [])?;
+    for name in &existing_names {
+        tx.execute(
+            "DELETE FROM cluster_members WHERE cluster_id IN \
+             (SELECT id FROM clusters WHERE name = ?1)",
+            params![name],
+        )?;
+        tx.execute("DELETE FROM clusters WHERE name = ?1", params![name])?;
+    }
 
     for (gname, members) in groups {
         if members.len() < 2 {
@@ -214,9 +275,14 @@ pub fn detect_clusters(tx: &Transaction, config: &PostprocessConfig) -> rusqlite
 
     let current_refs: BTreeSet<String> = {
         let mut stmt = tx.prepare("SELECT name FROM clusters ORDER BY name")?;
-        let collected = stmt
-            .query_map([], |row| row.get(0))?
-            .collect::<Result<BTreeSet<String>, _>>()?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut collected = BTreeSet::new();
+        for row in rows {
+            let name = row?;
+            if scope.contains(cluster_group(&name)) {
+                collected.insert(name);
+            }
+        }
         collected
     };
     for removed in existing_names
@@ -236,7 +302,7 @@ pub fn detect_clusters(tx: &Transaction, config: &PostprocessConfig) -> rusqlite
         collected
     };
     for node_ref in counter_refs {
-        if !current_refs.contains(&node_ref) {
+        if scope.contains(cluster_group(&node_ref)) && !current_refs.contains(&node_ref) {
             tx.execute(
                 "DELETE FROM node_change_counters WHERE node_kind = 'cluster' AND node_ref = ?1",
                 params![node_ref],

@@ -307,7 +307,10 @@ pub fn scan_full(
             if discovered_set.contains(rel) {
                 continue;
             }
-            if writer::delete_file(&tx, rel).map_err(|e| format!("delete failed: {e}"))? {
+            if writer::delete_file(&tx, rel)
+                .map_err(|e| format!("delete failed: {e}"))?
+                .is_some()
+            {
                 deleted.push(rel.clone());
             }
         }
@@ -415,6 +418,15 @@ pub fn scan_files(
         let tx = conn
             .transaction()
             .map_err(|e| format!("begin failed: {e}"))?;
+        let mut delta = crate::postprocess::ScanDelta::default();
+        let record_removed =
+            |delta: &mut crate::postprocess::ScanDelta, rel: &str, fd: writer::FileDelta| {
+                delta.touched_files.push(rel.to_string());
+                delta.names.extend(fd.names);
+                if rel.ends_with(".py") {
+                    delta.removed_py.push(rel.to_string());
+                }
+            };
 
         let db_paths: Vec<String> = {
             let mut stmt = tx
@@ -431,8 +443,11 @@ pub fn scan_files(
             if !config.is_path_excluded(rel) {
                 continue;
             }
-            if writer::delete_file(&tx, rel).map_err(|e| format!("delete failed: {e}"))? {
+            if let Some(fd) =
+                writer::delete_file(&tx, rel).map_err(|e| format!("delete failed: {e}"))?
+            {
                 deleted.push(rel.clone());
+                record_removed(&mut delta, rel, fd);
             }
         }
 
@@ -473,16 +488,26 @@ pub fn scan_files(
 
         let pool = spawn_parse_pool(root_dir, &config, to_parse, jobs);
         for rel in to_delete {
-            if writer::delete_file(&tx, &rel).map_err(|e| format!("delete failed: {e}"))? {
+            if let Some(fd) =
+                writer::delete_file(&tx, &rel).map_err(|e| format!("delete failed: {e}"))?
+            {
                 deleted.push(rel.clone());
+                record_removed(&mut delta, &rel, fd);
             }
             successful.push(rel);
         }
         for outcome in pool.receiver.iter() {
             match outcome {
                 FileOutcome::Facts(facts) => {
-                    writer::write_file_facts(&tx, &facts, pconfig.filter_small)
+                    let fd = writer::write_file_facts(&tx, &facts, pconfig.filter_small)
                         .map_err(|e| format!("write failed for {}: {e}", facts.rel_path))?;
+                    if fd.changed {
+                        delta.touched_files.push(facts.rel_path.clone());
+                        if fd.created && facts.rel_path.ends_with(".py") {
+                            delta.added_py.push(facts.rel_path.clone());
+                        }
+                        delta.names.extend(fd.names);
+                    }
                     successful.push(facts.rel_path.clone());
                 }
                 FileOutcome::Failed { rel_path, message } => {
@@ -497,7 +522,8 @@ pub fn scan_files(
         }
         join_pool(pool.handles)?;
         emit_progress_json(progress_json, "parse_done", None, scan_started);
-        crate::postprocess::run(&tx, &pconfig).map_err(|e| format!("postprocess failed: {e}"))?;
+        crate::postprocess::run_incremental(&tx, &pconfig, &delta)
+            .map_err(|e| format!("postprocess failed: {e}"))?;
         emit_progress_json(progress_json, "postprocess_done", None, scan_started);
         writer::write_meta(&tx, None).map_err(|e| format!("meta write failed: {e}"))?;
         tx.commit().map_err(|e| format!("commit failed: {e}"))?;
@@ -908,6 +934,138 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM symbols", [], |row| row.get(0))
             .unwrap();
         assert_eq!(orphan_symbols, 0);
+    }
+
+    /// phase1_projection plus every postprocess output the VIEWS compare:
+    /// resolved edges, edge_candidates, kind_hint, clusters, members.
+    fn postprocess_projection(db_path: &Path) -> Vec<Vec<String>> {
+        let conn = Connection::open(db_path).unwrap();
+        let mut out = phase1_projection(db_path);
+        for sql in [
+            "SELECT path, COALESCE(kind_hint,'') FROM files ORDER BY path",
+            "SELECT source_file, caller, callee, COALESCE(callee_file,''), COALESCE(callee_qualified,''), COALESCE(provenance,''), COALESCE(via,''), COALESCE(line,-1) FROM edges ORDER BY source_file, caller, callee, callee_qualified, line, provenance, via",
+            "SELECT e.source_file, e.caller, e.callee, ec.candidate_qualified, ec.score FROM edge_candidates ec JOIN edges e ON e.id=ec.edge_id ORDER BY e.source_file, e.caller, e.callee, e.line, ec.candidate_qualified",
+            "SELECT name, entry_symbols, file_count FROM clusters ORDER BY name",
+            "SELECT c.name, cm.file_path FROM cluster_members cm JOIN clusters c ON c.id=cm.cluster_id ORDER BY c.name, cm.file_path",
+        ] {
+            let mut stmt = conn.prepare(sql).unwrap();
+            let column_count = stmt.column_count();
+            let rows = stmt
+                .query_map([], |row| {
+                    let mut values = Vec::new();
+                    for i in 0..column_count {
+                        let value: rusqlite::types::Value = row.get(i)?;
+                        values.push(format!("{value:?}"));
+                    }
+                    Ok(values)
+                })
+                .unwrap();
+            for row in rows {
+                out.push(row.unwrap());
+            }
+        }
+        out
+    }
+
+    fn assert_no_candidate_orphans(db_path: &Path) {
+        let conn = Connection::open(db_path).unwrap();
+        let orphans: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM edge_candidates ec \
+                 LEFT JOIN edges e ON e.id = ec.edge_id WHERE e.id IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphans, 0);
+    }
+
+    /// Twin symbols in two files force global-tier ties (edge_candidates
+    /// rows) so the incremental reset path is exercised with candidates.
+    fn write_perturbation_corpus(root: &Path) {
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
+        std::fs::write(root.join("pkg/__init__.py"), "").unwrap();
+        std::fs::write(
+            root.join("pkg/util.py"),
+            "def helper():\n    return 1\n\n\ndef twin():\n    return 2\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("pkg/extra.py"), "def twin():\n    return 3\n").unwrap();
+        std::fs::write(
+            root.join("app.py"),
+            "from pkg.util import helper\n\n\ndef main():\n    helper()\n    twin()\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn incremental_perturbations_match_full_rescan() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_perturbation_corpus(root);
+        let inc_db = root.join("inc.db");
+        scan_full(root, &inc_db, 2, false, false, None).unwrap();
+
+        let rescan = |tag: &str| {
+            let db = root.join(format!("full_{tag}.db"));
+            scan_full(root, &db, 2, false, false, None).unwrap();
+            postprocess_projection(&db)
+        };
+
+        std::fs::write(
+            root.join("pkg/util.py"),
+            "def helper_renamed():\n    return 1\n\n\ndef twin():\n    return 2\n",
+        )
+        .unwrap();
+        scan_files(root, &inc_db, &["pkg/util.py".to_string()], 1, false, None).unwrap();
+        assert_eq!(postprocess_projection(&inc_db), rescan("rename"));
+        assert_no_candidate_orphans(&inc_db);
+
+        std::fs::write(
+            root.join("pkg/more.py"),
+            "def twin():\n    return 4\n\n\ndef helper_renamed():\n    return 5\n",
+        )
+        .unwrap();
+        scan_files(root, &inc_db, &["pkg/more.py".to_string()], 1, false, None).unwrap();
+        assert_eq!(postprocess_projection(&inc_db), rescan("add"));
+        assert_no_candidate_orphans(&inc_db);
+
+        std::fs::remove_file(root.join("pkg/extra.py")).unwrap();
+        scan_files(root, &inc_db, &["pkg/extra.py".to_string()], 1, false, None).unwrap();
+        assert_eq!(postprocess_projection(&inc_db), rescan("delete"));
+        assert_no_candidate_orphans(&inc_db);
+    }
+
+    #[test]
+    fn incremental_scan_order_commutes() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_perturbation_corpus(root);
+        let db_ab = root.join("ab.db");
+        let db_ba = root.join("ba.db");
+        scan_full(root, &db_ab, 1, false, false, None).unwrap();
+        scan_full(root, &db_ba, 1, false, false, None).unwrap();
+
+        std::fs::write(
+            root.join("pkg/util.py"),
+            "def helper():\n    return 10\n\n\ndef twin():\n    return 2\n\n\ndef late():\n    return 6\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("app.py"),
+            "from pkg.util import helper\n\n\ndef main():\n    helper()\n    twin()\n    late()\n",
+        )
+        .unwrap();
+        for rel in ["pkg/util.py", "app.py"] {
+            scan_files(root, &db_ab, &[rel.to_string()], 1, false, None).unwrap();
+        }
+        for rel in ["app.py", "pkg/util.py"] {
+            scan_files(root, &db_ba, &[rel.to_string()], 1, false, None).unwrap();
+        }
+        assert_eq!(
+            postprocess_projection(&db_ab),
+            postprocess_projection(&db_ba)
+        );
     }
 
     #[test]

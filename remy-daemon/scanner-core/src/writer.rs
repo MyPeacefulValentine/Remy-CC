@@ -25,6 +25,10 @@ pub fn open_db(path: &std::path::Path) -> Result<Connection, String> {
     }
     let db_existed = path.exists();
     let conn = Connection::open(path).map_err(|e| format!("open failed: {e}"))?;
+    // 128 MiB page cache: −29% on the tee ×8 postprocess segment (F.3,
+    // 2026-08-21); the only measured tier, hence no config key.
+    conn.execute_batch("PRAGMA cache_size = -131072")
+        .map_err(|e| format!("cache_size pragma failed: {e}"))?;
     let table_count: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
@@ -120,6 +124,16 @@ pub fn file_unchanged(tx: &Transaction, facts: &FileFacts) -> rusqlite::Result<b
         )))
 }
 
+/// Per-file change record aggregated by scan_files into ScanDelta.
+#[derive(Debug, Default)]
+pub struct FileDelta {
+    pub changed: bool,
+    /// The files row was newly inserted.
+    pub created: bool,
+    /// Old ∪ new symbol names and short names of the file.
+    pub names: Vec<String>,
+}
+
 /// scan_file's write path: upsert the files row, then replace the file's
 /// symbols, symbol_occurrences, edges, and patterns, carrying the
 /// summary-invalidation and retrieval-projection side effects (symbol hash
@@ -130,19 +144,27 @@ pub fn write_file_facts(
     tx: &Transaction,
     facts: &FileFacts,
     filter_small: bool,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<FileDelta> {
     if file_unchanged(tx, facts)? {
-        return Ok(());
+        return Ok(FileDelta::default());
     }
 
+    let mut delta_names: Vec<String> = Vec::new();
     let old_hashes: HashMap<String, Option<String>> = {
-        let mut stmt = tx.prepare("SELECT name, hash FROM symbols WHERE file_path = ?1")?;
-        let rows: Vec<(String, Option<String>)> = stmt
+        let mut stmt =
+            tx.prepare("SELECT name, short_name, hash FROM symbols WHERE file_path = ?1")?;
+        let rows: Vec<(String, String, Option<String>)> = stmt
             .query_map(params![facts.rel_path], |row| {
-                Ok((row.get(0)?, row.get(1)?))
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })?
             .collect::<Result<_, _>>()?;
-        rows.into_iter().collect()
+        rows.into_iter()
+            .map(|(name, short_name, hash)| {
+                delta_names.push(name.clone());
+                delta_names.push(short_name);
+                (name, hash)
+            })
+            .collect()
     };
     let old_symbol_refs: HashSet<String> = old_hashes
         .keys()
@@ -210,6 +232,13 @@ pub fn write_file_facts(
     )?;
     tx.execute(
         "DELETE FROM symbol_occurrences WHERE file_path = ?1",
+        params![facts.rel_path],
+    )?;
+    // Orphan guard: foreign_keys is off, so candidates left behind here
+    // would survive the targeted incremental reset forever.
+    tx.execute(
+        "DELETE FROM edge_candidates WHERE edge_id IN \
+         (SELECT id FROM edges WHERE source_file = ?1)",
         params![facts.rel_path],
     )?;
     tx.execute(
@@ -283,6 +312,8 @@ pub fn write_file_facts(
             ],
         )?;
 
+        delta_names.push(symbol.name.clone());
+        delta_names.push(short_name.clone());
         let node_ref = format!("{}::{}", facts.rel_path, symbol.name);
         new_symbol_refs.insert(node_ref.clone());
         let hash_unchanged = old_hashes.get(&symbol.name) == Some(&Some(hash));
@@ -360,22 +391,34 @@ pub fn write_file_facts(
         )?;
     }
 
-    Ok(())
+    delta_names.sort();
+    delta_names.dedup();
+    Ok(FileDelta {
+        changed: true,
+        created: exists.is_none(),
+        names: delta_names,
+    })
 }
 
 /// StructScanner._delete_file: retrieval-projection cascade first, then
 /// the fact rows (manual per-table deletes replicate the oracle's
 /// foreign-key cascade — this connection never enables foreign_keys).
-pub fn delete_file(tx: &Transaction, rel_path: &str) -> rusqlite::Result<bool> {
+/// Returns the removed file's FileDelta, or None when no files row existed.
+pub fn delete_file(tx: &Transaction, rel_path: &str) -> rusqlite::Result<Option<FileDelta>> {
+    let mut names: Vec<String> = Vec::new();
     let symbol_refs: Vec<String> = {
-        let mut stmt = tx.prepare(
-            "SELECT file_path || '::' || name FROM symbols \
-             WHERE file_path = ?1 ORDER BY name",
-        )?;
-        let collected = stmt
-            .query_map(params![rel_path], |row| row.get(0))?
+        let mut stmt =
+            tx.prepare("SELECT name, short_name FROM symbols WHERE file_path = ?1 ORDER BY name")?;
+        let rows: Vec<(String, String)> = stmt
+            .query_map(params![rel_path], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<Result<_, _>>()?;
-        collected
+        rows.into_iter()
+            .map(|(name, short_name)| {
+                names.push(name.clone());
+                names.push(short_name);
+                format!("{rel_path}::{name}")
+            })
+            .collect()
     };
     projection::delete_file_nodes(tx, rel_path, &symbol_refs)?;
     tx.execute(
@@ -384,6 +427,12 @@ pub fn delete_file(tx: &Transaction, rel_path: &str) -> rusqlite::Result<bool> {
     )?;
     tx.execute(
         "DELETE FROM symbol_occurrences WHERE file_path = ?1",
+        params![rel_path],
+    )?;
+    // Same orphan guard as write_file_facts: candidates go before edges.
+    tx.execute(
+        "DELETE FROM edge_candidates WHERE edge_id IN \
+         (SELECT id FROM edges WHERE source_file = ?1)",
         params![rel_path],
     )?;
     tx.execute(
@@ -395,7 +444,16 @@ pub fn delete_file(tx: &Transaction, rel_path: &str) -> rusqlite::Result<bool> {
         params![rel_path],
     )?;
     let removed = tx.execute("DELETE FROM files WHERE path = ?1", params![rel_path])?;
-    Ok(removed > 0)
+    if removed == 0 {
+        return Ok(None);
+    }
+    names.sort();
+    names.dedup();
+    Ok(Some(FileDelta {
+        changed: true,
+        created: false,
+        names,
+    }))
 }
 
 /// Diagnostic meta rows: last_updated (local time, second precision, same

@@ -1,15 +1,18 @@
 //! StructScanner._run_postprocess replication: direct-edge resolution
 //! reset, import-binding derivation, three-tier call-edge disambiguation,
 //! inferred-edge purge, Rust trait bases overwrite, then synthesis, file
-//! kinds, and cluster detection. Cost shape deliberately copies the oracle
-//! (full global recompute per pass); incremental optimization is an R3.5
-//! decision.
+//! kinds, and cluster detection. run() keeps the oracle's global recompute
+//! (full-scan path); run_incremental() (F.1) serves scan_files and must
+//! produce byte-identical VIEWS state.
 
 use crate::rconfig::PostprocessConfig;
 use crate::{clusters, pyjson, synth};
 use rusqlite::{params, params_from_iter, OptionalExtension, Transaction};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
+
+/// SQLite bind-parameter budget per statement for id-list chunking.
+const ID_CHUNK: usize = 500;
 
 /// `sys.stdlib_module_names` of the pinned oracle interpreter
 /// (CPython 3.12.9); the Python side reads it at runtime, so this constant
@@ -329,6 +332,186 @@ pub fn run(tx: &Transaction, config: &PostprocessConfig) -> rusqlite::Result<()>
     Ok(())
 }
 
+/// Per-scan change set aggregated by scan_files from writer::FileDelta.
+#[derive(Debug, Default)]
+pub struct ScanDelta {
+    /// Written-and-changed plus deleted rel paths.
+    pub touched_files: Vec<String>,
+    /// Old ∪ new symbol names and short names of the touched files.
+    pub names: HashSet<String>,
+    pub added_py: Vec<String>,
+    pub removed_py: Vec<String>,
+}
+
+/// (source_file, callee_file, callee_qualified) → count. The qualified
+/// column must stay in the key: detect_clusters' entry symbols group by
+/// callee_qualified, which pair-level counts cannot see change.
+type InferredSnapshot = HashMap<(String, String, String), i64>;
+
+fn inferred_snapshot(tx: &Transaction) -> rusqlite::Result<InferredSnapshot> {
+    let mut stmt = tx.prepare(
+        "SELECT source_file, COALESCE(callee_file, ''), \
+         COALESCE(callee_qualified, ''), COUNT(*) FROM edges \
+         WHERE provenance = 'inferred' GROUP BY 1, 2, 3",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(((row.get(0)?, row.get(1)?, row.get(2)?), row.get(3)?))
+    })?;
+    rows.collect()
+}
+
+/// Files whose import-binding resolution can flip when the indexed .py
+/// set changes: every hit-count transition of derive_import_bindings'
+/// unique-suffix rule involves a changed path matching a binding's forms.
+fn import_binding_hosts(
+    tx: &Transaction,
+    changed: &[&String],
+) -> rusqlite::Result<HashSet<String>> {
+    let mut hosts = HashSet::new();
+    if changed.is_empty() {
+        return Ok(hosts);
+    }
+    let mut stmt = tx.prepare(
+        "SELECT path, import_bindings FROM files \
+         WHERE import_bindings IS NOT NULL AND import_bindings != '[]' \
+         ORDER BY path",
+    )?;
+    let rows: Vec<(String, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    for (source_file, bindings_json) in rows {
+        let bindings: Vec<Value> = serde_json::from_str::<Value>(&bindings_json)
+            .ok()
+            .and_then(|value| value.as_array().cloned())
+            .unwrap_or_default();
+        let affected = bindings.iter().any(|binding| {
+            let module_name = binding.get("module").and_then(Value::as_str).unwrap_or("");
+            if module_name.is_empty() {
+                return false;
+            }
+            let head = module_name.split('.').next().unwrap_or("");
+            if PY_STDLIB_MODULE_NAMES.contains(&head) {
+                return false;
+            }
+            let joined = module_name.replace('.', "/");
+            let suffixes = [format!("{joined}.py"), format!("{joined}/__init__.py")];
+            changed.iter().any(|path| {
+                suffixes
+                    .iter()
+                    .any(|suffix| *path == suffix || path.ends_with(&format!("/{suffix}")))
+            })
+        });
+        if affected {
+            hosts.insert(source_file);
+        }
+    }
+    Ok(hosts)
+}
+
+/// F.1 targeted incremental postprocess. Contract: VIEWS state must be
+/// byte-identical to run() — reset set is a conservative superset of the
+/// re-resolvable direct edges, purge/synth/trait-bases stay global, and
+/// the snapshot diff feeds every inferred-edge change into kind/cluster.
+pub fn run_incremental(
+    tx: &Transaction,
+    config: &PostprocessConfig,
+    delta: &ScanDelta,
+) -> rusqlite::Result<()> {
+    let touched: HashSet<&str> = delta.touched_files.iter().map(String::as_str).collect();
+    let changed_py: Vec<&String> = delta
+        .added_py
+        .iter()
+        .chain(delta.removed_py.iter())
+        .collect();
+    let import_hosts = import_binding_hosts(tx, &changed_py)?;
+
+    let mut affected_files: BTreeSet<String> = delta.touched_files.iter().cloned().collect();
+    let mut target_ids: Vec<i64> = Vec::new();
+    {
+        // Single full-table pass: edges.callee carries no index.
+        let mut stmt = tx.prepare(
+            "SELECT id, source_file, callee, callee_file FROM edges \
+             WHERE provenance != 'inferred' OR provenance IS NULL",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, source_file, callee, callee_file) = row?;
+            if touched.contains(source_file.as_str())
+                || import_hosts.contains(&source_file)
+                || delta.names.contains(&callee)
+            {
+                target_ids.push(id);
+                if let Some(old_callee_file) = callee_file {
+                    affected_files.insert(old_callee_file);
+                }
+                affected_files.insert(source_file);
+            }
+        }
+    }
+
+    for chunk in target_ids.chunks(ID_CHUNK) {
+        let placeholders = vec!["?"; chunk.len()].join(",");
+        tx.execute(
+            &format!("DELETE FROM edge_candidates WHERE edge_id IN ({placeholders})"),
+            params_from_iter(chunk.iter()),
+        )?;
+        tx.execute(
+            &format!(
+                "UPDATE edges SET callee_qualified = NULL, callee_file = NULL, \
+                 provenance = NULL WHERE id IN ({placeholders})"
+            ),
+            params_from_iter(chunk.iter()),
+        )?;
+    }
+
+    let target_id_set: HashSet<i64> = target_ids.iter().copied().collect();
+    resolve_call_edges_filtered(tx, config, Some(&target_id_set))?;
+
+    for chunk in target_ids.chunks(ID_CHUNK) {
+        let placeholders = vec!["?"; chunk.len()].join(",");
+        let mut stmt = tx.prepare(&format!(
+            "SELECT callee_file FROM edges WHERE callee_file IS NOT NULL \
+             AND id IN ({placeholders})"
+        ))?;
+        let rows = stmt.query_map(params_from_iter(chunk.iter()), |row| {
+            row.get::<_, String>(0)
+        })?;
+        for row in rows {
+            affected_files.insert(row?);
+        }
+    }
+
+    let before = inferred_snapshot(tx)?;
+    purge_heuristic_edges(tx)?;
+    overwrite_rust_trait_bases(tx)?;
+    synth::run_all(tx, config)?;
+    let after = inferred_snapshot(tx)?;
+    for key in before.keys().chain(after.keys()) {
+        if before.get(key) != after.get(key) {
+            let (source_file, callee_file, _qualified) = key;
+            affected_files.insert(source_file.clone());
+            if !callee_file.is_empty() {
+                affected_files.insert(callee_file.clone());
+            }
+        }
+    }
+
+    clusters::compute_file_kinds_for(tx, config, &affected_files)?;
+    let groups: BTreeSet<String> = affected_files
+        .iter()
+        .map(|path| clusters::top_group(path).to_string())
+        .collect();
+    clusters::detect_clusters_for(tx, config, &groups)?;
+    Ok(())
+}
+
 fn reset_direct_edge_resolution(tx: &Transaction) -> rusqlite::Result<()> {
     tx.execute("DELETE FROM edge_candidates", [])?;
     tx.execute(
@@ -438,6 +621,17 @@ fn derive_import_bindings(tx: &Transaction) -> rusqlite::Result<ImportDerivation
 /// `StructScanner._resolve_call_edges`: same-file > direct-import > global
 /// scoring with speculative downgrades for ties and attribute calls.
 fn resolve_call_edges(tx: &Transaction, config: &PostprocessConfig) -> rusqlite::Result<()> {
+    resolve_call_edges_filtered(tx, config, None)
+}
+
+/// `only`: restrict to these edge ids. Unresolvable edges stay NULL
+/// permanently, so the incremental path must not re-walk that backlog;
+/// per-edge work is independent, so filtering preserves equivalence.
+fn resolve_call_edges_filtered(
+    tx: &Transaction,
+    config: &PostprocessConfig,
+    only: Option<&HashSet<i64>>,
+) -> rusqlite::Result<()> {
     let fanout_cap = config.resolve_fanout_cap;
     let score_same = config.resolve_score_same_file;
     let score_import = config.resolve_score_direct_import;
@@ -461,6 +655,9 @@ fn resolve_call_edges(tx: &Transaction, config: &PostprocessConfig) -> rusqlite:
     };
 
     for (edge_id, source_file, callee_name, call_form) in unresolved {
+        if only.is_some_and(|ids| !ids.contains(&edge_id)) {
+            continue;
+        }
         let imports_json: Option<Option<String>> = tx
             .query_row(
                 "SELECT imports FROM files WHERE path = ?1",
