@@ -29,6 +29,7 @@
 *   **Action**: You MUST locate the *source definition* of any referenced code.
 *   **Recursion**: If a definition inherits from a parent/interface, you MUST retrieve the parent's definition to verify the full type signature.
 *   **Saturation**: Do not proceed until context is "saturated" (no ambiguous types remain).
+*   **Full protocol**: `~/.claude/skills/remy-plan/saturation_protocol.md`
 
 <!-- ====================================================================== -->
 <!-- DYNAMIC LAYER: Specialized Skills                                      -->

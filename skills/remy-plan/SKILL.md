@@ -28,10 +28,7 @@ Phase 1 (Context Saturation)
 
 ## Phase 1: Context Saturation
 
-**Saturation Principles** (apply to Phase 1.2 and Phase 1.3):
-1.  **Self-Correction**: Ask "Do I have the *source definition* of every dependency involved?"
-2.  **Recursive Read**: If you only see usages (e.g., `db.connect()`), you MUST read the definition (e.g., `class DBConnection`).
-3.  **No Hallucinations**: You are FORBIDDEN from assuming implementation details without evidence.
+**Saturation Principles** (apply to Phase 1.2 and Phase 1.3): obtain the *source definition* of every dependency involved — NEVER infer a definition solely from its usage, and recurse through parent/interface definitions for full signatures; assuming implementation details without evidence is FORBIDDEN. Full protocol: `skills/remy-plan/saturation_protocol.md`.
 
 ### 1.1 Infrastructure Check
 
@@ -58,8 +55,7 @@ Execute the following four sub-tasks in order:
     *   Otherwise: record the output as the **Impact Report**.
 
 2.  **Forced Read**: For every file listed at Upstream Depth 1 and Downstream Depth 1 in the Impact Report:
-    *   If the Impact Report includes line ranges (e.g., `[L120-L155]`) **and** the file exceeds `PRECISION_READ_THRESHOLD` lines (default: 500), use `Read(file_path, offset=start_line, limit=end_line - start_line + 1)` for each listed function instead of reading the full file. Group adjacent functions into a single Read when their ranges overlap or are within 10 lines of each other.
-    *   Otherwise, `Read` the entire file.
+    *   Apply the **Precision-Read Rule**: offset-based `Read` per listed line range when the file exceeds `PRECISION_READ_THRESHOLD` lines (default: 500), merging adjacent ranges within 10 lines; otherwise read the entire file. Full rule: `skills/remy-plan/saturation_protocol.md`.
     *   For Depth 2+, read only files directly relevant to the planned change.
     *   **Exit Condition**: All Upstream Depth 1 and Downstream Depth 1 functions have been read. Context is saturated for the call chain dimension.
 
