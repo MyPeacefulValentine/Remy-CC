@@ -548,25 +548,27 @@ pub struct ScanArgs {
 
 pub fn run_scan(args: &ScanArgs) -> u8 {
     let jobs = args.jobs.unwrap_or_else(default_jobs);
-    let outcome = if args.files.is_empty() {
-        scan_full(
-            &args.root,
-            &args.db,
-            jobs,
-            args.progress,
-            args.progress_json,
-            args.lock_timeout,
-        )
-    } else {
-        scan_files(
-            &args.root,
-            &args.db,
-            &args.files,
-            jobs,
-            args.progress_json,
-            args.lock_timeout,
-        )
-    };
+    let outcome = canonical_root(&args.root).and_then(|root| {
+        if args.files.is_empty() {
+            scan_full(
+                &root,
+                &args.db,
+                jobs,
+                args.progress,
+                args.progress_json,
+                args.lock_timeout,
+            )
+        } else {
+            scan_files(
+                &root,
+                &args.db,
+                &args.files,
+                jobs,
+                args.progress_json,
+                args.lock_timeout,
+            )
+        }
+    });
     match outcome {
         Ok(result) => {
             if args.result_json {
@@ -606,6 +608,33 @@ pub fn run_scan(args: &ScanArgs) -> u8 {
             RunStatus::Failed.exit_code()
         }
     }
+}
+
+/// A relative `--root` makes discovery's rel_path_slash emit `../`-prefixed
+/// keys that poison the files table (G.0), so the root is resolved once here,
+/// ahead of both scan arms. A root that cannot be canonicalized fails the
+/// whole scan instead of continuing with a broken path.
+fn canonical_root(root: &Path) -> Result<PathBuf, String> {
+    let resolved = std::fs::canonicalize(root)
+        .map_err(|error| format!("root_unavailable: {}: {error}", root.display()))?;
+    Ok(strip_verbatim(resolved))
+}
+
+/// Windows canonicalize returns `\\?\C:\...`; drive-letter paths lose the
+/// verbatim prefix so stored project paths match the daemon's display_path
+/// convention. Verbatim UNC paths are left untouched.
+#[cfg(windows)]
+fn strip_verbatim(path: PathBuf) -> PathBuf {
+    let value = path.to_string_lossy();
+    match value.strip_prefix(r"\\?\") {
+        Some(stripped) if stripped.as_bytes().get(1) == Some(&b':') => PathBuf::from(stripped),
+        _ => path,
+    }
+}
+
+#[cfg(not(windows))]
+fn strip_verbatim(path: PathBuf) -> PathBuf {
+    path
 }
 
 #[cfg(test)]
@@ -870,6 +899,26 @@ mod tests {
             rows.map(|row| row.unwrap()).collect()
         };
         assert_eq!(patterns, vec!["observer_emit", "observer_register"]);
+    }
+
+    #[test]
+    fn canonical_root_rejects_a_missing_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("does_not_exist");
+        let error = canonical_root(&missing).unwrap_err();
+        assert!(error.starts_with("root_unavailable: "), "{error}");
+    }
+
+    #[test]
+    fn canonical_root_resolves_dot_segments() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_corpus(root);
+        let indirect = root.join("src").join("..");
+        let resolved = canonical_root(&indirect).unwrap();
+        assert_eq!(resolved, canonical_root(root).unwrap());
+        #[cfg(windows)]
+        assert!(!resolved.to_string_lossy().starts_with(r"\\?\"));
     }
 
     #[test]

@@ -740,3 +740,49 @@ def test_docstring_only_edit_is_hash_neutral_in_rust(tmp_path: Path):
         "docstring-only edit must keep the symbol hash")
     assert edited["not_doc.py:h"] != base["not_doc.py:h"], (
         "a non-docstring triple-quoted literal stays inside the hash")
+
+
+def test_relative_root_scan_matches_absolute_root_scan(tmp_path: Path):
+    destination = tmp_path / "relroot"
+    _write_docstring_corpus(destination)
+    abs_db = tmp_path / "abs.db"
+    assert _rust_scan(destination, abs_db)["outcome"] == "success"
+
+    rel_db = tmp_path / "rel.db"
+    output = subprocess.check_output(
+        [str(BINARY), "scan", "--root", "relroot", "--db", str(rel_db), "--result-json"],
+        text=True,
+        cwd=str(tmp_path),
+    )
+    assert json.loads(output.strip().splitlines()[-1])["outcome"] == "success"
+
+    inc_output = subprocess.check_output(
+        [str(BINARY), "scan", "--root", "relroot", "--db", str(rel_db),
+         "--result-json", "--files", "plain.py"],
+        text=True,
+        cwd=str(tmp_path),
+    )
+    assert json.loads(inc_output.strip().splitlines()[-1])["outcome"] == "success"
+
+    db = sqlite3.connect(str(rel_db))
+    try:
+        paths = [row[0] for row in db.execute("SELECT path FROM files")]
+    finally:
+        db.close()
+    assert paths, "relative-root scan must index the corpus"
+    assert all(not path.startswith("..") for path in paths), paths
+    assert _phase1_state(abs_db) == _phase1_state(rel_db)
+
+
+def test_missing_root_fails_fast_with_result_json(tmp_path: Path):
+    proc = subprocess.run(
+        [str(BINARY), "scan", "--root", str(tmp_path / "missing"),
+         "--db", str(tmp_path / "x.db"), "--result-json"],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert proc.returncode != 0
+    result = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert result["outcome"] == "failed"
+    assert any("root_unavailable" in error["message"] for error in result["errors"])
