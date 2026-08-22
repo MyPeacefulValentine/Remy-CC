@@ -137,7 +137,7 @@ Allowed probe types (read-only + test execution):
 
 ### 2.4 Circuit Breaker Check
 
-If `_hypothesis_count >= DEBUG_MAX_HYPOTHESES` (a retry-budget-exhausted halt per `skills/remy-plan/halt_protocol.md`):
+If `_hypothesis_count >= DEBUG_MAX_HYPOTHESES` (a retry-budget-exhausted halt per `~/.claude/skills/remy-plan/halt_protocol.md`):
 
 1. **HALT** autonomous investigation.
 2. Present to user via `AskUserQuestion`:
@@ -220,7 +220,7 @@ Return to 2.1 with updated evidence context.
 ```
 
 **Strict Rules:**
-- **Evidence Record (MUST)**: evidence[] lists only files ACTUALLY READ; excerpt is verbatim (no summaries); `confirmed` = read this session, `suspected` = inferred unread; evidence_refs points to ≥1 `confirmed` entry; non-git repos use `"type": "filesystem"` without `"commit"`. Full definition: `skills/remy-plan/evidence_record.md`.
+- **Evidence Record (MUST)**: evidence[] lists only files ACTUALLY READ; excerpt is verbatim (no summaries); `confirmed` = read this session, `suspected` = inferred unread; evidence_refs points to ≥1 `confirmed` entry; non-git repos use `"type": "filesystem"` without `"commit"`. Full definition: `~/.claude/skills/remy-plan/evidence_record.md`.
 - If diagnosis is `inconclusive`: set `"mode": "investigate"` instead of `"write"` in the task object.
 
 4. Update `.active_packet`: `Bash("rm -f '.claude/temp_task/.active_packet' && echo 'debug_{TIMESTAMP}.json' > '.claude/temp_task/.active_packet'")`.

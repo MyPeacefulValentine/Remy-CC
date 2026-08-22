@@ -66,7 +66,7 @@ Although strict schema validation is disabled, you MUST internally structure you
     -   If file does not exist: HALT. Report error. Do NOT proceed.
 2.  **Extract constraints**: parse `evidence_packet.proposed_changes[]` as the authoritative change scope.
     -   MUST NOT make changes outside the described scope.
-    -   For any `evidence[]` item with `status: "suspected"`: re-read the referenced `path` and `range` and confirm before proceeding. After confirming, `Edit` the packet file to promote that item's `status` to `"confirmed"` — the PreToolUse guard exempts writes under `.claude/temp_task/`, so this edit is always permitted. Status semantics and state machine: `skills/remy-plan/evidence_record.md`.
+    -   For any `evidence[]` item with `status: "suspected"`: re-read the referenced `path` and `range` and confirm before proceeding. After confirming, `Edit` the packet file to promote that item's `status` to `"confirmed"` — the PreToolUse guard exempts writes under `.claude/temp_task/`, so this edit is always permitted. Status semantics and state machine: `~/.claude/skills/remy-plan/evidence_record.md`.
 3.  Proceed to Phase 1.
 
 **If NO argument provided:**
@@ -79,8 +79,8 @@ Although strict schema validation is disabled, you MUST internally structure you
     *   **EXISTS**: Run `Bash("python \"~/.claude/skills/remy-index/impact.py\" <target_file_1> <target_file_2> ...")` with the files targeted for modification. Use the output as the definitive dependency list. If exit code = 2 (no call graph data), fall through to the manual path below.
     *   **MCP alternative**: If `remy-index` MCP server is active, `query_impact` / `query_callers` tools provide equivalent data without subprocess overhead.
     *   **MISSING or exit 2**: Use `grep` or `glob` to locate all files that import or call the `target_files`.
-    *   **Read**: For every file at Upstream Depth 1 and Downstream Depth 1 in the impact output (or all grep-discovered files in the manual path), apply the **Precision-Read Rule**: offset-based `Read` per listed line range when the file exceeds `PRECISION_READ_THRESHOLD` lines (default: 500), merging adjacent ranges within 10 lines; otherwise read the entire file. Full rule: `skills/remy-plan/saturation_protocol.md`.
-2.  **Verify Signatures**: Read the definitions of any external functions you intend to use — NEVER infer a definition solely from its usage (principle layer: `skills/remy-plan/saturation_protocol.md`).
+    *   **Read**: For every file at Upstream Depth 1 and Downstream Depth 1 in the impact output (or all grep-discovered files in the manual path), apply the **Precision-Read Rule**: offset-based `Read` per listed line range when the file exceeds `PRECISION_READ_THRESHOLD` lines (default: 500), merging adjacent ranges within 10 lines; otherwise read the entire file. Full rule: `~/.claude/skills/remy-plan/saturation_protocol.md`.
+2.  **Verify Signatures**: Read the definitions of any external functions you intend to use — NEVER infer a definition solely from its usage (principle layer: `~/.claude/skills/remy-plan/saturation_protocol.md`).
 
 **Phase 2: Framework Compliance Check (Conditional)**
 
@@ -108,7 +108,7 @@ For each file to be modified, execute the following sub-steps in order. Maintain
 | # | Condition | Trigger |
 | :--- | :--- | :--- |
 | H1 | The file about to be edited is NOT listed in any `proposed_changes[].description` or referenced `evidence[].path` | Scope overflow |
-| H2 | The target function's signature or structure has changed since the audit's `evidence[].excerpt` (staleness per `skills/remy-plan/evidence_record.md`) | Stale plan |
+| H2 | The target function's signature or structure has changed since the audit's `evidence[].excerpt` (staleness per `~/.claude/skills/remy-plan/evidence_record.md`) | Stale plan |
 | H3 | The edit would violate a constraint stated in `sender_payload.analysis` | Constraint conflict |
 
 **If ANY condition is TRUE → Hard Interrupt:**
@@ -174,7 +174,7 @@ If tests fail:
     -   "Apply fix to implementation" — attempt to fix the regression.
     -   "Revert changes" — undo the edits made in Phase 3 (use `Edit` to restore original content).
     -   "Ignore and continue" — accept the failure (user takes responsibility).
-3.  **If user chooses fix**: Apply fix, re-run tests. If still failing after 2 attempts, HALT and report (retry-budget-exhausted halt; trigger classes and post-halt sequence: `skills/remy-plan/halt_protocol.md`).
+3.  **If user chooses fix**: Apply fix, re-run tests. If still failing after 2 attempts, HALT and report (retry-budget-exhausted halt; trigger classes and post-halt sequence: `~/.claude/skills/remy-plan/halt_protocol.md`).
 4.  **If user chooses revert**: Restore original file content from Pre-Read state.
 
 ### 4.4 No Tests Available

@@ -24,7 +24,7 @@ Before generating any files, you MUST perform a deep audit of the work done.
     *   If no commits exist, include staged changes (`git diff --staged`).
 2.  **Recursive Audit (Anti-Hallucination)**:
     *   **Trace**: For every modified file, identify its upstream callers and downstream dependencies.
-    *   **Read**: Verify the *source definitions* of changed functions — NEVER infer a definition solely from its usage (principle layer: `skills/remy-plan/saturation_protocol.md`).
+    *   **Read**: Verify the *source definitions* of changed functions — NEVER infer a definition solely from its usage (principle layer: `~/.claude/skills/remy-plan/saturation_protocol.md`).
     *   **Verify**: Confirm you understand the *exact* technical logic, not just the intent.
     *   **Constraint**: Do NOT proceed until you can explain the "Ripple Effects" and "Systemic Impact" for every change.
 

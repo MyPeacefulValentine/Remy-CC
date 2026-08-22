@@ -252,7 +252,7 @@ For each Error Record with a file path:
 ```
 
 **Strict Rules:**
-- **Evidence Record (MUST)**: evidence[] lists only files ACTUALLY READ; excerpt is verbatim (no summaries); `confirmed` = read this session, `suspected` = inferred unread; evidence_refs points to ≥1 `confirmed` entry; non-git repos use `"type": "filesystem"` without `"commit"`. Full definition: `skills/remy-plan/evidence_record.md`.
+- **Evidence Record (MUST)**: evidence[] lists only files ACTUALLY READ; excerpt is verbatim (no summaries); `confirmed` = read this session, `suspected` = inferred unread; evidence_refs points to ≥1 `confirmed` entry; non-git repos use `"type": "filesystem"` without `"commit"`. Full definition: `~/.claude/skills/remy-plan/evidence_record.md`.
 - If diagnosis could not identify a fixable issue (e.g., infrastructure failure, flaky test): set `"mode": "investigate"` instead of `"write"`.
 
 4. Update `.active_packet`: `Bash("rm -f '.claude/temp_task/.active_packet' && echo 'ci_{TIMESTAMP}.json' > '.claude/temp_task/.active_packet'")`.
