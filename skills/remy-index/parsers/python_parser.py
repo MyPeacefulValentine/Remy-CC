@@ -21,13 +21,11 @@ def _line_start_offsets(data):
 
 
 def _segment_without_docstring(source, node, doc_node, segment):
-    """Splice the docstring literal out of the symbol's source segment.
+    """Splice the docstring literal out of the segment, or None on any
+    inconsistency (hash then falls back to the unmodified segment).
 
-    All offsets are computed in UTF-8 bytes — the unit ast uses for
-    col_offset — so the removal is byte-identical to the tree-sitter
-    implementation in scanner-core (parse_python.rs). Returns None when the
-    computed extent is inconsistent, in which case the hash falls back to
-    the unmodified segment.
+    Offsets are UTF-8 bytes — ast's col_offset unit — so the result is
+    byte-identical to scanner-core's tree-sitter implementation.
     """
     data = source.encode("utf-8")
     starts = _line_start_offsets(data)

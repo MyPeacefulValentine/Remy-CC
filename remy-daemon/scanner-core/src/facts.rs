@@ -12,10 +12,8 @@ pub struct SymbolInfo {
     pub end_lineno: Option<i64>,
     pub docstring: Option<String>,
     pub bases: Option<Vec<String>>,
-    /// Segment variant fed to the symbol hash when the language excludes
-    /// some source text from hashing (Python: docstring literal spliced
-    /// out). `None` means the hash uses `source_segment` unchanged. Never
-    /// used for summarization or line counting.
+    /// Hash-only segment variant (Python: docstring spliced out); `None`
+    /// means the hash uses `source_segment` unchanged.
     pub hash_source_segment: Option<String>,
 }
 

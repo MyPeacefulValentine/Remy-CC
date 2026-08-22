@@ -610,19 +610,17 @@ pub fn run_scan(args: &ScanArgs) -> u8 {
     }
 }
 
-/// A relative `--root` makes discovery's rel_path_slash emit `../`-prefixed
-/// keys that poison the files table (G.0), so the root is resolved once here,
-/// ahead of both scan arms. A root that cannot be canonicalized fails the
-/// whole scan instead of continuing with a broken path.
+/// G.0: a relative root makes discovery emit `../`-prefixed rel keys, so it
+/// is resolved once here for both scan arms; an unresolvable root fails the
+/// scan instead of continuing with a broken path.
 fn canonical_root(root: &Path) -> Result<PathBuf, String> {
     let resolved = std::fs::canonicalize(root)
         .map_err(|error| format!("root_unavailable: {}: {error}", root.display()))?;
     Ok(strip_verbatim(resolved))
 }
 
-/// Windows canonicalize returns `\\?\C:\...`; drive-letter paths lose the
-/// verbatim prefix so stored project paths match the daemon's display_path
-/// convention. Verbatim UNC paths are left untouched.
+/// Drop the Windows `\\?\` prefix on drive-letter paths (daemon display_path
+/// convention); verbatim UNC paths are left untouched.
 #[cfg(windows)]
 fn strip_verbatim(path: PathBuf) -> PathBuf {
     let value = path.to_string_lossy();

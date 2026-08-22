@@ -19,11 +19,9 @@
 //!   regardless). Deterministic only since the parser's R3.3 cache fix
 //!   (contract version 2): the frozen v1 tree cache handed later channels a
 //!   stale tree from the previously parsed file.
-//! - **Hash input**: the docstring literal is spliced out of the segment
-//!   first (contract version 3, C2 ruling — see docs/RETIREMENT.md §4), then
-//!   `re.sub(r'#[^\n]*', '', segment)`, which also strips from a `#` inside
-//!   a string literal. The `#` quirk is frozen oracle behaviour, reproduced
-//!   verbatim.
+//! - **Hash input**: the docstring literal is spliced out first (contract
+//!   v3, C2 ruling), then `re.sub(r'#[^\n]*', '', segment)` — the `#` strip
+//!   inside string literals is frozen oracle behaviour, reproduced verbatim.
 
 use crate::facts::{CacheIdentity, EdgeInfo, PatternFact, SymbolInfo};
 use crate::py_unparse;
@@ -306,11 +304,8 @@ fn effective_end(node: Node) -> Option<(usize, usize)> {
 
 /// `ast.get_docstring`: the first statement's string literal, cleaned with
 /// `inspect.cleandoc`.
-/// Splice the docstring literal out of `segment` for the symbol hash input
-/// (contract version 3). Detection mirrors `ast.get_docstring`'s predicate —
-/// CPython folds adjacent plain string literals into one `Constant`, so
-/// `concatenated_string` is accepted here, unlike `docstring()` below whose
-/// narrower predicate is frozen behaviour for the docstring column.
+/// Splice the docstring literal out of `segment` for the hash input
+/// (contract v3), byte-identical to python_parser._segment_without_docstring.
 fn hash_segment_without_docstring(node: Node, source: &str, segment: &str) -> Option<String> {
     let (start, end) = docstring_extent(node, source)?;
     let seg_start = node.start_byte();
@@ -325,10 +320,9 @@ fn hash_segment_without_docstring(node: Node, source: &str, segment: &str) -> Op
     Some(format!("{}{}", &segment[..rel_start], &segment[rel_end..]))
 }
 
-/// Byte extent of the docstring literal: first non-comment body statement is
-/// an expression statement holding a plain (non-bytes, non-f) string or a
-/// concatenation of such strings — the exact shape `ast.get_docstring`
-/// accepts as a `Constant[str]`.
+/// Docstring extent per `ast.get_docstring`'s predicate: unlike
+/// `docstring()` below (frozen column behaviour), `concatenated_string` is
+/// accepted because CPython folds adjacent plain literals into one Constant.
 fn docstring_extent(node: Node, source: &str) -> Option<(usize, usize)> {
     let body = node.child_by_field_name("body")?;
     let first = named_children(body)
