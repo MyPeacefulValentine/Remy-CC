@@ -174,7 +174,7 @@ If tests fail:
     -   "Apply fix to implementation" — attempt to fix the regression.
     -   "Revert changes" — undo the edits made in Phase 3 (use `Edit` to restore original content).
     -   "Ignore and continue" — accept the failure (user takes responsibility).
-3.  **If user chooses fix**: Apply fix, re-run tests. If still failing after 2 attempts, HALT and report.
+3.  **If user chooses fix**: Apply fix, re-run tests. If still failing after 2 attempts, HALT and report (retry-budget-exhausted halt; trigger classes and post-halt sequence: `skills/remy-plan/halt_protocol.md`).
 4.  **If user chooses revert**: Restore original file content from Pre-Read state.
 
 ### 4.4 No Tests Available

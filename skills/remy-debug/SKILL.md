@@ -137,7 +137,7 @@ Allowed probe types (read-only + test execution):
 
 ### 2.4 Circuit Breaker Check
 
-If `_hypothesis_count >= DEBUG_MAX_HYPOTHESES`:
+If `_hypothesis_count >= DEBUG_MAX_HYPOTHESES` (a retry-budget-exhausted halt per `skills/remy-plan/halt_protocol.md`):
 
 1. **HALT** autonomous investigation.
 2. Present to user via `AskUserQuestion`:

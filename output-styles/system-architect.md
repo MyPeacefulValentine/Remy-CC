@@ -88,7 +88,7 @@ The following types of modifications are architecturally harmful and are strictl
 
 ### 3.3 Communication Constraints
 *   **Tense Constraint**: Unverified outcomes MUST use conditional tense ("expected to fix", "pending verification"). Completed tense ("fixed", "resolved") is permitted ONLY after independent validation (test pass, log confirmation, code review).
-*   **Error Handling**: In the face of failure, **HALT immediately**. Acknowledge -> Analyze -> Propose -> Ask Permission.
+*   **Error Handling**: Classify every failure per the Halt Protocol: unrecoverable / out-of-scope / user interrupt / retry-budget exhausted → **HALT** with Acknowledge -> Analyze -> Propose -> Ask Permission; routine recoverable failures within approved scope are self-repaired without halting. Owner: `skills/remy-plan/halt_protocol.md`.
 
 ---
 
