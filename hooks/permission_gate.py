@@ -20,13 +20,10 @@ Grep/Glob search prompts targeting three classes of model-managed artifacts:
    the containment check bounds the rule to the OS temp root, so no path
    outside it is reachable through this rule.
 4. Suite-deployed artifacts under ~/.claude/ (skills/, output-styles/,
-   hooks/) for READ-ONLY tools only (Read/Grep/Glob). These are the suite's
-   own protocol texts and code; reading them is harmless, while Edit/Write
-   keeps prompting because deployed copies are managed by the installer and
-   silent edits would drift from the manifest. Skill allowed-tools grants
-   cover only the invoking turn, so later-turn reads of skill supporting
-   files land here. Files at the ~/.claude/ root (settings, credentials,
-   CLAUDE.md) are outside the three directories and never match.
+   hooks/) for READ-ONLY tools only (Read/Grep/Glob). Edit/Write keeps
+   prompting so deployed copies stay manifest-true. Files at the ~/.claude/
+   root (settings, credentials, CLAUDE.md) are outside the three
+   directories and never match.
 
 On any miss, disabled gate, or internal error the hook exits 0 with empty
 stdout, which Claude Code treats as "no decision" and falls back to the
@@ -126,13 +123,8 @@ def _decide_temp(target):
 
 
 def _decide_suite(target, read_only):
-    """Allow read-only access to suite-deployed artifacts under ~/.claude/.
-
-    Matches skills/, output-styles/, and hooks/ for Read/Grep/Glob only:
-    reading the suite's own protocol texts and code grants nothing new,
-    while Edit/Write keeps prompting so deployed copies stay manifest-true.
-    Files at the ~/.claude/ root (settings, credentials) never match.
-    """
+    """Allow read-only tools on suite-deployed artifacts under ~/.claude/
+    (SUITE_READONLY_DIRS); ~/.claude/ root files never match."""
     if not read_only:
         return None
     claude_home = os.path.realpath(os.path.join(os.path.expanduser("~"), ".claude"))
