@@ -1,0 +1,17 @@
+{
+  "id": "c01_def_dispatch_ns_cmd",
+  "tier": "direct",
+  "kind": "def",
+  "language": "c",
+  "corpus": "tests/fixtures/tee_canary",
+  "symbol": "dispatch_ns_cmd",
+  "file": "tests/fixtures/tee_canary/framework/gtask/src/framework/tee_ns_cmd_dispatch.c",
+  "prompt": "In the tee_canary fixture tree, find where the function `dispatch_ns_cmd` is defined. Report its name and the repo-relative path of the file that defines it.",
+  "ground_truth": {
+    "method": "set",
+    "gt_source": "manual (verified 2026-08-22 against tee_ns_cmd_dispatch.c:114)",
+    "expected": [
+      ["dispatch_ns_cmd", "tests/fixtures/tee_canary/framework/gtask/src/framework/tee_ns_cmd_dispatch.c"]
+    ]
+  }
+}

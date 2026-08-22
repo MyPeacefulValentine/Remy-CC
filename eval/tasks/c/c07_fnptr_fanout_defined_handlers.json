@@ -1,0 +1,20 @@
+{
+  "id": "c07_fnptr_fanout_defined_handlers",
+  "tier": "fnptr",
+  "kind": "fanout",
+  "language": "c",
+  "corpus": "tests/fixtures/tee_canary",
+  "symbol": "g_ns_sync_cmd_table",
+  "file": "tests/fixtures/tee_canary/framework/gtask/src/framework/tee_ns_cmd_dispatch.c",
+  "prompt": "In the tee_canary fixture tree, the table `g_ns_sync_cmd_table` registers handler functions for command IDs. List every registered handler that is DEFINED inside the fixture tree: its name and the repo-relative path of the file that DEFINES it. Exclude handlers whose definitions are outside the fixture tree.",
+  "ground_truth": {
+    "method": "set",
+    "gt_source": "manual (verified 2026-08-22: table tee_ns_cmd_dispatch.c:72-90 registers 9 handlers; in-fixture definitions: need_load_app app_load_srv.c:134, process_cmd_with_audit_event dispatch.c:47, handle_time_adjust global_task.c:299, get_tee_version global_task.c:423; register_agent/unregister_agent/dump_statmeminfo/dump_service_session_info/agent_late_init defined outside fixture)",
+    "expected": [
+      ["need_load_app", "tests/fixtures/tee_canary/framework/gtask/src/app_load/tee_app_load_srv.c"],
+      ["process_cmd_with_audit_event", "tests/fixtures/tee_canary/framework/gtask/src/framework/tee_ns_cmd_dispatch.c"],
+      ["handle_time_adjust", "tests/fixtures/tee_canary/framework/gtask/src/framework/global_task.c"],
+      ["get_tee_version", "tests/fixtures/tee_canary/framework/gtask/src/framework/global_task.c"]
+    ]
+  }
+}

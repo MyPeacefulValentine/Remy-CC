@@ -1,0 +1,17 @@
+{
+  "id": "c04_callers_crossfile_process_load_image",
+  "tier": "direct",
+  "kind": "callers",
+  "language": "c",
+  "corpus": "tests/fixtures/tee_canary",
+  "symbol": "process_load_image",
+  "file": "tests/fixtures/tee_canary/framework/gtask/src/framework/global_task.c",
+  "prompt": "In the tee_canary fixture tree, `process_load_image` is defined in global_task.c. Find every function that directly calls it. Report each caller's name and the repo-relative path of the file that contains the call.",
+  "ground_truth": {
+    "method": "set",
+    "gt_source": "manual (verified 2026-08-22: sole call site tee_ns_cmd_dispatch.c:37 inside process_async_cmd; global_task.c contains only the definition at :448)",
+    "expected": [
+      ["process_async_cmd", "tests/fixtures/tee_canary/framework/gtask/src/framework/tee_ns_cmd_dispatch.c"]
+    ]
+  }
+}

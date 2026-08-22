@@ -1,0 +1,19 @@
+{
+  "id": "c02_callees_crossfile_process_async_cmd",
+  "tier": "direct",
+  "kind": "callees",
+  "language": "c",
+  "corpus": "tests/fixtures/tee_canary",
+  "symbol": "process_async_cmd",
+  "file": "tests/fixtures/tee_canary/framework/gtask/src/framework/tee_ns_cmd_dispatch.c",
+  "prompt": "In the tee_canary fixture tree, the function `process_async_cmd` (in tee_ns_cmd_dispatch.c) directly calls several project functions. List each callee that is DEFINED inside the fixture tree: its name and the repo-relative path of the file that DEFINES it. Exclude functions whose definitions are outside the fixture tree.",
+  "ground_truth": {
+    "method": "set",
+    "gt_source": "manual (verified 2026-08-22: call sites tee_ns_cmd_dispatch.c:31,34,37; definitions global_task.c:378,448; set_service_thread_cmd defined outside fixture -> excluded per prompt)",
+    "expected": [
+      ["process_ta_common_cmd", "tests/fixtures/tee_canary/framework/gtask/src/framework/global_task.c"],
+      ["process_load_image", "tests/fixtures/tee_canary/framework/gtask/src/framework/global_task.c"]
+    ],
+    "notes": "Prompt says three direct project-function calls; set_service_thread_cmd has no in-fixture definition, so expected set is the two resolvable ones."
+  }
+}

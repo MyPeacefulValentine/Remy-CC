@@ -1,0 +1,17 @@
+{
+  "id": "c08_conditional_table_entry",
+  "tier": "direct",
+  "kind": "conditional",
+  "language": "c",
+  "corpus": "tests/fixtures/tee_canary",
+  "symbol": "dump_service_session_info",
+  "file": "tests/fixtures/tee_canary/framework/gtask/src/framework/tee_ns_cmd_dispatch.c",
+  "prompt": "In the tee_canary fixture tree, one entry of the command table `g_ns_sync_cmd_table` is only compiled when a configuration macro is enabled. Report that entry's handler function name and the repo-relative path of the file that contains the table.",
+  "ground_truth": {
+    "method": "set",
+    "gt_source": "manual (verified 2026-08-22: #ifdef CONFIG_ENABLE_DUMP_SRV_SESS guard tee_ns_cmd_dispatch.c:85-87)",
+    "expected": [
+      ["dump_service_session_info", "tests/fixtures/tee_canary/framework/gtask/src/framework/tee_ns_cmd_dispatch.c"]
+    ]
+  }
+}

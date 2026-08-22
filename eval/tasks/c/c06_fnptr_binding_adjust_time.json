@@ -1,0 +1,17 @@
+{
+  "id": "c06_fnptr_binding_adjust_time",
+  "tier": "fnptr",
+  "kind": "binding",
+  "language": "c",
+  "corpus": "tests/fixtures/tee_canary",
+  "symbol": "handle_time_adjust",
+  "file": "tests/fixtures/tee_canary/framework/gtask/src/framework/global_task.c",
+  "prompt": "In the tee_canary fixture tree, a command table maps command IDs to handler functions. Which handler function is registered for `GLOBAL_CMD_ID_ADJUST_TIME`? Report the handler's name and the repo-relative path of the file that DEFINES the handler.",
+  "ground_truth": {
+    "method": "set",
+    "gt_source": "manual (verified 2026-08-22: table entry tee_ns_cmd_dispatch.c:82; handler definition global_task.c:299)",
+    "expected": [
+      ["handle_time_adjust", "tests/fixtures/tee_canary/framework/gtask/src/framework/global_task.c"]
+    ]
+  }
+}

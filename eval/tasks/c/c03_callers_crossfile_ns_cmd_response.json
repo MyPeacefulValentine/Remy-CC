@@ -1,0 +1,18 @@
+{
+  "id": "c03_callers_crossfile_ns_cmd_response",
+  "tier": "direct",
+  "kind": "callers",
+  "language": "c",
+  "corpus": "tests/fixtures/tee_canary",
+  "symbol": "ns_cmd_response",
+  "file": "tests/fixtures/tee_canary/framework/gtask/src/framework/global_task.c",
+  "prompt": "In the tee_canary fixture tree, find every function that directly calls `ns_cmd_response`. Report each caller's name and the repo-relative path of the file that contains the call.",
+  "ground_truth": {
+    "method": "set",
+    "gt_source": "manual (verified 2026-08-22: call sites tee_ns_cmd_dispatch.c:135 in dispatch_ns_cmd; tee_app_load_srv.c:716 in send_img_load_response; definition global_task.c:279, no self-calls)",
+    "expected": [
+      ["dispatch_ns_cmd", "tests/fixtures/tee_canary/framework/gtask/src/framework/tee_ns_cmd_dispatch.c"],
+      ["send_img_load_response", "tests/fixtures/tee_canary/framework/gtask/src/app_load/tee_app_load_srv.c"]
+    ]
+  }
+}

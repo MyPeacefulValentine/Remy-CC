@@ -1,0 +1,17 @@
+{
+  "id": "c05_fnptr_dispatch_site",
+  "tier": "fnptr",
+  "kind": "dispatch",
+  "language": "c",
+  "corpus": "tests/fixtures/tee_canary",
+  "symbol": "need_load_app",
+  "file": "tests/fixtures/tee_canary/framework/gtask/src/app_load/tee_app_load_srv.c",
+  "prompt": "In the tee_canary fixture tree, `need_load_app` is never called by name. It is invoked through a function-pointer table. Find the function that performs this indirect invocation (the dispatch loop over the table). Report the dispatching function's name and the repo-relative path of the file that contains it.",
+  "ground_truth": {
+    "method": "set",
+    "gt_source": "manual (verified 2026-08-22: registration g_ns_sync_cmd_table entry tee_ns_cmd_dispatch.c:73; dispatch loop tee_ns_cmd_dispatch.c:105-108 in dispatch_ns_global_cmd)",
+    "expected": [
+      ["dispatch_ns_global_cmd", "tests/fixtures/tee_canary/framework/gtask/src/framework/tee_ns_cmd_dispatch.c"]
+    ]
+  }
+}
