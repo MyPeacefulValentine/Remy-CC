@@ -2372,3 +2372,47 @@ class TestDocstringExcludedFromHash:
         symbols = parser.parse_symbols(source, "mod.py")
         assert '"""Doc."""' in symbols[0].source_segment
         assert symbols[0].docstring == "Doc."
+
+    def test_fstring_and_bytes_first_statements_are_not_docstrings(self):
+        from parsers.python_parser import PythonParser
+        parser = PythonParser()
+        for source in (
+            'def f(a):\n    f"""formatted {a}"""\n    return a\n',
+            'def f(a):\n    b"""bytes literal"""\n    return a\n',
+        ):
+            symbols = parser.parse_symbols(source, "mod.py")
+            assert symbols[0].hash_source_segment is None, source
+
+    def test_contract_v2_rows_migrate_once_then_scan_is_idempotent(self, tmp_path, monkeypatch):
+        project = tmp_path / "migrate"
+        (project / ".claude").mkdir(parents=True)
+        (project / ".claude" / "logic_index_config").write_text(
+            "!.git/\n!.claude/\n", encoding="utf-8")
+        (project / "mod.py").write_text(
+            'def f(a):\n    """Doc."""\n    return a\n', encoding="utf-8")
+        scanner = StructScanner(str(project))
+        try:
+            assert scanner.scan_all().status.value == "success"
+            scanner.db.execute("UPDATE files SET parser_contract_version='2'")
+            scanner.db.commit()
+
+            parser = scanner._get_parser_for_file("mod.py")
+            calls = []
+            original_parse = parser.parse_symbols
+            monkeypatch.setattr(
+                parser,
+                "parse_symbols",
+                lambda source, path: calls.append(path) or original_parse(source, path),
+            )
+
+            assert scanner.scan_all().status.value == "success"
+            assert calls, "a stored v2 row must be re-parsed"
+            migrated_call_count = len(calls)
+            versions = {row[0] for row in scanner.db.execute(
+                "SELECT parser_contract_version FROM files")}
+            assert versions == {"3"}
+
+            assert scanner.scan_all().status.value == "success"
+            assert len(calls) == migrated_call_count, "a migrated row must not re-parse again"
+        finally:
+            scanner.db.close()
