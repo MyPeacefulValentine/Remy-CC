@@ -95,6 +95,10 @@ class TestDecide:
     def test_artifact_read_allowed(self, tmp_path):
         assert gate.decide(str(tmp_path), "Read", ".claude/temp_task/x.json") == "allow"
 
+    @pytest.mark.parametrize("tool", ["Grep", "Glob"])
+    def test_artifact_search_allowed(self, tmp_path, tool):
+        assert gate.decide(str(tmp_path), tool, ".claude/temp_task") == "allow"
+
     @pytest.mark.parametrize("path", [
         ".claude/temp_task/x.json",
         ".claude/settings.json",
@@ -103,6 +107,20 @@ class TestDecide:
     ])
     def test_read_write_symmetry(self, tmp_path, path):
         assert gate.decide(str(tmp_path), "Read", path) == gate.decide(str(tmp_path), "Write", path)
+
+    @pytest.mark.parametrize("tool", ["Grep", "Glob"])
+    @pytest.mark.parametrize("path", [
+        ".claude/temp_task/x.json",
+        ".claude/settings.json",
+        ".claude/unknown.md",
+        "src/main.py",
+    ])
+    def test_search_file_target_matches_read(self, tmp_path, tool, path):
+        assert gate.decide(str(tmp_path), tool, path) == gate.decide(str(tmp_path), "Read", path)
+
+    @pytest.mark.parametrize("tool", ["Grep", "Glob"])
+    def test_claude_root_search_still_prompts(self, tmp_path, tool):
+        assert gate.decide(str(tmp_path), tool, ".claude") == "skip:root"
 
     @pytest.mark.parametrize("path", [
         ".claude/settings.json",
@@ -119,8 +137,9 @@ class TestDecide:
         ".claude/settings.local.json",
         ".claude/remy-config.json",
     ])
-    def test_settings_read_denied(self, tmp_path, path):
-        assert gate.decide(str(tmp_path), "Read", path) == "skip:denied"
+    @pytest.mark.parametrize("tool", ["Read", "Grep", "Glob"])
+    def test_settings_read_denied(self, tmp_path, tool, path):
+        assert gate.decide(str(tmp_path), tool, path) == "skip:denied"
 
     @pytest.mark.parametrize("path", [
         "src/main.py",
@@ -195,6 +214,21 @@ class TestMemoryDecide:
         target = self.projects / "D--some-project" / "memory"
         assert gate.decide(str(tmp_path), "Write", str(target)) == "skip:outside"
 
+    @pytest.mark.parametrize("tool", ["Grep", "Glob"])
+    def test_memory_dir_search_allowed(self, tmp_path, tool):
+        target = self.projects / "D--some-project" / "memory"
+        assert gate.decide(str(tmp_path), tool, str(target)) == "allow"
+
+    @pytest.mark.parametrize("tool", ["Grep", "Glob"])
+    def test_memory_file_search_allowed(self, tmp_path, tool):
+        target = self.projects / "D--some-project" / "memory" / "MEMORY.md"
+        assert gate.decide(str(tmp_path), tool, str(target)) == "allow"
+
+    @pytest.mark.parametrize("tool", ["Grep", "Glob"])
+    def test_project_slug_root_search_skipped(self, tmp_path, tool):
+        target = self.projects / "D--some-project"
+        assert gate.decide(str(tmp_path), tool, str(target)) == "skip:outside"
+
     def test_projects_root_file_skipped(self, tmp_path):
         target = self.projects / "stray.md"
         assert gate.decide(str(tmp_path), "Write", str(target)) == "skip:outside"
@@ -220,6 +254,15 @@ class TestTempDecide:
     def test_temp_read_allowed(self, tmp_path, isolated_temp_root):
         target = isolated_temp_root / "tasks" / "agent.output"
         assert gate.decide(str(tmp_path), "Read", str(target)) == "allow"
+
+    @pytest.mark.parametrize("tool", ["Grep", "Glob"])
+    def test_temp_dir_search_allowed(self, tmp_path, isolated_temp_root, tool):
+        target = isolated_temp_root / "tasks"
+        assert gate.decide(str(tmp_path), tool, str(target)) == "allow"
+
+    @pytest.mark.parametrize("tool", ["Grep", "Glob"])
+    def test_temp_root_search_allowed(self, tmp_path, isolated_temp_root, tool):
+        assert gate.decide(str(tmp_path), tool, str(isolated_temp_root)) == "allow"
 
     def test_traversal_out_of_temp_skipped(self, tmp_path, isolated_temp_root):
         target = isolated_temp_root / ".." / "escape.py"
@@ -258,6 +301,24 @@ class TestMainIO:
         rc, out = _run_hook(_payload(tmp_path, "Read"), tmp_path / "home")
         assert rc == 0
         assert json.loads(out) == gate.ALLOW_DECISION
+
+    def test_grep_path_field_emits_documented_decision(self, tmp_path):
+        stdin_bytes = json.dumps(
+            {"tool_name": "Grep",
+             "tool_input": {"pattern": "x", "path": ".claude/temp_task"},
+             "cwd": str(tmp_path)}
+        ).encode("utf-8")
+        rc, out = _run_hook(stdin_bytes, tmp_path / "home")
+        assert rc == 0
+        assert json.loads(out) == gate.ALLOW_DECISION
+
+    def test_grep_without_path_emits_nothing(self, tmp_path):
+        stdin_bytes = json.dumps(
+            {"tool_name": "Grep", "tool_input": {"pattern": "x"}, "cwd": str(tmp_path)}
+        ).encode("utf-8")
+        rc, out = _run_hook(stdin_bytes, tmp_path / "home")
+        assert rc == 0
+        assert out == ""
 
     @pytest.mark.parametrize("stdin_bytes", [b"", b"not json at all", b"[1, 2]"])
     def test_malformed_stdin_fails_open(self, tmp_path, stdin_bytes):

@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-PermissionRequest hook that auto-approves Edit/Write/Read targeting three
-classes of model-managed artifacts:
+PermissionRequest hook that auto-approves Edit/Write/Read prompts and
+Grep/Glob search prompts targeting three classes of model-managed artifacts:
 
 1. Project-level .claude/ system artifacts (temp_* directories, history/,
    generated tree and index files). Settings files are never approved: paths
@@ -12,7 +12,9 @@ classes of model-managed artifacts:
    The rule matches on path shape (any <slug>), not on the current project's
    slug: the slug encoding is an undocumented Claude Code internal, and every
    file in a memory/ directory belongs to the same model-authored content
-   class.
+   class. Search tools may additionally target the memory/ directory itself:
+   searching a directory whose files are all individually approved grants no
+   new access.
 3. Files inside the system temporary directory (tempfile.gettempdir()).
    Temp-dir probe scripts and scratch artifacts are model-managed content;
    the containment check bounds the rule to the OS temp root, so no path
@@ -25,8 +27,11 @@ and is never used.
 
 Normative reference: the Exemptions list in style.md §1.2 (Authorization Gate
 owner). This hook is the mechanism-layer counterpart of that list; the three
-target classes above are approved uniformly for Edit, Write, and Read prompts,
-and settings-class paths always fall through to the normal prompt.
+target classes above are approved uniformly for Edit, Write, Read, Grep, and
+Glob prompts, and settings-class paths always fall through to the normal
+prompt. Grep/Glob carry the target in tool_input "path" (optional; absent
+means no decision), and their directory targets follow the same containment
+rules as file targets.
 """
 
 import json
@@ -35,7 +40,8 @@ import sys
 import tempfile
 import time
 
-ALLOWED_TOOLS = ("Edit", "Write", "Read")
+ALLOWED_TOOLS = ("Edit", "Write", "Read", "Grep", "Glob")
+SEARCH_TOOLS = ("Grep", "Glob")
 ALLOWED_DIR_PREFIXES = ("temp_",)
 ALLOWED_DIRS = ("history",)
 ALLOWED_ROOT_FILE_PREFIXES = ("project_tree", "logic_tree", "logic_index", "tree_config")
@@ -73,13 +79,15 @@ def _contains(root, target):
         return False
 
 
-def _decide_memory(target):
+def _decide_memory(target, allow_dir=False):
     """Allow files inside any per-project auto-memory directory.
 
     Matches ~/.claude/projects/<slug>/memory/<...>; returns "allow" on match
     and None otherwise. Shape-based on purpose: the <slug> encoding is an
     undocumented Claude Code internal, so the rule does not try to bind the
-    slug to the current project.
+    slug to the current project. With allow_dir (search tools), the memory/
+    directory itself also matches: every file it contains is individually
+    approved, so searching it grants no new access.
     """
     projects_root = os.path.realpath(
         os.path.join(os.path.expanduser("~"), ".claude", "projects")
@@ -89,6 +97,8 @@ def _decide_memory(target):
     rel = os.path.relpath(target, projects_root)
     parts = rel.replace("\\", "/").split("/")
     if len(parts) >= 3 and parts[1].lower() == MEMORY_DIR_NAME:
+        return "allow"
+    if allow_dir and len(parts) == 2 and parts[1].lower() == MEMORY_DIR_NAME:
         return "allow"
     return None
 
@@ -121,7 +131,7 @@ def decide(cwd, tool_name, file_path):
     target = os.path.realpath(target)
 
     if not _contains(claude_dir, target):
-        if _decide_memory(target) == "allow":
+        if _decide_memory(target, allow_dir=tool_name in SEARCH_TOOLS) == "allow":
             return "allow"
         if _decide_temp(target) == "allow":
             return "allow"
@@ -178,7 +188,7 @@ def main():
         tool_name = input_data.get("tool_name", "")
         tool_input = input_data.get("tool_input", {})
         cwd = input_data.get("cwd", os.getcwd())
-        file_path = tool_input.get("file_path", "")
+        file_path = tool_input.get("file_path", "") or tool_input.get("path", "")
 
         if not gate_enabled(cwd):
             if trace:

@@ -184,6 +184,15 @@
             "command": "python \"~/.claude/hooks/permission_gate.py\""
           }
         ]
+      },
+      {
+        "matcher": "Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"~/.claude/hooks/permission_gate.py\""
+          }
+        ]
       }
     ]
   },
