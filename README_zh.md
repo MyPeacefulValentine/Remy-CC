@@ -74,7 +74,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | 工具前置防护 | 每次工具调用前 | 将绝对路径转换为相对路径；为 Shell 命令注入 Conda/Mamba 激活和 UTF-8 编码；检查 snake_case 文件命名；cwd 漂移时提醒模型恢复会话根 |
 | 逻辑富化 | Read/Grep/Glob 执行前 | 消费脏文件条目进行增量重解析；追加目标文件的调用者/被调用者关系和架构层信息（需要逻辑索引） |
 | 脏文件追踪 | Edit/Write 执行后 | 记录被修改的文件路径，供下次 Read 时增量更新逻辑索引 |
-| 权限闸门 | Edit/Write/Read 及 Grep/Glob 权限决策时 | 自动放行针对项目级 `.claude/` 系统工件（temp 目录、history、生成的树与索引文件）、`~/.claude/projects/<slug>/memory/` 下的项目记忆文件（搜索工具可指向 memory 目录本身）及系统临时目录内文件的 Edit/Write/Read 与 Grep/Glob（搜索）弹窗；settings 类文件照常弹窗；可用 `REMY_PERMISSION_GATE` 关闭 |
+| 权限闸门 | Edit/Write/Read 及 Grep/Glob 权限决策时 | 自动放行针对项目级 `.claude/` 系统工件（temp 目录、history、生成的树与索引文件）、`~/.claude/projects/<slug>/memory/` 下的项目记忆文件（搜索工具可指向 memory 目录本身）及系统临时目录内文件的 Edit/Write/Read 与 Grep/Glob（搜索）弹窗；对 `~/.claude/` 下套件部署工件（skills/output-styles/hooks）额外放行只读工具；settings 类文件照常弹窗；可用 `REMY_PERMISSION_GATE` 关闭 |
 | 生命周期管理 | 会话启动/结束、上下文压缩前 | 重新生成项目树快照和语言指令文件；触发全量结构扫描以刷新符号行号和调用图；记录会话根锚点，cwd 漂移时保持 `.claude/` 工件位置不变 |
 | 子代理语言注入 | 子代理启动时 | 向每个子代理的上下文注入配置的响应语言指令 |
 | CWD 防护 | 工作目录变化时 | cwd 偏离锚定会话根时向用户发终端提醒；工件写入始终锚定会话根 |

@@ -278,6 +278,46 @@ class TestTempDecide:
         assert gate.decide(str(cwd), "Edit", ".claude/settings.json") == "skip:denied"
 
 
+class TestSuiteDecide:
+    @pytest.fixture(autouse=True)
+    def fake_home(self, tmp_path, monkeypatch):
+        home = tmp_path / "home"
+        home.mkdir(exist_ok=True)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        self.claude_home = home / ".claude"
+        yield
+
+    @pytest.mark.parametrize("tool", ["Read", "Grep", "Glob"])
+    @pytest.mark.parametrize("sub", ["skills", "output-styles", "hooks"])
+    def test_suite_file_readonly_allowed(self, tmp_path, tool, sub):
+        target = self.claude_home / sub / "remy-plan" / "halt_protocol.md"
+        assert gate.decide(str(tmp_path), tool, str(target)) == "allow"
+
+    @pytest.mark.parametrize("tool", ["Grep", "Glob"])
+    def test_suite_dir_search_allowed(self, tmp_path, tool):
+        target = self.claude_home / "skills" / "remy-plan"
+        assert gate.decide(str(tmp_path), tool, str(target)) == "allow"
+
+    @pytest.mark.parametrize("tool", ["Edit", "Write"])
+    def test_suite_file_write_skipped(self, tmp_path, tool):
+        target = self.claude_home / "skills" / "remy-plan" / "SKILL.md"
+        assert gate.decide(str(tmp_path), tool, str(target)) == "skip:outside"
+
+    @pytest.mark.parametrize("name", ["settings.json", "settings.local.json", "CLAUDE.md", ".credentials.json"])
+    def test_claude_home_root_files_skipped(self, tmp_path, name):
+        target = self.claude_home / name
+        assert gate.decide(str(tmp_path), "Read", str(target)) == "skip:outside"
+
+    def test_traversal_out_of_suite_dir_skipped(self, tmp_path):
+        target = self.claude_home / "skills" / ".." / "settings.json"
+        assert gate.decide(str(tmp_path), "Read", str(target)) == "skip:outside"
+
+    def test_other_tools_still_skipped(self, tmp_path):
+        target = self.claude_home / "skills" / "remy-plan" / "SKILL.md"
+        assert gate.decide(str(tmp_path), "Bash", str(target)) == "skip:tool"
+
+
 class TestGateEnabled:
     def test_default_is_enabled(self, tmp_path):
         assert gate.gate_enabled(str(tmp_path)) is True

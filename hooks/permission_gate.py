@@ -19,6 +19,14 @@ Grep/Glob search prompts targeting three classes of model-managed artifacts:
    Temp-dir probe scripts and scratch artifacts are model-managed content;
    the containment check bounds the rule to the OS temp root, so no path
    outside it is reachable through this rule.
+4. Suite-deployed artifacts under ~/.claude/ (skills/, output-styles/,
+   hooks/) for READ-ONLY tools only (Read/Grep/Glob). These are the suite's
+   own protocol texts and code; reading them is harmless, while Edit/Write
+   keeps prompting because deployed copies are managed by the installer and
+   silent edits would drift from the manifest. Skill allowed-tools grants
+   cover only the invoking turn, so later-turn reads of skill supporting
+   files land here. Files at the ~/.claude/ root (settings, credentials,
+   CLAUDE.md) are outside the three directories and never match.
 
 On any miss, disabled gate, or internal error the hook exits 0 with empty
 stdout, which Claude Code treats as "no decision" and falls back to the
@@ -42,6 +50,8 @@ import time
 
 ALLOWED_TOOLS = ("Edit", "Write", "Read", "Grep", "Glob")
 SEARCH_TOOLS = ("Grep", "Glob")
+READ_ONLY_TOOLS = ("Read",) + SEARCH_TOOLS
+SUITE_READONLY_DIRS = ("skills", "output-styles", "hooks")
 ALLOWED_DIR_PREFIXES = ("temp_",)
 ALLOWED_DIRS = ("history",)
 ALLOWED_ROOT_FILE_PREFIXES = ("project_tree", "logic_tree", "logic_index", "tree_config")
@@ -115,6 +125,23 @@ def _decide_temp(target):
     return None
 
 
+def _decide_suite(target, read_only):
+    """Allow read-only access to suite-deployed artifacts under ~/.claude/.
+
+    Matches skills/, output-styles/, and hooks/ for Read/Grep/Glob only:
+    reading the suite's own protocol texts and code grants nothing new,
+    while Edit/Write keeps prompting so deployed copies stay manifest-true.
+    Files at the ~/.claude/ root (settings, credentials) never match.
+    """
+    if not read_only:
+        return None
+    claude_home = os.path.realpath(os.path.join(os.path.expanduser("~"), ".claude"))
+    for sub in SUITE_READONLY_DIRS:
+        if _contains(os.path.join(claude_home, sub), target):
+            return "allow"
+    return None
+
+
 def decide(cwd, tool_name, file_path):
     """Classify one permission request.
 
@@ -134,6 +161,8 @@ def decide(cwd, tool_name, file_path):
         if _decide_memory(target, allow_dir=tool_name in SEARCH_TOOLS) == "allow":
             return "allow"
         if _decide_temp(target) == "allow":
+            return "allow"
+        if _decide_suite(target, read_only=tool_name in READ_ONLY_TOOLS) == "allow":
             return "allow"
         return "skip:outside"
 
