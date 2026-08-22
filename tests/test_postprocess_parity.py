@@ -213,6 +213,18 @@ class TestSummaryInvalidationParity:
         assert python_rows == _retrieval_state(rust_db)
         assert all(len(row[10]) == 64 for row in python_rows)
 
+    def test_incremental_path_keeps_retrieval_and_summary_parity(self, twin_projects):
+        root, python_db, rust_db = twin_projects
+        (root / "pkg" / "a.py").write_text(
+            'def documented():\n    """Documented helper."""\n    return 7\n\n\n'
+            "def freshly_added():\n    return documented()\n",
+            encoding="utf-8",
+        )
+        assert _python_scan_files(root, ["pkg/a.py"]).status.value == "success"
+        assert _rust_scan(root, rust_db, "--files", "pkg/a.py")["outcome"] == "success"
+        assert _summary_state(python_db) == _summary_state(rust_db)
+        assert _retrieval_state(python_db) == _retrieval_state(rust_db)
+
 
 @pytest.mark.skipif(not PYTHON_PARSER_AVAILABLE, reason="python parser unavailable")
 class TestPostprocessFailureInjection:

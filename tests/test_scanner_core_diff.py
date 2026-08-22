@@ -487,3 +487,190 @@ def test_rust_progress_json_lines_contract(c_project: Path):
     assert final["type"] == "scan_result"
     assert final["schema_version"] == 1
     assert final["outcome"] == "success"
+
+
+def _assert_no_candidate_orphans(db_path: Path):
+    db = sqlite3.connect(str(db_path))
+    try:
+        orphans = db.execute(
+            "SELECT COUNT(*) FROM edge_candidates ec "
+            "LEFT JOIN edges e ON e.id = ec.edge_id WHERE e.id IS NULL"
+        ).fetchone()
+        assert orphans == (0,)
+    finally:
+        db.close()
+
+
+@pytest.fixture
+def perturbation_project(tmp_path: Path) -> Path:
+    """Python tree with global-tier short-name ties (edge_candidates rows),
+    shared by the incremental-vs-full cases."""
+    root = tmp_path / "proj"
+    (root / "pkg").mkdir(parents=True)
+    (root / ".claude").mkdir()
+    (root / ".claude" / "logic_index_config").write_text("!.claude/\n", encoding="utf-8")
+    (root / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (root / "pkg" / "util.py").write_text(
+        "def helper():\n    return 1\n\n\ndef twin():\n    return 2\n",
+        encoding="utf-8",
+    )
+    (root / "pkg" / "extra.py").write_text(
+        "def twin():\n    return 3\n", encoding="utf-8"
+    )
+    (root / "app.py").write_text(
+        "from pkg.util import helper\n\n\ndef main():\n    helper()\n    twin()\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_rust_incremental_perturbations_match_python_full(
+    tmp_path: Path, perturbation_project: Path
+):
+    root = perturbation_project
+    rust_db = tmp_path / "rust_inc.db"
+    _python_scan(root)
+    assert _rust_scan(root, rust_db)["outcome"] == "success"
+
+    perturbations = [
+        # Cross-file rename: the twin tie in pkg/extra.py re-resolves.
+        (
+            "pkg/util.py",
+            "def helper_renamed():\n    return 1\n\n\ndef twin():\n    return 2\n",
+        ),
+        # New file adds a lexicographically earlier twin candidate.
+        ("pkg/aaa.py", "def twin():\n    return 4\n"),
+        # Remove the import-tier caller's edges entirely.
+        ("app.py", "def main():\n    return 0\n"),
+    ]
+    for rel, content in perturbations:
+        (root / rel).write_text(content, encoding="utf-8")
+        result = _python_scan_files(root, [rel])
+        assert result.status.value == "success", result.errors
+        assert _rust_scan(root, rust_db, "--files", rel)["outcome"] == "success"
+        python_db = root / ".claude" / "logic_index.db"
+        blocking = oracle_comparator.blocking(_full_findings(python_db, rust_db))
+        assert blocking == [], (rel, [(f.view, f.key, f.column) for f in blocking])
+        _assert_no_candidate_orphans(rust_db)
+
+    (root / "pkg" / "extra.py").unlink()
+    result = _python_scan_files(root, ["pkg/extra.py"])
+    assert result.status.value == "success", result.errors
+    assert _rust_scan(root, rust_db, "--files", "pkg/extra.py")["outcome"] == "success"
+    python_db = root / ".claude" / "logic_index.db"
+    assert oracle_comparator.blocking(_full_findings(python_db, rust_db)) == []
+    _assert_no_candidate_orphans(rust_db)
+
+
+def test_rust_incremental_import_binding_host_matches_full(tmp_path: Path):
+    """Adding/removing a .py file flips another file's import-binding
+    resolution (external ↔ unique suffix hit); the host file is never in
+    the delta, so only the binding-host edge reset can reach its edges."""
+    root = tmp_path / "proj"
+    (root / ".claude").mkdir(parents=True)
+    (root / ".claude" / "logic_index_config").write_text("!.claude/\n", encoding="utf-8")
+    (root / "host.py").write_text(
+        "from vendor.mod import ext_fn\n\n\ndef use():\n    return ext_fn()\n",
+        encoding="utf-8",
+    )
+    (root / "other.py").write_text(
+        "def ext_fn():\n    return 0\n", encoding="utf-8"
+    )
+    python_db = _python_scan(root)
+    rust_db = tmp_path / "rust_hosts.db"
+    assert _rust_scan(root, rust_db)["outcome"] == "success"
+    db = sqlite3.connect(str(rust_db))
+    try:
+        unresolved = db.execute(
+            "SELECT callee_qualified FROM edges WHERE callee='ext_fn'"
+        ).fetchone()
+        assert unresolved == (None,), "external suppression must hold initially"
+    finally:
+        db.close()
+
+    (root / "vendor").mkdir()
+    (root / "vendor" / "mod.py").write_text(
+        "def ext_fn():\n    return 1\n", encoding="utf-8"
+    )
+    for rel in ["vendor/mod.py"]:
+        assert _python_scan_files(root, [rel]).status.value == "success"
+        assert _rust_scan(root, rust_db, "--files", rel)["outcome"] == "success"
+    assert oracle_comparator.blocking(_full_findings(python_db, rust_db)) == []
+    db = sqlite3.connect(str(rust_db))
+    try:
+        resolved = db.execute(
+            "SELECT callee_qualified FROM edges WHERE callee='ext_fn'"
+        ).fetchone()
+        assert resolved == ("vendor/mod.py::ext_fn",)
+    finally:
+        db.close()
+
+    (root / "vendor" / "mod.py").unlink()
+    assert _python_scan_files(root, ["vendor/mod.py"]).status.value == "success"
+    assert _rust_scan(root, rust_db, "--files", "vendor/mod.py")["outcome"] == "success"
+    assert oracle_comparator.blocking(_full_findings(python_db, rust_db)) == []
+    db = sqlite3.connect(str(rust_db))
+    try:
+        unresolved = db.execute(
+            "SELECT callee_qualified FROM edges WHERE callee='ext_fn'"
+        ).fetchone()
+        assert unresolved == (None,), "removal must restore external suppression"
+    finally:
+        db.close()
+
+
+def test_rust_incremental_fanout_cap_overflow_matches_full(
+    tmp_path: Path, perturbation_project: Path, monkeypatch
+):
+    """A delta file pushing an observer signal past the fanout cap drops
+    an inferred edge between two non-delta pkg files, and that drop flips
+    the pkg cluster below the density threshold — neither endpoint is in
+    the delta, so only the synth snapshot diff can reach the cluster."""
+    root = perturbation_project
+    (root / "pkg" / "emitter.py").write_text(
+        "from pkg.util import helper\n\n\nclass Hub:\n"
+        "    def fire(self):\n        helper()\n"
+        "        for cb in self.hooks:\n            cb()\n",
+        encoding="utf-8",
+    )
+    (root / "pkg" / "reg_b.py").write_text(
+        "from pkg.util import helper\n\n\ndef on_b():\n    return helper()\n\n\n"
+        "class RegB:\n    def setup(self):\n        self.hooks.append(on_b)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("REMY_SYNTH_EVENT_FANOUT_CAP", "1")
+    _python_scan(root)
+    rust_db = tmp_path / "rust_fanout.db"
+    assert _rust_scan(root, rust_db)["outcome"] == "success"
+    db = sqlite3.connect(str(rust_db))
+    try:
+        observer = db.execute(
+            "SELECT COUNT(*) FROM edges WHERE via='observer'"
+        ).fetchone()
+        assert observer == (1,), "fixture must start with one observer edge"
+        clusters = db.execute("SELECT name FROM clusters").fetchall()
+        assert clusters == [("pkg",)], "fixture must start with the pkg cluster"
+    finally:
+        db.close()
+
+    (root / "reg_c.py").write_text(
+        "def on_c():\n    return 2\n\n\nclass RegC:\n"
+        "    def setup(self):\n        self.hooks.append(on_c)\n",
+        encoding="utf-8",
+    )
+    result = _python_scan_files(root, ["reg_c.py"])
+    assert result.status.value == "success", result.errors
+    assert _rust_scan(root, rust_db, "--files", "reg_c.py")["outcome"] == "success"
+    python_db = root / ".claude" / "logic_index.db"
+    blocking = oracle_comparator.blocking(_full_findings(python_db, rust_db))
+    assert blocking == [], [(f.view, f.key, f.column) for f in blocking]
+    db = sqlite3.connect(str(rust_db))
+    try:
+        observer = db.execute(
+            "SELECT COUNT(*) FROM edges WHERE via='observer'"
+        ).fetchone()
+        assert observer == (0,), "cap overflow must drop the emitter's edges"
+        clusters = db.execute("SELECT name FROM clusters").fetchall()
+        assert clusters == [], "density must fall below threshold"
+    finally:
+        db.close()
