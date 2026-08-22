@@ -520,6 +520,32 @@ python -m pytest Remy-CC/tests/test_daemon_provider.py Remy-CC/tests/test_daemon
 cargo test --workspace --manifest-path Remy-CC/remy-daemon/Cargo.toml
 ```
 
+## F.1 增量后处理（scanner-core 0.2.0）
+
+Rust 侧 `scan_files` 的后处理从全局重算切换为 `postprocess::run_incremental`：
+直接边消歧只重置受影响边集（Δ 源边 ∪ callee ∈ 变更文件新旧名字超集 ∪ .py 增删
+触及的 import 绑定宿主边，reset 前捕获旧 callee_file，同步删除 edge_candidates），
+purge/synth/trait-bases 保持全局但以 `(source_file, callee_file, callee_qualified)`
+三元组计数快照包夹，差分端点与直接边新旧端点并入受影响文件集，kind_hint 按
+文件集、cluster 按其顶层组目标化重算。`scan_full` 仍走全局 `run()`。等价门槛：
+增量与全量重扫的全部 VIEWS 状态逐字节相同（含 clusters/edge_candidates/
+retrieval_documents），由以下用例锁定：
+
+- `scan.rs` 内联测试：扰动序列（重命名/加文件/删文件）逐步与全量重扫比对含
+  kind/cluster/candidates 的扩展投影；两文件增量顺序交换律；edge_candidates
+  零孤儿（`edges.id` 为 AUTOINCREMENT 且连接不启用 foreign_keys，写入层在
+  DELETE edges 前先删 candidates）。
+- `test_scanner_core_diff.py`：扰动序列全视图零 blocking（跨文件重命名翻转
+  twin 候选、字典序更前的同短名新文件、删文件）+ 孤儿回归；fanout 越限用例
+  （`REMY_SYNTH_EVENT_FANOUT_CAP=1`，delta 文件把 observer 信号推过上限，
+  两个非 delta 文件间的 inferred 边被丢弃并使 pkg 集群跌破密度阈值——检验
+  快照差分对非 delta 端点的覆盖）。
+- `test_postprocess_parity.py`：增量路径的 summary/retrieval 状态与 Python
+  oracle 逐值一致。
+
+登记事项：python 回切臂对大仓增量沿用 `REMY_STRUCT_SCAN_TIMEOUT`（默认 60 s，
+gpu 语料实测 65.3 s 贴顶），回切前需按仓库规模上调该值。
+
 ## state.db WAL 备份约束
 
 `~/.remy-cc/state.db` 以 WAL 日志模式运行。未 checkpoint 的行只存在于

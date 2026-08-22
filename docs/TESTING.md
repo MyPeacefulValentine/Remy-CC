@@ -605,6 +605,40 @@ A `crt-static` release build reported `remy-daemon 0.2.0` and contained no
 Rust-mode install, verify, default uninstall, reinstall, `--purge-state`, and
 project-index preservation. The unchanged browser UI suite passed 8 Chromium tests.
 
+## F.1 incremental postprocess (scanner-core 0.2.0)
+
+The Rust `scan_files` path replaces the global postprocess with
+`postprocess::run_incremental`: the direct-edge reset covers only the
+affected edge set (edges of touched files ∪ callee in the old∪new name
+superset of touched files ∪ edges of import-binding hosts touched by .py
+additions/removals; old callee_file captured before the reset, matching
+edge_candidates deleted with it), purge/synth/trait-bases stay global but
+are bracketed by `(source_file, callee_file, callee_qualified)` count
+snapshots, and the diff endpoints plus the direct-edge old/new endpoints
+drive targeted kind_hint (per file) and cluster (per top-level group)
+recomputation. `scan_full` keeps the global `run()`. Equivalence gate:
+incremental and full-rescan VIEWS states are byte-identical (clusters,
+edge_candidates, and retrieval_documents included), locked by:
+
+- `scan.rs` inline tests: a perturbation sequence (rename / add / delete)
+  compared step-by-step against full rescans over an extended projection
+  including kinds, clusters, and candidates; two-file scan-order
+  commutativity; zero edge_candidates orphans (`edges.id` is AUTOINCREMENT
+  and the connection never enables foreign_keys, so the write layer
+  deletes candidates before their edges).
+- `test_scanner_core_diff.py`: perturbation sequences with zero blocking
+  findings over the full views, an orphan regression, and a fanout-cap
+  overflow case (`REMY_SYNTH_EVENT_FANOUT_CAP=1`: a delta file pushes an
+  observer signal past the cap, dropping an inferred edge between two
+  non-delta files and sinking the pkg cluster below the density
+  threshold — exercising snapshot-diff coverage of non-delta endpoints).
+- `test_postprocess_parity.py`: summary/retrieval state parity with the
+  Python oracle along the incremental path.
+
+Registered note: the python fallback arm keeps `REMY_STRUCT_SCAN_TIMEOUT`
+(default 60 s; the gpu corpus measured 65.3 s) for incremental jobs — raise
+it per repository size before switching back.
+
 ## state.db WAL backup constraint
 
 `~/.remy-cc/state.db` runs in WAL journal mode. Rows not yet checkpointed live
