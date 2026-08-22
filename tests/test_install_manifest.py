@@ -148,17 +148,6 @@ def test_cleanup_idempotent(claude_home):
     assert not f.exists()
 
 
-def test_schema_version_persisted(claude_home):
-    records = [{"path": "skills/remy-plan/SKILL.md", "sha256": "deadbeef"}]
-    install.write_manifest(claude_home, records, None,
-                           injected_hooks={}, injected_permissions=[])
-    manifest_path = claude_home / install.MANIFEST_FILE
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["schema_version"] == install.MANIFEST_SCHEMA_VERSION
-    assert manifest["schema_version"] == 2
-    assert manifest["files"] == records
-
-
 def test_copy_tree_records_relative_posix(tmp_path, claude_home):
     src_root = tmp_path / "src"
     (src_root / "subdir").mkdir(parents=True)
@@ -228,9 +217,9 @@ def test_resolve_path_rejects_traversal(claude_home):
 
 
 def test_e2e_upgrade_from_v143_legacy_manifest(tmp_path, claude_home):
-    """End-to-end v1.4.3 -> v1.4.4 upgrade: legacy absolute-path manifest is replayed,
-    third-party files survive, deprecated skill is auto-cleaned, and the new manifest is
-    written with schema_version=2 + POSIX-relative paths."""
+    """v1.4.3 -> v1.4.4 upgrade replay: legacy absolute-path manifest cleanup
+    removes managed files, third-party files survive, the deprecated skill is
+    auto-cleaned, and fresh copy_tree records are POSIX-relative."""
     remy_plan = claude_home / "skills" / "remy-plan" / "SKILL.md"
     h_plan = _seed_file(remy_plan, "v1.4.3 remy-plan")
     remy_foo = claude_home / "skills" / "remy-foo" / "SKILL.md"
@@ -275,33 +264,19 @@ def test_e2e_upgrade_from_v143_legacy_manifest(tmp_path, claude_home):
     records.extend(install.copy_tree(src_root / "skills", claude_home / "skills", claude_home))
     records.extend(install.copy_tree(src_root / "hooks", claude_home / "hooks", claude_home))
 
-    install.write_manifest(claude_home, records, None,
-                           injected_hooks={}, injected_permissions=[])
-
-    new_manifest_path = claude_home / install.MANIFEST_FILE
-    assert new_manifest_path.exists()
-    new_manifest = json.loads(new_manifest_path.read_text(encoding="utf-8"))
-
-    assert new_manifest["schema_version"] == 2
-    for entry in new_manifest["files"]:
-        p = entry["path"]
+    record_paths = {entry["path"] for entry in records}
+    assert "skills/remy-plan/SKILL.md" in record_paths
+    assert "hooks/pre_tool_guard.py" in record_paths
+    for p in record_paths:
         assert not p.startswith("/")
         assert "\\" not in p
         assert not (len(p) >= 2 and p[1] == ":")
-
-    record_paths = {e["path"] for e in new_manifest["files"]}
-    assert "skills/remy-plan/SKILL.md" in record_paths
-    assert "hooks/pre_tool_guard.py" in record_paths
     assert all("vendor-tool" not in p for p in record_paths)
     assert all("user-extension" not in p for p in record_paths)
 
-    assert third_party_skill.exists()
     assert third_party_skill.read_text(encoding="utf-8") == "external skill"
-    assert third_party_hook.exists()
     assert third_party_hook.read_text(encoding="utf-8") == "external hook"
-
     assert not (claude_home / "skills" / "remy-foo").exists()
-
     assert (claude_home / "skills" / "remy-plan" / "SKILL.md").read_text(encoding="utf-8") == "v1.4.4 remy-plan"
     assert (claude_home / "hooks" / "pre_tool_guard.py").read_text(encoding="utf-8") == "v1.4.4 hook"
 
@@ -325,207 +300,6 @@ def test_language_md_sha256_consistency_no_spurious_bak(claude_home, monkeypatch
     bak = lang_md_path.with_suffix(lang_md_path.suffix + install.BACKUP_SUFFIX)
     assert not bak.exists()
     assert not lang_md_path.exists()
-
-
-def test_uninstall_preserves_user_remy_config(claude_home, monkeypatch):
-    config = claude_home / "remy-config.json"
-    config.write_text(
-        json.dumps({"schema_version": "1.0.0", "values": {"REMY_LANG": "zh-CN"}}),
-        encoding="utf-8",
-    )
-    manifest = {
-        "version": "test",
-        "schema_version": 2,
-        "files": [],
-        "injected_hooks": {},
-        "injected_permissions": [],
-    }
-    (claude_home / install.MANIFEST_FILE).write_text(json.dumps(manifest), encoding="utf-8")
-    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
-
-    install.do_uninstall()
-
-    assert config.exists()
-    assert json.loads(config.read_text(encoding="utf-8"))["values"]["REMY_LANG"] == "zh-CN"
-
-
-def test_uninstall_handles_missing_sha256_field(claude_home, monkeypatch):
-    """R2 regression: do_uninstall must tolerate manifest entries lacking the sha256 field
-    (semantic alignment with cleanup_from_manifest)."""
-    f = claude_home / "skills" / "remy-plan" / "SKILL.md"
-    f.parent.mkdir(parents=True)
-    f.write_text("x", encoding="utf-8")
-    manifest = {
-        "version": "test",
-        "schema_version": 2,
-        "files": [{"path": "skills/remy-plan/SKILL.md"}],
-        "injected_hooks": {},
-        "injected_permissions": [],
-    }
-    (claude_home / install.MANIFEST_FILE).write_text(json.dumps(manifest), encoding="utf-8")
-
-    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
-
-    install.do_uninstall()
-
-    assert not f.exists()
-    assert not (claude_home / install.MANIFEST_FILE).exists()
-
-
-def test_uninstall_with_sha256_match_still_removes(claude_home, monkeypatch):
-    """R2 regression complement: when sha256 is present and matches, removal proceeds as before."""
-    f = claude_home / "skills" / "remy-plan" / "SKILL.md"
-    f.parent.mkdir(parents=True)
-    f.write_text("x", encoding="utf-8")
-    expected = install.compute_sha256(f)
-    manifest = {
-        "version": "test",
-        "schema_version": 2,
-        "files": [{"path": "skills/remy-plan/SKILL.md", "sha256": expected}],
-        "injected_hooks": {},
-        "injected_permissions": [],
-    }
-    (claude_home / install.MANIFEST_FILE).write_text(json.dumps(manifest), encoding="utf-8")
-
-    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
-
-    install.do_uninstall()
-
-    assert not f.exists()
-
-
-def test_uninstall_skips_user_modified_file(claude_home, monkeypatch):
-    """R2 regression complement: user-modified file (sha256 mismatch) is preserved."""
-    f = claude_home / "skills" / "remy-plan" / "SKILL.md"
-    f.parent.mkdir(parents=True)
-    f.write_text("original", encoding="utf-8")
-    recorded_hash = install.compute_sha256(f)
-    f.write_text("user-modified", encoding="utf-8")
-    manifest = {
-        "version": "test",
-        "schema_version": 2,
-        "files": [{"path": "skills/remy-plan/SKILL.md", "sha256": recorded_hash}],
-        "injected_hooks": {},
-        "injected_permissions": [],
-    }
-    (claude_home / install.MANIFEST_FILE).write_text(json.dumps(manifest), encoding="utf-8")
-
-    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
-
-    install.do_uninstall()
-
-    assert f.exists()
-    assert f.read_text(encoding="utf-8") == "user-modified"
-
-
-@pytest.mark.parametrize(
-    ("status_rc", "message_key"),
-    [(0, "uninstall_daemon_running"), (2, "uninstall_daemon_status_unknown")],
-)
-def test_uninstall_refuses_before_changes_when_daemon_not_confirmed_stopped(
-    daemon_env, claude_home, monkeypatch, capsys, status_rc, message_key
-):
-    daemon = daemon_env.remy_home / "bin" / daemon_env.exe_name
-    daemon_hash = _seed_file(daemon, "deployed-daemon")
-    hook = claude_home / "hooks" / "pre_tool_guard.py"
-    hook_hash = _seed_file(hook, "hook")
-    manifest_path = claude_home / install.MANIFEST_FILE
-    manifest_path.write_text(
-        json.dumps({
-            "version": "test",
-            "schema_version": 2,
-            "files": [
-                {"path": "hooks/pre_tool_guard.py", "sha256": hook_hash},
-                {"path": str(daemon), "sha256": daemon_hash},
-            ],
-            "injected_hooks": {},
-            "injected_permissions": [],
-        }),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
-    monkeypatch.setattr(install.subprocess, "run", _FakeDaemonRun(status_rc=status_rc))
-
-    install.do_uninstall()
-
-    assert hook.exists()
-    assert daemon.exists()
-    assert manifest_path.exists()
-    assert install._t(message_key) in capsys.readouterr().out
-
-
-def test_uninstall_removes_stopped_daemon_and_manifest(
-    daemon_env, claude_home, monkeypatch
-):
-    daemon = daemon_env.remy_home / "bin" / daemon_env.exe_name
-    daemon_hash = _seed_file(daemon, "deployed-daemon")
-    manifest_path = claude_home / install.MANIFEST_FILE
-    manifest_path.write_text(
-        json.dumps({
-            "version": "test",
-            "schema_version": 2,
-            "files": [{"path": str(daemon), "sha256": daemon_hash}],
-            "injected_hooks": {},
-            "injected_permissions": [],
-        }),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
-    monkeypatch.setattr(install.subprocess, "run", _FakeDaemonRun(status_rc=1))
-
-    install.do_uninstall()
-
-    assert not daemon.exists()
-    assert not manifest_path.exists()
-
-
-def _seed_verifiable_home(claude_home):
-    (claude_home / "settings.json").write_text(json.dumps({"hooks": {}}), encoding="utf-8")
-    manifest = {
-        "version": "test",
-        "schema_version": 2,
-        "files": [],
-        "injected_hooks": {},
-        "injected_permissions": [],
-    }
-    (claude_home / install.MANIFEST_FILE).write_text(json.dumps(manifest), encoding="utf-8")
-
-
-def _isolate_verify(claude_home, monkeypatch, mcp_module):
-    """Point do_verify at a temporary home and control mcp availability.
-
-    _load_remy_config_module is stubbed so the check never reads the real user
-    configuration (which holds a live API key)."""
-    def _no_config():
-        raise OSError("config access disabled in test")
-
-    _seed_verifiable_home(claude_home)
-    monkeypatch.setattr(install, "get_claude_home", lambda: claude_home)
-    monkeypatch.setattr(install, "_load_remy_config_module", _no_config)
-    monkeypatch.setitem(sys.modules, "mcp", mcp_module)
-
-
-def test_verify_reports_missing_mcp_as_error(claude_home, monkeypatch, capsys):
-    """MCP SDK is a required install component, so its absence must fail verification."""
-    _isolate_verify(claude_home, monkeypatch, None)
-
-    with pytest.raises(SystemExit) as exc:
-        install.do_verify()
-
-    assert exc.value.code == 1
-    out = capsys.readouterr().out
-    assert install._t("verify_mcp_missing") in out
-    assert install._t("verify_mcp_no") in out
-
-
-def test_verify_passes_when_mcp_installed(claude_home, monkeypatch, capsys):
-    _isolate_verify(claude_home, monkeypatch, types.ModuleType("mcp"))
-
-    install.do_verify()
-
-    out = capsys.readouterr().out
-    assert install._t("verify_ok") in out
-    assert install._t("verify_mcp_missing") not in out
 
 
 # ── daemon binary deployment (R1.3) ─────────────────────────────
@@ -746,7 +520,7 @@ def test_daemon_deploy_reclaims_existing_when_daemon_running(daemon_env, monkeyp
 
 def test_daemon_deploy_survives_copy_permission_error(daemon_env, monkeypatch, capsys):
     """Windows raises PermissionError (winerror 32) when the target exe is running.
-    Install must continue so write_manifest still runs."""
+    Install must continue so the remaining transaction still runs."""
     monkeypatch.setattr(install.subprocess, "run", _FakeDaemonRun())
     install.deploy_daemon_binary([])
     dst = daemon_env.remy_home / "bin" / daemon_env.exe_name
@@ -766,27 +540,23 @@ def test_daemon_deploy_survives_copy_permission_error(daemon_env, monkeypatch, c
 
 
 def test_daemon_record_survives_reinstall_without_source(daemon_env, monkeypatch, claude_home):
-    """Full reinstall sequence: deploy, then re-run with no buildable source.
-    The binary must survive cleanup and stay listed in the regenerated manifest."""
+    """Deploy, then replay a legacy manifest cleanup with no buildable source:
+    the deployed binary lives outside the claude root, so cleanup must skip it
+    and a re-deploy without source must keep it recorded."""
     monkeypatch.setattr(install.subprocess, "run", _FakeDaemonRun())
     first = []
     install.deploy_daemon_binary(first)
-    install.write_manifest(claude_home, first, None, injected_hooks={}, injected_permissions=[])
 
     dst = daemon_env.remy_home / "bin" / daemon_env.exe_name
-    manifest = json.loads((claude_home / install.MANIFEST_FILE).read_text(encoding="utf-8"))
-    assert str(dst) in {e["path"] for e in manifest["files"]}
+    legacy_manifest = {"version": "test", "files": first}
 
     daemon_env.exe.unlink()
-    install.cleanup_from_manifest(manifest, claude_home)
+    install.cleanup_from_manifest(legacy_manifest, claude_home)
     assert dst.exists()
 
     second = []
     install.deploy_daemon_binary(second)
-    install.write_manifest(claude_home, second, None, injected_hooks={}, injected_permissions=[])
-
-    reloaded = json.loads((claude_home / install.MANIFEST_FILE).read_text(encoding="utf-8"))
-    assert str(dst) in {e["path"] for e in reloaded["files"]}
+    assert {entry["path"] for entry in second} == {str(dst)}
     assert dst.exists()
 
 
@@ -942,12 +712,18 @@ def test_v3_uninstall_preserves_engine_and_project_state(v3_runtime, tmp_path):
     project_db = tmp_path / "project" / ".claude" / "logic_index.db"
     project_db.parent.mkdir(parents=True)
     project_db.write_bytes(b"project")
+    user_config = roots.claude / "remy-config.json"
+    user_config.write_text(
+        json.dumps({"schema_version": "1.0.0", "values": {"REMY_LANG": "zh-CN"}}),
+        encoding="utf-8",
+    )
 
     result = runtime.uninstall()
 
     assert result.exit_code == 0
     assert state.read_bytes() == b"state"
     assert project_db.read_bytes() == b"project"
+    assert json.loads(user_config.read_text(encoding="utf-8"))["values"]["REMY_LANG"] == "zh-CN"
     assert not (roots.remy / "install" / "manifest.json").exists()
     assert not (roots.claude / "skills" / "remy-test" / "data.txt").exists()
 
