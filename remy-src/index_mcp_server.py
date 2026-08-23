@@ -25,20 +25,22 @@ if not remy_config.load_config(strict=False).get_bool("REMY_MCP_SERVER_ENABLED")
     print("remy-index MCP server disabled (REMY_MCP_SERVER_ENABLED=false)", file=sys.stderr)
     sys.exit(0)
 
-from index_mcp_queries import (
+from index_mcp_facts import (
     query_symbol_impl,
     query_symbol_summary_impl,
     query_file_summary_impl,
+    query_patterns_impl,
+    query_cluster_summary_impl,
+    query_cluster_files_impl,
+)
+from index_mcp_graph import (
     query_callers_impl,
     query_callees_impl,
     query_impact_impl,
-    query_patterns_impl,
-    query_search_impl,
     query_flow_impl,
-    query_cluster_summary_impl,
-    query_cluster_files_impl,
-    query_navigate_impl,
 )
+from index_mcp_search import query_search_impl
+from index_mcp_navigate import query_navigate_impl
 
 _DB_REL_DEFAULT = os.path.join(".claude", "logic_index.db")
 _freshness_warning = ""
