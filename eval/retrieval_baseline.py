@@ -30,12 +30,16 @@ def _load_index_modules():
         path = str(_REMY_ROOT / relative)
         if path not in sys.path:
             sys.path.insert(0, path)
-    index_mcp_queries = importlib.import_module("index_mcp_queries")
+    index_mcp_search = importlib.import_module("index_mcp_search")
+    index_mcp_navigate = importlib.import_module("index_mcp_navigate")
+    index_mcp_common = importlib.import_module("index_mcp_common")
     retrieval_projection = importlib.import_module("retrieval_projection")
     schema = importlib.import_module("schema")
     symbol_names = importlib.import_module("symbol_names")
     return (
-        index_mcp_queries,
+        index_mcp_search,
+        index_mcp_navigate,
+        index_mcp_common,
         retrieval_projection,
         schema.SCHEMA_SQL,
         schema.VERSION,
@@ -91,7 +95,7 @@ def load_spec(path: Path) -> dict:
 
 
 def build_fixture(spec: dict, db_path: Path) -> sqlite3.Connection:
-    _, projection, schema_sql, version, tokenize_symbol = _load_index_modules()
+    _, _, _, projection, schema_sql, version, tokenize_symbol = _load_index_modules()
     db = sqlite3.connect(str(db_path))
     db.executescript(schema_sql)
     db.execute("INSERT INTO meta (key, value) VALUES ('version', ?)", (version,))
@@ -355,7 +359,7 @@ def _safe_measure_call(call: Callable[[], object]) -> Callable[[], object]:
     return invoke
 
 
-def evaluate_task(queries, db, db_path: Path, task: dict,
+def evaluate_task(queries, common, db, db_path: Path, task: dict,
                   warmups: int, iterations: int) -> dict:
     text = task["query"]
     limit = task.get("limit", 10)
@@ -411,7 +415,7 @@ def evaluate_task(queries, db, db_path: Path, task: dict,
         }
         for rank, item in enumerate(merged, 1)
     ]
-    with queries.database_override(db_path):
+    with common.database_override(db_path):
         public_output = public_call()
         timed_calls: dict[str, Callable[[], object]] = {
             name: _safe_measure_call(call) for name, call in channel_calls.items()
@@ -621,7 +625,7 @@ def compare_results(current: dict, baseline: dict) -> dict:
 
 def run_baseline(spec: dict, *, warmups: int = 3, iterations: int = 30,
                  navigate_db: Path | None = None) -> dict:
-    queries, _, _, schema_version, _ = _load_index_modules()
+    queries, navigate, common, _, _, schema_version, _ = _load_index_modules()
     with tempfile.TemporaryDirectory(prefix="remy-retrieval-baseline-") as tmp:
         db_path = Path(tmp) / "logic_index.db"
         db = build_fixture(spec, db_path)
@@ -633,7 +637,7 @@ def run_baseline(spec: dict, *, warmups: int = 3, iterations: int = 30,
                 "SELECT COUNT(*) FROM migration_log"
             ).fetchone()[0]
             task_records = [
-                evaluate_task(queries, db, db_path, task, warmups, iterations)
+                evaluate_task(queries, common, db, db_path, task, warmups, iterations)
                 for task in spec["tasks"]
             ]
             after_version = db.execute(
@@ -669,7 +673,7 @@ def run_baseline(spec: dict, *, warmups: int = 3, iterations: int = 30,
             "migration_count_after": after_migrations,
         },
         "navigation": navigation_measurement(
-            queries,
+            navigate,
             navigate_db,
             _navigation_intents(spec),
             spec.get("navigation", {}).get("top_k", 5),

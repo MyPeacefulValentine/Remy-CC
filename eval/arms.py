@@ -7,7 +7,7 @@ Tool arms for the A/B comparison.
 
 Remy-CC tools are loaded from `index_mcp_server` (FastMCP) for their schemas and
 dispatched through its `@mcp.tool` wrapper functions (which apply the tools'
-default arguments and forward to `index_mcp_queries`), returning the SAME
+default arguments and forward to the owner query modules), returning the SAME
 formatted strings the live MCP server returns — so the token cost measured here
 is faithful to real agent usage.
 
@@ -202,7 +202,7 @@ class RemyTools:
             if ap not in sys.path:
                 sys.path.insert(0, ap)
         import index_mcp_server as mod
-        import index_mcp_queries as queries
+        import index_mcp_common as queries
         self._mod = mod
         self._queries = queries
         for t in asyncio.run(mod.mcp.list_tools()):

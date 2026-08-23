@@ -137,8 +137,8 @@ class TestRetrievalBaseline:
 
         nav_db = tmp_path / "navigate.db"
         baseline.build_fixture(p1_4, nav_db).close()
-        import index_mcp_queries as queries
-        nav = baseline.navigation_measurement(queries, nav_db, intents, 5)
+        import index_mcp_navigate as navigate
+        nav = baseline.navigation_measurement(navigate, nav_db, intents, 5)
         assert nav["measured"] is True
         assert nav["corpus"] == {
             "cluster_count": 2, "file_count": 6, "file_with_short_count": 2,
@@ -216,9 +216,9 @@ class TestRetrievalBaseline:
     def test_query_search_signature_and_tool_names_remain_stable(self):
         import asyncio
         import index_mcp_server
-        import index_mcp_queries
+        import index_mcp_search
 
-        signature = inspect.signature(index_mcp_queries.query_search_impl)
+        signature = inspect.signature(index_mcp_search.query_search_impl)
         assert list(signature.parameters) == [
             "text", "limit", "file_hint", "match", "language",
             "symbol_type", "path_hint",
