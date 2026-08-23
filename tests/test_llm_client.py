@@ -2,9 +2,11 @@
 
 import json
 import os
+import ssl
 import sys
 import urllib.error
 from email.message import Message
+from pathlib import Path
 
 import pytest
 
@@ -159,3 +161,90 @@ class TestCircuitBreaker:
 
         assert client.call("prompt") == "Error: REMY_LLM_API_KEY not set."
         assert client.api_calls == 0
+
+
+class _FakeConfig:
+    """ConfigSnapshot stand-in for the real-constructor path."""
+
+    _DEFAULTS = {
+        "REMY_LLM_API_KEY": "fake-key",
+        "REMY_LLM_MODEL": "fake-model",
+        "REMY_LLM_BASE_URL": "https://example.invalid",
+        "REMY_LLM_MAX_TOKENS": 32768,
+        "REMY_LLM_RETRY_LIMIT": 8,
+        "REMY_LLM_TIMEOUT": 300,
+        "REMY_LLM_TLS_INSECURE": False,
+    }
+
+    def __init__(self, **overrides):
+        self._values = {**self._DEFAULTS, **overrides}
+
+    def get(self, key, default=None):
+        return self._values.get(key, default)
+
+    def get_int(self, key):
+        return self._values[key]
+
+    def get_bool(self, key):
+        return self._values[key]
+
+
+class TestTlsConfiguration:
+    def test_default_context_verifies_certificates(self):
+        client = LlmClient(config=_FakeConfig())
+
+        assert client.ssl_context.check_hostname is True
+        assert client.ssl_context.verify_mode == ssl.CERT_REQUIRED
+
+    def test_insecure_flag_disables_verification(self):
+        client = LlmClient(config=_FakeConfig(REMY_LLM_TLS_INSECURE=True))
+
+        assert client.ssl_context.check_hostname is False
+        assert client.ssl_context.verify_mode == ssl.CERT_NONE
+
+    @pytest.mark.parametrize(
+        "raw_value, expected_verify, expected_hostname",
+        [("false", ssl.CERT_REQUIRED, True), ("true", ssl.CERT_NONE, False)],
+    )
+    def test_default_constructor_reads_key_through_load_config(
+        self, tmp_path, monkeypatch, raw_value, expected_verify, expected_hostname
+    ):
+        home = tmp_path / "home"
+        (home / ".claude").mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+        for key in llm_client.remy_config.FIELD_SPECS:
+            monkeypatch.delenv(key, raising=False)
+        (home / ".claude" / "remy-config.json").write_text(
+            json.dumps({
+                "schema_version": "1.0.0",
+                "values": {"REMY_LLM_TLS_INSECURE": raw_value},
+            }),
+            encoding="utf-8",
+        )
+
+        client = LlmClient()
+
+        assert client.ssl_context.verify_mode == expected_verify
+        assert client.ssl_context.check_hostname is expected_hostname
+
+    def test_cert_verification_error_fails_fast_without_retry(self, monkeypatch):
+        client = _make_client()
+        attempts = {"count": 0}
+
+        def fail(*_args, **_kwargs):
+            attempts["count"] += 1
+            raise urllib.error.URLError(
+                ssl.SSLCertVerificationError(1, "certificate verify failed: self-signed certificate")
+            )
+
+        monkeypatch.setattr(llm_client.urllib.request, "urlopen", fail)
+        monkeypatch.setattr(
+            llm_client.time, "sleep",
+            lambda _s: pytest.fail("cert failure must not enter the retry loop"),
+        )
+
+        result = client.call("prompt")
+
+        assert result.startswith("Error: TLS certificate verification failed")
+        assert "REMY_LLM_TLS_INSECURE=true" in result
+        assert attempts["count"] == 1

@@ -51,14 +51,14 @@ def test_registry_owns_llm_defaults(config_home):
 def test_registry_ui_metadata_contract(config_home):
     _ = config_home
     registry = remy_config.registry_for_ui()
-    assert len(registry) == 58
+    assert len(registry) == 59
     group_ids = [group["id"] for group in remy_config.GROUPS]
     assert group_ids == ["llm_api", "index_generation", "injection", "mcp", "summary", "timeline", "system"]
     counts = {group_id: 0 for group_id in group_ids}
     for row in registry:
         counts[row["group"]] += 1
     assert counts == {
-        "llm_api": 7,
+        "llm_api": 8,
         "index_generation": 12,
         "injection": 8,
         "mcp": 9,
@@ -89,7 +89,7 @@ def test_registry_ui_metadata_contract(config_home):
         "llm_api": [
             "REMY_LLM_API_KEY", "REMY_LLM_BASE_URL", "REMY_LLM_MODEL",
             "REMY_LLM_MAX_WORKERS", "REMY_LLM_RETRY_LIMIT", "REMY_LLM_TIMEOUT",
-            "REMY_LLM_MAX_TOKENS",
+            "REMY_LLM_MAX_TOKENS", "REMY_LLM_TLS_INSECURE",
         ],
         "index_generation": [
             "REMY_LOGIC_INDEX_FILTER_SMALL", "REMY_LOGIC_INDEX_DB_PATH",

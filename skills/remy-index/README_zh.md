@@ -257,6 +257,7 @@ pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
 | `REMY_LLM_RETRY_LIMIT` | `8` | 重试次数（范围：`0..32`；单次重试等待不超过60秒） |
 | `REMY_LLM_TIMEOUT` | `300` | 超时秒数（范围：`30..3600`） |
 | `REMY_LLM_MAX_TOKENS` | `32768` | 响应Token上限（范围：`1024..1048576`） |
+| `REMY_LLM_TLS_INSECURE` | `false` | 禁用LLM端点的TLS证书校验（不安全）；只允许用户配置或进程环境 |
 | `REMY_LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
 | `REMY_LOGIC_INDEX_FILTER_SMALL` | `false` | 跳过无文档小函数的LLM摘要 |
 | `REMY_LANG` | `en` | Remy 界面与注入视图语言（`en` / `zh-CN`）；摘要以英文生成 |
@@ -264,6 +265,18 @@ pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
 
 `PRECISION_READ_THRESHOLD`继续作为Claude技能协议参数保留在`settings.json`，
 不属于Python运行时Remy配置。
+
+### TLS证书校验
+
+LLM端点证书默认按系统信任库校验。早期版本禁用了校验；升级后，使用自签名或
+企业代理证书的端点会在首次调用时快速失败并返回
+`Error: TLS certificate verification failed (...)`，不进入重试。设置
+`REMY_LLM_TLS_INSECURE=true`（仅限用户配置或进程环境）可恢复旧行为；该开关
+同时关闭证书与主机名校验，不安全。
+
+LLM通道仅使用OpenAI兼容的Chat Completions协议。Anthropic将其OpenAI兼容层
+定位为测试用途而非生产接口；生产环境接入Claude应使用暴露OpenAI兼容端点的
+中继服务。
 
 ### 配置文件（`.claude/logic_index_config`）
 

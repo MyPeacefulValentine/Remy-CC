@@ -51,8 +51,9 @@ class LlmClient:
         self.circuit_open = False
         self.api_calls = 0
         self.ssl_context = ssl.create_default_context()
-        self.ssl_context.check_hostname = False
-        self.ssl_context.verify_mode = ssl.CERT_NONE
+        if config.get_bool("REMY_LLM_TLS_INSECURE"):
+            self.ssl_context.check_hostname = False
+            self.ssl_context.verify_mode = ssl.CERT_NONE
 
     def call(self, prompt):
         if not self.api_key:
@@ -118,6 +119,12 @@ class LlmClient:
                     continue
                 return f"Error: HTTP {e.code} - {e.reason}"
             except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+                reason = getattr(e, "reason", None)
+                if isinstance(reason, ssl.SSLCertVerificationError):
+                    return (
+                        f"Error: TLS certificate verification failed ({reason}); "
+                        "set REMY_LLM_TLS_INSECURE=true to bypass (insecure)"
+                    )
                 if retries < self.retry_limit:
                     retries += 1
                     wait = min(DEFAULT_RETRY_BACKOFF_CAP_SECONDS, 2 ** retries) + (random.random() * 0.3)

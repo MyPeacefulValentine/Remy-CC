@@ -252,6 +252,7 @@ variables with the same `REMY_*` names override both files for that process tree
 | `REMY_LLM_RETRY_LIMIT` | `8` | Retry count (range: `0..32`; retry delay capped at 60 seconds) |
 | `REMY_LLM_TIMEOUT` | `300` | Timeout in seconds (range: `30..3600`) |
 | `REMY_LLM_MAX_TOKENS` | `32768` | Response token limit (range: `1024..1048576`) |
+| `REMY_LLM_TLS_INSECURE` | `false` | Disable TLS certificate verification for the LLM endpoint (insecure); user configuration or process environment only |
 | `REMY_LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
 | `REMY_LOGIC_INDEX_FILTER_SMALL` | `false` | Skip LLM summarization for small functions without docstrings |
 | `REMY_LANG` | `en` | Remy interface and injected-view language (`en` / `zh-CN`); summaries are generated in English |
@@ -259,6 +260,21 @@ variables with the same `REMY_*` names override both files for that process tree
 
 `PRECISION_READ_THRESHOLD` remains a Claude skill-protocol setting in
 `settings.json`; it is not a Python runtime Remy setting.
+
+### TLS Certificate Verification
+
+LLM endpoint certificates are verified against the system trust store by
+default. Earlier versions disabled verification; after upgrading, an endpoint
+behind a self-signed or enterprise-proxy certificate fails fast on the first
+call with `Error: TLS certificate verification failed (...)` instead of
+retrying. Set `REMY_LLM_TLS_INSECURE=true` (user configuration or process
+environment only) to restore the previous behavior; this disables certificate
+and hostname checks and is insecure.
+
+The LLM channel speaks the OpenAI-compatible Chat Completions protocol only.
+Anthropic positions its OpenAI compatibility layer as a testing aid rather
+than a production interface; for production Claude access, use a relay that
+exposes an OpenAI-compatible endpoint.
 
 ### Configuration File (`.claude/logic_index_config`)
 
