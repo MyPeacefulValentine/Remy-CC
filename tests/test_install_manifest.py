@@ -858,11 +858,24 @@ def test_v3_running_daemon_rejects_before_write(v3_runtime, tmp_path, monkeypatc
     runtime, roots = v3_runtime
     monkeypatch.setattr(install_facade, "probe_daemon", lambda _path: DaemonProbe("running", "0.2.0"))
 
-    with pytest.raises(InstallRuntimeError, match="must be stopped"):
+    with pytest.raises(InstallRuntimeError, match="must be stopped") as exc:
         runtime.install(_v3_request(tmp_path))
 
+    assert "remy-cc daemon stop" in str(exc.value)
     assert not roots.claude.exists()
     assert not (roots.remy / "install" / "manifest.json").exists()
+
+
+def test_v3_running_daemon_rejects_uninstall_with_stop_command(v3_runtime, tmp_path, monkeypatch):
+    runtime, roots = v3_runtime
+    runtime.install(_v3_request(tmp_path))
+    monkeypatch.setattr(install_facade, "probe_daemon", lambda _path: DaemonProbe("running", "0.2.0"))
+
+    with pytest.raises(InstallRuntimeError, match="must be stopped") as exc:
+        runtime.uninstall()
+
+    assert "remy-cc daemon stop" in str(exc.value)
+    assert (roots.remy / "install" / "manifest.json").exists()
 
 
 def test_install_entry_uninstall_requires_interactive_confirmation(v3_runtime, tmp_path, monkeypatch):
@@ -1109,9 +1122,10 @@ def test_v3_unknown_daemon_state_rejects_before_write(v3_runtime, tmp_path, monk
     runtime, roots = v3_runtime
     monkeypatch.setattr(install_facade, "probe_daemon", lambda _path: DaemonProbe("unknown"))
 
-    with pytest.raises(InstallRuntimeError, match="must be stopped"):
+    with pytest.raises(InstallRuntimeError, match="must be stopped") as exc:
         runtime.install(_v3_request(tmp_path))
 
+    assert "remy-cc daemon stop" in str(exc.value)
     assert not roots.claude.exists()
 
 

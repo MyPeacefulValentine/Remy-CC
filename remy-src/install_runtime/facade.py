@@ -71,7 +71,9 @@ class InstallRuntime:
         daemon_path = self.roots.remy / "bin" / default_daemon_name()
         daemon = probe_daemon(daemon_path)
         if daemon.state != "stopped":
-            raise InstallRuntimeError("daemon must be stopped before installation")
+            raise InstallRuntimeError(
+                "daemon must be stopped before installation; run: remy-cc daemon stop"
+            )
 
         descriptor = probe_python(request.python_executable)
         hook_mode, daemon_source = self._select_daemon(request.daemon_candidate, daemon_path)
@@ -243,7 +245,9 @@ class InstallRuntime:
         daemon_path = self.roots.remy / "bin" / default_daemon_name()
         daemon = probe_daemon(daemon_path)
         if daemon.state != "stopped":
-            raise InstallRuntimeError("daemon must be stopped before uninstall")
+            raise InstallRuntimeError(
+                "daemon must be stopped before uninstall; run: remy-cc daemon stop"
+            )
         settings_path = self.roots.claude / "settings.json"
         settings = load_settings(settings_path)
         cleaned_settings = remove_settings_claim(settings, manifest["settings_claim"])

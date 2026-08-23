@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import hashlib
 import json
 import os
 import shutil
@@ -13,11 +12,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import remy_config
 from install_runtime import InstallRuntime, InstallRuntimeError, OperationResult, roots_from_environment
 from install_runtime.facade import result_for_error
-
-MANIFEST_FILE = ".installer_manifest.json"
-BACKUP_SUFFIX = ".bak"
-DAEMON_STATUS_TIMEOUT = 10
-DEPLOY_DIRS = ["hooks", "skills", "output-styles", "remy-src", "remy-assets"]
 
 
 def get_claude_home():
@@ -69,112 +63,6 @@ def cmd_config(args):
         _load_config_ui().main(mode="project", target_path=str(project_dir))
     else:
         _load_config_ui().main()
-
-
-def _module_available(name):
-    try:
-        __import__(name)
-    except ImportError:
-        return False
-    return True
-
-
-def cmd_verify(_args):
-    claude_home = get_claude_home()
-    errors = []
-
-    if sys.version_info < (3, 10):
-        errors.append("Python version too old: {} (requires >= 3.10)".format(sys.version))
-
-    settings_path = claude_home / "settings.json"
-    if not settings_path.exists():
-        errors.append("settings.json not found")
-    else:
-        try:
-            with open(settings_path, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-            hooks = settings.get("hooks", {})
-            for _event, entries in hooks.items():
-                if not isinstance(entries, list):
-                    continue
-                for entry in entries:
-                    for hook in entry.get("hooks", []):
-                        cmd = hook.get("command", "")
-                        parts = cmd.split('"')
-                        if len(parts) >= 2:
-                            hook_path = Path(parts[1])
-                            if not hook_path.exists():
-                                errors.append("Hook file not found: " + str(hook_path))
-        except json.JSONDecodeError as e:
-            errors.append("settings.json format error: " + str(e))
-
-    config_path = claude_home / remy_config.CONFIG_FILE_NAME
-    if not config_path.exists():
-        errors.append("Remy configuration not found")
-    else:
-        try:
-            remy_config.validate_document(config_path, project=False)
-        except (OSError, remy_config.ConfigError) as exc:
-            errors.append("Remy configuration invalid: " + type(exc).__name__)
-
-    manifest_path = claude_home / ".installer_manifest.json"
-    if not manifest_path.exists():
-        errors.append("Install manifest not found")
-    else:
-        try:
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                manifest = json.load(f)
-            missing = 0
-            mismatched = 0
-            for entry in manifest.get("files", []):
-                target = _resolve_record_path(entry, claude_home)
-                if not target.exists():
-                    missing += 1
-                    continue
-                expected_hash = entry.get("sha256")
-                if expected_hash:
-                    try:
-                        actual_hash = hashlib.sha256(target.read_bytes()).hexdigest()
-                    except OSError:
-                        mismatched += 1
-                    else:
-                        if actual_hash != expected_hash:
-                            mismatched += 1
-            if missing:
-                errors.append("{} files missing from manifest".format(missing))
-            if mismatched:
-                errors.append("{} files differ from manifest".format(mismatched))
-        except (json.JSONDecodeError, OSError) as e:
-            errors.append("Manifest read error: " + str(e))
-
-    ts_available = _module_available("tree_sitter")
-    j2_available = _module_available("jinja2")
-    mcp_available = _module_available("mcp")
-    if not mcp_available:
-        errors.append(
-            "MCP SDK (mcp) is a required component but is not installed; "
-            "run: pip install --user mcp"
-        )
-    gh_available = shutil.which("gh") is not None
-
-    ver = get_version()
-    pyver = "{}.{}.{}".format(*sys.version_info[:3])
-    print("Remy v{}".format(ver))
-    print("  Python: {}".format(pyver))
-    print("  Target: {}".format(claude_home))
-    print("  tree-sitter: {}".format("installed" if ts_available else "not installed (optional)"))
-    print("  Jinja2: {}".format("installed" if j2_available else "not installed (optional)"))
-    print("  MCP SDK: {}".format("installed" if mcp_available else "not installed (required)"))
-    print("  GitHub CLI (gh): {}".format("installed" if gh_available else "not installed (optional)"))
-    print()
-
-    if errors:
-        print("Found {} issues:".format(len(errors)))
-        for err in errors:
-            print("  [X] " + err)
-        sys.exit(1)
-    else:
-        print("Verification passed.")
 
 
 def _emit_runtime_result(result, json_mode=False):
@@ -501,32 +389,12 @@ def cmd_update(args):
 
 _UNINSTALL_MSG = {
     "en": {
-        "no_manifest": "No install manifest found. Cannot uninstall.",
         "confirm": "This will remove all Remy-CC files and settings. Continue? [y/N] ",
         "aborted": "Uninstall cancelled.",
-        "skip_modified": "  [~] Skipped (modified): {name}",
-        "hooks_removed": "  [+] Suite hooks/permissions removed from settings.json",
-        "hooks_no_data": "  [i] Manifest has no hook/permission data. Run 'python install.py --uninstall' from source for full settings cleanup.",
-        "claude_restored": "  [+] CLAUDE.md restored from backup",
-        "shim_removed": "  [+] CLI shim removed",
-        "shim_deferred": "  [i] Could not remove {path} (in use). Delete manually after exit.",
-        "daemon_running": "  [!] remy-daemon is running; uninstall did not change any files.\n      Stop it and retry: remy-cc daemon stop",
-        "daemon_status_unknown": "  [!] Could not verify that remy-daemon is stopped; uninstall did not change any files.\n      Check it with: remy-cc daemon status",
-        "done": "\nUninstall complete. Removed {removed} files, skipped {skipped} modified files.",
     },
     "zh-CN": {
-        "no_manifest": "未找到安装记录，无法执行卸载。",
         "confirm": "此操作将移除所有 Remy-CC 文件和配置。是否继续？[y/N] ",
         "aborted": "卸载已取消。",
-        "skip_modified": "  [~] 跳过（已被修改）: {name}",
-        "hooks_removed": "  [+] settings.json 中的套件配置已移除",
-        "hooks_no_data": "  [i] 安装记录中无 hook/permission 数据。请从源码运行 'python install.py --uninstall' 以完整清理。",
-        "claude_restored": "  [+] CLAUDE.md 已从备份恢复",
-        "shim_removed": "  [+] CLI 入口已移除",
-        "shim_deferred": "  [i] 无法删除 {path}（正在使用）。退出后请手动删除。",
-        "daemon_running": "  [!] remy-daemon 正在运行，卸载未修改任何文件。\n      请先停止后重试：remy-cc daemon stop",
-        "daemon_status_unknown": "  [!] 无法确认 remy-daemon 已停止，卸载未修改任何文件。\n      请执行以下命令检查：remy-cc daemon status",
-        "done": "\n卸载完成。删除 {removed} 个文件，跳过 {skipped} 个已修改文件。",
     },
 }
 
@@ -541,185 +409,6 @@ def _um(key, **kwargs):
     fallback = _UNINSTALL_MSG["en"].get(key) or key
     template = msgs.get(key) or fallback
     return template.format(**kwargs) if kwargs else template
-
-
-def compute_sha256(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def _resolve_record_path(rec, claude_home):
-    """Resolve a manifest record's path to an absolute Path.
-    schema_version >= 2 stores POSIX-relative paths; legacy schemas may store absolute paths."""
-    p = Path(rec["path"])
-    if p.is_absolute():
-        return p
-    return claude_home / p
-
-
-def hooks_equal(h1, h2):
-    return h1.get("command", "").strip() == h2.get("command", "").strip()
-
-
-def _daemon_status():
-    exe_name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
-    exe = _remy_cc_home() / "bin" / exe_name
-    if not exe.is_file():
-        return False
-    try:
-        result = subprocess.run(
-            [str(exe), "status"], capture_output=True, timeout=DAEMON_STATUS_TIMEOUT
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode == 0:
-        return True
-    if result.returncode == 1:
-        return False
-    return None
-
-
-def cmd_uninstall(args):
-    claude_home = get_claude_home()
-    manifest_path = claude_home / MANIFEST_FILE
-
-    if not manifest_path.exists():
-        print(_um("no_manifest"))
-        sys.exit(1)
-
-    with open(manifest_path, "r", encoding="utf-8") as f:
-        manifest = json.load(f)
-
-    if not getattr(args, "yes", False):
-        try:
-            answer = input(_um("confirm")).strip().lower()
-        except EOFError:
-            answer = ""
-        if answer != "y":
-            print(_um("aborted"))
-            return
-
-    daemon_status = _daemon_status()
-    if daemon_status is True:
-        print(_um("daemon_running"))
-        return
-    if daemon_status is None:
-        print(_um("daemon_status_unknown"))
-        return
-
-    files = manifest.get("files", [])
-    removed = 0
-    skipped = 0
-    for entry in files:
-        fpath = _resolve_record_path(entry, claude_home)
-        if not fpath.exists():
-            continue
-        try:
-            current_hash = compute_sha256(fpath)
-        except OSError:
-            skipped += 1
-            continue
-        if current_hash != entry["sha256"]:
-            print(_um("skip_modified", name=fpath.name))
-            skipped += 1
-            continue
-        try:
-            fpath.unlink()
-            removed += 1
-        except PermissionError:
-            pass
-
-    settings_path = claude_home / "settings.json"
-    injected_hooks = manifest.get("injected_hooks", {})
-    injected_perms = manifest.get("injected_permissions", [])
-
-    if (injected_hooks or injected_perms) and settings_path.exists():
-        try:
-            with open(settings_path, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-
-            ext_hooks = settings.get("hooks", {})
-            for event, tpl_entries in injected_hooks.items():
-                if event not in ext_hooks:
-                    continue
-                if not isinstance(tpl_entries, list):
-                    continue
-                for tpl_entry in tpl_entries:
-                    tpl_hook_list = tpl_entry.get("hooks", [])
-                    for ext_entry in ext_hooks[event]:
-                        if ext_entry.get("matcher", "") != tpl_entry.get("matcher", ""):
-                            continue
-                        ext_hook_list = ext_entry.get("hooks", [])
-                        ext_entry["hooks"] = [
-                            eh for eh in ext_hook_list
-                            if not any(hooks_equal(eh, th) for th in tpl_hook_list)
-                        ]
-                    ext_hooks[event] = [e for e in ext_hooks[event] if e.get("hooks")]
-                    if not ext_hooks[event]:
-                        del ext_hooks[event]
-            if not ext_hooks:
-                settings.pop("hooks", None)
-
-            ext_perms = settings.get("permissions", {}).get("allow", [])
-            if ext_perms and injected_perms:
-                settings["permissions"]["allow"] = [
-                    p for p in ext_perms if p not in injected_perms
-                ]
-                if not settings["permissions"]["allow"]:
-                    settings["permissions"].pop("allow", None)
-                if not settings.get("permissions"):
-                    settings.pop("permissions", None)
-
-            with open(settings_path, "w", encoding="utf-8") as f:
-                json.dump(settings, f, indent=2, ensure_ascii=False)
-                f.write("\n")
-            print(_um("hooks_removed"))
-        except (json.JSONDecodeError, OSError, KeyError):
-            pass
-    elif not injected_hooks and not injected_perms and manifest.get("files"):
-        print(_um("hooks_no_data"))
-
-    claude_md = claude_home / "CLAUDE.md"
-    claude_md_bak = claude_home / ("CLAUDE.md" + BACKUP_SUFFIX)
-    if claude_md_bak.exists():
-        shutil.copy2(claude_md_bak, claude_md)
-        claude_md_bak.unlink()
-        print(_um("claude_restored"))
-
-    bin_dir = claude_home / "bin"
-    if bin_dir.is_symlink():
-        bin_dir.unlink()
-        print(_um("shim_removed"))
-    elif bin_dir.exists():
-        try:
-            shutil.rmtree(bin_dir)
-            print(_um("shim_removed"))
-        except OSError:
-            print(_um("shim_deferred", path=bin_dir))
-
-    try:
-        manifest_path.unlink()
-    except (PermissionError, FileNotFoundError):
-        pass
-
-    for dirname in DEPLOY_DIRS:
-        dirpath = claude_home / dirname
-        if dirpath.is_symlink():
-            dirpath.unlink()
-            continue
-        if not dirpath.exists():
-            continue
-        for root, _dirs, _files in os.walk(str(dirpath), topdown=False):
-            try:
-                if not os.listdir(root):
-                    os.rmdir(root)
-            except OSError:
-                pass
-
-    print(_um("done", removed=removed, skipped=skipped))
 
 
 def main():

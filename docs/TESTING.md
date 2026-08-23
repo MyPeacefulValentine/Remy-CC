@@ -177,9 +177,9 @@ injection group 8), and stale keys in existing user configs round-trip
 without activation. The installer installs the `mcp` package unconditionally
 and aborts when pip fails or Python is older than 3.10. Verification has two
 independent entry points that must agree on this contract: `install.py
---verify` (source checkout) and `cli.py::cmd_verify` behind `remy-cc verify`
-(installed shim). Both report a missing `mcp` package as an error and exit 1,
-and both require Python 3.10.
+--verify` (source checkout) and `cli.py::cmd_verify_runtime` behind
+`remy-cc verify` (installed shim). Both report a missing `mcp` package as an
+error and exit 1, and both require Python 3.10.
 
 ## query_impact rendering and counting
 
