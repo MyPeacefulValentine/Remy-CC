@@ -135,3 +135,31 @@ change) second; the two never overlapped.
 | Legacy manifest translation window closure | v2.0.0 release audit (H8-B2/B6) |
 | rconfig dual-owner registry single-sourcing after Python scanner exit | R4.3 |
 | Probe corpus / parser support-matrix consistency check | standing (§9 matrix) |
+
+## 6. Python exit boundary (H.6, R4.0 audit record)
+
+Audit date: 2026-08-23 (R4.0). "Python exit" (R4.3) is defined as
+**production-path exit**. Every Python-side component belongs to exactly one
+class below; R4.3 deletion accounting, H8-B2 (settings merge host language) and
+H8-D3 (diagnostics ownership) consume this table as the boundary authority.
+
+| Class | Components | Verdict |
+| :--- | :--- | :--- |
+| 1. Production worker arm | Python scanner production arm (`struct_scan.py --result-json` full-scan path), daemon Python worker arm, rust→python switch-back, hook fallback, G4 probe channel | Exits at R4.3, gated by the §2.1/§2.2 criteria |
+| 2. Hooks proper | `hooks/*.py` runtime hooks (R2 moved bookkeeping only, not the hook bodies) | Stays Python (non-exit) |
+| 3. Config & CLI surface | `config_ui.py`, `remy_config.py` registry, `cli.py` — all subcommand families including `summary-*` — and the `remy-cc` shim | Stays Python (non-exit); the shim's post-I3 target is ruled at R4.4 (H8-B5) |
+| 4. Development-time tools | `oracle/`, `eval/` | Permanent; never counted as exit blockers |
+
+H.5 ruling (R4.0, 2026-08-23): the **summary runtime**
+(`summarizer` / `propagation` / `llm_judge` / `bootstrap` + `llm_client`)
+stays Python long-term and is accounted under class 3's lifecycle. The MCP
+`query_navigate` LLM channel is re-implemented in Rust at R4.1 (reqwest,
+OpenAI wire protocol, single POST; TLS key semantics ported from
+`REMY_LLM_TLS_INSECURE`). The navigate prompt is an embedded string, so D2
+(prompt asset root) is not touched by R4.1; it becomes relevant only if a
+future ruling rewrites the summary runtime itself.
+
+`remy_config.py` is alive under any ruling (G2, verified: 29 production
+imports across hooks / skills / MCP / cli / install / config UI); the R4.3
+rconfig single-sourcing item is therefore a contract-sync-ownership question,
+not a survival question.

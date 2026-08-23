@@ -113,3 +113,27 @@ F.1（差分基线变更）先行，C2（oracle 身份变更）在后，两者�
 | Legacy manifest 翻译窗口关闭 | v2.0.0 发布审计（H8-B2/B6） |
 | Python scanner 退场后 rconfig 双 owner 单源化 | R4.3 |
 | 探针语料 / parser 支持矩阵一致性检查 | 常设（§9 矩阵） |
+
+## 6. Python 退场边界（H.6，R4.0 审计记录）
+
+审计日期：2026-08-23（R4.0）。「Python 退场」（R4.3）定义为**生产路径退场**。
+每个 Python 侧组件恰归属下表一类；R4.3 删除清单、H8-B2（settings 合并宿主语言）
+与 H8-D3（诊断归属）以本表为边界权威。
+
+| 分类 | 组件 | 裁定 |
+| :--- | :--- | :--- |
+| 1. 生产 worker 臂 | Python scanner 生产臂（`struct_scan.py --result-json` 全量扫描路径）、daemon Python worker 臂、rust→python 回切、hook fallback、G4 探针通道 | R4.3 退场，受 §2.1/§2.2 判据门控 |
+| 2. hooks 本体 | `hooks/*.py` 运行时钩子（R2 仅迁记账，不迁 hook 本体） | 长存 Python（非退场） |
+| 3. 配置与 CLI 面 | `config_ui.py`、`remy_config.py` registry、`cli.py` 全部子命令族（含 `summary-*`）、`remy-cc` shim | 长存 Python（非退场）；shim 在 I3 后的指向由 R4.4 裁定（H8-B5） |
+| 4. 开发期工具 | `oracle/`、`eval/` | 永久保留；不计退场阻塞 |
+
+H.5 裁定（R4.0，2026-08-23）：**summary runtime**
+（`summarizer` / `propagation` / `llm_judge` / `bootstrap` + `llm_client`）
+长存 Python，生命周期计入分类 3。MCP `query_navigate` 的 LLM 通道在 R4.1
+以 Rust 重写（reqwest，OpenAI 线协议，单 POST；TLS 键语义自
+`REMY_LLM_TLS_INSECURE` 移植）。navigate prompt 为内嵌字符串，D2（prompt
+资产根）不被 R4.1 触及；仅当未来裁定重写 summary runtime 本体时才需处理。
+
+`remy_config.py` 在任何裁定下均存活（G2 已核实：hooks / skills / MCP / cli /
+install / config UI 共 29 处生产 import）；R4.3 的 rconfig 单源化命题因此是
+契约同步义务归属问题，而非存活侧选择问题。
