@@ -23,8 +23,7 @@
                                                      └──────────┬───────────────┘
                                                                 │ import
                                                      ┌──────────▼───────────────┐
-                                                     │  index_mcp_queries.py    │
-                                                     │  (兼容再导出，覆盖)      │
+                                                     │  owner 查询模块          │
                                                      │  ├─ common / facts       │
                                                      │  ├─ graph / search       │
                                                      │  └─ navigate             │
@@ -472,7 +471,6 @@ python -u ~/.claude/remy-src/index_mcp_server.py
 | 文件 | 行数 | 职责 |
 | :--- | :--- | :--- |
 | `index_mcp_server.py` | ~280 | FastMCP 服务器定义、tool handler（薄封装）、新鲜度初始化 |
-| `index_mcp_queries.py` | ~110 | 兼容再导出入口：全部既有公开名称保持可导入 |
 | `index_mcp_common.py` | ~100 | 共享数据库访问、ContextVar、配置作用域、摘要查找 |
 | `index_mcp_facts.py` | ~240 | symbol/file/cluster/pattern 事实查询 |
 | `index_mcp_graph.py` | ~580 | ambiguous BFS、callers/callees/impact、flow 遍历与格式化 |
@@ -491,7 +489,7 @@ python -u ~/.claude/remy-src/index_mcp_server.py
 
 ### 新增 Tool
 
-1. 在对应职责子模块（`index_mcp_facts.py` / `index_mcp_graph.py` / `index_mcp_search.py` / `index_mcp_navigate.py`）中实现 `query_xxx_impl(...)`，并在 `index_mcp_queries.py` 中再导出。
+1. 在对应职责子模块（`index_mcp_facts.py` / `index_mcp_graph.py` / `index_mcp_search.py` / `index_mcp_navigate.py`）中实现 `query_xxx_impl(...)`，并在 `index_mcp_server.py` 中从该 owner 模块 import。
 2. 在 `index_mcp_server.py` 中添加 handler：
    ```python
    @mcp.tool()

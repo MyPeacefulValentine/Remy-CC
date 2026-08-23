@@ -119,7 +119,7 @@ navigation记录为同库双口径：corpus口径（cluster/file数、有摘要f
 收集、子变更载荷、父摘要重写、传播主流程）自`run.py`拆出。`run.py`保留
 `LogicIndexer`作为编排与CLI入口：参数、输出状态、退出码`0 / 2 / 1`、
 `success / partial / failed`聚合规则与dirty确认均不变。
-`index_mcp_queries.py`与`cli.py`的默认LLM通道改为直接构造`LlmClient`
+`index_mcp_navigate.py`与`cli.py`的默认LLM通道改为直接构造`LlmClient`
 （每次调用新建实例，熔断不跨调用，与拆分前行为一致）。
 
 ```

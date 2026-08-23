@@ -41,7 +41,7 @@ SPECS = [
     ("t03_callers_with_freshness", "direct", "callers",
      "remy-src/index_mcp_server.py", "_with_freshness"),
     ("t04_callers_get_latest_summary", "direct", "callers",
-     "remy-src/index_mcp_queries.py", "get_latest_summary"),
+     "remy-src/index_mcp_common.py", "get_latest_summary"),
     ("t05_callers_write_summary_version", "direct", "callers",
      "skills/remy-index/summarizer.py", "write_summary_version"),
     ("t06_callees_write_summary_version", "direct", "callees",
@@ -55,7 +55,7 @@ SPECS = [
     ("t10_crossfile_symbolinfo", "multi_hop", "callers",
      "skills/remy-index/parsers/base.py", "SymbolInfo"),
     ("t11_twohop_get_latest_summary", "multi_hop", "callers2",
-     "remy-src/index_mcp_queries.py", "get_latest_summary"),
+     "remy-src/index_mcp_common.py", "get_latest_summary"),
     ("t12_twohop_write_summary_version", "multi_hop", "callers2",
      "skills/remy-index/summarizer.py", "write_summary_version"),
 ]

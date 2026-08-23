@@ -25,7 +25,6 @@
     "remy-src/index_mcp_search.py",
     "remy-src/index_mcp_facts.py",
     "remy-src/index_mcp_navigate.py",
-    "remy-src/index_mcp_queries.py",
     "remy-src/cli.py",
     "tests/test_cli_daemon.py",
     "hooks/doc_manager/injector.py",

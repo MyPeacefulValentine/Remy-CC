@@ -152,7 +152,7 @@ collection, child-change payloads, parent rewrite, propagation pass) are
 extracted from `run.py`. `run.py` keeps `LogicIndexer` as the orchestration
 and CLI entry: arguments, output statuses, exit codes `0 / 2 / 1`, the
 `success / partial / failed` aggregation rule, and dirty confirmation are
-unchanged. The default LLM channels in `index_mcp_queries.py` and `cli.py`
+unchanged. The default LLM channels in `index_mcp_navigate.py` and `cli.py`
 construct `LlmClient` directly (one instance per call; the breaker does not
 persist across calls, matching prior behavior).
 
