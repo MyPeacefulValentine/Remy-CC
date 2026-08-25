@@ -118,6 +118,28 @@ class TestInitFreshness:
         index_mcp_server._init_freshness()
         assert "Warning" in index_mcp_server._freshness_warning
 
+    def test_non_numeric_file_count_falls_to_hash(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        self._reset()
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        db = sqlite3.connect(str(claude_dir / "logic_index.db"))
+        db.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+        db.execute("CREATE TABLE files (path TEXT PRIMARY KEY, struct_hash TEXT NOT NULL)")
+        db.execute("INSERT INTO meta VALUES ('file_count', 'not-a-number')")
+        (tmp_path / "m.py").write_text("x=1\n", encoding="utf-8")
+        content = (tmp_path / "m.py").read_text(encoding="utf-8")
+        h = hashlib.md5(content.encode("utf-8")).hexdigest()
+        db.execute("INSERT INTO files VALUES ('m.py', ?)", (h,))
+        db.commit()
+        db.close()
+        def mock_run(cmd, **kwargs):
+            raise FileNotFoundError("git not found")
+        monkeypatch.setattr("index_mcp_server.subprocess.run", mock_run)
+        import index_mcp_server
+        index_mcp_server._init_freshness()
+        assert index_mcp_server._freshness_warning == ""
+
     def test_no_source_commit_falls_to_hash(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         self._reset()

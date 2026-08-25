@@ -98,7 +98,10 @@ def _init_freshness():
     try:
         stored_row = db.execute("SELECT value FROM meta WHERE key='source_commit'").fetchone()
         file_count_row = db.execute("SELECT value FROM meta WHERE key='file_count'").fetchone()
-        total = int(file_count_row[0]) if file_count_row else 1
+        try:
+            total = int(file_count_row[0]) if file_count_row else 1
+        except (TypeError, ValueError):
+            total = 1
 
         try:
             head, git_cwd = _resolve_git_head(os.getcwd(), db)
@@ -114,9 +117,7 @@ def _init_freshness():
                 if not dirty:
                     return
                 rate = len(dirty) / max(total, 1)
-                if rate > 0.5:
-                    _freshness_warning = f"[Warning: index may be stale — {len(dirty)} files modified since last scan. Consider running /remy-index.]"
-                elif rate > 0.2:
+                if rate > 0.2:
                     _freshness_warning = f"[Warning: index may be stale — {len(dirty)} files modified since last scan. Consider running /remy-index.]"
                 return
             elif stored_row:
