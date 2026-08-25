@@ -12,23 +12,27 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
-/// migrations.initialize_database guard, fail-closed: a fresh (or empty)
-/// database gets the schema and version stamp; an existing database with a
-/// missing or non-current version is refused unchanged — the migration
-/// ladder stays a Python-side single owner (run the Python scanner once to
-/// migrate, then rescan here).
-pub fn open_db(path: &std::path::Path) -> Result<Connection, String> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-    }
+/// Outcome of open_db: `Rebuilt` marks a database that held pre-current
+/// (or versionless) content and was backed up to `.bak` and recreated
+/// empty at the current schema — incremental callers escalate to the full
+/// file set within the same locked call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenOutcome {
+    Ready,
+    Rebuilt,
+}
+
+/// Schema owner guard (R4.2 ruling, docs/RETIREMENT.md §2.5): the Rust
+/// owner supports the current schema version only. A fresh (or empty)
+/// database gets the schema and version stamp; a database below the
+/// current version — or holding tables but no version row — is backed up
+/// to `.bak` (SQLite backup API) and rebuilt from the current schema; a
+/// database at or above the current version whose version string does not
+/// match exactly, or cannot be parsed, is refused unchanged. Lossless
+/// 6→12 migration stays with the frozen Python ladder until R4.3.
+pub fn open_db(path: &std::path::Path) -> Result<(Connection, OpenOutcome), String> {
     let db_existed = path.exists();
-    let conn = Connection::open(path).map_err(|e| format!("open failed: {e}"))?;
-    // 128 MiB page cache: −29% on the tee ×8 postprocess segment (F.3,
-    // 2026-08-21); the only measured tier, hence no config key.
-    conn.execute_batch("PRAGMA cache_size = -131072")
-        .map_err(|e| format!("cache_size pragma failed: {e}"))?;
+    let conn = open_raw(path)?;
     let table_count: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
@@ -37,40 +41,123 @@ pub fn open_db(path: &std::path::Path) -> Result<Connection, String> {
         )
         .map_err(|e| format!("schema probe failed: {e}"))?;
     if !db_existed || table_count == 0 {
-        conn.execute_batch(crate::SCHEMA_SQL)
-            .map_err(|e| format!("schema create failed: {e}"))?;
-        conn.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?1)",
-            params![crate::SCHEMA_VERSION],
-        )
-        .map_err(|e| format!("version stamp failed: {e}"))?;
-        return Ok(conn);
+        create_current_schema(&conn)?;
+        return Ok((conn, OpenOutcome::Ready));
     }
-    let version: Option<String> = conn
-        .query_row("SELECT value FROM meta WHERE key='version'", [], |row| {
-            row.get(0)
-        })
-        .optional()
-        .unwrap_or(None);
-    match version {
-        None => Err(format!(
-            "Existing logic_index.db at {} has no schema version. \
-             The database is preserved unchanged.",
-            path.display()
-        )),
-        Some(version) if version != crate::SCHEMA_VERSION => Err(format!(
-            "logic_index.db at {} has schema version {version}, expected {}. \
-             The database is preserved unchanged; migrate it with the Python \
-             scanner first.",
-            path.display(),
-            crate::SCHEMA_VERSION
-        )),
-        Some(_) => {
+    match schema_version(&conn) {
+        None => Ok((backup_and_rebuild(conn, path)?, OpenOutcome::Rebuilt)),
+        Some(version) if version == crate::SCHEMA_VERSION => {
             conn.execute_batch(crate::SCHEMA_SQL)
                 .map_err(|e| format!("schema replay failed: {e}"))?;
-            Ok(conn)
+            Ok((conn, OpenOutcome::Ready))
+        }
+        Some(version) => {
+            let below_current = match (
+                parse_version(&version),
+                parse_version(crate::SCHEMA_VERSION),
+            ) {
+                (Some(stored), Some(current)) => stored < current,
+                _ => false,
+            };
+            if below_current {
+                Ok((backup_and_rebuild(conn, path)?, OpenOutcome::Rebuilt))
+            } else {
+                Err(format!(
+                    "logic_index.db at {} has schema version {version}, expected {}. \
+                     The database is preserved unchanged; only databases below \
+                     the current version are rebuilt.",
+                    path.display(),
+                    crate::SCHEMA_VERSION
+                ))
+            }
         }
     }
+}
+
+/// Read-only schema version probe: None when the database has no meta
+/// table or no version row. Also the read-path check entry (R4.1 mcp).
+pub fn schema_version(conn: &Connection) -> Option<String> {
+    conn.query_row("SELECT value FROM meta WHERE key='version'", [], |row| {
+        row.get(0)
+    })
+    .optional()
+    .unwrap_or(None)
+}
+
+fn open_raw(path: &std::path::Path) -> Result<Connection, String> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+    }
+    let conn = Connection::open(path).map_err(|e| format!("open failed: {e}"))?;
+    // 128 MiB page cache: −29% on the tee ×8 postprocess segment (F.3,
+    // 2026-08-21); the only measured tier, hence no config key.
+    conn.execute_batch("PRAGMA cache_size = -131072")
+        .map_err(|e| format!("cache_size pragma failed: {e}"))?;
+    Ok(conn)
+}
+
+fn create_current_schema(conn: &Connection) -> Result<(), String> {
+    // WAL matches migrations.initialize_database; the mode persists in the
+    // database file, so MCP readers see WAL regardless of which
+    // implementation created it.
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .map_err(|e| format!("journal_mode pragma failed: {e}"))?;
+    conn.execute_batch(crate::SCHEMA_SQL)
+        .map_err(|e| format!("schema create failed: {e}"))?;
+    conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?1)",
+        params![crate::SCHEMA_VERSION],
+    )
+    .map_err(|e| format!("version stamp failed: {e}"))?;
+    Ok(())
+}
+
+/// "major.minor.patch" with all-numeric components; None otherwise.
+fn parse_version(value: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = value.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
+}
+
+fn append_suffix(path: &std::path::Path, suffix: &str) -> std::path::PathBuf {
+    let mut value = path.as_os_str().to_os_string();
+    value.push(suffix);
+    std::path::PathBuf::from(value)
+}
+
+fn backup_and_rebuild(conn: Connection, path: &std::path::Path) -> Result<Connection, String> {
+    let backup_path = append_suffix(path, ".bak");
+    let mut destination = Connection::open(&backup_path).map_err(backup_abort_message)?;
+    {
+        let backup =
+            rusqlite::backup::Backup::new(&conn, &mut destination).map_err(backup_abort_message)?;
+        backup
+            .run_to_completion(512, std::time::Duration::ZERO, None)
+            .map_err(backup_abort_message)?;
+    }
+    drop(destination);
+    drop(conn);
+    std::fs::remove_file(path).map_err(|e| format!("rebuild remove failed: {e}"))?;
+    for suffix in ["-wal", "-shm"] {
+        let _ = std::fs::remove_file(append_suffix(path, suffix));
+    }
+    let conn = open_raw(path)?;
+    create_current_schema(&conn)?;
+    Ok(conn)
+}
+
+fn backup_abort_message(error: rusqlite::Error) -> String {
+    format!(
+        "Failed to back up logic_index.db before rebuild: {error}. \
+         Rebuild aborted to avoid data loss."
+    )
 }
 
 /// edges and patterns have no composite key covering their per-file
@@ -544,7 +631,7 @@ mod tests {
     fn dropped_transaction_leaves_empty_tables() {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("state.db");
-        let mut conn = open_db(&db_path).unwrap();
+        let mut conn = open_db(&db_path).unwrap().0;
         {
             let tx = conn.transaction().unwrap();
             drop_secondary_indexes(&tx).unwrap();
@@ -573,7 +660,7 @@ mod tests {
     fn commit_persists_and_indexes_are_rebuilt() {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("state.db");
-        let mut conn = open_db(&db_path).unwrap();
+        let mut conn = open_db(&db_path).unwrap().0;
         {
             let tx = conn.transaction().unwrap();
             drop_secondary_indexes(&tx).unwrap();
@@ -605,7 +692,7 @@ mod tests {
     #[test]
     fn bulk_kept_indexes_survive_drop() {
         let dir = tempfile::tempdir().unwrap();
-        let mut conn = open_db(&dir.path().join("state.db")).unwrap();
+        let mut conn = open_db(&dir.path().join("state.db")).unwrap().0;
         let tx = conn.transaction().unwrap();
         drop_secondary_indexes(&tx).unwrap();
         let surviving: Vec<String> = {
@@ -625,7 +712,7 @@ mod tests {
     fn unchanged_file_short_circuits() {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("state.db");
-        let mut conn = open_db(&db_path).unwrap();
+        let mut conn = open_db(&db_path).unwrap().0;
         let facts = sample_facts("a.c");
         {
             let tx = conn.transaction().unwrap();
@@ -639,5 +726,132 @@ mod tests {
             changed.struct_hash = "h2".to_string();
             assert!(!file_unchanged(&tx, &changed).unwrap());
         }
+    }
+
+    fn seeded_db(db_path: &std::path::Path, version: &str) -> std::path::PathBuf {
+        let mut conn = open_db(db_path).unwrap().0;
+        {
+            let tx = conn.transaction().unwrap();
+            write_file_facts(&tx, &sample_facts("a.c"), false).unwrap();
+            tx.commit().unwrap();
+        }
+        conn.execute(
+            "UPDATE meta SET value=?1 WHERE key='version'",
+            params![version],
+        )
+        .unwrap();
+        drop(conn);
+        db_path.to_path_buf()
+    }
+
+    #[test]
+    fn fresh_db_is_ready_and_wal() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("state.db");
+        let (conn, outcome) = open_db(&db_path).unwrap();
+        assert_eq!(outcome, OpenOutcome::Ready);
+        let mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(mode.to_lowercase(), "wal");
+    }
+
+    #[test]
+    fn below_current_version_is_backed_up_and_rebuilt() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = seeded_db(&dir.path().join("state.db"), "7.0.0");
+        let (conn, outcome) = open_db(&db_path).unwrap();
+        assert_eq!(outcome, OpenOutcome::Rebuilt);
+        let version: String = conn
+            .query_row("SELECT value FROM meta WHERE key='version'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, crate::SCHEMA_VERSION);
+        let files: i64 = conn
+            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(files, 0);
+        let backup = Connection::open(append_suffix(&db_path, ".bak")).unwrap();
+        let bak_version: String = backup
+            .query_row("SELECT value FROM meta WHERE key='version'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(bak_version, "7.0.0");
+        let bak_files: i64 = backup
+            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(bak_files, 1);
+    }
+
+    #[test]
+    fn versionless_database_with_tables_is_rebuilt() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("state.db");
+        let conn = Connection::open(&db_path).unwrap();
+        conn.execute_batch("CREATE TABLE files (path TEXT PRIMARY KEY, struct_hash TEXT NOT NULL)")
+            .unwrap();
+        drop(conn);
+        let (conn, outcome) = open_db(&db_path).unwrap();
+        assert_eq!(outcome, OpenOutcome::Rebuilt);
+        let version: String = conn
+            .query_row("SELECT value FROM meta WHERE key='version'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, crate::SCHEMA_VERSION);
+        assert!(append_suffix(&db_path, ".bak").exists());
+    }
+
+    #[test]
+    fn newer_and_unparseable_versions_are_refused_unchanged() {
+        for stored in ["999.0.0", "not-a-version"] {
+            let dir = tempfile::tempdir().unwrap();
+            let db_path = seeded_db(&dir.path().join("state.db"), stored);
+            let before = std::fs::read(&db_path).unwrap();
+            let error = open_db(&db_path).map(|_| ()).unwrap_err();
+            assert!(error.contains("preserved unchanged"), "{error}");
+            assert!(!append_suffix(&db_path, ".bak").exists());
+            assert_eq!(std::fs::read(&db_path).unwrap(), before);
+        }
+    }
+
+    #[test]
+    fn current_version_reopen_reports_ready() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("state.db");
+        drop(open_db(&db_path).unwrap());
+        let (_conn, outcome) = open_db(&db_path).unwrap();
+        assert_eq!(outcome, OpenOutcome::Ready);
+        assert!(!append_suffix(&db_path, ".bak").exists());
+    }
+
+    #[test]
+    fn rebuild_backup_includes_committed_wal_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = seeded_db(&dir.path().join("state.db"), "10.0.0");
+        let conn = Connection::open(&db_path).unwrap();
+        conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+        conn.execute(
+            "INSERT INTO files (path, struct_hash, language, layer, imports, \
+             import_bindings, parser_contract_version, parser_backend, \
+             parser_environment) VALUES ('wal.py','wal-hash','PythonParser', \
+             'Core','[]','[]','','','{}')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let (_conn, outcome) = open_db(&db_path).unwrap();
+        assert_eq!(outcome, OpenOutcome::Rebuilt);
+        let backup = Connection::open(append_suffix(&db_path, ".bak")).unwrap();
+        let wal_row: i64 = backup
+            .query_row(
+                "SELECT COUNT(*) FROM files WHERE path='wal.py'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(wal_row, 1);
     }
 }

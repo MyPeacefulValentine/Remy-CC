@@ -308,14 +308,14 @@ def test_cross_file_trait_impl_agrees_across_implementations(tmp_path: Path):
             db.close()
 
 
-def test_rust_scan_refuses_non_current_schema_version(tmp_path: Path):
+def test_rust_scan_refuses_newer_schema_version(tmp_path: Path):
     destination = tmp_path / "rust"
     shutil.copytree(CORPUS_ROOT / "rust", destination)
     _python_scan(destination)
     stale_db = tmp_path / "stale.db"
     db = sqlite3.connect(str(stale_db))
     db.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
-    db.execute("INSERT INTO meta VALUES ('version', '11.0.0')")
+    db.execute("INSERT INTO meta VALUES ('version', '999.0.0')")
     db.commit()
     before = stale_db.read_bytes()
     db.close()
@@ -327,7 +327,7 @@ def test_rust_scan_refuses_non_current_schema_version(tmp_path: Path):
     assert completed.returncode == 1
     report = json.loads(completed.stdout.strip().splitlines()[-1])
     assert report["outcome"] == "failed"
-    assert "11.0.0" in report["errors"][0]["message"]
+    assert "999.0.0" in report["errors"][0]["message"]
     assert stale_db.read_bytes() == before
 
 

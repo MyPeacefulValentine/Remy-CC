@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn symbol_lookup_covers_separator_collisions_via_fallback() {
         let dir = tempfile::tempdir().unwrap();
-        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap();
+        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap().0;
         let tx = conn.transaction().unwrap();
         // Name containing "::" resolves through the column-equality split.
         tx.execute(
@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn refresh_inserts_then_updates_and_delete_removes() {
         let dir = tempfile::tempdir().unwrap();
-        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap();
+        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap().0;
         let tx = conn.transaction().unwrap();
         seed_symbol(&tx);
         refresh_node(&tx, "symbol", "a.rs::save").unwrap();
@@ -459,7 +459,7 @@ mod tests {
     #[test]
     fn summary_state_machine_barriers_and_skips() {
         let dir = tempfile::tempdir().unwrap();
-        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap();
+        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap().0;
         let tx = conn.transaction().unwrap();
         for (version, summary, status) in [
             (1, Some("{\"short\": \"v1\", \"full\": null}"), "ok"),
@@ -490,7 +490,7 @@ mod tests {
     #[test]
     fn mark_stale_updates_projection_and_reports_transition() {
         let dir = tempfile::tempdir().unwrap();
-        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap();
+        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap().0;
         let tx = conn.transaction().unwrap();
         seed_symbol(&tx);
         tx.execute(

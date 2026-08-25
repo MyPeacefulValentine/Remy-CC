@@ -948,7 +948,7 @@ mod tests {
     #[test]
     fn three_tier_scoring_and_speculative_downgrades() {
         let dir = tempfile::tempdir().unwrap();
-        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap();
+        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap().0;
         let tx = conn.transaction().unwrap();
         insert_file(&tx, "a.py", r#"["b.py", "c.py"]"#, "[]");
         insert_file(&tx, "b.py", "[]", "[]");
@@ -1004,7 +1004,7 @@ mod tests {
     #[test]
     fn import_bindings_supplement_and_external_suppression() {
         let dir = tempfile::tempdir().unwrap();
-        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap();
+        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap().0;
         let tx = conn.transaction().unwrap();
         insert_file(
             &tx,
@@ -1052,7 +1052,7 @@ mod tests {
     #[test]
     fn rust_trait_bases_overwrite_is_idempotent_and_shrinks() {
         let dir = tempfile::tempdir().unwrap();
-        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap();
+        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap().0;
         let tx = conn.transaction().unwrap();
         insert_file(&tx, "traits.rs", "[]", "[]");
         insert_file(&tx, "backend.rs", "[]", "[]");
@@ -1085,7 +1085,7 @@ mod tests {
     #[test]
     fn ambiguous_impl_target_merges_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap();
+        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap().0;
         let tx = conn.transaction().unwrap();
         for path in ["dup_a.rs", "dup_b.rs", "main.rs"] {
             insert_file(&tx, path, "[]", "[]");

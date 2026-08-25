@@ -218,6 +218,18 @@ fn test_hold_lock_window() {
 /// `progress` emits a PROGRESS line to stderr every 250 written files
 /// (throughput curve measurements); `progress_json` emits the JSON Lines
 /// progress events; `lock_timeout` overrides REMY_INDEX_SCAN_LOCK_TIMEOUT.
+/// Stderr-only notice: the scan_result v1 line stays unchanged, so a
+/// rebuild is visible in logs without touching the JSON contract.
+fn note_rebuild(outcome: writer::OpenOutcome, db_path: &Path) {
+    if outcome == writer::OpenOutcome::Rebuilt {
+        eprintln!(
+            "SCHEMA_REBUILD pre-current logic_index.db at {} was backed up \
+             to .bak and rebuilt; scanning the full file set",
+            db_path.display()
+        );
+    }
+}
+
 pub fn scan_full(
     root_dir: &Path,
     db_path: &Path,
@@ -240,7 +252,8 @@ pub fn scan_full(
         discovery::discover(root_dir, &config).map_err(|e| format!("discovery failed: {e}"))?;
     let discovered: Vec<String> = files.iter().map(|f| f.rel_path.clone()).collect();
 
-    let mut conn = writer::open_db(db_path)?;
+    let (mut conn, open_outcome) = writer::open_db(db_path)?;
+    note_rebuild(open_outcome, db_path);
     let pool = spawn_parse_pool(root_dir, &config, files, jobs);
 
     let started = std::time::Instant::now();
@@ -413,7 +426,15 @@ pub fn scan_files(
     let mut deleted = Vec::new();
     let mut errors = Vec::new();
 
-    let mut conn = writer::open_db(db_path)?;
+    let (mut conn, open_outcome) = writer::open_db(db_path)?;
+    note_rebuild(open_outcome, db_path);
+    if open_outcome == writer::OpenOutcome::Rebuilt {
+        let files =
+            discovery::discover(root_dir, &config).map_err(|e| format!("discovery failed: {e}"))?;
+        for file in files {
+            requested.push((file.rel_path, file.full_path));
+        }
+    }
     {
         let tx = conn
             .transaction()

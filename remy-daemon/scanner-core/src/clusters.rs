@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn detects_cluster_and_marks_member_change_stale() {
         let dir = tempfile::tempdir().unwrap();
-        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap();
+        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap().0;
         let tx = conn.transaction().unwrap();
         seed_two_file_cluster(&tx);
         detect_clusters(&tx, &config()).unwrap();
@@ -410,7 +410,7 @@ mod tests {
     #[test]
     fn removed_cluster_cleans_projection_and_counters() {
         let dir = tempfile::tempdir().unwrap();
-        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap();
+        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap().0;
         let tx = conn.transaction().unwrap();
         seed_two_file_cluster(&tx);
         detect_clusters(&tx, &config()).unwrap();
@@ -435,7 +435,7 @@ mod tests {
     #[test]
     fn kind_hints_cover_all_three_bands() {
         let dir = tempfile::tempdir().unwrap();
-        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap();
+        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap().0;
         let tx = conn.transaction().unwrap();
         tx.execute(
             "INSERT INTO files (path, struct_hash) VALUES ('tiny.py', 'h'), ('loose.py', 'h'), ('dense.py', 'h')",
