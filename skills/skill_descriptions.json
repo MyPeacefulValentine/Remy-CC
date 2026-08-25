@@ -16,12 +16,12 @@
     "zh-CN": "通过意图/日志/代码三角验证审查代码变更。无先验上下文的独立盲审。与 /remy-changelog 配对：生成日志、回退上下文、再执行审计。"
   },
   "remy-index": {
-    "en": "Scan source files (Python, C/C++, TypeScript) and generate semantic logic index via LLM. Index is injected into CLAUDE.md and used by hooks/skills for dependency analysis. Run after repo init or major changes.",
-    "zh-CN": "扫描源文件（Python、C/C++、TypeScript）并通过 LLM 生成语义逻辑索引（代码语义摘要）。索引注入 CLAUDE.md 并供钩子和技能进行依赖分析。建议在仓库初始化或重大修改后运行。"
+    "en": "Scan source files (Python, C/C++, TypeScript, Rust) and generate semantic logic index via LLM. Index is injected into CLAUDE.md and used by hooks/skills for dependency analysis. Run after repo init or major changes.",
+    "zh-CN": "扫描源文件（Python、C/C++、TypeScript、Rust）并通过 LLM 生成语义逻辑索引（代码语义摘要）。索引注入 CLAUDE.md 并供钩子和技能进行依赖分析。建议在仓库初始化或重大修改后运行。"
   },
   "remy-lookup": {
-    "en": "Display the current logic index tree (.claude/logic_tree.md) without regenerating.",
-    "zh-CN": "显示当前逻辑索引树（.claude/logic_tree.md），无需重新生成。"
+    "en": "Display the current logic index overview (.claude/logic_tree_view.md) without regenerating.",
+    "zh-CN": "显示当前逻辑索引概览（.claude/logic_tree_view.md），无需重新生成。"
   },
   "remy-debug": {
     "en": "Diagnose bugs via hypothesis loop with circuit breaker. Diagnosis only — produces evidence packets for /remy-patch without modifying code.",

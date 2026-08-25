@@ -125,7 +125,13 @@ Get file-level semantic summary (role, key symbols, layer) without reading the f
 ## skills/remy-index/impact.py (8 symbols, layer=Core)
   short: BFS-based impact analysis over the call graph.
   full: Provides bfs_callers / bfs_callees / format_output utilities used by /remy-plan and /remy-patch.
+  key symbols:
+    - [function] bfs_callees  L91-L120
+    - [function] bfs_callers  L60-L88
+    ... (+6 more)
 ```
+
+Key symbols are sorted by case-folded name and capped at `REMY_MCP_RESULT_LIMIT` entries; a `... (+N more)` line reports the remainder, and a file with no indexed symbols prints `key symbols: (none)`.
 
 Errors: returns `No file '<path>' in index. Run /remy-index to scan.` when the path is not indexed.
 
@@ -240,7 +246,7 @@ result and does not continue to later channels.
 | `limit` | `int` | `10` | Result limit in the range `1..REMY_MCP_RESULT_LIMIT` |
 | `file_hint` | `str` | `""` | Compatibility alias for `path_hint` |
 | `match` | `str` | `"all"` | `all`, `any`, or exact contiguous `phrase` semantics |
-| `language` | `str` | `""` | `python`, `c_cpp`, or `typescript` parser family |
+| `language` | `str` | `""` | `python`, `c_cpp`, `typescript`, or `rust` parser family |
 | `symbol_type` | `str` | `""` | Exact symbol type filter |
 | `path_hint` | `str` | `""` | Case-insensitive literal path substring filter |
 

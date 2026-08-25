@@ -125,7 +125,13 @@ summary for 'bfs_callers'
 ## skills/remy-index/impact.py (8 symbols, layer=Core)
   short: 基于调用图的 BFS 影响分析。
   full: 提供 bfs_callers / bfs_callees / format_output 工具函数，供 /remy-plan 与 /remy-patch 调用。
+  key symbols:
+    - [function] bfs_callees  L91-L120
+    - [function] bfs_callers  L60-L88
+    ... (+6 more)
 ```
+
+key symbols 按 casefold 名称排序，条数受 `REMY_MCP_RESULT_LIMIT` 限制；截断时以 `... (+N more)` 报告剩余数，无符号文件输出 `key symbols: (none)`。
 
 错误情况：路径未索引时返回 `No file '<path>' in index. Run /remy-index to scan.`
 
@@ -229,7 +235,7 @@ event/callback patterns (3 results)
 | `limit` | `int` | `10` | 结果上限，范围为`1..REMY_MCP_RESULT_LIMIT` |
 | `file_hint` | `str` | `""` | `path_hint`的兼容别名 |
 | `match` | `str` | `"all"` | `all`、`any`或精确连续`phrase`语义 |
-| `language` | `str` | `""` | `python`、`c_cpp`或`typescript`解析器家族 |
+| `language` | `str` | `""` | `python`、`c_cpp`、`typescript`或`rust`解析器家族 |
 | `symbol_type` | `str` | `""` | 精确符号类型过滤 |
 | `path_hint` | `str` | `""` | 不区分大小写的字面路径子串过滤 |
 
