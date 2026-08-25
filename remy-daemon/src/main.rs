@@ -10,6 +10,7 @@
 mod clock;
 mod hook_client;
 mod logging;
+mod mcp;
 mod process;
 mod protocol;
 mod provider;
@@ -74,6 +75,8 @@ enum DaemonCommand {
         #[command(subcommand)]
         command: HookCommand,
     },
+    /// Serve the remy-index MCP read path over stdio (per-session, R4.1)
+    Mcp,
     /// Scan a source tree into a logic index database (R3.4+: four-language
     /// per-file facts plus the single-transaction global postprocess;
     /// R3.5a: project scan lock, incremental exclusion/identity semantics)
@@ -117,6 +120,9 @@ enum HookCommand {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let command = match cli.command {
+        DaemonCommand::Mcp => {
+            return mcp::run();
+        }
         DaemonCommand::Hook { command } => {
             return hook_client::run(match command {
                 HookCommand::Dirty => hook_client::HookKind::Dirty,
@@ -162,7 +168,7 @@ fn main() -> ExitCode {
         DaemonCommand::Start { foreground: false } => start_detached(&home, &clock),
         DaemonCommand::Stop => stop(&home, &clock),
         DaemonCommand::Status { json } => status(&home, json),
-        DaemonCommand::Hook { .. } | DaemonCommand::Scan { .. } => {
+        DaemonCommand::Hook { .. } | DaemonCommand::Scan { .. } | DaemonCommand::Mcp => {
             unreachable!("dispatched before daemon home resolution")
         }
     };
