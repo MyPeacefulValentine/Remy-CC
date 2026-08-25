@@ -692,6 +692,38 @@ The daemon's built-in v1→v2 migration uses the backup API for its pre-migratio
 manual snapshots, test fixtures, and any future tooling that copies a live
 state database.
 
+## R4.2 schema owner and the frozen Python ladder
+
+R4.2 ruling (authoritative text: RETIREMENT §2.5): the Rust owner
+(`writer.rs::open_db`) supports the current schema version only. The five-state
+dispatch matrix is covered at two layers — `test_schema_rebuild.py` (CLI
+end-to-end, skipped without a built binary) and the `writer.rs` unit tests:
+
+- below current, or tables present without a version row → backup to `.bak`
+  via the backup API, then rebuild; an incremental entry escalates to the full
+  file set inside the same locked call (`SCHEMA_REBUILD` stderr notice; the
+  scan_result v1 line is unchanged);
+- equal to current → idempotent DDL replay, zero data writes, no `.bak`;
+- above current, or unparseable version string → refused unchanged
+  (byte-identity assertion).
+
+Window discipline (until the R4.3 Python exit):
+
+1. The ladder in `migrations.py` is **frozen** — no edits to existing
+   segments. The single exception is a schema bump shipped inside the window:
+   the Python side adds the segment plus its `test_migration_ladder.py` case
+   matrix (idempotent re-entry, rollback on failure, migration_log record);
+   the Rust rebuild floor tracks `SCHEMA_VERSION` automatically and needs no
+   change.
+2. Known behavioral difference between the arms: Rust rebuilds below-current
+   databases (self-healing; `summary_versions` content stays in `.bak` only),
+   while the Python ladder migrates 6–11 losslessly and refuses <6. Use the
+   Python arm (`struct_scan.py`) when a lossless migration is required. The
+   difference converges at R4.3.
+3. Resident-state sample factories are single-sourced in
+   `tests/ladder_samples.py`, shared by the ladder tests and the rebuild
+   tests; no pre-generated database binaries are committed.
+
 ## Boundaries
 
 Committed tests use synthetic source or the fixed MulanPSL-2.0 TEE fixture, temporary directories, and temporary SQLite databases. They do not require an LLM API key or network access. P0.3 compares normalized full and incremental states. P0.4 adds fixed-revision symbols and relationships, repeated full-scan idempotency, handler rename/delete comparisons, parser-backend reporting, and local full-project measurement commands. P0.5 moves the structural implementation into `schema.py`, `symbol_names.py`, `migrations.py`, and `scanner.py`; `struct_scan.py` remains the stable CLI/import entry point. P0.6 rejects scalar and byte arrays before emitting positional registration facts, rejects numeric and expression handler values, preserves Unicode word identifiers, reports pattern types and sources, and checks the three known image arrays in the fixed full project. The fixed project has no known function-pointer struct table that omits inner aggregate braces; that C form remains outside the verified parser contract. Migration tests import without parser modules, while the full suite, Pyright, compatibility exports, both fixture backends, and the three fixed full-project scans verify the current behavior.

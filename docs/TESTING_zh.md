@@ -590,6 +590,31 @@ daemon 内置的 v1→v2 迁移使用 backup API 生成迁移前的 `state.db.ba
 路径不受影响。该约束适用于手工快照、测试 fixture 以及未来任何复制运行中
 状态库的工具。
 
+## R4.2 schema owner 与 Python ladder 冻结
+
+R4.2 裁定（权威文本 RETIREMENT §2.5）：Rust owner（`writer.rs::open_db`）
+仅支持当前 schema 版本。五态分派矩阵由 `test_schema_rebuild.py`（CLI 端到端，
+无二进制时跳过）与 `writer.rs` 单元测试双层覆盖：
+
+- 低于当前版本、或含表但无版本行 → backup API 备份 `.bak` 后重建，增量入口
+  在同一持锁调用内升级为全量文件集（`SCHEMA_REBUILD` stderr 通知；
+  scan_result v1 行不变）；
+- 等于当前版本 → 幂等重放 DDL，零数据写入，不产生 `.bak`；
+- 高于当前版本、或版本串不可解析 → 拒绝并保留（字节级不变断言）。
+
+窗口期纪律（至 R4.3 Python 退场）：
+
+1. `migrations.py` 的 ladder 处于**冻结态**——不修改任何既有段。唯一例外是
+   窗口期内发生 schema bump：Python 侧同步增段并补 `test_migration_ladder.py`
+   用例矩阵（幂等重入 + 失败回滚 + migration_log 记录）；Rust 侧重建下界自动
+   跟随 `SCHEMA_VERSION`，无需改动。
+2. 两臂已知行为差异：Rust 对低于当前版本的库执行备份重建（自愈，丢弃
+   `summary_versions`，`.bak` 保留恢复通道）；Python ladder 对 6–11 执行无损
+   迁移、对 <6 拒绝保留。需要无损迁移时使用 Python 臂（`struct_scan.py`）。
+   该差异随 R4.3 收敛。
+3. 驻留态样本工厂单源于 `tests/ladder_samples.py`，ladder 测试与重建测试
+   共用；不提交预生成 DB 二进制。
+
 ## 边界
 
 已提交测试使用合成源码或固定的MulanPSL-2.0 TEE fixture、临时目录和临时SQLite数据库，不需要LLM API key或网络。P0.3比较全量与增量扫描的规范化状态。P0.4增加固定版本符号和关系、重复全量幂等性、handler重命名/删除比较、解析后端报告及本地完整项目测量命令。P0.5将结构扫描实现拆分到`schema.py`、`symbol_names.py`、`migrations.py`和`scanner.py`，`struct_scan.py`继续作为稳定CLI和导入入口。P0.6在生成位置注册事实前拒绝普通标量和字节数组，拒绝数值与表达式handler，保留Unicode单词标识符，报告pattern类型与来源，并检查固定完整项目中的三个已知图片数组。固定项目没有发现省略内层聚合花括号的已知函数指针结构体表，该C形式不属于当前已验证的解析契约。migration测试验证导入时不加载parser模块；完整测试、Pyright、兼容再导出、两种fixture后端和三次固定完整项目扫描验证当前行为。
