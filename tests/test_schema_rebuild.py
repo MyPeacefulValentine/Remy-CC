@@ -143,6 +143,18 @@ def test_newer_or_unparseable_version_is_refused_unchanged(
     assert not Path(str(db_path) + ".bak").exists()
 
 
+def test_empty_database_file_is_initialized_without_backup(py_project: Path, tmp_path: Path):
+    db_path = tmp_path / "logic_index.db"
+    db_path.touch()
+
+    completed = _scan(py_project, db_path, "--files", "app.py")
+
+    assert completed.returncode == 0, completed.stderr
+    assert "SCHEMA_REBUILD" not in completed.stderr
+    assert _db_version(db_path) == "12.0.0"
+    assert not Path(str(db_path) + ".bak").exists()
+
+
 def test_current_version_database_opens_without_rebuild(py_project: Path, tmp_path: Path):
     db_path = tmp_path / "logic_index.db"
     first = _scan(py_project, db_path)
