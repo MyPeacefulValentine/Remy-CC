@@ -1,7 +1,7 @@
 {
   "remy-index": {
     "type": "stdio",
-    "command": "python",
-    "args": ["-u", "~/.claude/remy-src/index_mcp_server.py"]
+    "command": "~/.remy-cc/bin/remy-daemon",
+    "args": ["mcp"]
   }
 }

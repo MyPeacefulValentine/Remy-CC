@@ -146,3 +146,23 @@ H.5 裁定（R4.0，2026-08-23）：**summary runtime**
 `remy_config.py` 在任何裁定下均存活（G2 已核实：hooks / skills / MCP / cli /
 install / config UI 共 29 处生产 import）；R4.3 的 rconfig 单源化命题因此是
 契约同步义务归属问题，而非存活侧选择问题。
+
+## 7. Python MCP server：部署面退役（R4.1 审计记录）
+
+审计日期：2026-08-26（R4.1）。MCP 读路径迁入 Rust 宿主（`remy-daemon mcp`，
+rmcp 3.1.4，per-session stdio；INV-R2 拓扑不变）。退役范围为**仅部署面**，
+与 §6 边界一致：
+
+- `remy_mcp.json` 改注册 `~/.remy-cc/bin/remy-daemon` + `["mcp"]`
+  （由 `install.py::register_mcp_server` 展开为二进制绝对路径）。
+- 六条 `index_mcp_*.py` 条目移出 `DEPLOY_FILES_MAP`；已部署副本由下次
+  install 事务的 delete 语义清除。
+- `mcp` SDK 不再是 install 必装依赖（`_prepare_dependencies` 撤销必装检查）；
+  保留在 `requirements-dev.txt` 供存留消费者使用。
+- **仓内保留**（§6 第 4 类）：`remy-src/index_mcp_server.py` 与五个 owner
+  模块作为差分 oracle 及 `eval/arms.py`（FastMCP `list_tools()` schema 来源）
+  与测试模块（`test_freshness.py`、`test_mcp_server_invariants.py`、
+  `test_retrieval_baseline.py`、`test_mcp_rust_parity.py`）的存活消费面。
+- 差分证据：`tests/test_mcp_rust_parity.py`（H.4 矩阵；10 tool 剥警告前缀后
+  字节级，search/navigate 比较有序 node_ref 序列）。复审点：若 Python oracle
+  模块失去最后一个开发期消费者，按第 4 类常规清理退役，无需新审计。

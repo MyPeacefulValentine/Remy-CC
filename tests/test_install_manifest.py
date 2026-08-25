@@ -1244,6 +1244,21 @@ def test_install_candidates_exclude_claude_dir_and_db_artifacts(tmp_path):
     assert not any(path.endswith(".lock") for path in paths)
 
 
+def test_mcp_registration_points_to_daemon_binary(tmp_path, monkeypatch):
+    claude_home = tmp_path / ".claude"
+    claude_home.mkdir()
+    monkeypatch.setenv("REMY_CC_HOME", str(tmp_path / ".remy-cc"))
+
+    install.register_mcp_server(claude_home)
+
+    document = json.loads((tmp_path / ".claude.json").read_text(encoding="utf-8"))
+    entry = document["mcpServers"]["remy-index"]
+    expected = str(tmp_path / ".remy-cc" / "bin" / install._daemon_exe_name()).replace("\\", "/")
+    assert entry["command"] == expected
+    assert entry["args"] == ["mcp"]
+    assert "~" not in entry["command"]
+
+
 def test_mcp_registration_rejects_corrupt_user_document(tmp_path):
     claude_home = tmp_path / ".claude"
     claude_home.mkdir()

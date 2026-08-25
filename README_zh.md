@@ -52,7 +52,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 
 - **系统提示词**（`CLAUDE.md`、`style.md`、输出风格定义）规定了工程原则、沟通约束和禁止行为，构成会话启动时加载的静态行为基线。
 - **运行时钩子**（hooks）在 Claude Code 事件上自动触发——每次工具调用前、每条用户消息发送时、以及会话生命周期的关键节点。它们负责重新注入行为规则以对抗指令衰减、规范路径和 Shell 环境、在文件读取时追加调用者/被调用者上下文，以及保持项目文件树快照的时效性。钩子是持续执行的约束层，无需用户介入。
-- **MCP 服务器**（`remy-src/index_mcp_server.py`）是基于 stdio 的 Model Context Protocol 服务器，会话启动时自动拉起。暴露 12 个代码智能查询 tool（`query_symbol`、`query_symbol_summary`、`query_file_summary`、`query_callers`、`query_callees`、`query_impact`、`query_patterns`、`query_search`、`query_flow`、`query_cluster_summary`、`query_cluster_files`、`query_navigate`），使 Claude 可直接访问语义代码图，无需启动子进程。注入系统固定使用 MCP Minimal 视图：集群概览加 MCP 工具指引，详情按需查询。
+- **MCP 服务器**（`remy-daemon mcp`，R4.1 起为 Rust 宿主；Python oracle 保留在 `remy-src/index_mcp_server.py` 供开发期差分测试）是基于 stdio 的 Model Context Protocol 服务器，会话启动时自动拉起。暴露 12 个代码智能查询 tool（`query_symbol`、`query_symbol_summary`、`query_file_summary`、`query_callers`、`query_callees`、`query_impact`、`query_patterns`、`query_search`、`query_flow`、`query_cluster_summary`、`query_cluster_files`、`query_navigate`），使 Claude 可直接访问语义代码图，无需启动子进程。注入系统固定使用 MCP Minimal 视图：集群概览加 MCP 工具指引，详情按需查询。
 - **技能**（skills）是需要手动调用的斜杠命令（`/remy-plan`、`/remy-patch`、`/remy-audit` 等），用于执行结构化的多步骤开发任务。每个技能都定义了明确的输入、输出和停止条件。
 
 这四层之间存在设计上的耦合。钩子负责维护技能所依赖的上下文——文件树、语义代码索引、会话历史都通过生命周期事件自动更新。MCP 服务器与钩子共享 SQLite 数据库（`logic_index.db`，WAL 模式并发读）。反过来，技能产出的工件（任务包、变更日志、审计报告）也会被钩子在工具调用时校验。例如，`/remy-plan` 写入的任务包会约束 `/remy-patch` 允许编辑的文件范围，而 `pre_tool_guard` 钩子在每次 `Edit` 调用时执行这一边界检查。

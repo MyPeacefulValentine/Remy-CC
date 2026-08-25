@@ -177,3 +177,27 @@ future ruling rewrites the summary runtime itself.
 imports across hooks / skills / MCP / cli / install / config UI); the R4.3
 rconfig single-sourcing item is therefore a contract-sync-ownership question,
 not a survival question.
+
+## 7. Python MCP server: deployment-face retirement (R4.1 audit record)
+
+Audit date: 2026-08-26 (R4.1). The MCP read path moved into the Rust host
+(`remy-daemon mcp`, rmcp 3.1.4, per-session stdio; INV-R2 topology unchanged).
+Retirement is **deployment-face only**, consistent with the §6 boundary:
+
+- `remy_mcp.json` now registers `~/.remy-cc/bin/remy-daemon` + `["mcp"]`
+  (expanded to the absolute binary path by `install.py::register_mcp_server`).
+- The six `index_mcp_*.py` entries left `DEPLOY_FILES_MAP`; already-deployed
+  copies are removed by the next install transaction's delete semantics.
+- The `mcp` SDK is no longer a required install dependency
+  (`_prepare_dependencies` required-check dropped); it stays in
+  `requirements-dev.txt` for the retained consumers.
+- **Retained in-repo** (§6 class 4): `remy-src/index_mcp_server.py` and the
+  five owner modules stay as the differential oracle and as live consumers for
+  `eval/arms.py` (FastMCP `list_tools()` schema source) and the test modules
+  (`test_freshness.py`, `test_mcp_server_invariants.py`,
+  `test_retrieval_baseline.py`, `test_mcp_rust_parity.py`).
+- Differential evidence: `tests/test_mcp_rust_parity.py` (H.4 matrix; 10 tools
+  byte-level after warning-prefix strip, search/navigate ordered node_ref
+  sequence). Re-examination point: if the Python oracle modules ever lose
+  their last development-time consumer, they retire as a normal class-4
+  cleanup, no new audit required.

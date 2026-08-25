@@ -55,12 +55,6 @@ DEPLOY_FILES_MAP = {
     "remy-src/config_ui.html": "remy-src/config_ui.html",
     "remy-assets/logo.svg": "remy-assets/logo.svg",
     "remy-src/patch_descriptions.py": "remy-src/patch_descriptions.py",
-    "remy-src/index_mcp_server.py": "remy-src/index_mcp_server.py",
-    "remy-src/index_mcp_common.py": "remy-src/index_mcp_common.py",
-    "remy-src/index_mcp_graph.py": "remy-src/index_mcp_graph.py",
-    "remy-src/index_mcp_search.py": "remy-src/index_mcp_search.py",
-    "remy-src/index_mcp_facts.py": "remy-src/index_mcp_facts.py",
-    "remy-src/index_mcp_navigate.py": "remy-src/index_mcp_navigate.py",
     "remy-src/remy_config.py": "remy-src/remy_config.py",
 }
 SETTINGS_TEMPLATE = "settings.example.json"
@@ -124,7 +118,6 @@ UI = {
         "removed_old_dir": "  [-] Removed obsolete: {name}/",
         "ts_prompt": "Install tree-sitter (high-precision C/C++/TypeScript/Rust parsing)? [Y/n] ",
         "j2_prompt": "Install Jinja2 (remy-inspect template rendering)? [Y/n] ",
-        "mcp_install_failed": "  [x] MCP SDK installation failed. The MCP server is a required component; resolve the pip failure and re-run install.py.",
         "api_config_new": "Configure LLM API for Logic Index? [Y/n] ",
         "api_config_existing": "Existing API config detected. Reconfigure? [y/N] ",
         "api_cost_hint": "  [i] Logic Index may require many API calls.\n      Cost-effective models recommended (e.g. deepseek-v4-flash, or pay-per-call coding plans).",
@@ -171,7 +164,6 @@ UI = {
         "removed_old_dir": "  [-] 已删除旧目录：{name}/",
         "ts_prompt": "是否安装 tree-sitter（C/C++/TypeScript/Rust 高精度解析）？[Y/n] ",
         "j2_prompt": "是否安装 Jinja2（post-verify 模板渲染增强）？[Y/n] ",
-        "mcp_install_failed": "  [x] MCP SDK 安装失败。MCP 服务器为必需组件；请解决 pip 失败后重新运行 install.py。",
         "api_config_new": "是否配置 Logic Index 的 LLM API？[Y/n] ",
         "api_config_existing": "检测到已有 API 配置，是否重新配置？[y/N] ",
         "api_cost_hint": "  [i] Logic Index 可能产生较多 API 调用。\n      建议选择低成本模型（如 deepseek-v4-flash）或按次计费方案。",
@@ -640,11 +632,26 @@ def register_mcp_server(claude_home: Path) -> None:
         mcp_entries = json.load(f)
 
     abs_prefix = str(claude_home).replace("\\", "/")
+    remy_cc_prefix = str(_remy_cc_home()).replace("\\", "/")
+    daemon_command = remy_cc_prefix + "/bin/" + _daemon_exe_name()
+
+    def _expand(value):
+        if not isinstance(value, str):
+            return value
+        if value == "~/.remy-cc/bin/remy-daemon":
+            return daemon_command
+        if "~/.claude/" in value:
+            return value.replace("~/.claude/", abs_prefix + "/")
+        if "~/.remy-cc/" in value:
+            return value.replace("~/.remy-cc/", remy_cc_prefix + "/")
+        return value
+
     for _name, conf in mcp_entries.items():
+        if "command" in conf:
+            conf["command"] = _expand(conf["command"])
         args = conf.get("args", [])
         for i, arg in enumerate(args):
-            if isinstance(arg, str) and "~/.claude/" in arg:
-                args[i] = arg.replace("~/.claude/", abs_prefix + "/")
+            args[i] = _expand(arg)
 
     claude_json_path = claude_home.parent / ".claude.json"
     existing = {}
@@ -962,24 +969,6 @@ def deploy_daemon_binary(records: list) -> None:
 
 
 def _prepare_dependencies(non_interactive: bool) -> bool:
-    required = ("mcp",)
-    missing_required = []
-    for name in required:
-        try:
-            __import__(name)
-        except ImportError:
-            missing_required.append(name)
-    if missing_required:
-        if non_interactive:
-            print(_t("mcp_install_failed"), file=sys.stderr)
-            return False
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--user", *missing_required],
-            check=False,
-        )
-        if result.returncode != 0:
-            print(_t("mcp_install_failed"), file=sys.stderr)
-            return False
     if non_interactive:
         return True
     optional = (
