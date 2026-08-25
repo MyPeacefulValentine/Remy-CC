@@ -1,6 +1,6 @@
 [package]
 name = "scanner-core"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 description = "Remy-CC Rust scanner: per-file fact extraction (R3.2, C/C++ first)"
 license = "MIT"
