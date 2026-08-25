@@ -14,6 +14,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skills", "remy
 migrations = importlib.import_module("migrations")
 schema = importlib.import_module("schema")
 
+from ladder_samples import (
+    _make_v6_db,
+    _make_v7_db,
+    _make_v8_db,
+    _make_v9_db,
+    _make_v10_db,
+    _make_v11_db,
+)
+
 MIGRATION_HANDLERS = migrations.MIGRATION_HANDLERS
 _migrate_v6_to_v7 = migrations._migrate_v6_to_v7
 _migrate_v7_to_v8 = migrations._migrate_v7_to_v8
@@ -24,77 +33,6 @@ _migrate_v11_to_v12 = migrations._migrate_v11_to_v12
 _resolve_migration_path = migrations._resolve_migration_path
 SCHEMA_SQL = schema.SCHEMA_SQL
 VERSION = schema.VERSION
-
-
-V6_SCHEMA = """
-CREATE TABLE files (
-    path TEXT PRIMARY KEY,
-    struct_hash TEXT NOT NULL,
-    language TEXT,
-    layer TEXT DEFAULT 'Core',
-    imports TEXT
-);
-CREATE TABLE symbols (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    file_path TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    short_name TEXT,
-    type TEXT NOT NULL,
-    args TEXT,
-    lineno INTEGER,
-    end_lineno INTEGER,
-    hash TEXT,
-    summary TEXT,
-    bases TEXT,
-    name_tokens TEXT NOT NULL DEFAULT '',
-    UNIQUE(file_path, name)
-);
-CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
-CREATE VIRTUAL TABLE symbols_fts USING fts5(
-    name, name_tokens, file_path, summary,
-    content='symbols', content_rowid='id', tokenize='unicode61'
-);
-CREATE TRIGGER symbols_fts_ai AFTER INSERT ON symbols BEGIN
-    INSERT INTO symbols_fts(rowid, name, name_tokens, file_path, summary)
-    VALUES (NEW.id, NEW.name, NEW.name_tokens, NEW.file_path, NEW.summary);
-END;
-CREATE TRIGGER symbols_fts_ad AFTER DELETE ON symbols BEGIN
-    INSERT INTO symbols_fts(symbols_fts, rowid, name, name_tokens, file_path, summary)
-    VALUES ('delete', OLD.id, OLD.name, OLD.name_tokens, OLD.file_path, OLD.summary);
-END;
-CREATE TRIGGER symbols_fts_au AFTER UPDATE ON symbols BEGIN
-    INSERT INTO symbols_fts(symbols_fts, rowid, name, name_tokens, file_path, summary)
-    VALUES ('delete', OLD.id, OLD.name, OLD.name_tokens, OLD.file_path, OLD.summary);
-    INSERT INTO symbols_fts(rowid, name, name_tokens, file_path, summary)
-    VALUES (NEW.id, NEW.name, NEW.name_tokens, NEW.file_path, NEW.summary);
-END;
-"""
-
-
-def _make_v6_db(path):
-    db = sqlite3.connect(str(path))
-    db.executescript(V6_SCHEMA)
-    db.execute("INSERT INTO meta (key, value) VALUES ('version', '6.0.0')")
-    db.execute(
-        "INSERT INTO files (path, struct_hash, language, layer, imports) VALUES (?,?,?,?,?)",
-        ("src/foo.py", "h1", "PythonParser", "Core", "[]"),
-    )
-    db.execute(
-        "INSERT INTO symbols (file_path, name, short_name, type, args, lineno, end_lineno, hash, summary, name_tokens) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?)",
-        ("src/foo.py", "alpha", "alpha", "function", "()", 1, 5, "sh1", "Computes alpha", "alpha"),
-    )
-    db.commit()
-    return db
-
-
-def _make_v7_db(path):
-    db = _make_v6_db(path)
-    _migrate_v6_to_v7(db)
-    db.execute("UPDATE meta SET value='7.0.0' WHERE key='version'")
-    db.execute("UPDATE files SET struct_hash='h1'")
-    db.commit()
-    return db
 
 
 def test_migrate_v6_to_v7_creates_new_tables(tmp_path):
@@ -408,15 +346,6 @@ def test_v7_to_v8_rolls_back_on_failure(tmp_path):
     real_db.close()
 
 
-def _make_v8_db(path):
-    db = _make_v7_db(path)
-    _migrate_v7_to_v8(db)
-    db.execute("UPDATE meta SET value='8.0.0' WHERE key='version'")
-    db.execute("UPDATE files SET struct_hash='h1'")
-    db.commit()
-    return db
-
-
 def test_v8_to_v9_builds_current_projection_and_removes_old_fts(tmp_path):
     db = _make_v8_db(tmp_path / "logic_index.db")
     db.execute(
@@ -469,28 +398,6 @@ def test_v8_to_v9_rolls_back_on_failure(tmp_path):
         "SELECT COUNT(*) FROM summary_versions"
     ).fetchone()[0] == 1
     real_db.close()
-
-
-def _make_v9_db(path):
-    db = _make_v8_db(path)
-    _migrate_v8_to_v9(db)
-    db.execute("UPDATE meta SET value='9.0.0' WHERE key='version'")
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS edges (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_file TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
-            caller TEXT NOT NULL,
-            callee TEXT NOT NULL,
-            callee_file TEXT,
-            callee_qualified TEXT,
-            line INTEGER,
-            provenance TEXT,
-            synthesized_from TEXT,
-            via TEXT
-        )
-    """)
-    db.commit()
-    return db
 
 
 def test_v9_to_v10_deduplicates_inferred_edges_and_rebuilds_hashes(tmp_path):
@@ -607,14 +514,6 @@ def test_v9_to_v10_rolls_back_on_failure(tmp_path):
     real_db.close()
 
 
-def _make_v10_db(path):
-    db = _make_v9_db(path)
-    _migrate_v9_to_v10(db)
-    db.execute("UPDATE meta SET value='10.0.0' WHERE key='version'")
-    db.commit()
-    return db
-
-
 def test_v10_to_v11_adds_empty_parser_identities_and_preserves_facts(tmp_path):
     db = _make_v10_db(tmp_path / "logic_index.db")
     before_hash = db.execute(
@@ -667,14 +566,6 @@ def test_v10_to_v11_rolls_back_on_failure(tmp_path):
         "WHERE from_version='10.0.0' AND to_version='11.0.0'"
     ).fetchone()[0] == 0
     real_db.close()
-
-
-def _make_v11_db(path):
-    db = _make_v10_db(path)
-    _migrate_v10_to_v11(db)
-    db.execute("UPDATE meta SET value='11.0.0' WHERE key='version'")
-    db.commit()
-    return db
 
 
 def test_v11_to_v12_adds_call_form_and_import_bindings_and_preserves_facts(tmp_path):
