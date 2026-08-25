@@ -294,6 +294,22 @@ def test_project_discovery_from_descendant(config_home, tmp_path):
         monkeypatch.undo()
 
 
+def test_home_is_not_a_project_root(config_home):
+    _write(config_home / ".claude" / "remy-config.json", {"REMY_LANG": "zh-CN"})
+    nested = config_home / "docs" / "notes"
+    nested.mkdir(parents=True)
+    assert remy_config.discover_project_root(nested) is None
+    assert remy_config.discover_project_root(config_home) is None
+
+
+def test_project_under_home_is_still_discovered(config_home):
+    project = config_home / "work" / "repo"
+    nested = project / "src"
+    nested.mkdir(parents=True)
+    _write(project / ".claude" / "remy-config.json", {"REMY_LANG": "en"})
+    assert remy_config.discover_project_root(nested) == project
+
+
 def _save_worker(module_path, home, key, value, ready):
     os.environ["HOME"] = home
     os.environ["USERPROFILE"] = home

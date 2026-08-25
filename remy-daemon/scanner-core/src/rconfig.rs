@@ -37,10 +37,17 @@ pub struct PostprocessConfig {
     pub full_scan_timeout: i64,
 }
 
+/// Single source of the user-home decision for all Rust arms. Windows
+/// resolves USERPROFILE first to match Python's `Path.home()` (ntpath
+/// ignores HOME); POSIX keeps HOME first. Both implementations must agree
+/// on what "home" is, or project-root exclusion and `~` expansion diverge
+/// between the Python and Rust arms.
 pub fn user_home() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
+    #[cfg(windows)]
+    let value = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"));
+    #[cfg(not(windows))]
+    let value = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+    value.map(PathBuf::from)
 }
 
 fn read_config_values(path: &Path) -> Result<HashMap<String, String>, String> {

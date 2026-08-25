@@ -36,9 +36,7 @@ pub fn hook_runtime(script_name: &str) -> io::Result<(PathBuf, PathBuf)> {
 }
 
 pub fn user_home() -> io::Result<PathBuf> {
-    env::var_os("HOME")
-        .or_else(|| env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
+    scanner_core::rconfig::user_home()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "cannot locate user home"))
 }
 

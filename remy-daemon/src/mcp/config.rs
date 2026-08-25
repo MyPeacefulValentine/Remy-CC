@@ -14,6 +14,11 @@ const CONFIG_FILE_NAME: &str = "remy-config.json";
 /// Markers remy_config.discover_project_root probes under `.claude/`.
 const ROOT_MARKERS: &[&str] = &[CONFIG_FILE_NAME, "logic_index_config", "logic_index.db"];
 
+/// Keys rejected from the project-layer config file, mirroring the Python
+/// FieldSpec `project_allowed=False` boundary: a cloned repository must not
+/// inject credentials or TLS downgrades into the MCP LLM channel.
+const PROJECT_FORBIDDEN_KEYS: &[&str] = &["REMY_LLM_API_KEY", "REMY_LLM_TLS_INSECURE"];
+
 #[derive(Debug, Clone)]
 pub struct McpConfig {
     pub server_enabled: bool,
@@ -142,15 +147,26 @@ const FIELDS: &[Field] = &[
     },
 ];
 
-pub fn user_home() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-}
+pub use scanner_core::rconfig::user_home;
 
-pub fn discover_project_root(start: &Path) -> Option<PathBuf> {
+/// Walks upward from `start`; reaching `home` terminates discovery — the
+/// user home and its ancestors are never project roots (`~/.claude/` always
+/// carries the user-level config, which must not gain project-layer scope).
+/// Comparison canonicalizes both sides (case and `\\?\` prefix on Windows,
+/// symlinks on POSIX); on canonicalize failure the raw path is compared, so
+/// a failure can only skip the exclusion, never exclude a real project.
+pub fn discover_project_root(start: &Path, home: Option<&Path>) -> Option<PathBuf> {
+    let stop = home.map(|h| h.canonicalize().unwrap_or_else(|_| h.to_path_buf()));
     let mut current = start;
     loop {
+        if let Some(stop) = &stop {
+            let canonical = current
+                .canonicalize()
+                .unwrap_or_else(|_| current.to_path_buf());
+            if &canonical == stop {
+                return None;
+            }
+        }
         let claude_dir = current.join(".claude");
         if ROOT_MARKERS
             .iter()
@@ -164,7 +180,11 @@ pub fn discover_project_root(start: &Path) -> Option<PathBuf> {
 
 /// Lenient file read: unreadable or malformed files contribute no values,
 /// only a diagnostic (load_config strict=False behavior).
-fn read_config_values(path: &Path, diagnostics: &mut Vec<String>) -> HashMap<String, String> {
+fn read_config_values(
+    path: &Path,
+    project: bool,
+    diagnostics: &mut Vec<String>,
+) -> HashMap<String, String> {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(_) => return HashMap::new(),
@@ -189,6 +209,13 @@ fn read_config_values(path: &Path, diagnostics: &mut Vec<String>) -> HashMap<Str
     };
     let mut result = HashMap::new();
     for (key, value) in values {
+        if project && PROJECT_FORBIDDEN_KEYS.contains(&key.as_str()) {
+            diagnostics.push(format!(
+                "config field {key} is not allowed in project configuration in {}",
+                path.display()
+            ));
+            continue;
+        }
         match value.as_str() {
             Some(text) => {
                 result.insert(key.clone(), text.to_string());
@@ -271,10 +298,11 @@ pub fn load() -> McpConfig {
 /// parallel tests).
 fn load_from(cwd: &Path, home: Option<PathBuf>, env: &dyn Fn(&str) -> Option<String>) -> McpConfig {
     let mut diagnostics = Vec::new();
-    let project_root = discover_project_root(cwd);
+    let project_root = discover_project_root(cwd, home.as_deref());
     let user_values = match &home {
         Some(home) => read_config_values(
             &home.join(".claude").join(CONFIG_FILE_NAME),
+            false,
             &mut diagnostics,
         ),
         None => HashMap::new(),
@@ -282,6 +310,7 @@ fn load_from(cwd: &Path, home: Option<PathBuf>, env: &dyn Fn(&str) -> Option<Str
     let project_values = match &project_root {
         Some(root) => read_config_values(
             &root.join(".claude").join(CONFIG_FILE_NAME),
+            true,
             &mut diagnostics,
         ),
         None => HashMap::new(),
@@ -460,5 +489,53 @@ mod tests {
     fn no_project_root_keeps_relative_db_path() {
         let resolved = resolve_db_path(".claude/logic_index.db", None, None);
         assert_eq!(resolved, PathBuf::from(".claude/logic_index.db"));
+    }
+
+    #[test]
+    fn home_is_not_a_project_root() {
+        let (_dir, home) = isolated();
+        write_config(
+            &home,
+            r#"{"schema_version": "1.0.0", "values": {"REMY_MCP_RESULT_LIMIT": "20"}}"#,
+        );
+        let nested = home.join("docs").join("notes");
+        std::fs::create_dir_all(&nested).unwrap();
+        assert_eq!(discover_project_root(&nested, Some(&home)), None);
+        assert_eq!(discover_project_root(&home, Some(&home)), None);
+    }
+
+    #[test]
+    fn project_under_home_is_still_discovered() {
+        let (_dir, home) = isolated();
+        let project = home.join("work").join("repo");
+        let nested = project.join("src");
+        std::fs::create_dir_all(&nested).unwrap();
+        write_config(
+            &project,
+            r#"{"schema_version": "1.0.0", "values": {"REMY_MCP_RESULT_LIMIT": "20"}}"#,
+        );
+        assert_eq!(
+            discover_project_root(&nested, Some(&home)),
+            Some(project.clone())
+        );
+    }
+
+    #[test]
+    fn project_secret_keys_are_rejected_with_diagnostics() {
+        let (dir, home) = isolated();
+        write_config(
+            dir.path(),
+            r#"{"schema_version": "1.0.0", "values": {"REMY_LLM_API_KEY": "injected", "REMY_LLM_TLS_INSECURE": "true", "REMY_MCP_RESULT_LIMIT": "30"}}"#,
+        );
+        let config = load_from(dir.path(), Some(home), &|_| None);
+        assert_eq!(config.llm_api_key, "");
+        assert!(!config.llm_tls_insecure);
+        assert_eq!(config.result_limit, 30);
+        for key in PROJECT_FORBIDDEN_KEYS {
+            assert!(config
+                .diagnostics
+                .iter()
+                .any(|d| d.contains(key) && d.contains("not allowed in project")));
+        }
     }
 }

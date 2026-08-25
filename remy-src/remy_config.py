@@ -262,7 +262,13 @@ def discover_project_root(start: Optional[Path | str] = None) -> Optional[Path]:
     current = Path(start or Path.cwd()).resolve()
     if current.is_file():
         current = current.parent
+    try:
+        home: Optional[Path] = Path.home().resolve()
+    except (RuntimeError, OSError):
+        home = None
     for candidate in (current, *current.parents):
+        if home is not None and candidate == home:
+            return None
         claude_dir = candidate / ".claude"
         if any((claude_dir / name).exists() for name in (CONFIG_FILE_NAME, "logic_index_config", "logic_index.db")):
             return candidate
