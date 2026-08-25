@@ -15,7 +15,7 @@ and the falsifiable condition under which the verdict must be re-examined.
 | `--worker-config-json` plaintext-secret probe channel (G4) | **Retain** (bound to the Python worker arm lifecycle) | R4.3, same batch as switch-back |
 | `index_mcp_queries.py` compatibility shell | **Retain** | First substantive release after v1.7.1 |
 | `struct_scan.py` compatibility entry point | **Retain** | R4.3 (consumer set must be empty first) |
-| Migration ladder 6→12 (Python owner) | **Retain, no truncation** | R4.2 (ownership migration, ladder moves whole) |
+| Migration ladder 6→12 (Python owner) | **Retain, frozen** (R4.2 ruling: the Rust owner supports the current version only; the ladder is not replicated) | R4.3 (retired with the Python scanner) |
 | state.db v1→v2 migration + legacy manifest translation layer | **Retain** | v2.0.0 release audit (H8-B2/B6) |
 | `install.py` v2 dead arms (`write_manifest`/`do_install`/`do_uninstall`/`do_verify`) | **Delete** (this batch) | — |
 
@@ -91,11 +91,25 @@ manual invocation in logged terminals).
 
 ### 2.5 Compatibility floor
 
-- Minimum supported starting point: **v1.4.0** (logic index schema 6.0.0).
-- The migration ladder 6→12 is not truncatable: {6, 7, 10, 12} are real release
-  resident states and upgrades do not force a rescan (H.7, verified). R4.2 may
-  move the ladder's ownership but must move it whole, with below-floor databases
-  failing closed into a full rebuild.
+- Minimum supported starting point: **v1.4.0** (logic index schema 6.0.0;
+  lossless upgrades run through the frozen Python ladder until R4.3, and
+  through backup-and-rebuild thereafter).
+- Ladder ownership ruling (R4.2, 2026-08-25 — supersedes the earlier
+  "move whole" form): the Rust owner supports the current schema version only.
+  On open, a database below the current version — or one holding tables but no
+  version row — is backed up to `.bak` (SQLite backup API) and rebuilt from the
+  current schema; an incremental entry then escalates to the full file set
+  within the same locked call. A database above the current version, or with an
+  unparseable version string, is refused unchanged. The six ladder segments are
+  not replicated in Rust. Data cost accepted by the ruling: `summary_versions`
+  content is not carried over (it survives in `.bak`; regeneration uses the
+  existing bootstrap pipeline). The public floor raise is declared at the
+  v2.0.0 release audit (H8-B6); the parent plan's R4.2
+  "minimum-compatible-version truncation ruling" slot is settled by this entry.
+- The Python ladder (`migrations.py`) is frozen until R4.3: no segment edits;
+  the single exception is a synchronized segment addition if a schema bump
+  ships inside the window (the Rust rebuild floor tracks `SCHEMA_VERSION`
+  automatically and needs no change).
 - daemon state schema v1→v2 migration and the installer's legacy manifest
   translation layer (`facade._parse_legacy_manifest`) remain until the v2.0.0
   release audit rules on the legacy-install population (H8-B2/B6).
@@ -131,7 +145,7 @@ change) second; the two never overlapped.
 | Switch-back + hook fallback + G4 channel joint review | R4.3 |
 | `struct_scan.py` consumer-set emptying (hooks, worker, run.py) | R4.3 |
 | `index_mcp_queries.py` shell retirement (import rewiring first) | first substantive release after v1.7.1 |
-| Migration ladder ownership (move whole, fail-closed floor) | R4.2 |
+| Migration ladder ownership (current-version rebuild semantics; ladder not replicated) | R4.2 — settled 2026-08-25 (§2.5) |
 | Legacy manifest translation window closure | v2.0.0 release audit (H8-B2/B6) |
 | rconfig dual-owner registry single-sourcing after Python scanner exit | R4.3 |
 | Probe corpus / parser support-matrix consistency check | standing (§9 matrix) |

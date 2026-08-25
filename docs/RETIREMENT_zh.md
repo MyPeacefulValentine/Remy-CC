@@ -14,7 +14,7 @@ scanner 组件与旧入口的退役审计裁定。每个条目记录 owner、生
 | `--worker-config-json` 明文 secret 探针通道（G4） | **保留**（与 Python worker 臂同生命周期） | R4.3，与回切同批 |
 | `index_mcp_queries.py` 兼容壳 | **保留** | v1.7.1 后首个实质 release |
 | `struct_scan.py` 兼容入口 | **保留** | R4.3（消费者集合须先清空） |
-| Migration ladder 6→12（Python owner） | **保留，零截断** | R4.2（归属迁移，阶梯整体随迁） |
+| Migration ladder 6→12（Python owner） | **保留，冻结**（R4.2 裁定：Rust owner 仅支持当前版本，阶梯不复刻） | R4.3（随 Python scanner 退场） |
 | state.db v1→v2 迁移 + legacy manifest 翻译层 | **保留** | v2.0.0 发布审计（H8-B2/B6） |
 | `install.py` v2 死臂（`write_manifest`/`do_install`/`do_uninstall`/`do_verify`） | **删除**（本批） | — |
 
@@ -75,10 +75,19 @@ R4.3 同批复审退役。在此之前的现行缓解为操作性约束（不在
 
 ### 2.5 兼容底线
 
-- 最低支持起点：**v1.4.0**（logic index schema 6.0.0）。
-- Migration ladder 6→12 不可截断：{6, 7, 10, 12} 均为真实发布驻留态，且升级
-  不强制重扫（H.7，已验证）。R4.2 可迁移阶梯归属，但必须整体随迁，低于底线的
-  库 fail-closed 转全量重建。
+- 最低支持起点：**v1.4.0**（logic index schema 6.0.0；无损升级在 R4.3 前经
+  冻结的 Python ladder 执行，其后转为备份重建形态）。
+- 阶梯归属裁定（R4.2，2026-08-25——取代此前"整体随迁"形态）：Rust owner 仅
+  支持当前 schema 版本。打开时，低于当前版本的库——或含表但无版本行的库——
+  先以 SQLite backup API 备份为 `.bak` 再按当前 schema 重建；增量入口随后在
+  同一持锁调用内升级为全量文件集。高于当前版本或版本串不可解析的库拒绝并保留。
+  六段 ladder 不在 Rust 侧复刻。裁定接受的数据代价：`summary_versions` 内容
+  不随迁（保留在 `.bak` 中；重生成走既有 bootstrap 管线）。对外兼容底线的正式
+  抬升声明归 v2.0.0 发布审计（H8-B6）；父计划 R4.2 行预留的"最低兼容版本截断
+  裁定"槽位由本条结清。
+- Python ladder（`migrations.py`）冻结至 R4.3：不改任何段；唯一例外是窗口期
+  内发生 schema bump 时的同步增段（Rust 重建下界自动跟随 `SCHEMA_VERSION`，
+  无需改动）。
 - daemon state schema v1→v2 迁移与安装器 legacy manifest 翻译层
   （`facade._parse_legacy_manifest`）保留至 v2.0.0 发布审计对存量 v2 安装
   人口做出裁定（H8-B2/B6）。
@@ -109,7 +118,7 @@ F.1（差分基线变更）先行，C2（oracle 身份变更）在后，两者�
 | 回切 + hook fallback + G4 通道联合复审 | R4.3 |
 | `struct_scan.py` 消费者集合清空（hooks、worker、run.py） | R4.3 |
 | `index_mcp_queries.py` 壳退役（先改 import 接线） | v1.7.1 后首个实质 release |
-| Migration ladder 归属（整体随迁，fail-closed 底线） | R4.2 |
+| Migration ladder 归属（当前版本重建语义；阶梯不复刻） | R4.2——已结清 2026-08-25（§2.5） |
 | Legacy manifest 翻译窗口关闭 | v2.0.0 发布审计（H8-B2/B6） |
 | Python scanner 退场后 rconfig 双 owner 单源化 | R4.3 |
 | 探针语料 / parser 支持矩阵一致性检查 | 常设（§9 矩阵） |
