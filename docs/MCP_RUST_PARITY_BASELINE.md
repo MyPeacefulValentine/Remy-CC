@@ -59,19 +59,40 @@ non-deterministic or ambiguous paths are untested:
 
 - **Byte-for-byte** applies after stripping the freshness warning prefix (the `[Warning:
   index may be stale …]` line is startup-state dependent and not part of the contract).
-- **Semantic layer** (search/navigate): compare the ordered node_ref sequence; BM25 rank
-  values compare under a declared tolerance or by order only — the form is an R4.1
-  decision point.
+- **Semantic layer** (search/navigate): compare the ordered node_ref sequence only; BM25
+  rank values are not asserted (R4.1 decision, 2026-08-26 — the Python stdlib SQLite and
+  the rusqlite bundled SQLite differ in version, so float rank equality is not
+  guaranteed and a numeric tolerance would need recalibration on every SQLite bump).
 - **Excluded from the baseline**: navigate LLM miss-path behavior; freshness sampling
-  randomness (unreachable given R8; seed injection **N2** remains an R4.1 first-commit
-  item); tool schema decoration differences (title / `$schema` / int64 format) handled by
-  the R4.1 allowed-differences list plus one real Claude Code session test.
+  randomness (unreachable given R8; the **N2** seed seam shipped with the R4.1 first
+  commit — `REMY_FRESHNESS_SAMPLE_SEED` switches the fallback branch to a sorted,
+  seed-rotated deterministic subset reproducible across implementations; the env key is
+  a test seam, not a registered config field); non-ASCII identifier behavior in
+  search/navigate (casefold / Unicode category / fuzzy-ratio equivalence is guaranteed
+  for ASCII identifiers only — the entire indexed corpus today; declared boundary for
+  future non-ASCII corpora).
+
+### 4.1 Allowed tool-schema differences (R4.1 decision, 2026-08-26)
+
+The rmcp/schemars output may differ from the FastMCP oracle in exactly these
+decoration-layer items; anything beyond this list is a defect:
+
+| Item | FastMCP | rmcp/schemars |
+| :--- | :--- | :--- |
+| per-property `title` | present ("Max Depth" etc.) | absent |
+| top-level `title` | `query_xxxArguments` | absent |
+| top-level `$schema` | absent | `https://json-schema.org/draft/2020-12/schema` |
+| integer `format` | absent | `int64` |
+
+Closure action: one real Claude Code session invoking all 12 tools against the Rust
+server, verifying parameter parsing and callability.
 
 ## 5. Status
 
 - N5 (cluster list secondary sort key): **shipped in the preparation batch** —
   `query_cluster_summary(name="")` qualifies for byte-for-byte comparison.
-- N2 (freshness sampling seed): deferred to the R4.1 first commit.
+- N2 (freshness sampling seed): **shipped in the R4.1 first commit** — deterministic
+  subset mode behind `REMY_FRESHNESS_SAMPLE_SEED` (sorted by path, rotated by seed).
 - `query_search` accepts `language="rust"` and `query_file_summary` emits the bounded
   `key symbols` section as of the preparation batch; the Rust implementation reproduces
   these as part of the oracle.

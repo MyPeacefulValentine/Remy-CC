@@ -53,16 +53,34 @@ server 的输出，Python server 方可退役。oracle 为**稳定化后**的 Py
 
 - **逐字节**比较在剥离新鲜度警告前缀后进行（`[Warning: index may be stale …]` 行依赖
   启动时状态，不属于契约）。
-- **语义层**（search/navigate）：比较有序 node_ref 序列；BM25 rank 数值按声明容差或
-  仅比序——形态为 R4.1 决策点。
-- **排除项**：navigate LLM miss 路径行为；新鲜度抽样随机性（R8 下不可达；种子注入
-  **N2** 仍留 R4.1 首提交）；tool schema 装饰层差异（title/`$schema`/int64 format）
-  由 R4.1 允许差异清单 + 一次真实 Claude Code 会话实测处置。
+- **语义层**（search/navigate）：仅比较有序 node_ref 序列，BM25 rank 数值不入断言
+  （R4.1 裁定，2026-08-26——Python 内置 SQLite 与 rusqlite bundled SQLite 版本不同，
+  浮点 rank 相等无保障，数值容差在每次 SQLite 升级时需重新标定）。
+- **排除项**：navigate LLM miss 路径行为；新鲜度抽样随机性（R8 下不可达；**N2** 种子
+  接缝已随 R4.1 首提交落地——`REMY_FRESHNESS_SAMPLE_SEED` 使回退分支切换为按 path
+  排序、按种子旋转的确定性子集，跨实现可复现；该 env 键为 test seam，不注册进配置面）；
+  search/navigate 的非 ASCII 标识符行为（casefold/Unicode 分类/fuzzy ratio 等价仅对
+  ASCII 标识符保证——即当前全部索引语料；对未来非 ASCII 语料为已声明边界）。
+
+### 4.1 允许的 tool schema 差异（R4.1 裁定，2026-08-26）
+
+rmcp/schemars 输出与 FastMCP oracle 的差异仅限下列装饰层条目；超出本清单即缺陷：
+
+| 条目 | FastMCP | rmcp/schemars |
+| :--- | :--- | :--- |
+| per-property `title` | 有（"Max Depth" 等） | 无 |
+| 顶层 `title` | `query_xxxArguments` | 无 |
+| 顶层 `$schema` | 无 | `https://json-schema.org/draft/2020-12/schema` |
+| 整型 `format` | 无 | `int64` |
+
+关闭动作：一次真实 Claude Code 会话对 Rust server 调用全部 12 tool，验证参数解析与
+可调用性。
 
 ## 5. 状态
 
 - N5（集群列表次级排序键）：**已随准备批次落地**——`query_cluster_summary(name="")`
   具备逐字节比较条件。
-- N2（新鲜度抽样种子）：留 R4.1 首提交。
+- N2（新鲜度抽样种子）：**已随 R4.1 首提交落地**——`REMY_FRESHNESS_SAMPLE_SEED`
+  确定性子集模式（按 path 排序、按种子旋转）。
 - `query_search` 自准备批次起接受 `language="rust"`，`query_file_summary` 输出有界
   `key symbols` 段；Rust 实现以该行为为 oracle 复现。

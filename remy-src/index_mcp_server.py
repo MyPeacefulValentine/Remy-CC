@@ -132,7 +132,19 @@ def _init_freshness():
             return
 
         sample_size = min(10, max(1, math.ceil(len(all_files) * 0.1)))
-        sample = random.sample(all_files, sample_size)
+        seed_raw = os.environ.get("REMY_FRESHNESS_SAMPLE_SEED")
+        if seed_raw is not None:
+            # Test seam (H.4 N2): deterministic, RNG-free selection so both
+            # implementations pick the same files — sort by path, rotate by seed.
+            try:
+                start = int(seed_raw)
+            except ValueError:
+                start = 0
+            ordered = sorted(all_files)
+            start %= len(ordered)
+            sample = [ordered[(start + i) % len(ordered)] for i in range(sample_size)]
+        else:
+            sample = random.sample(all_files, sample_size)
         mismatches = 0
         for path, stored_hash in sample:
             if not os.path.exists(path):

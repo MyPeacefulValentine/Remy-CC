@@ -144,6 +144,81 @@ class TestInitFreshness:
         assert index_mcp_server._freshness_warning == ""
 
 
+class TestDeterministicSample:
+    """H.4 N2 seed seam: REMY_FRESHNESS_SAMPLE_SEED selects a sorted, rotated
+    subset instead of random.sample, so both implementations pick the same files."""
+
+    def _reset(self):
+        import index_mcp_server
+        index_mcp_server._freshness_warning = ""
+
+    def _build_db(self, tmp_path, bad_paths):
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        db = sqlite3.connect(str(claude_dir / "logic_index.db"))
+        db.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+        db.execute("CREATE TABLE files (path TEXT PRIMARY KEY, struct_hash TEXT NOT NULL)")
+        db.execute("INSERT INTO meta VALUES ('file_count', '10')")
+        for i in range(10):
+            path = f"f{i}.py"
+            (tmp_path / path).write_text(f"x={i}\n", encoding="utf-8")
+            if path in bad_paths:
+                h = "wrong_hash"
+            else:
+                content = (tmp_path / path).read_text(encoding="utf-8")
+                h = hashlib.md5(content.encode("utf-8")).hexdigest()
+            db.execute("INSERT INTO files VALUES (?, ?)", (path, h))
+        db.commit()
+        db.close()
+
+    def _run(self, monkeypatch, seed):
+        def mock_run(cmd, **kwargs):
+            raise FileNotFoundError("git not found")
+        monkeypatch.setattr("index_mcp_server.subprocess.run", mock_run)
+        monkeypatch.setenv("REMY_FRESHNESS_SAMPLE_SEED", seed)
+        import index_mcp_server
+        index_mcp_server._init_freshness()
+        return index_mcp_server._freshness_warning
+
+    def test_seed_zero_selects_sorted_prefix(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        self._reset()
+        self._build_db(tmp_path, bad_paths={"f0.py"})
+        warning = self._run(monkeypatch, "0")
+        assert "1/1 sampled files differ" in warning
+
+    def test_seed_rotation_skips_bad_file(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        self._reset()
+        self._build_db(tmp_path, bad_paths={"f0.py"})
+        warning = self._run(monkeypatch, "1")
+        assert warning == ""
+
+    def test_same_seed_is_idempotent(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        self._reset()
+        self._build_db(tmp_path, bad_paths={"f3.py"})
+        first = self._run(monkeypatch, "3")
+        self._reset()
+        second = self._run(monkeypatch, "3")
+        assert first == second
+        assert "1/1 sampled files differ" in first
+
+    def test_invalid_seed_falls_back_to_zero(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        self._reset()
+        self._build_db(tmp_path, bad_paths={"f0.py"})
+        warning = self._run(monkeypatch, "not-an-int")
+        assert "1/1 sampled files differ" in warning
+
+    def test_seed_wraps_modulo_file_count(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        self._reset()
+        self._build_db(tmp_path, bad_paths={"f0.py"})
+        warning = self._run(monkeypatch, "10")
+        assert "1/1 sampled files differ" in warning
+
+
 class TestWithFreshness:
     def test_error_passthrough(self):
         import index_mcp_server
