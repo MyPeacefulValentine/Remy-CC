@@ -12,7 +12,8 @@
       {"path": "src/duplicate_a.py", "language": "PythonParser", "layer": "Core"},
       {"path": "src/duplicate_b.py", "language": "python", "layer": "Core"},
       {"path": "Src/Ä/Unicode.py", "language": "PythonParser", "layer": "Core"},
-      {"path": "web/router.ts", "language": "TSParser", "layer": "Core"}
+      {"path": "web/router.ts", "language": "TSParser", "layer": "Core"},
+      {"path": "src/rusty.rs", "language": "RustParser", "layer": "Core"}
     ],
     "symbols": [
       {"file_path": "src/exact.py", "name": "ExactTarget", "type": "class", "args": "", "lineno": 10, "summary_short": "canonical precision lookup target"},
@@ -28,7 +29,8 @@
       {"file_path": "src/duplicate_a.py", "name": "duplicateHandler", "type": "function", "args": "event", "lineno": 11, "summary_short": "handles alpha duplicate events"},
       {"file_path": "src/duplicate_b.py", "name": "duplicateHandler", "type": "function", "args": "event", "lineno": 12, "summary_short": "handles beta duplicate events"},
       {"file_path": "Src/Ä/Unicode.py", "name": "unicodeTarget", "type": "function", "args": "", "lineno": 13, "summary_short": "unicode path marker"},
-      {"file_path": "web/router.ts", "name": "RouterInterface", "type": "interface", "args": "", "lineno": 14, "summary_short": "route contract marker"}
+      {"file_path": "web/router.ts", "name": "RouterInterface", "type": "interface", "args": "", "lineno": 14, "summary_short": "route contract marker"},
+      {"file_path": "src/rusty.rs", "name": "rust_entry", "type": "function", "args": "cfg", "lineno": 16, "summary_short": "oxidized dispatch marker"}
     ],
     "file_summaries": {
       "src/exact.py": "Exact target definitions",
@@ -56,6 +58,7 @@
     {"id": "language_c_cpp", "scenario": "c cpp language filter", "query": "Auth Token", "language": "c_cpp", "limit": 10, "expected_nodes": ["src/cpp.cc::Auth::TokenParser"], "expected_empty": false, "expected_channel": "like"},
     {"id": "language_filter_empty", "scenario": "language removes candidates", "query": "canonical precision", "language": "c_cpp", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_channel": null},
     {"id": "language_typescript", "scenario": "typescript language family", "query": "route contract", "language": "typescript", "symbol_type": "interface", "limit": 10, "expected_nodes": ["web/router.ts::RouterInterface"], "expected_empty": false, "expected_channel": "fts"},
+    {"id": "language_rust", "scenario": "rust language filter", "query": "oxidized dispatch", "language": "rust", "limit": 10, "expected_nodes": ["src/rusty.rs::rust_entry"], "expected_empty": false, "expected_channel": "fts"},
     {"id": "symbol_type_class", "scenario": "symbol type class filter", "query": "canonical precision", "symbol_type": "class", "limit": 10, "expected_nodes": ["src/exact.py::ExactTarget"], "expected_empty": false, "expected_channel": "fts"},
     {"id": "symbol_type_empty", "scenario": "symbol type removes candidates", "query": "canonical precision", "symbol_type": "struct", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_channel": null},
     {"id": "path_case_separator", "scenario": "path case and separator normalization", "query": "ExactTarget", "path_hint": "SRC\\EXACT.PY", "limit": 10, "expected_nodes": ["src/exact.py::ExactTarget"], "expected_empty": false, "expected_channel": "like"},
@@ -69,7 +72,7 @@
     {"id": "empty_query", "scenario": "empty query error", "query": "", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
     {"id": "punctuation_only", "scenario": "punctuation only error", "query": "*** (:) \"", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
     {"id": "invalid_match", "scenario": "invalid match error", "query": "target", "match": "invalid", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
-    {"id": "invalid_language", "scenario": "invalid language error", "query": "target", "language": "rust", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
+    {"id": "invalid_language", "scenario": "invalid language error", "query": "target", "language": "go", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
     {"id": "invalid_symbol_type", "scenario": "invalid symbol type error", "query": "target", "symbol_type": "method", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
     {"id": "whitespace_language", "scenario": "whitespace language error", "query": "target", "language": "   ", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},
     {"id": "path_conflict", "scenario": "path alias conflict error", "query": "target", "file_hint": "src/", "path_hint": "tests/", "limit": 10, "expected_nodes": [], "expected_empty": true, "expected_error": true, "expected_channel": null},

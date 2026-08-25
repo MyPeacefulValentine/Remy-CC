@@ -249,7 +249,7 @@ class TestQuerySearch:
 
     @pytest.mark.parametrize("field,value", [
         ("match", "invalid"),
-        ("language", "rust"),
+        ("language", "go"),
         ("language", "   "),
         ("symbol_type", "method"),
         ("symbol_type", "   "),
@@ -291,6 +291,38 @@ class TestQuerySearch:
         assert "a.py::main" in result
         assert query_search_impl("entry", language="c_cpp").startswith(
             "No symbols found"
+        )
+
+    def test_rust_language_filter(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        db = sqlite3.connect(str(claude_dir / "logic_index.db"))
+        db.executescript(SCHEMA_SQL)
+        for index, (path, language, name) in enumerate((
+            ("lib.rs", "RustParser", "oxidize_input"),
+            ("lib.py", "PythonParser", "oxidize_helper"),
+        )):
+            db.execute(
+                "INSERT INTO files (path, struct_hash, language) VALUES (?,?,?)",
+                (path, f"h{index}", language),
+            )
+            db.execute(
+                "INSERT INTO symbols (file_path,name,short_name,type,lineno,name_tokens) "
+                "VALUES (?,?,?,?,?,?)",
+                (path, name, name, "function", index + 1, "oxidize input helper"),
+            )
+        retrieval_projection.rebuild_projection(db)
+        db.commit()
+        db.close()
+
+        from index_mcp_search import query_search_impl
+        result = query_search_impl("oxidize", language="rust")
+        assert "lib.rs::oxidize_input" in result
+        assert "lib.py" not in result
+        assert query_search_impl("oxidize", language="RUST") == result
+        assert "lib.py::oxidize_helper" in query_search_impl(
+            "oxidize", language="python"
         )
 
     def test_match_modes(self, db_dir):

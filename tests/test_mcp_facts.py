@@ -183,3 +183,127 @@ class TestQueryClusterFilesImpl:
         c_idx = result.index("c.py")
         d_idx = result.index("d.py")
         assert c_idx < d_idx
+
+
+def _write_facts_db(tmp_path, files, symbols=(), patterns=(), clusters=()):
+    import sqlite3
+    from struct_scan import SCHEMA_SQL
+
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    db = sqlite3.connect(str(claude_dir / "logic_index.db"))
+    db.executescript(SCHEMA_SQL)
+    for index, path in enumerate(files):
+        db.execute(
+            "INSERT INTO files (path, struct_hash, language, layer) "
+            "VALUES (?,?,'python','Core')",
+            (path, f"h{index}"),
+        )
+    for path, name, lineno in symbols:
+        db.execute(
+            "INSERT INTO symbols (file_path,name,short_name,type,lineno,end_lineno,name_tokens) "
+            "VALUES (?,?,?,'function',?,?,?)",
+            (path, name, name.split(".")[-1], lineno, lineno + 4, name),
+        )
+    for path, ptype, signal, handler, line in patterns:
+        db.execute(
+            "INSERT INTO patterns VALUES (NULL,?,?,?,?,?,NULL)",
+            (path, ptype, signal, handler, line),
+        )
+    for cid, name, file_count in clusters:
+        db.execute(
+            "INSERT INTO clusters (id,name,label,entry_symbols,file_count) "
+            "VALUES (?,?,NULL,'[]',?)",
+            (cid, name, file_count),
+        )
+    db.commit()
+    db.close()
+
+
+class TestDeterministicOrdering:
+    def test_symbol_output_ignores_insertion_order(self, tmp_path, monkeypatch):
+        from index_mcp_facts import query_symbol_impl
+
+        outputs = []
+        for order in (("z.py", "a.py"), ("a.py", "z.py")):
+            root = tmp_path / f"case_{order[0][0]}"
+            root.mkdir()
+            _write_facts_db(
+                root, order, symbols=[(path, "shared_fn", 5) for path in order]
+            )
+            monkeypatch.chdir(root)
+            outputs.append(query_symbol_impl("shared_fn", None))
+        assert outputs[0] == outputs[1]
+        assert outputs[0].index("a.py::shared_fn") < outputs[0].index("z.py::shared_fn")
+
+    def test_patterns_output_ignores_insertion_order(self, tmp_path, monkeypatch):
+        from index_mcp_facts import query_patterns_impl
+
+        rows = [
+            ("z.py", "observer_register", "sig_b", "on_b", 9),
+            ("a.py", "observer_register", "sig_a", "on_a", 3),
+        ]
+        outputs = []
+        for label, ordered in (("fwd", rows), ("rev", list(reversed(rows)))):
+            root = tmp_path / label
+            root.mkdir()
+            _write_facts_db(root, ("a.py", "z.py"), patterns=ordered)
+            monkeypatch.chdir(root)
+            outputs.append(query_patterns_impl(None, None, None))
+        assert outputs[0] == outputs[1]
+        assert outputs[0].index("a.py:L3") < outputs[0].index("z.py:L9")
+
+    def test_cluster_summary_ties_break_by_name(self, tmp_path, monkeypatch):
+        from index_mcp_facts import query_cluster_summary_impl
+
+        _write_facts_db(
+            tmp_path, (), clusters=[(1, "zeta", 3), (2, "alpha", 3), (3, "big", 9)]
+        )
+        monkeypatch.chdir(tmp_path)
+        result = query_cluster_summary_impl(None)
+        assert result.index("## big") < result.index("## alpha")
+        assert result.index("## alpha") < result.index("## zeta")
+
+
+class TestFileSummaryKeySymbols:
+    def test_lists_bounded_symbols_and_remainder(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("REMY_MCP_RESULT_LIMIT", "10")
+        _write_facts_db(
+            tmp_path,
+            ("wide.py",),
+            symbols=[("wide.py", f"fn_{index:02d}", index * 10 + 1)
+                     for index in range(12)],
+        )
+        monkeypatch.chdir(tmp_path)
+        from index_mcp_facts import query_file_summary_impl
+        result = query_file_summary_impl("wide.py")
+        assert "12 symbols" in result
+        section = result.split("key symbols:")[1]
+        shown = [line for line in section.splitlines()
+                 if line.strip().startswith("- [")]
+        assert len(shown) == 10
+        assert "fn_00" in shown[0]
+        assert "... (+2 more)" in section
+
+    def test_lists_all_symbols_within_limit(self, db_dir):
+        from index_mcp_facts import query_file_summary_impl
+        result = query_file_summary_impl("a.py")
+        section = result.split("key symbols:")[1]
+        assert "- [function] helper  L12-L20" in section
+        assert "- [function] main  L1-L10" in section
+        assert section.index("helper") < section.index("main")
+        assert "more)" not in section
+
+    def test_zero_symbol_file_reports_none(self, db_dir):
+        import sqlite3
+        from index_mcp_facts import query_file_summary_impl
+        db = sqlite3.connect(".claude/logic_index.db")
+        db.execute(
+            "INSERT INTO files (path, struct_hash, language, layer) "
+            "VALUES ('empty.py','he','python','Core')"
+        )
+        db.commit()
+        db.close()
+        result = query_file_summary_impl("empty.py")
+        assert "0 symbols" in result
+        assert "key symbols: (none)" in result

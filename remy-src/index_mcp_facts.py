@@ -9,27 +9,28 @@ from index_mcp_common import (
     _query_scoped,
     get_latest_summary,
 )
-from impact import collect_file_symbols, get_layer
+from impact import get_layer
 
 
 def _resolve_symbol(db, name, file=None):
+    order = " ORDER BY file_path, name, COALESCE(lineno, 0)"
     if "::" in name:
         parts = name.split("::", 1)
         rows = db.execute(
             "SELECT file_path, name, type, args, lineno, end_lineno "
-            "FROM symbols WHERE file_path = ? AND name = ?",
+            "FROM symbols WHERE file_path = ? AND name = ?" + order,
             (parts[0], parts[1]),
         ).fetchall()
     elif file:
         rows = db.execute(
             "SELECT file_path, name, type, args, lineno, end_lineno "
-            "FROM symbols WHERE file_path = ? AND (name = ? OR short_name = ?)",
+            "FROM symbols WHERE file_path = ? AND (name = ? OR short_name = ?)" + order,
             (file, name, name),
         ).fetchall()
     else:
         rows = db.execute(
             "SELECT file_path, name, type, args, lineno, end_lineno "
-            "FROM symbols WHERE name = ? OR short_name = ?",
+            "FROM symbols WHERE name = ? OR short_name = ?" + order,
             (name, name),
         ).fetchall()
     return rows[:_config_values()[1]]
@@ -103,7 +104,12 @@ def query_patterns_impl(pattern_type=None, signal_name=None, file=None):
             params.append(file)
 
         where = " AND ".join(conditions) if conditions else "1=1"
-        sql = f"SELECT file_path, pattern_type, signal_name, handler, line FROM patterns WHERE {where} LIMIT ?"
+        sql = (
+            f"SELECT file_path, pattern_type, signal_name, handler, line "
+            f"FROM patterns WHERE {where} "
+            f"ORDER BY file_path, pattern_type, COALESCE(signal_name, ''), "
+            f"COALESCE(handler, ''), COALESCE(line, 0) LIMIT ?"
+        )
         params.append(_config_values()[1])
 
         rows = db.execute(sql, params).fetchall()
@@ -139,7 +145,8 @@ def query_cluster_summary_impl(name=None):
             ).fetchall()
         else:
             rows = db.execute(
-                "SELECT name, label, entry_symbols, file_count FROM clusters ORDER BY file_count DESC"
+                "SELECT name, label, entry_symbols, file_count FROM clusters "
+                "ORDER BY file_count DESC, name"
             ).fetchall()
         if not rows:
             return f"No clusters found" + (f" matching '{name}'" if name else "")
@@ -180,7 +187,12 @@ def query_file_summary_impl(file):
         row = db.execute("SELECT path FROM files WHERE path = ?", (file,)).fetchone()
         if not row:
             return f"No file '{file}' in index. Run /remy-index to scan."
-        symbol_count = len(collect_file_symbols(db, file))
+        symbol_rows = db.execute(
+            "SELECT name, type, lineno, end_lineno FROM symbols "
+            "WHERE file_path = ? ORDER BY lower(name), name, COALESCE(lineno, 0)",
+            (file,),
+        ).fetchall()
+        symbol_count = len(symbol_rows)
         layer = get_layer(db, file)
         summary = get_latest_summary(db, "file", file)
         lines = [f"## {file} ({symbol_count} symbols, layer={layer})"]
@@ -192,6 +204,17 @@ def query_file_summary_impl(file):
             lines.append("  summary: (no summary available)")
         if summary and summary.get("status") and summary["status"] != "ok":
             lines.append(f"  status: {summary['status']}")
+        if not symbol_rows:
+            lines.append("  key symbols: (none)")
+        else:
+            shown = symbol_rows[:_config_values()[1]]
+            lines.append("  key symbols:")
+            for sname, stype, lineno, end_lineno in shown:
+                loc = f"  L{lineno}" + (f"-L{end_lineno}" if end_lineno else "") if lineno else ""
+                lines.append(f"    - [{stype}] {sname}{loc}")
+            remaining = symbol_count - len(shown)
+            if remaining:
+                lines.append(f"    ... (+{remaining} more)")
         return "\n".join(lines)
     finally:
         db.close()

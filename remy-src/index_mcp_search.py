@@ -31,6 +31,7 @@ _LANGUAGE_VALUES = {
     "python": ("pythonparser", "python"),
     "c_cpp": ("ccppparser", "c_cpp", "c", "cpp"),
     "typescript": ("tsparser", "typescript", "ts", "tsx"),
+    "rust": ("rustparser", "rust", "rs"),
 }
 _FUZZY_CUTOFF = 0.6
 
@@ -110,7 +111,7 @@ def _make_search_query(text, limit=10, file_hint="", *, match="all",
         raise _SearchInputError("language must not contain only whitespace")
     normalized_language = language.strip().casefold()
     if normalized_language and normalized_language not in _LANGUAGE_VALUES:
-        raise _SearchInputError("language must be one of: python, c_cpp, typescript")
+        raise _SearchInputError("language must be one of: python, c_cpp, typescript, rust")
 
     if not isinstance(symbol_type, str):
         raise _SearchInputError("symbol_type must be a string")
