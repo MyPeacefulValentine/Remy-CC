@@ -197,5 +197,6 @@
     ]
   },
   "outputStyle": "system-architect",
+  "switchModelsOnFlag": false,
   "spinnerTipsEnabled": true
 }
