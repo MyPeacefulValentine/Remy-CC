@@ -1013,7 +1013,7 @@ def _build_install_candidates(stage_root: Path, lang: str, install_runtime, root
             src,
             stage_claude / dirname,
             dirs_exist_ok=True,
-            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", ".claude", "*.db", "*.db-wal", "*.db-shm", "*.lock"),
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", ".claude", "*.db", "*.db-wal", "*.db-shm", "*.lock", "*.bak*"),
         )
     shim_dir = stage_claude / "bin"
     shim_dir.mkdir(parents=True, exist_ok=True)
