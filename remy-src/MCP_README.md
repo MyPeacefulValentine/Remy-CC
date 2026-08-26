@@ -18,7 +18,7 @@ The server exits gracefully (exit code 0) if `mcp` is not installed or if `REMY_
 ┌─────────────────────┐       JSON-RPC (stdio)       ┌──────────────────────────┐
 │   Claude Code       │ ◄──────────────────────────► │  index_mcp_server.py     │
 │   (MCP client)      │                              │  ├─ _init_freshness()    │
-└─────────────────────┘                              │  ├─ 12 tool handlers     │
+└─────────────────────┘                              │  ├─ 13 tool handlers     │
                                                      │  └─ _with_freshness()    │
                                                      └──────────┬───────────────┘
                                                                 │ import
@@ -385,6 +385,48 @@ invalidate the cache.
 2. [0.55] security / auth/session.py
    - session lifecycle around token use
 ```
+
+### query_dependencies
+
+Analyze file-level import/include relations — the pure import dependencies the
+call graph does not express. The dependency graph merges the stored resolved
+imports (`files.imports`) with query-time unique-suffix derivation from
+`files.import_bindings` (the same `derive_import_bindings` rule the scanner's
+edge resolution uses, so scan-time and query-time semantics cannot drift).
+Multi-hit bindings produce no edge (unique-only); stdlib modules are
+short-circuited. Entries stored in `imports` that are not present in the
+files table are rendered with a `(not indexed)` marker.
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `files` | `list[str]` | (required) | Project-relative paths; backslashes are normalized |
+| `direction` | `str` | `both` | `up` = files importing the targets, `down` = files the targets import, `both` = both sections |
+| `depth` | `int` | `2` | BFS depth, clamped to `REMY_MCP_BFS_MAX_DEPTH` |
+
+Levels are lexicographically sorted; each file appears only in its
+first-reached level (cycles terminate via the visited set).
+
+**Output example:**
+```
+dependency analysis for: app/main.py
+
+imported by (upstream importers):
+  (none)
+
+imports (downstream dependencies):
+  [depth 1] 2 file(s): app/util.py, libs/helpers.py
+  [depth 2] 1 file(s): vendor/missing.py (not indexed)
+
+summary: 0 upstream file(s), 3 downstream file(s)
+```
+
+**Errors:**
+- Invalid direction: `Error: direction must be one of up/down/both.`
+- No target in the index: `No indexed files found matching: <inputs>`
+
+This tool is Rust single-implementation (no Python oracle arm); its acceptance
+surface is `tests/test_mcp_dependencies.py`, not the H.4 differential matrix
+(see `docs/MCP_RUST_PARITY_BASELINE.md` §4.2).
 
 ## Configuration
 

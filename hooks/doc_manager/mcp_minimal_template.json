@@ -68,6 +68,11 @@
       "scenario": {"zh-CN": "按意图导航", "en": "Navigate by intent"},
       "call": "query_navigate(intent, top_k=5)",
       "purpose": {"zh-CN": "用自然语言意图定位相关 cluster/file/symbol", "en": "Locate relevant cluster/file/symbol by natural-language intent"}
+    },
+    {
+      "scenario": {"zh-CN": "文件导入关系", "en": "File import relations"},
+      "call": "query_dependencies(files, direction='both', depth=2)",
+      "purpose": {"zh-CN": "文件级导入/包含关系（调用图不表达的纯导入依赖）", "en": "File-level import/include relations (pure import deps the call graph does not express)"}
     }
   ],
   "usage_title": {
@@ -82,7 +87,8 @@
       "⚠ 当目标仅是理解函数签名或用途时，应优先调用 query_symbol_summary，而非 Read 整个源文件",
       "⚠ 当目标是了解整个文件的角色时，应优先调用 query_file_summary，而非 Read 整个源文件",
       "⚠ 当目标是确认调用关系时，应优先调用 query_callers/query_callees，而非逐文件 Grep",
-      "⚠ 当目标是了解 cluster 内文件分布时，应优先调用 query_cluster_files，而非手动 grep cluster 目录"
+      "⚠ 当目标是了解 cluster 内文件分布时，应优先调用 query_cluster_files，而非手动 grep cluster 目录",
+      "⚠ 当目标是文件级导入关系（谁导入它/它导入谁）时，应优先调用 query_dependencies，而非 grep import 语句或 query_impact"
     ],
     "en": [
       "Understanding project/module structure → query_symbol + query_symbol_summary + query_file_summary (instead of Read)",
@@ -91,7 +97,8 @@
       "⚠ When your goal is to understand a function's signature or purpose, prefer query_symbol_summary over reading the full source file",
       "⚠ When your goal is to understand a file's overall role, prefer query_file_summary over reading the full source file",
       "⚠ When your goal is to confirm call relationships, prefer query_callers/query_callees over file-by-file grep",
-      "⚠ When your goal is to understand file distribution within a cluster, prefer query_cluster_files over manual grep"
+      "⚠ When your goal is to understand file distribution within a cluster, prefer query_cluster_files over manual grep",
+      "⚠ When your goal is file-level import relations (who imports it / what it imports), prefer query_dependencies over grepping import statements or query_impact"
     ]
   },
   "cluster_title": {

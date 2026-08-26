@@ -724,6 +724,22 @@ Window discipline (until the R4.3 Python exit):
    `tests/ladder_samples.py`, shared by the ladder tests and the rebuild
    tests; no pre-generated database binaries are committed.
 
+## query_dependencies dedicated suite (Rust single-implementation)
+
+`tests/test_mcp_dependencies.py` is the acceptance surface for the
+`query_dependencies` MCP tool, which has no Python oracle arm and is excluded
+from the H.4 differential matrix (MCP_RUST_PARITY_BASELINE.md §4.2). It drives
+the release `remy-daemon mcp` binary (skipped when not built) against a
+purpose-built corpus and asserts: stored-plus-derived edge merging with a
+golden rendering, unique-suffix derivation (stdlib short-circuit, multi-hit
+drop), the `(not indexed)` dangling marker, up/down duality, cycle
+termination, depth clamping to `REMY_MCP_BFS_MAX_DEPTH`, the invalid-direction
+error, byte-identical repeated calls, and an unchanged DB snapshot hash.
+
+```bash
+python -m pytest Remy-CC/tests/test_mcp_dependencies.py -v
+```
+
 ## Boundaries
 
 Committed tests use synthetic source or the fixed MulanPSL-2.0 TEE fixture, temporary directories, and temporary SQLite databases. They do not require an LLM API key or network access. P0.3 compares normalized full and incremental states. P0.4 adds fixed-revision symbols and relationships, repeated full-scan idempotency, handler rename/delete comparisons, parser-backend reporting, and local full-project measurement commands. P0.5 moves the structural implementation into `schema.py`, `symbol_names.py`, `migrations.py`, and `scanner.py`; `struct_scan.py` remains the stable CLI/import entry point. P0.6 rejects scalar and byte arrays before emitting positional registration facts, rejects numeric and expression handler values, preserves Unicode word identifiers, reports pattern types and sources, and checks the three known image arrays in the fixed full project. The fixed project has no known function-pointer struct table that omits inner aggregate braces; that C form remains outside the verified parser contract. Migration tests import without parser modules, while the full suite, Pyright, compatibility exports, both fixture backends, and the three fixed full-project scans verify the current behavior.

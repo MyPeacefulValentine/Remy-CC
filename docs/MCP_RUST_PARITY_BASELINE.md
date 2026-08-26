@@ -87,6 +87,23 @@ decoration-layer items; anything beyond this list is a defect:
 Closure action: one real Claude Code session invoking all 12 tools against the Rust
 server, verifying parameter parsing and callability.
 
+### 4.2 Single-implementation tools (decision, 2026-08-26)
+
+Tools implemented only in Rust with no Python oracle arm are **excluded from the
+differential matrix**: a freshly written Python reference would share no independent
+correctness anchor with the Rust implementation (mutual comparison is circular), and
+adding code to the retiring Python server contradicts the retirement direction. Their
+acceptance surface is a dedicated test suite instead, which must include a DB
+immutability assertion (snapshot hash unchanged across calls).
+
+Current single-implementation tools: `query_dependencies` (suite:
+`tests/test_mcp_dependencies.py`). The tool-listing assertion in
+`tests/test_mcp_rust_parity.py` tracks them via `RUST_ONLY_TOOLS`.
+
+Consequence for the eval harness: `eval/arms.py` enumerates the tool surface from the
+Python oracle's `list_tools()`, so single-implementation tools never enter the eval
+arms — the eval tool surface is a strict subset of the production surface.
+
 ## 5. Status
 
 - N5 (cluster list secondary sort key): **shipped in the preparation batch** —

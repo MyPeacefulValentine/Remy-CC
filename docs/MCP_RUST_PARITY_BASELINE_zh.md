@@ -76,6 +76,19 @@ rmcp/schemars 输出与 FastMCP oracle 的差异仅限下列装饰层条目；�
 关闭动作：一次真实 Claude Code 会话对 Rust server 调用全部 12 tool，验证参数解析与
 可调用性。
 
+### 4.2 单实现 tool（裁定，2026-08-26）
+
+仅有 Rust 实现、无 Python oracle 臂的 tool **不入差分矩阵**：为其新写 Python 参照与
+Rust 实现之间没有独立正确性锚点（互相比较是循环验证），且向退役中的 Python server
+添加代码与退役方向矛盾。其验收面改为专项测试套，且必须包含 DB 不可变断言
+（调用前后快照 hash 不变）。
+
+当前单实现 tool：`query_dependencies`（专项套：`tests/test_mcp_dependencies.py`）。
+`tests/test_mcp_rust_parity.py` 的 tool 名单断言经 `RUST_ONLY_TOOLS` 跟踪它们。
+
+对 eval 基准的影响：`eval/arms.py` 从 Python oracle 的 `list_tools()` 枚举工具面，
+单实现 tool 不会进入 eval 臂——eval 工具面是生产工具面的真子集。
+
 ## 5. 状态
 
 - N5（集群列表次级排序键）：**已随准备批次落地**——`query_cluster_summary(name="")`

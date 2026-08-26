@@ -18,7 +18,7 @@
 ┌─────────────────────┐       JSON-RPC (stdio)       ┌──────────────────────────┐
 │   Claude Code       │ ◄──────────────────────────► │  index_mcp_server.py     │
 │   (MCP 客户端)      │                              │  ├─ _init_freshness()    │
-└─────────────────────┘                              │  ├─ 12 个tool handler    │
+└─────────────────────┘                              │  ├─ 13 个tool handler    │
                                                      │  └─ _with_freshness()    │
                                                      └──────────┬───────────────┘
                                                                 │ import
@@ -365,6 +365,44 @@ file 候选携带所属 cluster，逐层下钻不出现孤儿。
 2. [0.55] security / auth/session.py
    - session lifecycle around token use
 ```
+
+### query_dependencies
+
+分析文件级导入/包含关系——调用图不表达的纯导入依赖。依赖图由已存储的解析
+导入（`files.imports`）与查询期从 `files.import_bindings` 做的唯一后缀派生
+合并而成（与 scanner 边解析共用同一 `derive_import_bindings` 规则，扫描期与
+查询期语义不会漂移）。多重命中绑定不产生边（unique-only）；stdlib 模块短路。
+`imports` 中不在 files 表的条目渲染时附加 `(not indexed)` 标记。
+
+| 参数 | 类型 | 默认值 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `files` | `list[str]` | （必需） | 项目相对路径；反斜杠自动归一化 |
+| `direction` | `str` | `both` | `up` = 导入目标的文件，`down` = 目标导入的文件，`both` = 双段 |
+| `depth` | `int` | `2` | BFS 深度，钳制至 `REMY_MCP_BFS_MAX_DEPTH` |
+
+层内路径按字典序；每个文件仅出现在首达层（visited 集合使导入环终止）。
+
+**输出示例：**
+```
+dependency analysis for: app/main.py
+
+imported by (upstream importers):
+  (none)
+
+imports (downstream dependencies):
+  [depth 1] 2 file(s): app/util.py, libs/helpers.py
+  [depth 2] 1 file(s): vendor/missing.py (not indexed)
+
+summary: 0 upstream file(s), 3 downstream file(s)
+```
+
+**错误：**
+- 非法 direction：`Error: direction must be one of up/down/both.`
+- 目标均不在索引：`No indexed files found matching: <inputs>`
+
+该 tool 为 Rust 单实现（无 Python oracle 臂）；验收面为
+`tests/test_mcp_dependencies.py`，不入 H.4 差分矩阵
+（见 `docs/MCP_RUST_PARITY_BASELINE_zh.md` §4.2）。
 
 ## 配置
 

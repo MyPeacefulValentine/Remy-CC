@@ -23,7 +23,10 @@ attached.
 `B-remy` loads the MCP tool schemas via FastMCP `list_tools()` and dispatches to
 the same `@mcp.tool` wrappers the live server uses, so measured token cost equals
 real usage. `query_navigate` is excluded because its LLM callback would fold LLM
-cost into the retrieval-tool measurement.
+cost into the retrieval-tool measurement. Because the enumeration source is the
+Python oracle, Rust single-implementation tools (`query_dependencies`) never
+enter the eval arms — the eval tool surface is a strict subset of the
+production surface (MCP_RUST_PARITY_BASELINE.md §4.2).
 
 ## Ground truth is non-circular
 
