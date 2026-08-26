@@ -572,6 +572,22 @@ span 从符号段落中挖出写入 `SymbolInfo.hash_source_segment`；hash 消�
 `Constant`，因此拼接式 docstring 双侧均被剥除（差分语料 `concat.py`）；
 f-string 与 bytes 字面量在双侧均不构成 docstring。
 
+## Rust import 探测大小写校验（rust parser contract version 4）
+
+`resolve_imports` 通过存在性探测把 `use`/`mod` 头段映射到项目文件；在
+大小写不敏感文件系统（Windows/macOS）上该探测不区分大小写地命中目录项，
+`clock.rs` 内的 `use super::Clock` 因此记录了 Linux 上不存在的悬挂自引用
+`Clock.rs`。双侧现在在存在性命中后把每个源码派生段与磁盘实际目录项名
+逐字比对（`rust_parser.py` 的 `_case_exact_on_disk`、`parse_rust.rs` 的
+`case_exact_on_disk`）；大小写不匹配按文件不存在处理，k 递减探测循环
+继续。大小写敏感文件系统不受影响（命中即逐字相同）。rust parser
+`CACHE_CONTRACT_VERSION` 双侧 3 → 4，存量 `.rs` 行经 identity-invalid
+路径重解析，错误大小写的陈旧条目随之消除。锁定用例：
+`test_rust_parser.py::TestRustImports::test_use_super_type_name_does_not_self_import`
+/ `test_mod_declaration_case_mismatch_is_not_recorded`、`parse_rust.rs`
+内联测试 `case_mismatched_probes_are_rejected`，以及跨实现差分套的
+`casing.rs` 语料。
+
 ## state.db WAL 备份约束
 
 `~/.remy-cc/state.db` 以 WAL 日志模式运行。未 checkpoint 的行只存在于

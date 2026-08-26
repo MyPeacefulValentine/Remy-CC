@@ -672,6 +672,25 @@ string literals into one `Constant`, so a concatenated docstring is removed
 on both sides (`concat.py` in the diff corpus); f-strings and bytes
 literals are never docstrings on either side.
 
+## Rust import probe case check (rust parser contract version 4)
+
+`resolve_imports` maps `use`/`mod` heads to project files by an existence
+probe; on case-insensitive filesystems (Windows/macOS) that probe matched
+entries regardless of case, so `use super::Clock` inside `clock.rs` recorded
+a dangling self-import `Clock.rs` that never appears on Linux. Both sides
+now verify every source-derived segment against the on-disk entry name
+(`_case_exact_on_disk` in `rust_parser.py`, `case_exact_on_disk` in
+`parse_rust.rs`) after the existence hit; a case mismatch counts as absent
+and the k-shrinking probe loop continues. Case-sensitive filesystems are
+unaffected (an existence hit is always an exact match there). The rust
+parser `CACHE_CONTRACT_VERSION` bumped 3 → 4 on both sides so existing
+`.rs` rows re-parse via the identity-invalid path and stale wrong-case
+entries drop out. Locked by
+`test_rust_parser.py::TestRustImports::test_use_super_type_name_does_not_self_import`
+/ `test_mod_declaration_case_mismatch_is_not_recorded`, the
+`case_mismatched_probes_are_rejected` inline test in `parse_rust.rs`, and
+the `casing.rs` corpus fixture in the cross-implementation diff suite.
+
 ## state.db WAL backup constraint
 
 `~/.remy-cc/state.db` runs in WAL journal mode. Rows not yet checkpointed live
