@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 use tree_sitter::{Node, Parser};
 
 pub const LANGUAGE_ID: &str = "RustParser";
-pub const CACHE_CONTRACT_VERSION: &str = "3";
+pub const CACHE_CONTRACT_VERSION: &str = "4";
 pub const EXTENSIONS: &[&str] = &[".rs"];
 
 /// Crate versions pinned in Cargo.toml, recorded in `parser_environment`
@@ -541,6 +541,29 @@ fn dirname(path: &Path) -> PathBuf {
     }
 }
 
+/// True when every path segment matches the on-disk entry name exactly.
+/// `Path::is_file` matches case-insensitively on Windows/macOS filesystems;
+/// source-derived segments (module names from `use`/`mod`) must match the
+/// real entry name byte-for-byte or the index diverges across platforms
+/// (e.g. `use super::Clock` probing `Clock.rs` must not match `clock.rs`).
+fn case_exact_on_disk(base_dir: &Path, rel_parts: &[String]) -> bool {
+    let mut cursor = base_dir.to_path_buf();
+    for part in rel_parts {
+        let Ok(mut entries) = std::fs::read_dir(&cursor) else {
+            return false;
+        };
+        if !entries.any(|entry| {
+            entry
+                .map(|e| e.file_name().to_string_lossy() == part.as_str())
+                .unwrap_or(false)
+        }) {
+            return false;
+        }
+        cursor.push(part);
+    }
+    true
+}
+
 fn normcase_eq(left: &Path, right: &Path) -> bool {
     if cfg!(windows) {
         left.to_string_lossy().to_lowercase().replace('/', "\\")
@@ -600,9 +623,16 @@ pub fn resolve_imports(source: &str, file_path: &Path, root_dir: &Path) -> Vec<S
     let mut imports: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
-    let record = |candidate: &Path, imports: &mut Vec<String>, seen: &mut HashSet<String>| {
-        if candidate.is_file() {
-            let rel = relpath_slash(candidate, root_dir);
+    let record = |base_dir: &Path,
+                  rel_parts: &[String],
+                  imports: &mut Vec<String>,
+                  seen: &mut HashSet<String>| {
+        let mut candidate = base_dir.to_path_buf();
+        for part in rel_parts {
+            candidate.push(part);
+        }
+        if candidate.is_file() && case_exact_on_disk(base_dir, rel_parts) {
+            let rel = relpath_slash(&candidate, root_dir);
             if !rel.starts_with("..") {
                 if seen.insert(rel.clone()) {
                     imports.push(rel);
@@ -624,14 +654,14 @@ pub fn resolve_imports(source: &str, file_path: &Path, root_dir: &Path) -> Vec<S
             return false;
         }
         for k in (1..=segments.len()).rev() {
-            let mut stem = base_dir.to_path_buf();
-            for segment in &segments[..k] {
-                stem.push(segment);
+            let mut file_parts: Vec<String> = segments[..k].to_vec();
+            if let Some(last) = file_parts.last_mut() {
+                last.push_str(".rs");
             }
-            let mut with_rs = stem.clone().into_os_string();
-            with_rs.push(".rs");
-            if record(Path::new(&with_rs), imports, seen)
-                || record(&stem.join("mod.rs"), imports, seen)
+            let mut mod_parts: Vec<String> = segments[..k].to_vec();
+            mod_parts.push("mod.rs".to_string());
+            if record(base_dir, &file_parts, imports, seen)
+                || record(base_dir, &mod_parts, imports, seen)
             {
                 return true;
             }
@@ -952,6 +982,36 @@ use util::paths::helper_fn;
     }
 
     #[test]
+    fn case_mismatched_probes_are_rejected() {
+        // On case-insensitive filesystems `use super::Casing` (a type, not
+        // a module) probes `Casing.rs` and must not match `casing.rs`
+        // itself; same for `mod State;` against `state.rs`.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src/casing.rs"), "").unwrap();
+        std::fs::write(root.join("src/state.rs"), "").unwrap();
+
+        let source = "mod nested { use super::Casing; }\n";
+        let imports = resolve_imports(source, &root.join("src/casing.rs"), root);
+        assert!(imports.is_empty(), "{imports:?}");
+
+        let source = "mod State;\n";
+        let imports = resolve_imports(source, &root.join("src/main.rs"), root);
+        assert!(imports.is_empty(), "{imports:?}");
+
+        let source = "mod state;\nuse self::casing::Item;\n";
+        let imports = resolve_imports(source, &root.join("src/main.rs"), root);
+        assert_eq!(imports, vec!["src/state.rs", "src/casing.rs"]);
+
+        std::fs::create_dir_all(root.join("src/util")).unwrap();
+        std::fs::write(root.join("src/util/extra.rs"), "").unwrap();
+        let source = "use crate::Util::extra;\n";
+        let imports = resolve_imports(source, &root.join("src/main.rs"), root);
+        assert!(imports.is_empty(), "{imports:?}");
+    }
+
+    #[test]
     fn grouped_use_lists_flatten() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -1009,7 +1069,7 @@ impl Plain for external::Widget {}
     #[test]
     fn cache_identity_is_the_rust_producer() {
         let identity = cache_identity();
-        assert_eq!(identity.contract_version, "3");
+        assert_eq!(identity.contract_version, "4");
         assert_eq!(identity.backend, "rust-tree-sitter");
         assert!(identity.environment.contains("tree-sitter-rust"));
     }

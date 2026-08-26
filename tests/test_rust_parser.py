@@ -274,6 +274,27 @@ class TestRustImports:
         imports = RustParser().resolve_imports(source, str(src / "main.rs"), str(root))
         assert set(imports) == {"crate1/src/utils/mod.rs", "crate1/src/utils/fs.rs"}
 
+    def test_use_super_type_name_does_not_self_import(self, crate):
+        # `use super::Casing` names a type; on case-insensitive filesystems
+        # the `Casing.rs` probe must not match `casing.rs` itself.
+        root, src = crate
+        (src / "casing.rs").write_text("", encoding="utf-8")
+        source = "mod nested { use super::Casing; }\n"
+        imports = RustParser().resolve_imports(source, str(src / "casing.rs"), str(root))
+        assert imports == {}
+
+    def test_mod_declaration_case_mismatch_is_not_recorded(self, crate):
+        root, src = crate
+        source = "mod State;\n"
+        imports = RustParser().resolve_imports(source, str(src / "main.rs"), str(root))
+        assert imports == {}
+
+    def test_directory_segment_case_mismatch_is_not_recorded(self, crate):
+        root, src = crate
+        source = "use crate::Utils::fs;\n"
+        imports = RustParser().resolve_imports(source, str(src / "main.rs"), str(root))
+        assert imports == {}
+
 
 class TestRustRejectionSemantics:
     @pytest.fixture

@@ -501,7 +501,7 @@ def test_oracle_manifest_generate_roundtrip(tmp_path: Path):
     }
     registry = {entry["language_id"]: entry for entry in loaded["registry"]}
     assert set(registry) == {"PythonParser", "CCppParser", "TSParser", "RustParser"}
-    assert registry["RustParser"]["cache_contract_version"] == "3"
+    assert registry["RustParser"]["cache_contract_version"] == "4"
     assert {gap["id"] for gap in loaded["known_gaps"]} == {
         "python-docstring-in-hash",
     }

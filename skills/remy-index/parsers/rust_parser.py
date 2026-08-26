@@ -118,11 +118,31 @@ def _segment_with_attributes(node, source_bytes):
     return source_bytes[start:node.end_byte].decode("utf-8", errors="replace")
 
 
+def _case_exact_on_disk(base_dir, rel_parts):
+    """True when every path segment matches the on-disk entry name exactly.
+
+    ``os.path.isfile`` matches case-insensitively on Windows/macOS
+    filesystems; source-derived segments (module names from ``use``/``mod``)
+    must match the real entry name byte-for-byte or the index diverges
+    across platforms (e.g. ``use super::Clock`` probing ``Clock.rs`` must
+    not match ``clock.rs``).
+    """
+    cursor = base_dir
+    for part in rel_parts:
+        try:
+            if part not in os.listdir(cursor):
+                return False
+        except OSError:
+            return False
+        cursor = os.path.join(cursor, part)
+    return True
+
+
 class RustParser(LanguageParser):
     """Parser for Rust source files. Requires tree-sitter-rust; no fallback."""
 
     language_id = "RustParser"
-    CACHE_CONTRACT_VERSION = "3"
+    CACHE_CONTRACT_VERSION = "4"
 
     def get_extensions(self):
         return [".rs"]
@@ -469,8 +489,9 @@ class RustParser(LanguageParser):
 
         imports = {}
 
-        def _record(candidate):
-            if candidate and os.path.isfile(candidate):
+        def _record(base_dir, rel_parts):
+            candidate = os.path.join(base_dir, *rel_parts)
+            if os.path.isfile(candidate) and _case_exact_on_disk(base_dir, rel_parts):
                 rel = os.path.relpath(candidate, root_dir).replace(os.sep, "/")
                 if not rel.startswith(".."):
                     imports[rel] = False
@@ -481,8 +502,9 @@ class RustParser(LanguageParser):
             if not base_dir or not segments:
                 return False
             for k in range(len(segments), 0, -1):
-                stem = os.path.join(base_dir, *segments[:k])
-                if _record(stem + ".rs") or _record(os.path.join(stem, "mod.rs")):
+                parts = list(segments[:k])
+                file_parts = parts[:-1] + [parts[-1] + ".rs"]
+                if _record(base_dir, file_parts) or _record(base_dir, parts + ["mod.rs"]):
                     return True
             return False
 
