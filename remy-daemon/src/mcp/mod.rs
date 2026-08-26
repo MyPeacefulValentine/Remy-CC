@@ -5,6 +5,7 @@
 
 mod common;
 pub mod config;
+mod deps;
 mod facts;
 mod freshness;
 mod graph;
@@ -36,6 +37,7 @@ const INSTRUCTIONS: &str = concat!(
     "- To get a subsystem-level overview: query_cluster_summary (cluster contracts, entry symbols)\n",
     "- To list a cluster's member files: query_cluster_files (optionally with short summaries)\n",
     "- To locate work by intent (\"where do I modify auth logic\"): query_navigate (LLM-ranked clusters/files)\n",
+    "- To trace file-level import/include relations (who imports this file, what does it import): query_dependencies (instead of grepping import statements)\n",
     "\n",
     "Index summaries are stored in English. Phrase query_search text and\n",
     "query_navigate intents in English for best lexical recall.\n",
@@ -160,6 +162,19 @@ struct NavigateParams {
     intent: String,
     #[serde(default = "default_top_k")]
     top_k: i64,
+}
+
+fn default_direction() -> String {
+    "both".to_string()
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct DepsParams {
+    files: Vec<String>,
+    #[serde(default = "default_direction")]
+    direction: String,
+    #[serde(default = "default_depth")]
+    depth: i64,
 }
 
 #[derive(Clone)]
@@ -328,6 +343,19 @@ impl RemyIndexServer {
     )]
     async fn query_navigate(&self, Parameters(p): Parameters<NavigateParams>) -> String {
         self.wrap(navigate::query_navigate_impl(&self.cfg, &p.intent, p.top_k).await)
+    }
+
+    #[tool(
+        name = "query_dependencies",
+        description = "Analyze file-level import/include dependencies (pure import relations the call graph does not express). direction='up' lists files importing the targets, 'down' lists files the targets import, 'both' lists both. Combines resolved imports with unique-suffix import-binding derivation; unresolved entries are marked (not indexed)."
+    )]
+    async fn query_dependencies(&self, Parameters(p): Parameters<DepsParams>) -> String {
+        self.wrap(deps::query_dependencies_impl(
+            &self.cfg,
+            &p.files,
+            &p.direction,
+            p.depth,
+        ))
     }
 }
 
