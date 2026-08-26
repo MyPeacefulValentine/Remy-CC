@@ -1,74 +1,70 @@
 # remy-index MCP 服务器
 
-基于 stdio 的 [Model Context Protocol](https://modelcontextprotocol.io/) 服务器，从 remy-index SQLite 数据库暴露代码智能查询。Claude Code 通过 JSON-RPC 与此服务器通信，查询符号定义、调用图和影响分析。
+基于 stdio 的 [Model Context Protocol](https://modelcontextprotocol.io/) 服务器，从 remy-index SQLite 数据库暴露代码智能查询。自 R4.1 起，生产宿主为 Rust 二进制——`remy-daemon mcp`（rmcp 3.1.4），由安装器部署到 `~/.remy-cc/bin/`。Claude Code 通过 JSON-RPC 与之通信，查询符号定义、调用图和影响分析，无需子进程。
+
+Python 服务器（`index_mcp_server.py`，FastMCP）作为 H.4 差分套（`tests/test_mcp_rust_parity.py`）的开发期渲染 oracle 保留在仓内，不再部署。
 
 ## 前置条件
 
 | 依赖 | 说明 |
 | :--- | :--- |
-| Python 3.10+ | `mcp` SDK 要求 |
-| `mcp` 包 | `pip install mcp`（FastMCP stdio 传输） |
+| `remy-daemon` 二进制 | 由 `install.py` 部署到 `~/.remy-cc/bin/` |
 | `logic_index.db` | 由 `/remy-index` 或 `struct_scan.py` 生成 |
 
-若 `mcp` 未安装或 `REMY_MCP_SERVER_ENABLED=false`，服务器以 exit code 0 退出。
+若 `REMY_MCP_SERVER_ENABLED=false`，服务器向 stderr 输出提示并以 exit code 0 退出。
 
 ## 架构
 
 ```
 ┌─────────────────────┐       JSON-RPC (stdio)       ┌──────────────────────────┐
-│   Claude Code       │ ◄──────────────────────────► │  index_mcp_server.py     │
-│   (MCP 客户端)      │                              │  ├─ _init_freshness()    │
-└─────────────────────┘                              │  ├─ 13 个tool handler    │
-                                                     │  └─ _with_freshness()    │
+│   Claude Code       │ ◄──────────────────────────► │  remy-daemon mcp         │
+│   (MCP 客户端)      │                              │  (rmcp，每会话一进程)    │
+└─────────────────────┘                              │  ├─ init_freshness()     │
+                                                     │  ├─ 13 个tool handler    │
+                                                     │  └─ with_freshness()     │
                                                      └──────────┬───────────────┘
-                                                                │ import
+                                                                │ mod
                                                      ┌──────────▼───────────────┐
-                                                     │  owner 查询模块          │
-                                                     │  ├─ common / facts       │
-                                                     │  ├─ graph / search       │
-                                                     │  └─ navigate             │
+                                                     │  域模块                  │
+                                                     │  ├─ config / common      │
+                                                     │  ├─ facts / graph        │
+                                                     │  ├─ search / navigate    │
+                                                     │  └─ deps / freshness     │
                                                      └──────────┬───────────────┘
-                                                                │ import
-                                                     ┌──────────▼───────────────┐
-                                                     │  impact.py +             │
-                                                     │  struct_scan.py           │
-                                                     │  （稳定辅助入口）         │
-                                                     └──────────┬───────────────┘
-                                                                │ 只读
+                                                                │ rusqlite (WAL)
                                                      ┌──────────▼───────────────┐
                                                      │  .claude/logic_index.db  │
                                                      │  (SQLite, WAL 模式)      │
                                                      └──────────────────────────┘
 ```
 
-**数据流向**：`struct_scan.py`继续作为SessionStart和脏文件消费器的稳定入口，并将结构扫描委托给`scanner.py`；`schema.py`、`symbol_names.py`和`migrations.py`分别保存schema、名称拆词和数据库迁移契约。扫描器向`logic_index.db`写入符号、边和模式。MCP服务器以WAL只读模式打开数据库并提供查询服务。全量、增量和手动索引写入者共用项目扫描锁；MCP读取可与当前写入者并发。
+**数据流向**：扫描器（生产为 Rust `remy-daemon scan`；Python `struct_scan.py` 为保留回退臂）在项目扫描锁保护下向 `logic_index.db` 写入符号、边和模式。MCP 服务器为每次查询打开短生命周期只读连接（WAL + `busy_timeout=3000`，无写路径——INV-R2）；MCP 读取可与当前写入者并发。查询语义按 H.4 基线（`docs/MCP_RUST_PARITY_BASELINE_zh.md`）自 Python owner 模块逐字节迁移。
 
 ## 启动与注册
 
-安装时注册到 `~/.claude.json`：
+安装时注册到 `~/.claude.json`（模板：`remy_mcp.json`）：
 
 ```json
 {
   "mcpServers": {
     "remy-index": {
       "type": "stdio",
-      "command": "python",
-      "args": ["-u", "~/.claude/remy-src/index_mcp_server.py"]
+      "command": "~/.remy-cc/bin/remy-daemon",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
 - Claude Code 在会话启动时自动拉起服务器。
-- `-u` 标志强制 stdout 无缓冲，确保 JSON-RPC 响应立即刷新到管道。
-- 服务器在 Claude Code 会话期间持续运行。
+- 服务器在 Claude Code 会话期间持续运行（每会话一个进程）。
 
 ### 启动流程
 
-1. 导入检查：若 `mcp` 包缺失，输出错误到 stderr 并 `sys.exit(0)`。
-2. 环境检查：若 `REMY_MCP_SERVER_ENABLED=false`，静默退出。
-3. **`_init_freshness()`**：通过 subprocess 探测索引新鲜度（git commit 比对或 hash 抽样）。必须在事件循环启动前执行（见[故障排查](#故障排查)）。
-4. **`mcp.run(transport="stdio")`**：进入 asyncio 事件循环，开始接收 JSON-RPC 请求。
+1. **`config::load()`**：读取 `remy-config.json`（用户级，项目级覆盖）与 `REMY_*` 进程环境变量；非法值诊断输出到 stderr。
+2. 环境检查：若 `REMY_MCP_SERVER_ENABLED=false`，向 stderr 输出提示并以 exit 0 退出。
+3. **`init_freshness()`**：探测索引新鲜度（git commit 比对或 hash 抽样），仅执行一次且先于 tokio runtime 启动；警告串此后不可变。
+4. **`serve(stdio())`**：启动 tokio runtime，开始接收 JSON-RPC 请求。
 
 ## 工具参考
 
@@ -302,6 +298,31 @@ search results for 'parse_file' (2 results, matched via union)
 
 ---
 
+### query_cluster_summary
+
+返回单个或全部集群的子系统级摘要。
+
+| 参数 | 类型 | 默认值 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `name` | `str` | `""` | 集群名（精确匹配）；空值返回全部集群，按 `file_count DESC, name` 排序 |
+
+每个集群渲染 `## <name> (<N> files)` 头部（存在不同 label 时附 `[alias: <label>]`），
+有可用摘要版本时渲染 `short:` / `full:` 行，`entry_symbols` 至多 5 个，仅当
+当前摘要 status 非 `ok` 时渲染 `status:` 行。
+
+**输出示例**（实机探针；该集群尚无生成摘要，故无 `short:`/`full:` 行并显示 status）：
+```
+## Remy-CC/hooks (11 files)
+  entry_symbols: Remy-CC/hooks/session_anchor.py::read, Remy-CC/hooks/permission_gate.py::decide, Remy-CC/hooks/pre_tool_guard.py::validate_packet
+  status: stale
+```
+
+**错误：**
+- 未知集群：`No clusters found matching '<name>'`
+- 空表：`No clusters found`
+
+---
+
 ### query_cluster_files
 
 列出指定 cluster 的成员文件，可选附短摘要。
@@ -412,20 +433,20 @@ Python运行时参数保存在`~/.claude/remy-config.json`，项目覆盖保存�
 
 | 变量 | 默认值 | 说明 |
 | :--- | :--- | :--- |
-| `REMY_REMY_MCP_SERVER_ENABLED` | `true` | 下次启动时禁用MCP服务器 |
-| `REMY_REMY_MCP_BFS_MAX_DEPTH` | `5` | callers/callees/impact的BFS深度上限 |
-| `REMY_REMY_MCP_RESULT_LIMIT` | `50` | BFS层与query_search共享结果上限 |
+| `REMY_MCP_SERVER_ENABLED` | `true` | 下次启动时禁用MCP服务器 |
+| `REMY_MCP_BFS_MAX_DEPTH` | `5` | callers/callees/impact/dependencies的BFS深度上限 |
+| `REMY_MCP_RESULT_LIMIT` | `50` | BFS层与query_search共享结果上限 |
 | `REMY_MCP_STATIC_ONLY_DEFAULT` | `false` | 查询实现收到`static_only=None`时使用的内部默认值；公开MCP工具保持`false` |
 | `REMY_FLOW_MAX_DEPTH` | `15` | query_flow深度硬上限 |
 | `REMY_FLOW_MAX_VISITED` | `2000` | query_flow访问节点硬上限 |
 | `REMY_NAVIGATE_CANDIDATE_CLUSTERS` | `5` | query_navigate每次意图查询的cluster候选上限 |
 | `REMY_NAVIGATE_CANDIDATE_FILES` | `10` | query_navigate每次意图查询的file候选上限 |
 | `REMY_NAVIGATE_CANDIDATE_SYMBOLS` | `10` | query_navigate每次意图查询的symbol候选上限 |
-| `REMY_REMY_LOGIC_INDEX_DB_PATH` | `.claude/logic_index.db` | 相对项目根的数据库路径 |
+| `REMY_LOGIC_INDEX_DB_PATH` | `.claude/logic_index.db` | 相对项目根的数据库路径 |
 
 ## 索引新鲜度检测
 
-启动时，`_init_freshness()` 检查索引是否最新：
+启动时，`init_freshness()`（`remy-daemon/src/mcp/freshness.rs`）检查索引是否最新：
 
 ```
 ┌─────────────────────────────┐
@@ -475,16 +496,6 @@ symbols matching 'parse_file' (1 results)
 
 ## 故障排查
 
-### 首次 tool call 永久挂起（Windows）
-
-**症状**：首次 MCP tool call 永不返回。
-
-**根因**：`subprocess.run(capture_output=True)` 在 asyncio tool handler 内部死锁。Windows 的 ProactorEventLoop 使用 I/O completion ports 管理 MCP 服务器的 stdin/stdout 管道。在同一进程内通过 `capture_output=True` 创建新管道时两者冲突，导致 subprocess 的管道读取永远不完成。
-
-**修复**（v1.4.3）：所有 subprocess 调用已移至 `_init_freshness()`，在 `mcp.run()` 启动事件循环前执行。
-
-**若修改后再次出现类似症状**：检查 tool handler 代码路径中是否存在 `subprocess.run`、`subprocess.Popen` 或 `os.popen` 调用。
-
 ### "Error: logic_index.db not found"
 
 数据库不存在于预期路径。运行 `/remy-index` 生成，或检查 `REMY_LOGIC_INDEX_DB_PATH` 是否指向正确位置。
@@ -498,52 +509,56 @@ symbols matching 'parse_file' (1 results)
 ### MCP 服务器未启动
 
 检查：
-1. `python --version` >= 3.10
-2. `pip show mcp` 确认包已安装
-3. `~/.claude.json` 的 `mcpServers` 中包含 `remy-index` 条目
-4. `REMY_MCP_SERVER_ENABLED` 未设为 `false`
+1. `~/.remy-cc/bin/remy-daemon --version` 可运行并报告部署版本
+2. `~/.claude.json` 的 `mcpServers` 中包含 `remy-index` 条目（command = daemon 二进制，args `["mcp"]`）
+3. `REMY_MCP_SERVER_ENABLED` 未设为 `false`
 
-诊断：手动运行并检查 stderr：
+诊断：手动运行并检查 stderr（配置诊断与禁用提示均输出到 stderr）：
 ```bash
-python -u ~/.claude/remy-src/index_mcp_server.py
+~/.remy-cc/bin/remy-daemon mcp
 ```
+
+### 首次 tool call 挂起（历史——仅适用开发期 Python oracle）
+
+该故障模式仅适用于开发期 Python oracle（`index_mcp_server.py`），不适用于 Rust 生产宿主。Windows 上 `subprocess.run(capture_output=True)` 在 asyncio tool handler 内部死锁：ProactorEventLoop 的 I/O completion ports 与同进程新建管道冲突，subprocess 读取永不完成。修复（v1.4.3）将全部 subprocess 调用移至 oracle 的 `_init_freshness()`，先于 `mcp.run()` 启动事件循环。修改 oracle 时，tool handler 代码路径中不得出现 `subprocess.run`/`subprocess.Popen`/`os.popen`。
 
 ## 开发者指南
 
-### 源文件
+### 源文件（Rust 宿主，`remy-daemon/src/mcp/`）
 
-| 文件 | 行数 | 职责 |
-| :--- | :--- | :--- |
-| `index_mcp_server.py` | ~280 | FastMCP 服务器定义、tool handler（薄封装）、新鲜度初始化 |
-| `index_mcp_common.py` | ~100 | 共享数据库访问、ContextVar、配置作用域、摘要查找 |
-| `index_mcp_facts.py` | ~240 | symbol/file/cluster/pattern 事实查询 |
-| `index_mcp_graph.py` | ~580 | ambiguous BFS、callers/callees/impact、flow 遍历与格式化 |
-| `index_mcp_search.py` | ~490 | 查询校验、exact/prefix/BM25/fuzzy 四通道、候选合并 |
-| `index_mcp_navigate.py` | ~380 | 意图导航：候选收集、judge_cache 键、prompt、LLM 排序 |
+| 模块 | 职责 |
+| :--- | :--- |
+| `mod.rs` | rmcp 服务器定义、tool 注册（`#[tool]`）、INSTRUCTIONS 文本、tokio 入口 |
+| `config.rs` | `REMY_*` 字段注册表、remy-config.json 作用域、环境变量覆盖、诊断 |
+| `common.rs` | 共享数据库访问（`open_db`）、摘要查找、新鲜度前缀辅助 |
+| `facts.rs` | symbol/file/cluster/pattern 事实查询 |
+| `graph.rs` | ambiguous BFS、callers/callees/impact、flow 遍历与格式化 |
+| `search.rs` | 查询校验、exact/prefix/BM25/fuzzy 四通道、候选合并 |
+| `navigate.rs` | 意图导航：候选收集、judge_cache 键、prompt、LLM 排序（reqwest） |
+| `deps.rs` | 文件级导入关系（复用 `scanner_core::postprocess::derive_import_bindings`） |
+| `freshness.rs` | 启动期新鲜度探测（git 比对、hash 抽样） |
 
-### 架构约束
+Python oracle 对应模块（`index_mcp_server.py` + `index_mcp_common/facts/graph/search/navigate.py`）保留在 `remy-src/`，仅供差分套与 eval 基准使用。
 
-**INV-1**：tool handler 代码路径中禁止调用 `subprocess.run`、`subprocess.Popen` 或任何创建 OS 管道的 API。此不变量防止 Windows ProactorEventLoop 死锁。违反将导致服务器在 Windows 上首次 tool call 时挂起。
+### 架构约束（Rust 宿主）
 
-**INV-2**：`_freshness_warning` 由 `_init_freshness()` 在事件循环启动前写入一次，之后不再修改。tool handler 仅读取此值。
+**INV-1**：外部进程调用（git 探测）仅发生在 `init_freshness()` 内，且先于 tokio runtime 启动（`mod.rs::run` 顺序）。tool handler 代码路径不派生进程；navigate 的 LLM 调用使用进程内 `reqwest`。
 
-**INV-3**：当 `result.startswith("Error:")` 时，`_with_freshness(result)` 跳过警告前缀——错误消息原样返回。
+**INV-2**：新鲜度警告由 `init_freshness()` 计算一次，经 `Arc<String>` 只读共享；tool handler 不修改它。
 
-**INV-4**：所有 tool handler 为同步 `def`（非 `async def`）。FastMCP 在线程池中运行它们。SQLite 操作不与 asyncio 冲突。
+**INV-3**：当结果以 `Error:` 开头时，`with_freshness(result)` 跳过警告前缀——错误消息原样返回（`common.rs`）。
+
+**INV-4**：每次查询打开短生命周期 rusqlite 连接（WAL + `busy_timeout=3000`），从不写入——读路径不进 daemon 写拓扑（INV-R2）。
+
+历史 oracle 约束：Python FastMCP oracle 额外禁止 tool handler 内的 subprocess 调用（Windows ProactorEventLoop 死锁——见故障排查）。
 
 ### 新增 Tool
 
-1. 在对应职责子模块（`index_mcp_facts.py` / `index_mcp_graph.py` / `index_mcp_search.py` / `index_mcp_navigate.py`）中实现 `query_xxx_impl(...)`，并在 `index_mcp_server.py` 中从该 owner 模块 import。
-2. 在 `index_mcp_server.py` 中添加 handler：
-   ```python
-   @mcp.tool()
-   def query_xxx(param: str, ...) -> str:
-       """MCP 工具列表中的单行描述。"""
-       return _with_freshness(query_xxx_impl(param, ...))
-   ```
-3. 在 `settings.example.json` 中注册权限（已被 `mcp__remy-index__*` 通配符覆盖）。
-4. 更新本 README 和主项目 README。
-5. 更新 `CLAUDE.md` 指令文本（`FastMCP()` 构造函数的 `instructions` 参数）。
+1. 在 `remy-daemon/src/mcp/` 下对应职责域模块中实现 `query_xxx_impl(...)`（新域则新建模块，如 `deps.rs`）。
+2. 在 `mod.rs` 注册：`Params` 结构体（serde 默认值 + schemars）+ 以 `self.wrap(...)` 包装 impl 的 `#[tool]` 方法 + INSTRUCTIONS 增一行。
+3. 按 `docs/MCP_RUST_PARITY_BASELINE_zh.md` §4.2 裁定验证面：有 Python oracle 臂的 tool 入差分矩阵；Rust 单实现 tool 建专项套（参照 `tests/test_mcp_dependencies.py`）并加入 parity 的 `RUST_ONLY_TOOLS` 白名单。
+4. 权限已被 `settings.example.json` 的 `mcp__remy-index__*` 通配符覆盖。
+5. 同步注册面：本 README（+英文版）、两个项目 README、工作区 `CLAUDE.md` 工具计数、`hooks/doc_manager/mcp_minimal_template.json`、`docs/TESTING.md`（+_zh）。
 
 ### 边置信度层级
 
