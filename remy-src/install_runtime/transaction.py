@@ -34,6 +34,8 @@ class FileTransaction:
         self.roots = roots
         self.journal_path = journal_path
         self.manifest_path = manifest_path
+        self.pending_deletes_path = journal_path.with_name("pending_deletes.json")
+        self.cleanup_leftovers: list[str] = []
 
     def recover(self) -> Optional[str]:
         if not self.journal_path.exists():
@@ -265,14 +267,92 @@ class FileTransaction:
         self.journal_path.unlink(missing_ok=True)
 
     def _cleanup(self, record: TransactionRecord) -> None:
+        """Best-effort residue removal after commit.
+
+        A locked backup (e.g. the previous daemon binary still mapped by a
+        running process on Windows) must not fail the committed install:
+        undeletable paths are registered for a later sweep and the journal is
+        released. Only a double failure — undeletable AND unregistrable —
+        keeps the journal and propagates, so recover() retries the full chain.
+        """
+        self.cleanup_leftovers = []
+        residues: list[Path] = []
         for action in record.actions:
             target = resolve_managed_path(self.roots, action.root, action.path)
-            target.with_name(action.backup_name).unlink(missing_ok=True)
+            residues.append(target.with_name(action.backup_name))
             if action.stage_name:
-                target.with_name(action.stage_name).unlink(missing_ok=True)
+                residues.append(target.with_name(action.stage_name))
         if record.operation == "uninstall":
-            self._removed_manifest_path(record).unlink(missing_ok=True)
+            residues.append(self._removed_manifest_path(record))
+        leftovers: list[Path] = []
+        for path in residues:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                leftovers.append(path)
+        if leftovers:
+            self._register_pending_deletes(leftovers)
+            self.cleanup_leftovers = [str(path) for path in leftovers]
         self.journal_path.unlink(missing_ok=True)
+
+    def _register_pending_deletes(self, paths: Sequence[Path]) -> None:
+        existing: list[str] = []
+        if self.pending_deletes_path.exists():
+            try:
+                document = load_json(self.pending_deletes_path)
+            except MetadataError:
+                document = None
+            entries = document.get("paths") if isinstance(document, dict) else None
+            if isinstance(entries, list):
+                existing = [str(entry) for entry in entries]
+        merged = list(dict.fromkeys(existing + [str(path) for path in paths]))
+        atomic_write_json(
+            self.pending_deletes_path, {"schema_version": 1, "paths": merged}
+        )
+
+    def _is_managed(self, path: Path) -> bool:
+        for root in (self.roots.claude, self.roots.remy):
+            try:
+                path.resolve().relative_to(Path(root).resolve())
+                return True
+            except ValueError:
+                continue
+        return False
+
+    def sweep_pending_deletes(self) -> None:
+        """Best-effort deletion of previously registered residues.
+
+        Entries outside the two managed roots are dropped without deletion.
+        Any failure keeps the entry (or the register file) for the next
+        sweep; sweeping never blocks the surrounding operation.
+        """
+        if not self.pending_deletes_path.exists():
+            return
+        try:
+            document = load_json(self.pending_deletes_path)
+        except MetadataError:
+            document = None
+        entries = document.get("paths") if isinstance(document, dict) else None
+        paths = [str(entry) for entry in entries] if isinstance(entries, list) else []
+        remaining: list[str] = []
+        for text in paths:
+            path = Path(text)
+            if not self._is_managed(path):
+                continue
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                remaining.append(text)
+        try:
+            if remaining:
+                atomic_write_json(
+                    self.pending_deletes_path,
+                    {"schema_version": 1, "paths": remaining},
+                )
+            else:
+                self.pending_deletes_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     def _removed_manifest_path(self, record: TransactionRecord) -> Path:
         return self.manifest_path.with_name(

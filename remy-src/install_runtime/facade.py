@@ -65,7 +65,10 @@ class InstallRuntime:
         self.runtime_path = roots.remy / RUNTIME_RELATIVE_PATH
 
     def install(self, request: InstallRequest) -> OperationResult:
-        recovery = self._transaction(self.manifest_path).recover()
+        recovery_transaction = self._transaction(self.manifest_path)
+        recovery = recovery_transaction.recover()
+        cleanup_leftovers = list(recovery_transaction.cleanup_leftovers)
+        recovery_transaction.sweep_pending_deletes()
         current, _ = self._load_current_manifest()
         self._validate_owned_files(current)
         daemon_path = self.roots.remy / "bin" / default_daemon_name()
@@ -153,8 +156,15 @@ class InstallRuntime:
                     }
                 )
             old_hash = sha256_file(self.manifest_path) if self.manifest_path.is_file() else None
-            changed = self._transaction(self.manifest_path).execute(
-                "install", changes, manifest, old_hash
+            transaction = self._transaction(self.manifest_path)
+            changed = transaction.execute("install", changes, manifest, old_hash)
+            cleanup_leftovers.extend(transaction.cleanup_leftovers)
+        warnings: list[str] = []
+        if cleanup_leftovers:
+            warnings.append(
+                "cleanup deferred for {} locked file(s); a later install removes them".format(
+                    len(cleanup_leftovers)
+                )
             )
         return OperationResult(
             operation="install",
@@ -162,6 +172,7 @@ class InstallRuntime:
             exit_code=0,
             hook_mode=hook_mode,
             changed=changed,
+            warnings=warnings,
             recovery=recovery,
         )
 
