@@ -1409,3 +1409,97 @@ def test_prompt_language_eof_falls_back_to_existing_config(claude_home, monkeypa
 
     monkeypatch.setattr("builtins.input", raise_eof)
     assert install.prompt_language() == "zh-CN"
+
+
+def _deny_backup_unlink(monkeypatch):
+    original = Path.unlink
+
+    def fake_unlink(self, missing_ok=False):
+        if ".backup" in self.name:
+            raise PermissionError(13, "image in use", str(self))
+        return original(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", fake_unlink)
+
+
+def test_v3_locked_backup_defers_cleanup_without_failing_install(
+    v3_runtime, tmp_path, monkeypatch
+):
+    runtime, roots = v3_runtime
+    runtime.install(_v3_request(tmp_path, "one"))
+    with monkeypatch.context() as patch_context:
+        _deny_backup_unlink(patch_context)
+        result = runtime.install(_v3_request(tmp_path, "two"))
+    assert result.exit_code == 0
+    assert any("cleanup deferred" in warning for warning in result.warnings)
+    assert not (roots.remy / "install" / "transaction.json").exists()
+    pending = json.loads(
+        (roots.remy / "install" / "pending_deletes.json").read_text(encoding="utf-8")
+    )
+    assert pending["schema_version"] == 1
+    assert any(".backup" in entry for entry in pending["paths"])
+    target = roots.claude / "skills" / "remy-test" / "data.txt"
+    assert target.read_text(encoding="utf-8") == "two"
+
+
+def test_v3_next_install_sweeps_pending_deletes(v3_runtime, tmp_path, monkeypatch):
+    runtime, roots = v3_runtime
+    runtime.install(_v3_request(tmp_path, "one"))
+    with monkeypatch.context() as patch_context:
+        _deny_backup_unlink(patch_context)
+        runtime.install(_v3_request(tmp_path, "two"))
+    pending_path = roots.remy / "install" / "pending_deletes.json"
+    registered = json.loads(pending_path.read_text(encoding="utf-8"))["paths"]
+
+    result = runtime.install(_v3_request(tmp_path, "two"))
+
+    assert result.exit_code == 0
+    assert not result.warnings
+    assert not pending_path.exists()
+    assert all(not Path(entry).exists() for entry in registered)
+
+
+def test_sweep_is_idempotent_and_drops_unmanaged_entries(v3_runtime, tmp_path):
+    runtime, roots = v3_runtime
+    transaction = FileTransaction(
+        roots,
+        roots.remy / "install" / "transaction.json",
+        roots.remy / "install" / "manifest.json",
+    )
+    managed_missing = roots.claude / "skills" / ".ghost.backup"
+    unmanaged = tmp_path / "outside" / "victim.txt"
+    unmanaged.parent.mkdir(parents=True)
+    unmanaged.write_text("keep", encoding="utf-8")
+    transaction.pending_deletes_path.parent.mkdir(parents=True, exist_ok=True)
+    transaction.pending_deletes_path.write_text(
+        json.dumps(
+            {"schema_version": 1, "paths": [str(managed_missing), str(unmanaged)]}
+        ),
+        encoding="utf-8",
+    )
+
+    transaction.sweep_pending_deletes()
+    transaction.sweep_pending_deletes()
+
+    assert not transaction.pending_deletes_path.exists()
+    assert unmanaged.read_text(encoding="utf-8") == "keep"
+
+
+def test_v3_double_failure_keeps_journal_and_raises(v3_runtime, tmp_path, monkeypatch):
+    runtime, roots = v3_runtime
+    runtime.install(_v3_request(tmp_path, "one"))
+
+    def deny_register(self, paths):
+        raise OSError(28, "register store unavailable")
+
+    with monkeypatch.context() as patch_context:
+        _deny_backup_unlink(patch_context)
+        patch_context.setattr(
+            FileTransaction, "_register_pending_deletes", deny_register
+        )
+        with pytest.raises(InstallRuntimeError, match="cleanup is incomplete"):
+            runtime.install(_v3_request(tmp_path, "two"))
+
+    assert (roots.remy / "install" / "transaction.json").exists()
+    target = roots.claude / "skills" / "remy-test" / "data.txt"
+    assert target.read_text(encoding="utf-8") == "two"
