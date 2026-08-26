@@ -7,7 +7,7 @@
 
 use crate::rconfig::PostprocessConfig;
 use crate::{clusters, pyjson, synth};
-use rusqlite::{params, params_from_iter, OptionalExtension, Transaction};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension, Transaction};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -527,15 +527,17 @@ fn purge_heuristic_edges(tx: &Transaction) -> rusqlite::Result<()> {
     Ok(())
 }
 
-struct ImportDerivation {
-    supplements: HashMap<String, Vec<String>>,
-    externals: HashMap<String, HashSet<String>>,
+pub struct ImportDerivation {
+    pub supplements: HashMap<String, Vec<String>>,
+    pub externals: HashMap<String, HashSet<String>>,
 }
 
 /// `StructScanner._derive_import_bindings`: unique path-suffix matching
-/// against indexed Python files with a stdlib short circuit.
-fn derive_import_bindings(tx: &Transaction) -> rusqlite::Result<ImportDerivation> {
-    let mut stmt = tx.prepare("SELECT path, import_bindings FROM files ORDER BY path")?;
+/// against indexed Python files with a stdlib short circuit. Exported for
+/// the MCP query_dependencies query-time derivation (single semantic source
+/// shared with scan-time edge resolution).
+pub fn derive_import_bindings(conn: &Connection) -> rusqlite::Result<ImportDerivation> {
+    let mut stmt = conn.prepare("SELECT path, import_bindings FROM files ORDER BY path")?;
     let rows: Vec<(String, Option<String>)> = stmt
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<Result<_, _>>()?;
