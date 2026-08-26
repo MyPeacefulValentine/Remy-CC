@@ -588,6 +588,23 @@ f-string 与 bytes 字面量在双侧均不构成 docstring。
 内联测试 `case_mismatched_probes_are_rejected`，以及跨实现差分套的
 `casing.rs` 语料。
 
+## 全局消歧语言边界（全部 parser contract +1）
+
+直接边 resolver 的全局同名层不区分源语言地匹配符号,Python 裸名调用
+`dirname` 可被解析到 Rust 的 `fn dirname`（2026-08-26 工作区探针计数
+986 条跨语言边,占已解析边 12.9%;本索引不建模跨语言 FFI,此类边全部
+错误）。双侧现在在全局层 join `files` 并要求候选的 `files.language`
+与 caller 文件相等;same-file 与 import 层天然同语言,不变。由于 Rust
+增量 postprocess 只重解析目标集内的边,部署库中已解析的存量行不会
+自行修复——四个 parser 的 `CACHE_CONTRACT_VERSION` 各 +1（python
+3 → 4、c_cpp 1 → 2、ts 2 → 3、rust 4 → 5,双侧同步）,全部存量行经
+identity-invalid 路径重入,升级后首次扫描即按新规则重解析全部边。
+symbol content hash 不变,摘要不重新生成。锁定用例：
+`test_struct_scan.py::TestResolveCallEdges::test_global_tier_skips_cross_language_candidates`
+/ `test_global_tier_same_language_candidate_wins_over_cross_language`、
+`postprocess.rs` 内联测试 `global_tier_is_language_bounded`,以及跨实现
+差分套的 `cross_lang.py` / `cross_lang.rs` 语料对。
+
 ## state.db WAL 备份约束
 
 `~/.remy-cc/state.db` 以 WAL 日志模式运行。未 checkpoint 的行只存在于

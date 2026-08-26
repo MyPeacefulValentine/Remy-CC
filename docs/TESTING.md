@@ -691,6 +691,29 @@ entries drop out. Locked by
 `case_mismatched_probes_are_rejected` inline test in `parse_rust.rs`, and
 the `casing.rs` corpus fixture in the cross-implementation diff suite.
 
+## Language-bounded global resolution (all parser contracts +1)
+
+The direct-edge resolver's global same-name tier matched symbols regardless
+of source language, so a bare Python call like `dirname` could resolve to a
+Rust `fn dirname` (a workspace probe on 2026-08-26 counted 986 such
+cross-language edges, 12.9% of resolved edges; the index does not model
+cross-language FFI, so every one is wrong). Both sides now join `files`
+in the global tier and require `files.language` equality with the caller's
+file; same-file and import tiers are inherently same-language and are
+unchanged. Because the Rust incremental postprocess only re-resolves
+targeted edges, already-resolved rows in deployed databases would never
+heal on their own — all four parser `CACHE_CONTRACT_VERSION`s bumped by one
+(python 3 → 4, c_cpp 1 → 2, ts 2 → 3, rust 4 → 5, both sides in lockstep)
+so every stored row re-enters the identity-invalid path and the full edge
+set re-resolves under the new rule on the first scan after upgrade.
+Symbol content hashes are unchanged, so summaries do not regenerate.
+Locked by
+`test_struct_scan.py::TestResolveCallEdges::test_global_tier_skips_cross_language_candidates`
+/ `test_global_tier_same_language_candidate_wins_over_cross_language`, the
+`global_tier_is_language_bounded` inline test in `postprocess.rs`, and the
+`cross_lang.py` / `cross_lang.rs` corpus pair in the cross-implementation
+diff suite.
+
 ## state.db WAL backup constraint
 
 `~/.remy-cc/state.db` runs in WAL journal mode. Rows not yet checkpointed live
