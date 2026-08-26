@@ -3,7 +3,7 @@ members = [".", "scanner-core"]
 
 [package]
 name = "remy-daemon"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2021"
 description = "Remy-CC resident daemon (R1.1: single-instance skeleton)"
 license = "MIT"
