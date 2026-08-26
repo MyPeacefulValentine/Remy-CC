@@ -122,7 +122,7 @@ class PythonParser(LanguageParser):
     """Parser for Python source files using the standard library ast module."""
 
     language_id = "PythonParser"
-    CACHE_CONTRACT_VERSION = "3"
+    CACHE_CONTRACT_VERSION = "4"
 
     def __init__(self):
         self._cached_hash = None

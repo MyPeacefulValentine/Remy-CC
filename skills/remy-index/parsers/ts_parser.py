@@ -220,7 +220,7 @@ class TSParser(LanguageParser):
     """Parser for TypeScript and TSX source files. Uses tree-sitter when available, regex otherwise."""
 
     language_id = "TSParser"
-    CACHE_CONTRACT_VERSION = "2"
+    CACHE_CONTRACT_VERSION = "3"
 
     @staticmethod
     def _tree_sitter_environment():

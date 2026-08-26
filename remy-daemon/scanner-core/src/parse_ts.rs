@@ -28,7 +28,7 @@ use std::sync::OnceLock;
 use tree_sitter::{Language as TsLanguage, Node, Parser};
 
 pub const LANGUAGE_ID: &str = "TSParser";
-pub const CACHE_CONTRACT_VERSION: &str = "2";
+pub const CACHE_CONTRACT_VERSION: &str = "3";
 pub const EXTENSIONS: &[&str] = &[".ts", ".tsx"];
 
 /// Crate versions pinned in Cargo.toml, recorded in `parser_environment`
@@ -630,7 +630,7 @@ function f(x: number) {}
     fn cache_identity_switches_backend_by_extension() {
         assert_eq!(cache_identity("a.ts").backend, "ts-tree-sitter");
         assert_eq!(cache_identity("a.tsx").backend, "tsx-tree-sitter");
-        assert_eq!(cache_identity("a.ts").contract_version, "2");
+        assert_eq!(cache_identity("a.ts").contract_version, "3");
     }
 
     #[test]

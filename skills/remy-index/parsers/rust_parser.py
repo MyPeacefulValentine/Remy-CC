@@ -142,7 +142,7 @@ class RustParser(LanguageParser):
     """Parser for Rust source files. Requires tree-sitter-rust; no fallback."""
 
     language_id = "RustParser"
-    CACHE_CONTRACT_VERSION = "4"
+    CACHE_CONTRACT_VERSION = "5"
 
     def get_extensions(self):
         return [".rs"]

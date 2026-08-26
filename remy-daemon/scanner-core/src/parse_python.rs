@@ -34,7 +34,7 @@ use std::sync::OnceLock;
 use tree_sitter::{Node, Parser, Tree};
 
 pub const LANGUAGE_ID: &str = "PythonParser";
-pub const CACHE_CONTRACT_VERSION: &str = "3";
+pub const CACHE_CONTRACT_VERSION: &str = "4";
 pub const EXTENSIONS: &[&str] = &[".py"];
 
 /// Crate versions pinned in Cargo.toml, recorded in `parser_environment`

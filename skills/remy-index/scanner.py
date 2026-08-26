@@ -493,10 +493,11 @@ class StructScanner:
         ).fetchall()
 
         for edge_id, source_file, callee_name, call_form in unresolved:
-            imports_row = self.db.execute(
-                "SELECT imports FROM files WHERE path = ?", (source_file,)
+            file_row = self.db.execute(
+                "SELECT imports, language FROM files WHERE path = ?", (source_file,)
             ).fetchone()
-            import_list = json.loads(imports_row[0]) if imports_row and imports_row[0] else []
+            import_list = json.loads(file_row[0]) if file_row and file_row[0] else []
+            source_language = file_row[1] if file_row else None
             for extra in supplements.get(source_file, ()):
                 if extra not in import_list:
                     import_list.append(extra)
@@ -528,10 +529,12 @@ class StructScanner:
                 if call_form != "attribute" and callee_name in external_names.get(source_file, ()):
                     continue
                 global_syms = self.db.execute(
-                    "SELECT file_path || '::' || name FROM symbols "
-                    "WHERE (name = ? OR short_name = ?) AND file_path != ? "
-                    "ORDER BY file_path, name LIMIT ?",
-                    (callee_name, callee_name, source_file, fanout_cap)
+                    "SELECT symbols.file_path || '::' || symbols.name FROM symbols "
+                    "JOIN files ON files.path = symbols.file_path "
+                    "WHERE (symbols.name = ? OR symbols.short_name = ?) "
+                    "AND symbols.file_path != ? AND files.language = ? "
+                    "ORDER BY symbols.file_path, symbols.name LIMIT ?",
+                    (callee_name, callee_name, source_file, source_language, fanout_cap)
                 ).fetchall()
                 for (q,) in global_syms:
                     candidates.append((q, score_global))

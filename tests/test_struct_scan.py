@@ -612,6 +612,29 @@ class TestResolveCallEdges:
         ).fetchone()
         assert row == ("b.py::Cfg.get", "speculative")
 
+    def test_global_tier_skips_cross_language_candidates(self, tmp_path):
+        scanner = self._project(tmp_path, {
+            "a.py": "def caller():\n    return cross_probe()\n",
+            "native.c": "int cross_probe(void) {\n    return 0;\n}\n",
+        })
+        row = scanner.db.execute(
+            "SELECT callee_qualified, provenance FROM edges "
+            "WHERE source_file='a.py' AND callee='cross_probe'"
+        ).fetchone()
+        assert row == (None, None)
+
+    def test_global_tier_same_language_candidate_wins_over_cross_language(self, tmp_path):
+        scanner = self._project(tmp_path, {
+            "a.py": "def caller():\n    return cross_probe()\n",
+            "native.c": "int cross_probe(void) {\n    return 0;\n}\n",
+            "b.py": "def cross_probe():\n    return 1\n",
+        })
+        row = scanner.db.execute(
+            "SELECT callee_qualified, provenance FROM edges "
+            "WHERE source_file='a.py' AND callee='cross_probe'"
+        ).fetchone()
+        assert row == ("b.py::cross_probe", "probable")
+
     def test_attribute_call_import_hit_is_speculative(self, tmp_path):
         scanner = self._project(tmp_path, {
             "a.py": "import helper_mod\n\ndef caller():\n    return helper_mod.run()\n",
@@ -971,7 +994,7 @@ class TestScanFiles:
             "FROM files WHERE path='src/main.py'"
         ).fetchone()
         assert row is not None
-        assert row[0] == "3"
+        assert row[0] == "4"
         assert row[1] == "python-ast"
         assert json.loads(row[2])["python"] == f"{sys.version_info.major}.{sys.version_info.minor}"
 
@@ -992,14 +1015,14 @@ class TestScanFiles:
         monkeypatch.setattr(
             python_parser,
             "cache_identity_candidates",
-            lambda _path: (ParserCacheIdentity.create("4", "python-ast", {
+            lambda _path: (ParserCacheIdentity.create("5", "python-ast", {
                 "python": f"{sys.version_info.major}.{sys.version_info.minor}"
             }),),
         )
         monkeypatch.setattr(
             python_parser,
             "cache_identity",
-            lambda _source, _path: ParserCacheIdentity.create("4", "python-ast", {
+            lambda _source, _path: ParserCacheIdentity.create("5", "python-ast", {
                 "python": f"{sys.version_info.major}.{sys.version_info.minor}"
             }),
         )
@@ -1020,8 +1043,8 @@ class TestScanFiles:
         rows = scanner.db.execute(
             "SELECT path,parser_contract_version FROM files ORDER BY path"
         ).fetchall()
-        assert dict(rows)["entry.ts"] == "2"
-        assert dict(rows)["src/main.py"] == "4"
+        assert dict(rows)["entry.ts"] == "3"
+        assert dict(rows)["src/main.py"] == "5"
         monkeypatch.setattr(ts_parser, "parse_symbols", original_ts)
 
     def test_failed_contract_reparse_preserves_old_fact_and_identity(
@@ -1040,12 +1063,12 @@ class TestScanFiles:
         monkeypatch.setattr(
             parser,
             "cache_identity_candidates",
-            lambda _path: (ParserCacheIdentity.create("4", "python-ast", environment),),
+            lambda _path: (ParserCacheIdentity.create("5", "python-ast", environment),),
         )
         monkeypatch.setattr(
             parser,
             "cache_identity",
-            lambda _source, _path: ParserCacheIdentity.create("4", "python-ast", environment),
+            lambda _source, _path: ParserCacheIdentity.create("5", "python-ast", environment),
         )
         original_parse = parser.parse_symbols
 
@@ -1490,7 +1513,7 @@ class TestScanFiles:
         ).fetchone() == ("",)
         assert scanner.db.execute(
             "SELECT parser_contract_version FROM files WHERE path='src/utils.py'"
-        ).fetchone() == ("3",)
+        ).fetchone() == ("4",)
         assert scanner.db.execute(
             "SELECT name,hash FROM symbols WHERE file_path='src/main.py' ORDER BY name"
         ).fetchall() == before_main
@@ -2410,7 +2433,7 @@ class TestDocstringExcludedFromHash:
             migrated_call_count = len(calls)
             versions = {row[0] for row in scanner.db.execute(
                 "SELECT parser_contract_version FROM files")}
-            assert versions == {"3"}
+            assert versions == {"4"}
 
             assert scanner.scan_all().status.value == "success"
             assert len(calls) == migrated_call_count, "a migrated row must not re-parse again"

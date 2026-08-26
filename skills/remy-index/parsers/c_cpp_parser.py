@@ -417,7 +417,7 @@ class CCppParser(LanguageParser):
     """Parser for C and C++ source files. Uses tree-sitter when available, regex otherwise."""
 
     language_id = "CCppParser"
-    CACHE_CONTRACT_VERSION = "1"
+    CACHE_CONTRACT_VERSION = "2"
     _CPP_EXTENSIONS = frozenset((".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx"))
     _CPP_HEADER_INDICATORS = (
         "class ", "namespace ", "template<", "template <",

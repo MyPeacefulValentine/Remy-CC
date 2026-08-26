@@ -94,7 +94,7 @@ def test_fixture_regex_canary():
     report = canary.run_canary(canary.FIXTURE_ROOT, backend="regex", fixture=True)
     assert report["parser_backend"] == "regex"
     assert report["parser_cache_identities"] == [{
-        "contract_version": "1",
+        "contract_version": "2",
         "backend": "c-cpp-regex",
         "environment": {},
     }]
@@ -501,7 +501,7 @@ def test_oracle_manifest_generate_roundtrip(tmp_path: Path):
     }
     registry = {entry["language_id"]: entry for entry in loaded["registry"]}
     assert set(registry) == {"PythonParser", "CCppParser", "TSParser", "RustParser"}
-    assert registry["RustParser"]["cache_contract_version"] == "4"
+    assert registry["RustParser"]["cache_contract_version"] == "5"
     assert {gap["id"] for gap in loaded["known_gaps"]} == {
         "python-docstring-in-hash",
     }

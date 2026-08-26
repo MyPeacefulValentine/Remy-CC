@@ -10,7 +10,7 @@ use std::sync::OnceLock;
 use tree_sitter::{Language, Node, Parser};
 
 pub const LANGUAGE_ID: &str = "CCppParser";
-pub const CACHE_CONTRACT_VERSION: &str = "1";
+pub const CACHE_CONTRACT_VERSION: &str = "2";
 
 pub const EXTENSIONS: &[&str] = &[".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx"];
 

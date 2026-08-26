@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 use tree_sitter::{Node, Parser};
 
 pub const LANGUAGE_ID: &str = "RustParser";
-pub const CACHE_CONTRACT_VERSION: &str = "4";
+pub const CACHE_CONTRACT_VERSION: &str = "5";
 pub const EXTENSIONS: &[&str] = &[".rs"];
 
 /// Crate versions pinned in Cargo.toml, recorded in `parser_environment`
@@ -1069,7 +1069,7 @@ impl Plain for external::Widget {}
     #[test]
     fn cache_identity_is_the_rust_producer() {
         let identity = cache_identity();
-        assert_eq!(identity.contract_version, "4");
+        assert_eq!(identity.contract_version, "5");
         assert_eq!(identity.backend, "rust-tree-sitter");
         assert!(identity.environment.contains("tree-sitter-rust"));
     }

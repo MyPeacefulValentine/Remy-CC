@@ -621,7 +621,9 @@ pub fn derive_import_bindings(conn: &Connection) -> rusqlite::Result<ImportDeriv
 }
 
 /// `StructScanner._resolve_call_edges`: same-file > direct-import > global
-/// scoring with speculative downgrades for ties and attribute calls.
+/// scoring with speculative downgrades for ties and attribute calls. The
+/// global tier only matches candidates whose files.language equals the
+/// caller's (the index does not resolve cross-language FFI).
 fn resolve_call_edges(tx: &Transaction, config: &PostprocessConfig) -> rusqlite::Result<()> {
     resolve_call_edges_filtered(tx, config, None)
 }
@@ -660,15 +662,15 @@ fn resolve_call_edges_filtered(
         if only.is_some_and(|ids| !ids.contains(&edge_id)) {
             continue;
         }
-        let imports_json: Option<Option<String>> = tx
+        let file_row: Option<(Option<String>, Option<String>)> = tx
             .query_row(
-                "SELECT imports FROM files WHERE path = ?1",
+                "SELECT imports, language FROM files WHERE path = ?1",
                 params![source_file],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?;
+        let (imports_json, source_language) = file_row.unwrap_or((None, None));
         let mut import_list: Vec<String> = imports_json
-            .flatten()
             .and_then(|text| serde_json::from_str::<Value>(&text).ok())
             .and_then(|value| value.as_array().cloned())
             .map(|items| {
@@ -740,14 +742,17 @@ fn resolve_call_edges_filtered(
                 continue;
             }
             let mut stmt = tx.prepare(
-                "SELECT file_path || '::' || name FROM symbols \
-                 WHERE (name = ?1 OR short_name = ?1) AND file_path != ?2 \
-                 ORDER BY file_path, name LIMIT ?3",
+                "SELECT symbols.file_path || '::' || symbols.name FROM symbols \
+                 JOIN files ON files.path = symbols.file_path \
+                 WHERE (symbols.name = ?1 OR symbols.short_name = ?1) \
+                 AND symbols.file_path != ?2 AND files.language = ?3 \
+                 ORDER BY symbols.file_path, symbols.name LIMIT ?4",
             )?;
             let global_syms: Vec<String> = stmt
-                .query_map(params![callee_name, source_file, fanout_cap], |row| {
-                    row.get(0)
-                })?
+                .query_map(
+                    params![callee_name, source_file, source_language, fanout_cap],
+                    |row| row.get(0),
+                )?
                 .collect::<Result<_, _>>()?;
             for qualified in global_syms {
                 candidates.push((qualified, score_global));
@@ -1049,6 +1054,58 @@ mod tests {
             )
             .unwrap();
         assert_eq!(ext, None, "unresolved external names skip the global tier");
+    }
+
+    #[test]
+    fn global_tier_is_language_bounded() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = open_db(&dir.path().join("db.sqlite")).unwrap().0;
+        let tx = conn.transaction().unwrap();
+        insert_file(&tx, "a.py", "[]", "[]");
+        tx.execute(
+            "INSERT INTO files (path, struct_hash, language, imports, import_bindings) \
+             VALUES ('native.rs', 'h', 'RustParser', '[]', '[]')",
+            [],
+        )
+        .unwrap();
+        insert_symbol(&tx, "native.rs", "cross_probe", "function");
+        tx.execute(
+            "INSERT INTO edges (source_file, caller, callee, line, call_form) \
+             VALUES ('a.py', 'main', 'cross_probe', 1, 'name')",
+            [],
+        )
+        .unwrap();
+        resolve_call_edges(&tx, &config()).unwrap();
+        let resolved: Option<String> = tx
+            .query_row(
+                "SELECT callee_qualified FROM edges WHERE callee='cross_probe'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            resolved, None,
+            "global tier must not match cross-language symbols"
+        );
+
+        insert_file(&tx, "b.py", "[]", "[]");
+        insert_symbol(&tx, "b.py", "cross_probe", "function");
+        reset_direct_edge_resolution(&tx).unwrap();
+        resolve_call_edges(&tx, &config()).unwrap();
+        let row: (Option<String>, Option<String>) = tx
+            .query_row(
+                "SELECT callee_qualified, provenance FROM edges WHERE callee='cross_probe'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            row,
+            (
+                Some("b.py::cross_probe".to_string()),
+                Some("probable".to_string())
+            )
+        );
     }
 
     #[test]
