@@ -537,17 +537,22 @@ def test_snapshot_identity_recorded(parity):
         db.close()
 
 
+# Rust single-implementation tools: no Python oracle arm, excluded from the
+# differential matrix (docs/MCP_RUST_PARITY_BASELINE.md §4.2). Their
+# acceptance surface is a dedicated suite (test_mcp_dependencies.py).
+ORACLE_TOOL_NAMES = [
+    "query_symbol", "query_symbol_summary", "query_file_summary",
+    "query_callers", "query_callees", "query_impact", "query_patterns",
+    "query_search", "query_flow", "query_cluster_summary",
+    "query_cluster_files", "query_navigate",
+]
+RUST_ONLY_TOOLS = {"query_dependencies"}
+
+
 def test_tool_listing_matches_oracle_names(parity):
     tools = parity["client"].list_tools()
     names = sorted(tool["name"] for tool in tools)
-    assert names == sorted(
-        [
-            "query_symbol", "query_symbol_summary", "query_file_summary",
-            "query_callers", "query_callees", "query_impact", "query_patterns",
-            "query_search", "query_flow", "query_cluster_summary",
-            "query_cluster_files", "query_navigate",
-        ]
-    )
+    assert names == sorted(ORACLE_TOOL_NAMES + sorted(RUST_ONLY_TOOLS))
     for tool in tools:
         schema = tool["inputSchema"]
         assert schema.get("type") == "object"
