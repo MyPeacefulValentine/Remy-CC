@@ -171,7 +171,6 @@ _FIELDS = (
     _field("REMY_STRUCT_SCAN_TIMEOUT", "STRUCT_SCAN_TIMEOUT", "int", "60", "system", "Lifecycle structural scan timeout in seconds", "生命周期结构扫描超时秒数", label_en="Structural Scan Timeout", label_zh="结构扫描超时", unit_en="seconds", unit_zh="秒", restart_scope="next_session", minimum=10, maximum=300),
     _field("REMY_FULL_SCAN_TIMEOUT", None, "int", "1800", "system", "Daemon full-scan job timeout in seconds", "daemon全量扫描作业超时秒数", label_en="Full Scan Timeout", label_zh="全量扫描超时", unit_en="seconds", unit_zh="秒", restart_scope="next_session", minimum=60, maximum=86400),
     _field("REMY_INDEX_SCAN_LOCK_TIMEOUT", "INDEX_SCAN_LOCK_TIMEOUT", "float", "30", "system", "Project scan lock timeout in seconds", "项目扫描锁超时秒数", label_en="Scan Lock Timeout", label_zh="扫描锁超时", unit_en="seconds", unit_zh="秒", restart_scope="next_session", minimum=0, maximum=300),
-    _field("REMY_INDEX_QUEUE_LOCK_TIMEOUT", "INDEX_QUEUE_LOCK_TIMEOUT", "float", "1", "system", "Dirty queue lock timeout in seconds", "脏路径队列锁超时秒数", label_en="Queue Lock Timeout", label_zh="队列锁超时", unit_en="seconds", unit_zh="秒", restart_scope="immediate", minimum=0, maximum=30),
     _field("REMY_EVAL_MODEL", "EVAL_MODEL", "text", "deepseek-v4-flash", "system", "Model used by the A/B evaluation agent", "A/B评估Agent使用的模型", label_en="Evaluation Model", label_zh="评估模型", restart_scope="immediate", ui_visible=False),
 )
 
