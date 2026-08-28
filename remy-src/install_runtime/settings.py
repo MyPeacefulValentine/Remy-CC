@@ -11,11 +11,11 @@ from .models import InstallRuntimeError, MetadataError, RootPaths
 
 ENRICH_PLACEHOLDER = "__REMY_ENRICH_COMMAND__"
 DIRTY_PLACEHOLDER = "__REMY_DIRTY_COMMAND__"
-ENRICH_SCRIPT = "logic_enrichment_hook.py"
-DIRTY_SCRIPT = "logic_dirty_tracker.py"
+# Script names identify retired python-arm hook registrations so upgrades
+# still remove them from settings.json.
 TARGET_HOOKS = {
-    ("PreToolUse", "Read|Glob|Grep"): ENRICH_SCRIPT,
-    ("PostToolUse", "Edit|Write"): DIRTY_SCRIPT,
+    ("PreToolUse", "Read|Glob|Grep"): "logic_enrichment_hook.py",
+    ("PostToolUse", "Edit|Write"): "logic_dirty_tracker.py",
 }
 
 
@@ -26,16 +26,11 @@ def quote_command_arg(value: str) -> str:
 
 
 def hook_commands(roots: RootPaths, hook_mode: str, python_executable: str) -> dict[str, str]:
+    del python_executable
     if hook_mode == "rust":
         executable = roots.remy / "bin" / ("remy-daemon.exe" if _is_windows_path(roots.remy) else "remy-daemon")
         prefix = quote_command_arg(str(executable))
         return {"enrich": prefix + " hook enrich", "dirty": prefix + " hook dirty"}
-    if hook_mode == "python":
-        prefix = quote_command_arg(python_executable)
-        return {
-            "enrich": prefix + " " + quote_command_arg(str(roots.claude / "hooks" / ENRICH_SCRIPT)),
-            "dirty": prefix + " " + quote_command_arg(str(roots.claude / "hooks" / DIRTY_SCRIPT)),
-        }
     raise InstallRuntimeError("unsupported Hook mode")
 
 

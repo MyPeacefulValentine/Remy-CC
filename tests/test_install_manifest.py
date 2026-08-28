@@ -581,8 +581,20 @@ def test_remy_cc_home_falls_back_when_path_home_raises(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-def v3_runtime(tmp_path):
+def v3_runtime(tmp_path, monkeypatch):
     roots = RootPaths(tmp_path / "claude root", tmp_path / "remy root")
+    # R4.3: install fails closed without a daemon binary; seed a fake deployed
+    # binary and its probes so the v3 suite exercises the rust-only path.
+    deployed = roots.remy / "bin" / probes_module.default_daemon_name()
+    _seed_file(deployed, "fake daemon binary")
+    monkeypatch.setattr(
+        install_facade, "probe_daemon", lambda _path: DaemonProbe("stopped")
+    )
+    monkeypatch.setattr(
+        install_facade,
+        "probe_daemon_version",
+        lambda path: "9.9.9" if path == deployed else None,
+    )
     return InstallRuntime(roots), roots
 
 
@@ -614,15 +626,15 @@ def _v3_request(tmp_path, content="payload"):
     )
 
 
-def test_v3_python_install_writes_dual_root_manifest_and_runtime(v3_runtime, tmp_path):
+def test_v3_install_writes_dual_root_manifest_and_runtime(v3_runtime, tmp_path):
     runtime, roots = v3_runtime
     result = runtime.install(_v3_request(tmp_path))
 
     assert result.exit_code == 0
-    assert result.hook_mode == "python"
+    assert result.hook_mode == "rust"
     manifest = json.loads((roots.remy / "install" / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["schema_version"] == 3
-    assert manifest["hook_mode"] == "python"
+    assert manifest["hook_mode"] == "rust"
     assert {entry["root"] for entry in manifest["files"]} == {"claude", "remy"}
     assert all(not Path(entry["path"]).is_absolute() for entry in manifest["files"])
     descriptor = json.loads((roots.remy / "runtime" / "python.json").read_text(encoding="utf-8"))
@@ -635,8 +647,19 @@ def test_v3_python_install_writes_dual_root_manifest_and_runtime(v3_runtime, tmp
         for entry in entries
         for hook in entry["hooks"]
     ]
-    assert any(str(Path(sys.executable)) in command and "logic_enrichment_hook.py" in command for command in commands)
-    assert any(str(Path(sys.executable)) in command and "logic_dirty_tracker.py" in command for command in commands)
+    assert any("remy-daemon" in command and command.endswith("hook enrich") for command in commands)
+    assert any("remy-daemon" in command and command.endswith("hook dirty") for command in commands)
+
+
+def test_v3_install_without_daemon_binary_is_rejected(tmp_path):
+    roots = RootPaths(tmp_path / "claude root", tmp_path / "remy root")
+    runtime = InstallRuntime(roots)
+
+    with pytest.raises(InstallRuntimeError, match="remy-daemon"):
+        runtime.install(_v3_request(tmp_path))
+
+    assert not (roots.remy / "install" / "manifest.json").exists()
+    assert not (roots.claude / "settings.json").exists()
 
 
 def test_v3_repeat_install_is_content_idempotent(v3_runtime, tmp_path):
@@ -904,6 +927,16 @@ def test_install_entry_json_uses_v3_facade(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(install, "register_mcp_server", lambda _home: None)
     monkeypatch.setattr(install, "migrate_permissions", lambda _path: None)
     monkeypatch.setattr(install, "_ui_lang", "zh-CN")
+    deployed = remy_home / "bin" / probes_module.default_daemon_name()
+    _seed_file(deployed, "fake daemon binary")
+    monkeypatch.setattr(
+        install_facade, "probe_daemon", lambda _path: DaemonProbe("stopped")
+    )
+    monkeypatch.setattr(
+        install_facade,
+        "probe_daemon_version",
+        lambda path: "9.9.9" if path == deployed else None,
+    )
     args = types.SimpleNamespace(non_interactive=True, json=True)
 
     install.do_install_v3(args)
@@ -913,7 +946,7 @@ def test_install_entry_json_uses_v3_facade(tmp_path, monkeypatch, capsys):
     result = json.loads(output[0])
     assert result["schema_version"] == 1
     assert result["status"] == "ok"
-    assert result["hook_mode"] == "python"
+    assert result["hook_mode"] == "rust"
     assert str(tmp_path) not in output[0]
     manifest = json.loads((remy_home / "install" / "manifest.json").read_text(encoding="utf-8"))
     paths = {(item["root"], item["path"]) for item in manifest["files"]}
@@ -1150,7 +1183,7 @@ def test_v3_missing_binary_with_unheld_lock_is_stopped(tmp_path):
 def test_v3_same_version_different_daemon_hash_is_rejected(v3_runtime, tmp_path, monkeypatch):
     runtime, roots = v3_runtime
     deployed = roots.remy / "bin" / ("remy-daemon.exe" if sys.platform == "win32" else "remy-daemon")
-    deployed.parent.mkdir(parents=True)
+    deployed.parent.mkdir(parents=True, exist_ok=True)
     deployed.write_bytes(b"deployed")
     candidate = tmp_path / deployed.name
     candidate.write_bytes(b"candidate")

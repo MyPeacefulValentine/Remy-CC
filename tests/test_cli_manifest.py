@@ -7,13 +7,27 @@ import types
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "remy-src"))
 
 import cli
+import install_runtime.facade as install_facade
+import install_runtime.probes as probes_module
 from install_runtime import CandidateFile, InstallRequest, InstallRuntime, RootPaths
+from install_runtime.probes import DaemonProbe
 
 
 def _install_v3_for_cli(tmp_path, monkeypatch):
     roots = RootPaths(tmp_path / "claude-v3", tmp_path / "remy-v3")
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(roots.claude))
     monkeypatch.setenv("REMY_CC_HOME", str(roots.remy))
+    deployed = roots.remy / "bin" / probes_module.default_daemon_name()
+    deployed.parent.mkdir(parents=True, exist_ok=True)
+    deployed.write_text("fake daemon binary", encoding="utf-8")
+    monkeypatch.setattr(
+        install_facade, "probe_daemon", lambda _path: DaemonProbe("stopped")
+    )
+    monkeypatch.setattr(
+        install_facade,
+        "probe_daemon_version",
+        lambda path: "9.9.9" if path == deployed else None,
+    )
     source = tmp_path / "managed.txt"
     source.write_text("managed", encoding="utf-8")
     template = {

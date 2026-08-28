@@ -170,10 +170,8 @@ _FIELDS = (
     _field("REMY_REPO_AUDIT_ROOT", "REPO_AUDIT_ROOT", "path", "~/claude_audit", "system", "Repository audit sandbox root", "仓库审计沙盒根目录", label_en="Audit Sandbox Root", label_zh="审计沙盒根目录", restart_scope="immediate", path_base="user"),
     _field("REMY_STRUCT_SCAN_TIMEOUT", "STRUCT_SCAN_TIMEOUT", "int", "60", "system", "Lifecycle structural scan timeout in seconds", "生命周期结构扫描超时秒数", label_en="Structural Scan Timeout", label_zh="结构扫描超时", unit_en="seconds", unit_zh="秒", restart_scope="next_session", minimum=10, maximum=300),
     _field("REMY_FULL_SCAN_TIMEOUT", None, "int", "1800", "system", "Daemon full-scan job timeout in seconds", "daemon全量扫描作业超时秒数", label_en="Full Scan Timeout", label_zh="全量扫描超时", unit_en="seconds", unit_zh="秒", restart_scope="next_session", minimum=60, maximum=86400),
-    _field("REMY_SCANNER_PROVIDER", None, "enum", "python", "system", "Scanner provider the daemon publishes after validation", "daemon验证后发布的扫描器provider", label_en="Scanner Provider", label_zh="扫描器Provider", restart_scope="next_session", options=("python", "rust")),
     _field("REMY_INDEX_SCAN_LOCK_TIMEOUT", "INDEX_SCAN_LOCK_TIMEOUT", "float", "30", "system", "Project scan lock timeout in seconds", "项目扫描锁超时秒数", label_en="Scan Lock Timeout", label_zh="扫描锁超时", unit_en="seconds", unit_zh="秒", restart_scope="next_session", minimum=0, maximum=300),
     _field("REMY_INDEX_QUEUE_LOCK_TIMEOUT", "INDEX_QUEUE_LOCK_TIMEOUT", "float", "1", "system", "Dirty queue lock timeout in seconds", "脏路径队列锁超时秒数", label_en="Queue Lock Timeout", label_zh="队列锁超时", unit_en="seconds", unit_zh="秒", restart_scope="immediate", minimum=0, maximum=30),
-    _field("REMY_MIGRATION_KEEP_JSON", "MIGRATION_KEEP_JSON", "bool", "false", "system", "Keep the legacy JSON index after migration", "迁移后保留旧JSON索引", label_en="Legacy JSON Retention", label_zh="旧JSON索引保留", restart_scope="immediate", ui_visible=False),
     _field("REMY_EVAL_MODEL", "EVAL_MODEL", "text", "deepseek-v4-flash", "system", "Model used by the A/B evaluation agent", "A/B评估Agent使用的模型", label_en="Evaluation Model", label_zh="评估模型", restart_scope="immediate", ui_visible=False),
 )
 

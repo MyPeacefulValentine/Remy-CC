@@ -10,7 +10,6 @@ import sys
 from datetime import datetime
 
 from index_state import (
-    DirtyQueue,
     ScanResult,
     StageError,
     project_scan_lock,
@@ -948,59 +947,33 @@ class StructScanner:
         )
 
 
-def scan_all(root_dir, acquire_lock=True, lock_timeout=None, manage_dirty=False):
+def scan_all(root_dir, acquire_lock=True, lock_timeout=None):
     lock = project_scan_lock(root_dir, timeout=lock_timeout) if acquire_lock else None
-    queue = DirtyQueue(root_dir) if manage_dirty else None
-    claim = None
-    result = None
     try:
         if lock is not None:
             lock.acquire()
-        if queue is not None:
-            claim = queue.claim()
         scanner = StructScanner(root_dir)
         try:
-            result = scanner.scan_all()
-            return result
+            return scanner.scan_all()
         finally:
             scanner.db.close()
     finally:
-        if queue is not None and claim is not None:
-            if result is not None and result.postprocess_complete:
-                acknowledged = set(result.successful_paths) | set(result.deleted_paths)
-                queue.finish(claim, acknowledged)
-            else:
-                queue.finish(claim, retry_all=True)
         if lock is not None:
             lock.release()
 
 
-def scan_files(root_dir, file_paths, acquire_lock=True, lock_timeout=None, manage_dirty=False):
+def scan_files(root_dir, file_paths, acquire_lock=True, lock_timeout=None):
     lock = project_scan_lock(root_dir, timeout=lock_timeout) if acquire_lock else None
-    queue = DirtyQueue(root_dir) if manage_dirty else None
-    claim = None
-    result = None
     try:
         if lock is not None:
             lock.acquire()
-        if queue is not None:
-            claim = queue.claim(file_paths)
-            scan_targets = claim.paths
-        else:
-            scan_targets = file_paths
-        if not scan_targets:
+        if not file_paths:
             return ScanResult.from_parts()
         scanner = StructScanner(root_dir)
         try:
-            result = scanner.scan_files(scan_targets)
-            return result
+            return scanner.scan_files(file_paths)
         finally:
             scanner.db.close()
     finally:
-        if queue is not None and claim is not None:
-            if result is not None and result.postprocess_complete:
-                queue.finish(claim, result.successful_paths)
-            else:
-                queue.finish(claim, retry_all=True)
         if lock is not None:
             lock.release()

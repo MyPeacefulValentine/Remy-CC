@@ -28,8 +28,6 @@
     "remy-src/cli.py",
     "tests/test_cli_daemon.py",
     "hooks/doc_manager/injector.py",
-    "hooks/logic_dirty_tracker.py",
-    "hooks/logic_enrichment_hook.py",
     "hooks/permission_gate.py",
     "tests/test_permission_gate.py",
     "tests/test_mcp_server_invariants.py",

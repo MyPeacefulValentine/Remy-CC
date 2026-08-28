@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skills", "remy-index"))
 from struct_scan import StructScanner, scan_all, scan_files, tokenize_symbol
-from index_state import DirtyQueue, StageError
+from index_state import StageError
 from parsers.base import ParserCacheIdentity, SymbolInfo
 from symbol_selection import (
     DUPLICATE_DEFINITION,
@@ -125,7 +125,7 @@ class TestInitDb:
         mode = scanner.db.execute("PRAGMA journal_mode").fetchone()[0]
         assert mode.lower() == "wal"
 
-    def test_version_mismatch_without_handler_preserves_db(self, tmp_path):
+    def test_version_mismatch_is_refused_and_preserves_db(self, tmp_path):
         claude_dir = tmp_path / ".claude"
         claude_dir.mkdir()
         config = claude_dir / "logic_index_config"
@@ -137,7 +137,7 @@ class TestInitDb:
         db.commit()
         db.close()
 
-        with pytest.raises(RuntimeError, match="Migration path"):
+        with pytest.raises(RuntimeError, match="remy-daemon scan"):
             StructScanner(str(tmp_path))
 
         db = sqlite3.connect(str(db_path))
@@ -145,7 +145,7 @@ class TestInitDb:
         assert version == "4.0.0"
         db.close()
 
-    def test_v6_to_v9_ladder_applied(self, tmp_path):
+    def test_legacy_v6_database_is_refused(self, tmp_path):
         claude_dir = tmp_path / ".claude"
         claude_dir.mkdir()
         config = claude_dir / "logic_index_config"
@@ -155,150 +155,41 @@ class TestInitDb:
         db.executescript("""
             CREATE TABLE files (path TEXT PRIMARY KEY, struct_hash TEXT NOT NULL,
                                 language TEXT, layer TEXT DEFAULT 'Core', imports TEXT);
-            CREATE TABLE symbols (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                  file_path TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
-                                  name TEXT NOT NULL, short_name TEXT, type TEXT NOT NULL,
-                                  args TEXT, lineno INTEGER, end_lineno INTEGER,
-                                  hash TEXT, summary TEXT, bases TEXT,
-                                  name_tokens TEXT NOT NULL DEFAULT '',
-                                  UNIQUE(file_path, name));
             CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
-            CREATE VIRTUAL TABLE symbols_fts USING fts5(name, name_tokens, file_path, summary,
-                                                       content='symbols', content_rowid='id', tokenize='unicode61');
-            CREATE TRIGGER symbols_fts_ai AFTER INSERT ON symbols BEGIN
-                INSERT INTO symbols_fts(rowid, name, name_tokens, file_path, summary)
-                VALUES (NEW.id, NEW.name, NEW.name_tokens, NEW.file_path, NEW.summary);
-            END;
         """)
         db.execute("INSERT INTO meta VALUES ('version', '6.0.0')")
         db.commit()
         db.close()
 
-        scanner = StructScanner(str(tmp_path))
-        version = scanner.db.execute("SELECT value FROM meta WHERE key='version'").fetchone()[0]
-        assert version == "12.0.0"
-        tables = {r[0] for r in scanner.db.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()}
-        assert "summary_versions" in tables
-        assert "retrieval_documents" in tables
-        assert "retrieval_fts" in tables
-        assert "summary_fts" not in tables
-        assert "symbol_occurrences" in tables
-        assert "symbols_fts" not in tables
-        cols = {c[1] for c in scanner.db.execute("PRAGMA table_info(symbols)").fetchall()}
-        assert "summary" not in cols
+        with pytest.raises(RuntimeError, match="remy-daemon scan"):
+            StructScanner(str(tmp_path))
 
+        db = sqlite3.connect(str(db_path))
+        version = db.execute("SELECT value FROM meta WHERE key='version'").fetchone()[0]
+        assert version == "6.0.0"
+        db.close()
 
-class TestMigrateJson:
-    def test_json_imported(self, tmp_path):
+    def test_legacy_json_cache_is_ignored_and_left_in_place(self, tmp_path):
         claude_dir = tmp_path / ".claude"
         claude_dir.mkdir()
         config = claude_dir / "logic_index_config"
-        config.write_text("!.git/\n", encoding="utf-8")
-        old_cache = {
-            "_meta": {"version": "3.0.0"},
-            "foo.py": {
-                "struct_hash": "abc123",
-                "language": "PythonParser",
-                "layer": "Core",
-                "imports": ["bar.py"],
-                "symbols": [{"name": "do_stuff", "type": "function", "args": "(x)", "lineno": 1, "end_lineno": 3, "hash": "h1", "summary": "Does stuff"}],
-                "calls": [{"caller": "do_stuff", "callee": "helper", "line": 2}],
-            },
-        }
-        json_path = claude_dir / "logic_index.json"
-        json_path.write_text(json.dumps(old_cache), encoding="utf-8")
-
-        scanner = StructScanner(str(tmp_path))
-        files = scanner.db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
-        symbols = scanner.db.execute("SELECT COUNT(*) FROM symbols").fetchone()[0]
-        edges = scanner.db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
-        assert files == 1
-        assert symbols == 1
-        assert edges == 1
-
-    def test_json_migrate_populates_name_tokens(self, tmp_path):
-        claude_dir = tmp_path / ".claude"
-        claude_dir.mkdir()
-        config = claude_dir / "logic_index_config"
-        config.write_text("!.git/\n", encoding="utf-8")
-        old_cache = {
-            "_meta": {"version": "3.0.0"},
-            "mod.py": {
-                "struct_hash": "xyz",
-                "language": "PythonParser",
-                "layer": "Core",
-                "imports": [],
-                "symbols": [{"name": "getUserById", "type": "function", "args": "(uid)", "lineno": 1, "end_lineno": 3, "hash": "h2", "summary": "Gets user"}],
-                "calls": [],
-            },
-        }
-        json_path = claude_dir / "logic_index.json"
-        json_path.write_text(json.dumps(old_cache), encoding="utf-8")
-
-        scanner = StructScanner(str(tmp_path))
-        row = scanner.db.execute("SELECT name_tokens FROM symbols WHERE name = 'getUserById'").fetchone()
-        assert row is not None
-        assert row[0] == "get User By Id"
-
-    def test_json_migration_rebuilds_retrieval_projection(self, tmp_path):
-        claude_dir = tmp_path / ".claude"
-        claude_dir.mkdir()
-        (claude_dir / "logic_index_config").write_text(
-            "!.git/\n!.claude/\n", encoding="utf-8"
-        )
+        config.write_text("!.git/\n!.claude/\n", encoding="utf-8")
         json_path = claude_dir / "logic_index.json"
         json_path.write_text(
-            json.dumps({
-                "_meta": {"version": "3.0.0"},
-                "x.py": {
-                    "struct_hash": "a",
-                    "language": "PythonParser",
-                    "layer": "Core",
-                    "imports": [],
-                    "symbols": [{
-                        "name": "entry",
-                        "type": "function",
-                        "args": "()",
-                        "lineno": 1,
-                        "end_lineno": 2,
-                        "hash": "h1",
-                        "summary": "JSON migration summary",
-                    }],
-                    "calls": [],
-                },
-            }),
+            json.dumps({"_meta": {"version": "3.0.0"}, "x.py": {
+                "struct_hash": "a", "language": "P", "layer": "Core",
+                "imports": [], "symbols": [], "calls": [],
+            }}),
             encoding="utf-8",
         )
 
         scanner = StructScanner(str(tmp_path))
         try:
-            row = scanner.db.execute(
-                "SELECT name, signature, summary_short FROM retrieval_documents "
-                "WHERE node_kind='symbol' AND node_ref='x.py::entry'"
-            ).fetchone()
-            assert row == ("entry", "()", "JSON migration summary")
-            match = scanner.db.execute(
-                "SELECT d.node_ref FROM retrieval_fts "
-                "JOIN retrieval_documents d ON d.doc_id = retrieval_fts.rowid "
-                "WHERE retrieval_fts MATCH 'JSON'"
-            ).fetchone()
-            assert match == ("x.py::entry",)
+            assert scanner.db.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 0
         finally:
             scanner.db.close()
-
-    def test_json_renamed_after_migration(self, tmp_path):
-        claude_dir = tmp_path / ".claude"
-        claude_dir.mkdir()
-        config = claude_dir / "logic_index_config"
-        config.write_text("!.git/\n", encoding="utf-8")
-        json_path = claude_dir / "logic_index.json"
-        json_path.write_text(json.dumps({"_meta": {"version": "3.0.0"}, "x.py": {"struct_hash": "a", "language": "P", "layer": "Core", "imports": [], "symbols": [], "calls": []}}), encoding="utf-8")
-
-        StructScanner(str(tmp_path))
-        assert not json_path.exists()
-        assert (claude_dir / "logic_index.json.migrated").exists()
+        assert json_path.exists()
+        assert not (claude_dir / "logic_index.json.migrated").exists()
 
 
 class TestScanFile:
@@ -483,16 +374,13 @@ class TestScanFile:
         scanner.db.close()
         assert result.status.value == "success"
         assert result.successful_paths == ("main.py",)
-    def test_scan_files_failure_requeues_only_failed_path(self, tmp_path, monkeypatch):
+    def test_scan_files_failure_is_selective(self, tmp_path, monkeypatch):
         (tmp_path / ".claude").mkdir()
         for name in ("a.py", "b.py"):
             (tmp_path / name).write_text(f"def {name[0]}():\n    return 1\n", encoding="utf-8")
         scanner = StructScanner(str(tmp_path))
         scanner.scan_all()
         scanner.db.close()
-        queue = DirtyQueue(str(tmp_path))
-        queue.record("a.py")
-        queue.record("b.py")
 
         original = StructScanner._scan_one_file
 
@@ -502,9 +390,10 @@ class TestScanFile:
             return original(self, full_path, parser, rel_path)
 
         monkeypatch.setattr(StructScanner, "_scan_one_file", selective_failure)
-        result = scan_files(str(tmp_path), ["a.py", "b.py"], manage_dirty=True)
+        result = scan_files(str(tmp_path), ["a.py", "b.py"])
         assert result.status.value == "partial"
-        assert queue.peek() == {"b.py"}
+        assert result.successful_paths == ("a.py",)
+        assert result.failed_paths == ("b.py",)
 
 
 class TestResolveCallEdges:
@@ -1092,9 +981,7 @@ class TestScanFiles:
         assert after_file == before_file
         assert after_symbols == before_symbols
 
-    def test_incremental_exclusion_removes_existing_facts_and_acknowledges_dirty(
-        self, tmp_path
-    ):
+    def test_incremental_exclusion_removes_existing_facts(self, tmp_path):
         (tmp_path / ".claude").mkdir()
         config = tmp_path / ".claude" / "logic_index_config"
         config.write_text("!.claude/\n", encoding="utf-8")
@@ -1112,15 +999,10 @@ class TestScanFiles:
             scanner.db.close()
 
         config.write_text("!.claude/\n!excluded/\n", encoding="utf-8")
-        queue = DirtyQueue(str(tmp_path))
-        queue.record("excluded/drop.py")
-        result = scan_files(
-            str(tmp_path), ["excluded/drop.py"], manage_dirty=True
-        )
+        result = scan_files(str(tmp_path), ["excluded/drop.py"])
         assert result.status.value == "success"
         assert result.successful_paths == ("excluded/drop.py",)
         assert result.deleted_paths == ("excluded/drop.py",)
-        assert queue.peek() == set()
         db = sqlite3.connect(str(tmp_path / ".claude" / "logic_index.db"))
         try:
             for table, column in (
@@ -1269,9 +1151,6 @@ class TestScanFiles:
             scanner.db.close()
 
         config.write_text("!.claude/\n!excluded.py\n", encoding="utf-8")
-        queue = DirtyQueue(str(tmp_path))
-        for name in ("valid.py", "excluded.py", "missing.py", "failed.py"):
-            queue.record(name)
         original = StructScanner._scan_one_file
 
         def fail_one(self, full_path, parser, rel_path):
@@ -1283,13 +1162,11 @@ class TestScanFiles:
         result = scan_files(
             str(tmp_path),
             ["valid.py", "excluded.py", "missing.py", "failed.py"],
-            manage_dirty=True,
         )
         assert result.status.value == "partial"
         assert result.successful_paths == ("excluded.py", "missing.py", "valid.py")
         assert result.deleted_paths == ("excluded.py",)
         assert result.failed_paths == ("failed.py",)
-        assert queue.peek() == {"failed.py"}
 
     @pytest.mark.parametrize(
         ("changed_file", "unchanged_file"),
@@ -1667,7 +1544,7 @@ class TestModuleLevelApi:
 
     def test_scan_files_function(self, temp_project):
         scan_all(str(temp_project))
-        scan_files(str(temp_project), ["src/main.py"], manage_dirty=False)
+        scan_files(str(temp_project), ["src/main.py"])
         db = sqlite3.connect(str(temp_project / ".claude" / "logic_index.db"))
         count = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
         db.close()

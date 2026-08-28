@@ -25,7 +25,6 @@ from daemon_test_support import (
 
 pytestmark = pytest.mark.skipif(skip_reason() is not None, reason=skip_reason() or "")
 
-HOOK_DIR = Path(__file__).resolve().parent.parent / "hooks"
 INDEX_DIR = Path(__file__).resolve().parent.parent / "skills" / "remy-index"
 STRUCT_SCAN = INDEX_DIR / "struct_scan.py"
 
@@ -62,22 +61,6 @@ def _hook_payload(tool_name, project, file_path):
             "tool_input": {"file_path": str(file_path)},
             "cwd": str(project),
         }
-    )
-
-
-def _run_python_hook(home, script, payload, project, extra_env=None):
-    environment = daemon_env(home)
-    if extra_env:
-        environment.update(extra_env)
-    return subprocess.run(
-        [sys.executable, str(HOOK_DIR / script)],
-        input=payload,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        cwd=project,
-        env=environment,
-        timeout=40,
     )
 
 
@@ -492,7 +475,7 @@ def test_response_loss_after_submit_preserves_state_without_dirty_queue(daemon_h
     assert len(jobs) == 1
 
 
-def test_rust_and_python_enrichment_outputs_match(daemon_home, tmp_path):
+def test_enrichment_output_carries_call_context(daemon_home, tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     (project / "main.py").write_text(
@@ -502,15 +485,18 @@ def test_rust_and_python_enrichment_outputs_match(daemon_home, tmp_path):
     (project / "utils.py").write_text("def helper(x):\n    return x\n", encoding="utf-8")
     _seed_enrichment_db(project, daemon_home)
     payload = _hook_payload("Read", project, project / "main.py")
-    python_result = _run_python_hook(
-        daemon_home, "logic_enrichment_hook.py", payload, project
-    )
-    rust_result = run_daemon(daemon_home, ["hook", "enrich"], input_data=payload)
-    assert python_result.returncode == rust_result.returncode == 0
-    assert json.loads(rust_result.stdout) == json.loads(python_result.stdout)
+    result = run_daemon(daemon_home, ["hook", "enrich"], input_data=payload)
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    context = output["hookSpecificOutput"]["additionalContext"]
+    assert output["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
+    assert output["hookSpecificOutput"]["permissionDecision"] == "allow"
+    assert "[Logic Context] main.py" in context
+    assert "Calls into:" in context
+    assert "utils.py" in context and "helper" in context
 
 
-def test_rust_and_python_config_precedence_match(daemon_home, tmp_path):
+def test_enrichment_config_precedence_env_project_user(daemon_home, tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     (project / "main.py").write_text(
@@ -528,23 +514,20 @@ def test_rust_and_python_config_precedence_match(daemon_home, tmp_path):
         {"REMY_ENRICHMENT_SIG_MAX_CHARS": "4"},
     )
     payload = _hook_payload("Read", project, project / "main.py")
-    for environment_value in ("2", "invalid"):
-        extra_env = {"REMY_ENRICHMENT_SIG_MAX_CHARS": environment_value}
-        python_result = _run_python_hook(
-            daemon_home,
-            "logic_enrichment_hook.py",
-            payload,
-            project,
-            extra_env=extra_env,
-        )
-        rust_result = run_daemon(
+    expectations = {
+        "2": "(a... (1 args)",
+        "invalid": "(arg... (1 args)",
+    }
+    for environment_value, truncated in expectations.items():
+        result = run_daemon(
             daemon_home,
             ["hook", "enrich"],
             input_data=payload,
-            extra_env=extra_env,
+            extra_env={"REMY_ENRICHMENT_SIG_MAX_CHARS": environment_value},
         )
-        assert python_result.returncode == rust_result.returncode == 0
-        assert json.loads(rust_result.stdout) == json.loads(python_result.stdout)
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert truncated in context, context
 
 
 def test_enrichment_serves_without_daemon(tmp_path):

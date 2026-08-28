@@ -399,7 +399,11 @@ class InstallRuntime:
             return "rust", candidate
         if deployed_version:
             return "rust", None
-        return "python", None
+        raise InstallRuntimeError(
+            "no usable remy-daemon binary was found; build it with "
+            "'cargo build --release' under remy-daemon/ (install.py deploys "
+            "target/release) or download a release with the daemon binary"
+        )
 
     def _build_install_changes(
         self,

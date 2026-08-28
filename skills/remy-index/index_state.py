@@ -1,9 +1,8 @@
-"""Shared run results, process locks, and dirty-path queue state."""
+"""Shared run results and the project scan lock."""
 
 from __future__ import annotations
 
 import errno
-import glob
 import importlib
 import os
 import sys
@@ -21,11 +20,7 @@ import remy_config
 SOURCE_EXTENSIONS = frozenset(
     (".py", ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx", ".ts", ".tsx", ".rs")
 )
-DIRTY_FILE = os.path.join(".claude", "logic_index_dirty")
-DIRTY_PROCESSING_FILE = DIRTY_FILE + ".processing"
-DIRTY_PENDING_PREFIX = DIRTY_FILE + ".pending."
 SCAN_LOCK_FILE = os.path.join(".claude", "logic_index_scan.lock")
-QUEUE_LOCK_FILE = os.path.join(".claude", "logic_index_dirty.lock")
 
 
 class RunStatus(str, Enum):
@@ -125,10 +120,6 @@ def scan_lock_timeout() -> float:
     return _env_timeout("INDEX_SCAN_LOCK_TIMEOUT", 30.0)
 
 
-def queue_lock_timeout() -> float:
-    return _env_timeout("INDEX_QUEUE_LOCK_TIMEOUT", 1.0)
-
-
 def _lock_byte(handle, nonblocking: bool) -> None:
     try:
         msvcrt = importlib.import_module("msvcrt")
@@ -222,128 +213,3 @@ def normalize_source_path(root_dir: str, file_path: str) -> Optional[str]:
     if os.path.splitext(candidate)[1].lower() not in SOURCE_EXTENSIONS:
         return None
     return os.path.relpath(candidate, root).replace(os.sep, "/")
-
-
-def _read_paths(path: str) -> set[str]:
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            return {line.strip() for line in handle if line.strip()}
-    except FileNotFoundError:
-        return set()
-
-
-def _atomic_write_paths(path: str, paths: Iterable[str]) -> None:
-    values = sorted(set(paths))
-    if not values:
-        try:
-            os.remove(path)
-        except FileNotFoundError:
-            pass
-        return
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    temp_path = f"{path}.tmp.{os.getpid()}"
-    with open(temp_path, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write("\n".join(values) + "\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temp_path, path)
-
-
-@dataclass(frozen=True)
-class DirtyClaim:
-    paths: Tuple[str, ...]
-
-
-class DirtyQueue:
-    """Crash-recoverable dirty path queue guarded by a short-lived file lock."""
-
-    def __init__(self, root_dir: str):
-        self.root_dir = os.path.abspath(root_dir)
-        self.dirty_path = os.path.join(self.root_dir, DIRTY_FILE)
-        self.processing_path = os.path.join(self.root_dir, DIRTY_PROCESSING_FILE)
-        self.pending_prefix = os.path.join(self.root_dir, DIRTY_PENDING_PREFIX)
-        self.lock_path = os.path.join(self.root_dir, QUEUE_LOCK_FILE)
-
-    def _lock(self) -> InterProcessFileLock:
-        return InterProcessFileLock(self.lock_path, queue_lock_timeout())
-
-    def _merge_pending_locked(self) -> set[str]:
-        paths = _read_paths(self.dirty_path)
-        for pending_path in glob.glob(self.pending_prefix + "*"):
-            paths.update(_read_paths(pending_path))
-            try:
-                os.remove(pending_path)
-            except FileNotFoundError:
-                pass
-        _atomic_write_paths(self.dirty_path, paths)
-        return paths
-
-    def _recover_processing_locked(self) -> set[str]:
-        paths = self._merge_pending_locked()
-        paths.update(_read_paths(self.processing_path))
-        _atomic_write_paths(self.dirty_path, paths)
-        try:
-            os.remove(self.processing_path)
-        except FileNotFoundError:
-            pass
-        return paths
-
-    def record(self, file_path: str) -> Optional[str]:
-        normalized = normalize_source_path(self.root_dir, file_path)
-        if normalized is None:
-            return None
-        try:
-            with self._lock():
-                paths = self._merge_pending_locked()
-                paths.add(normalized)
-                _atomic_write_paths(self.dirty_path, paths)
-        except LockTimeoutError:
-            os.makedirs(os.path.dirname(self.dirty_path), exist_ok=True)
-            pending_path = self.pending_prefix + str(os.getpid())
-            with open(pending_path, "a", encoding="utf-8", newline="\n") as handle:
-                handle.write(normalized + "\n")
-        return normalized
-
-    def peek(self) -> set[str]:
-        with self._lock():
-            return set(self._merge_pending_locked())
-
-    def claim(self, paths: Optional[Iterable[str]] = None) -> DirtyClaim:
-        with self._lock():
-            available = self._recover_processing_locked()
-            if paths is None:
-                selected = available
-            else:
-                requested = {
-                    normalized
-                    for item in paths
-                    for normalized in (normalize_source_path(self.root_dir, item),)
-                    if normalized is not None
-                }
-                selected = available & requested
-            _atomic_write_paths(self.dirty_path, available - selected)
-            _atomic_write_paths(self.processing_path, selected)
-            return DirtyClaim(tuple(sorted(selected)))
-
-    def finish(
-        self,
-        claim: DirtyClaim,
-        successful_paths: Iterable[str] = (),
-        *,
-        retry_all: bool = False,
-    ) -> None:
-        claimed = set(claim.paths)
-        successful = set(successful_paths)
-        with self._lock():
-            processing = _read_paths(self.processing_path)
-            active = processing & claimed
-            retry = active if retry_all else active - successful
-            queued = self._merge_pending_locked()
-            queued.update(retry)
-            _atomic_write_paths(self.dirty_path, queued)
-            remaining_processing = processing - active
-            _atomic_write_paths(self.processing_path, remaining_processing)
-
-    def recover(self) -> set[str]:
-        with self._lock():
-            return set(self._recover_processing_locked())
