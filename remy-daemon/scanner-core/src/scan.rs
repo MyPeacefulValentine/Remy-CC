@@ -210,14 +210,6 @@ fn test_hold_lock_window() {
     }
 }
 
-/// Full scan: acquire the project scan lock, discover, parse in parallel,
-/// write everything in one transaction with indexes rebuilt after the bulk
-/// load. Stored rows outside the discovered set are deleted before the
-/// index rebuild (StructScanner.scan_all sweep semantics), so a full scan
-/// converges the database after exclusions change or files disappear.
-/// `progress` emits a PROGRESS line to stderr every 250 written files
-/// (throughput curve measurements); `progress_json` emits the JSON Lines
-/// progress events; `lock_timeout` overrides REMY_INDEX_SCAN_LOCK_TIMEOUT.
 /// Stderr-only notice: the scan_result v1 line stays unchanged, so a
 /// rebuild is visible in logs without touching the JSON contract.
 fn note_rebuild(outcome: writer::OpenOutcome, db_path: &Path) {
@@ -230,6 +222,14 @@ fn note_rebuild(outcome: writer::OpenOutcome, db_path: &Path) {
     }
 }
 
+/// Full scan: acquire the project scan lock, discover, parse in parallel,
+/// write everything in one transaction with indexes rebuilt after the bulk
+/// load. Stored rows outside the discovered set are deleted before the
+/// index rebuild (StructScanner.scan_all sweep semantics), so a full scan
+/// converges the database after exclusions change or files disappear.
+/// `progress` emits a PROGRESS line to stderr every 250 written files
+/// (throughput curve measurements); `progress_json` emits the JSON Lines
+/// progress events; `lock_timeout` overrides REMY_INDEX_SCAN_LOCK_TIMEOUT.
 pub fn scan_full(
     root_dir: &Path,
     db_path: &Path,

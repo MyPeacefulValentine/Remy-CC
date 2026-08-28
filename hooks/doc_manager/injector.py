@@ -54,12 +54,8 @@ def _open_logic_db(cwd):
         return None
 
 
-# Registry of content to be injected.
-# Format: { "tag_name": "relative_file_path" }
-# The script injects:
-#   <tag_name>
-#   @relative_file_path
-#   </tag_name>
+# { "tag_name": "relative_file_path" }; inject_all wraps each entry in an
+# <tag_name>...</tag_name> block.
 REGISTRY = {
     "project_structure": ".claude/project_tree.md",
     "history_timeline": ".claude/history/timeline_view.md",
