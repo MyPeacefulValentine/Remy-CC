@@ -609,12 +609,12 @@ def test_hook_timeout_distributions_are_recorded(tmp_path):
         "binary": "debug",
         "connect_timeout_ms": 35,
         "read_timeout_ms": 100,
-        "connect_fallback": _distribution(connect_samples),
-        "read_fallback": _distribution(read_samples),
+        "connect_diagnostic": _distribution(connect_samples),
+        "read_diagnostic": _distribution(read_samples),
     }
     print("\nHook timeout paths: " + json.dumps(record, sort_keys=True))
-    assert record["connect_fallback"]["p50_ms"] <= record["connect_fallback"]["p99_ms"]
-    assert record["read_fallback"]["p50_ms"] <= record["read_fallback"]["p99_ms"]
+    assert record["connect_diagnostic"]["p50_ms"] <= record["connect_diagnostic"]["p99_ms"]
+    assert record["read_diagnostic"]["p50_ms"] <= record["read_diagnostic"]["p99_ms"]
 
 
 def test_latency_distributions_are_recorded(daemon_home):
