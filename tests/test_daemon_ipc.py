@@ -547,6 +547,25 @@ def test_rust_and_python_config_precedence_match(daemon_home, tmp_path):
         assert json.loads(rust_result.stdout) == json.loads(python_result.stdout)
 
 
+def test_enrichment_serves_without_daemon(tmp_path):
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "main.py").write_text(
+        "import os\nfrom utils import helper\n\ndef run():\n    return helper(1)\n",
+        encoding="utf-8",
+    )
+    (project / "utils.py").write_text("def helper(x):\n    return x\n", encoding="utf-8")
+    _seed_enrichment_db(project, home)
+    payload = _hook_payload("Read", project, project / "main.py")
+    result = run_daemon(home, ["hook", "enrich"], input_data=payload)
+    assert result.returncode == 0
+    assert result.stderr == ""
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "[Logic Context] main.py" in context
+    assert "Index freshness" not in context
+
+
 def test_enrichment_ignores_legacy_dirty_queue_file(daemon_home, tmp_path):
     project = tmp_path / "project"
     project.mkdir()

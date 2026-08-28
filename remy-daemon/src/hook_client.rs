@@ -515,15 +515,17 @@ fn run_enrichment(
         }
     }
 
+    // INV-R1: enrichment stays available without a running daemon; only the
+    // freshness signal (which needs the job table over IPC) is skipped then.
     let mut freshness: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
-    let mut ipc = IpcConnection::connect()?;
-    for file_path in &targets {
-        let Some(job) = ipc.latest_job(root, file_path)? else {
-            continue;
-        };
-        apply_job_state(&mut ipc, root, config, job, &mut freshness)?;
+    if let Ok(mut ipc) = IpcConnection::connect() {
+        for file_path in &targets {
+            let Some(job) = ipc.latest_job(root, file_path)? else {
+                continue;
+            };
+            apply_job_state(&mut ipc, root, config, job, &mut freshness)?;
+        }
     }
-    drop(ipc);
 
     let enrichment = db
         .as_ref()
