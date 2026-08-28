@@ -11,6 +11,8 @@ Features:
 
 import json
 import os
+import sqlite3
+import subprocess
 import sys
 import time
 import concurrent.futures
@@ -24,13 +26,13 @@ import remy_config
 from parsers import build_default_registry
 from llm_client import LlmClient, FatalError, TruncatedResponseError
 import propagation
-from struct_scan import StructScanner
+from schema import VERSION as SCHEMA_VERSION
 from symbol_selection import select_symbols
 from index_state import (
-    DirtyQueue,
     LockTimeoutError,
     RunResult,
     RunStatus,
+    ScanResult,
     StageError,
     project_scan_lock,
 )
@@ -42,6 +44,113 @@ from retrieval_projection import (
 VERSION = "4.0.0"
 
 MAX_CTX_CHARS = 200000
+
+DAEMON_BINARY_GUIDANCE = (
+    "remy-daemon binary not found; build it with 'cargo build --release' under "
+    "remy-daemon/ or reinstall Remy-CC so install.py deploys it to ~/.remy-cc/bin."
+)
+
+
+def find_daemon_binary():
+    """Locate remy-daemon: a development-tree build wins over the deployed copy."""
+    name = "remy-daemon.exe" if os.name == "nt" else "remy-daemon"
+    target_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "remy-daemon", "target")
+    )
+    dev_builds = [
+        path
+        for path in (os.path.join(target_dir, profile, name) for profile in ("release", "debug"))
+        if os.path.isfile(path)
+    ]
+    if dev_builds:
+        return max(dev_builds, key=os.path.getmtime)
+    remy_home = os.environ.get("REMY_CC_HOME") or os.path.join(os.path.expanduser("~"), ".remy-cc")
+    deployed = os.path.join(remy_home, "bin", name)
+    if os.path.isfile(deployed):
+        return deployed
+    return None
+
+
+def run_daemon_scan(root_dir, db_path, config):
+    """Run `remy-daemon scan` and translate its terminal scan_result line."""
+    binary = find_daemon_binary()
+    if binary is None:
+        return ScanResult(
+            status=RunStatus.FAILED,
+            errors=(StageError("struct_scan", DAEMON_BINARY_GUIDANCE),),
+            postprocess_complete=False,
+        )
+    lock_timeout = config.get_float("REMY_INDEX_SCAN_LOCK_TIMEOUT")
+    scan_timeout = config.get_int("REMY_STRUCT_SCAN_TIMEOUT")
+    command = [
+        binary, "scan", "--root", root_dir, "--db", db_path,
+        "--result-json", "--lock-timeout", str(lock_timeout),
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=max(1.0, scan_timeout + lock_timeout + 5.0),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return ScanResult(
+            status=RunStatus.FAILED,
+            errors=(StageError("struct_scan", str(exc)),),
+            postprocess_complete=False,
+        )
+    terminal = next(
+        (line for line in reversed(completed.stdout.splitlines()) if line.strip()), ""
+    )
+    try:
+        payload = json.loads(terminal)
+    except json.JSONDecodeError:
+        detail = completed.stderr.strip() or (
+            f"scan exited {completed.returncode} without a scan_result line"
+        )
+        return ScanResult(
+            status=RunStatus.FAILED,
+            errors=(StageError("struct_scan", detail),),
+            postprocess_complete=False,
+        )
+    status = {
+        "success": RunStatus.SUCCESS,
+        "partial": RunStatus.PARTIAL,
+    }.get(payload.get("outcome"), RunStatus.FAILED)
+    errors = tuple(
+        StageError(item.get("stage", "struct_scan"), item.get("message", ""), item.get("path"))
+        for item in payload.get("errors", [])
+    )
+    return ScanResult(
+        status=status,
+        successful_paths=tuple(payload.get("successful_paths", [])),
+        failed_paths=tuple(payload.get("failed_paths", [])),
+        deleted_paths=tuple(payload.get("deleted_paths", [])),
+        errors=errors,
+        postprocess_complete=bool(payload.get("postprocess_complete", False)),
+    )
+
+
+def open_semantic_connection(db_path):
+    """Open the scanned database for the semantic layers; assert the schema version."""
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA busy_timeout=5000")
+        row = connection.execute("SELECT value FROM meta WHERE key='version'").fetchone()
+    except sqlite3.DatabaseError as exc:
+        connection.close()
+        raise RuntimeError(f"logic index at {db_path} is unreadable: {exc}") from exc
+    if row is None or row[0] != SCHEMA_VERSION:
+        found = row[0] if row else "missing"
+        connection.close()
+        raise RuntimeError(
+            f"logic index schema version {found} does not match {SCHEMA_VERSION}; "
+            "rerun the structural scan"
+        )
+    return connection
 
 
 class LogicIndexer:
@@ -314,20 +423,18 @@ class LogicIndexer:
         file_completed = 0
         cluster_requested = 0
         cluster_completed = 0
-        queue = DirtyQueue(self.root_dir)
-        claim = None
+        db_path = str(self.config.get("REMY_LOGIC_INDEX_DB_PATH"))
         lock = project_scan_lock(self.root_dir)
 
         try:
-            lock.acquire()
-            claim = queue.claim()
-            scanner = StructScanner(self.root_dir, registry=self._registry)
-            scan_result = scanner.scan_all()
-            self.db = scanner.db
+            scan_result = run_daemon_scan(self.root_dir, db_path, self.config)
             errors.extend(scan_result.errors)
             if scan_result.status == RunStatus.FAILED:
                 return RunResult(RunStatus.FAILED, scan=scan_result, errors=tuple(errors))
             print("Structural scan complete.", flush=True)
+
+            lock.acquire()
+            self.db = open_semantic_connection(db_path)
 
             dirty_rows = self._select_dirty_symbols()
             symbol_requested = len(dirty_rows)
@@ -441,11 +548,6 @@ class LogicIndexer:
             status = RunStatus.PARTIAL if scan_result and scan_result.successful_paths else RunStatus.FAILED
             return RunResult(status, scan=scan_result, errors=tuple(errors))
         finally:
-            if claim is not None:
-                if scan_result is not None and scan_result.postprocess_complete:
-                    queue.finish(claim, claim.paths)
-                else:
-                    queue.finish(claim, retry_all=True)
             duration = time.time() - self.stats["start_time"]
             file_count = self.db.execute("SELECT COUNT(*) FROM files").fetchone()[0] if self.db else 0
             print("\n=== Logic Indexer Stats ===")
@@ -474,11 +576,16 @@ if __name__ == "__main__":
 
     indexer = LogicIndexer(os.getcwd())
     if cli_args.bootstrap_only:
+        db_path = str(indexer.config.get("REMY_LOGIC_INDEX_DB_PATH"))
         try:
+            scan_result = run_daemon_scan(indexer.root_dir, db_path, indexer.config)
+            if scan_result.status == RunStatus.FAILED:
+                for error in scan_result.errors:
+                    location = f" ({error.path})" if error.path else ""
+                    print(f"[{error.stage}]{location} {error.message}", file=sys.stderr)
+                sys.exit(RunStatus.FAILED.exit_code)
             with project_scan_lock(indexer.root_dir):
-                scanner = StructScanner(indexer.root_dir)
-                scan_result = scanner.scan_all()
-                indexer.db = scanner.db
+                indexer.db = open_semantic_connection(db_path)
                 result = indexer._run_hierarchical_bootstrap(mode_override=cli_args.mode)
                 status = scan_result.status
                 if result and (result.get("file_failed", 0) or result.get("cluster_failed", 0)):

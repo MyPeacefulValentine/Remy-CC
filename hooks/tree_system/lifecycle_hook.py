@@ -8,6 +8,7 @@
 @CreationDate: 2026-01-26
 """
 
+import glob
 import sys
 import json
 import os
@@ -30,10 +31,6 @@ except Exception:
     session_anchor = None
 
 GENERATOR_SCRIPT = "generate_smart_tree.py"
-STRUCT_SCAN_SCRIPT = os.path.join(
-    os.path.expanduser("~"), ".claude",
-    "skills", "remy-index", "struct_scan.py"
-)
 
 LANGUAGE_DIRECTIVES = {
     "zh-CN": "Always respond in Chinese-simplified",
@@ -133,21 +130,54 @@ def generate_language_md(cwd=None):
     except Exception as e:
         print(f"[LifecycleHook] Failed to generate language.md: {e}", file=sys.stderr)
 
+def find_daemon_binary():
+    """Locate remy-daemon: a development-tree build wins over the deployed copy."""
+    name = "remy-daemon.exe" if os.name == "nt" else "remy-daemon"
+    target_dir = os.path.abspath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "..", "remy-daemon", "target"
+    ))
+    dev_builds = [
+        path
+        for path in (os.path.join(target_dir, profile, name) for profile in ("release", "debug"))
+        if os.path.isfile(path)
+    ]
+    if dev_builds:
+        return max(dev_builds, key=os.path.getmtime)
+    remy_home = os.environ.get("REMY_CC_HOME") or os.path.join(os.path.expanduser("~"), ".remy-cc")
+    deployed = os.path.join(remy_home, "bin", name)
+    if os.path.isfile(deployed):
+        return deployed
+    return None
+
+
+def sweep_legacy_dirty_queue(cwd):
+    """Remove retired dirty-queue files (queue, .processing, .pending.*, .lock)."""
+    for path in glob.glob(os.path.join(cwd, ".claude", "logic_index_dirty*")):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 def run_struct_scan(cwd):
-    if not os.path.exists(STRUCT_SCAN_SCRIPT):
-        return None
     config = remy_config.load_config(cwd, strict=False)
     db_file = str(config.get("REMY_LOGIC_INDEX_DB_PATH"))
     json_file = os.path.join(cwd, ".claude", "logic_index.json")
     if not os.path.exists(db_file) and not os.path.exists(json_file):
+        return None
+    sweep_legacy_dirty_queue(cwd)
+    binary = find_daemon_binary()
+    if binary is None:
+        print("[StructScan] remy-daemon binary not found; skipping scan "
+              "(reinstall Remy-CC or build remy-daemon)", file=sys.stderr)
         return None
     scan_timeout = config.get_int("REMY_STRUCT_SCAN_TIMEOUT")
     lock_timeout = config.get_float("REMY_INDEX_SCAN_LOCK_TIMEOUT")
     total_timeout = max(1.0, scan_timeout + lock_timeout + 5.0)
     try:
         completed = subprocess.run(
-            [sys.executable, STRUCT_SCAN_SCRIPT, "--cwd", cwd,
-             "--lock-timeout", str(lock_timeout), "--consume-dirty"],
+            [binary, "scan", "--root", cwd, "--db", db_file,
+             "--result-json", "--lock-timeout", str(lock_timeout)],
             cwd=cwd,
             check=False,
             stdout=subprocess.DEVNULL,

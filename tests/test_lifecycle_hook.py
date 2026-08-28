@@ -30,13 +30,16 @@ def _write_db(path, file_count=1):
     db.close()
 
 
-def test_run_struct_scan_uses_custom_db_path(tmp_path, monkeypatch):
+def test_run_struct_scan_spawns_daemon_scan_with_custom_db_path(tmp_path, monkeypatch):
     project = tmp_path / "project"
     custom = project / "state" / "index.db"
     _write_config(project, "state/index.db")
     _write_db(custom)
-    script = tmp_path / "struct_scan.py"
-    script.write_text("", encoding="utf-8")
+    legacy_queue = project / ".claude" / "logic_index_dirty"
+    legacy_queue.write_text("main.py\n", encoding="utf-8")
+    legacy_pending = project / ".claude" / "logic_index_dirty.pending.123"
+    legacy_pending.write_text("a.py\n", encoding="utf-8")
+    binary = tmp_path / "remy-daemon.exe"
     observed = {}
 
     def run(args, **kwargs):
@@ -44,8 +47,27 @@ def test_run_struct_scan_uses_custom_db_path(tmp_path, monkeypatch):
         observed["cwd"] = kwargs["cwd"]
         return type("Result", (), {"returncode": 0, "stderr": b""})()
 
-    monkeypatch.setattr(lifecycle, "STRUCT_SCAN_SCRIPT", str(script))
+    monkeypatch.setattr(lifecycle, "find_daemon_binary", lambda: str(binary))
     monkeypatch.setattr(lifecycle.subprocess, "run", run)
     assert lifecycle.run_struct_scan(str(project)) == 0
     assert observed["cwd"] == str(project)
-    assert "--consume-dirty" in observed["args"]
+    args = observed["args"]
+    assert args[0] == str(binary)
+    assert args[1] == "scan"
+    assert args[args.index("--root") + 1] == str(project)
+    assert args[args.index("--db") + 1] == str(custom)
+    assert "--result-json" in args
+    assert "--lock-timeout" in args
+    assert "--consume-dirty" not in args
+    assert not legacy_queue.exists()
+    assert not legacy_pending.exists()
+
+
+def test_run_struct_scan_skips_when_daemon_binary_is_missing(tmp_path, monkeypatch, capsys):
+    project = tmp_path / "project"
+    custom = project / "state" / "index.db"
+    _write_config(project, "state/index.db")
+    _write_db(custom)
+    monkeypatch.setattr(lifecycle, "find_daemon_binary", lambda: None)
+    assert lifecycle.run_struct_scan(str(project)) is None
+    assert "remy-daemon binary not found" in capsys.readouterr().err
