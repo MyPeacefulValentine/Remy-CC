@@ -57,6 +57,8 @@ def run_daemon(home, args, timeout=10, *, input_data=None, extra_env=None):
         input=input_data,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
     )
 

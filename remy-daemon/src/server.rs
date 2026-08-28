@@ -422,8 +422,7 @@ mod tests {
         fs::create_dir_all(&project).unwrap();
         let logger = test_logger(&dir.path().join("log"));
         let (state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
-        let (scheduler, scheduler_thread) =
-            crate::scheduler::start(state, clock(), "python".to_string()).unwrap();
+        let (scheduler, scheduler_thread) = crate::scheduler::start(state, clock()).unwrap();
 
         let run_dir_clone = run_dir.clone();
         let scheduler_clone = scheduler.clone();
@@ -515,8 +514,7 @@ mod tests {
         let run_dir = dir.path().join("run");
         let logger = test_logger(&dir.path().join("log"));
         let (state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
-        let (scheduler, scheduler_thread) =
-            crate::scheduler::start(state, clock(), "python".to_string()).unwrap();
+        let (scheduler, scheduler_thread) = crate::scheduler::start(state, clock()).unwrap();
         let run_dir_clone = run_dir.clone();
         let scheduler_clone = scheduler.clone();
         let handle = std::thread::spawn(move || {
@@ -568,8 +566,7 @@ mod tests {
         let run_dir = dir.path().join("run");
         let logger = test_logger(&dir.path().join("log"));
         let (state, _) = StateStore::open(&dir.path().join("state"), clock()).unwrap();
-        let (scheduler, scheduler_thread) =
-            crate::scheduler::start(state, clock(), "python".to_string()).unwrap();
+        let (scheduler, scheduler_thread) = crate::scheduler::start(state, clock()).unwrap();
         let run_dir_clone = run_dir.clone();
         let scheduler_clone = scheduler.clone();
         let handle = std::thread::spawn(move || {

@@ -1,4 +1,4 @@
-"""End-to-end tests for R3.5b scanner provider switching and publication."""
+"""End-to-end tests for the rust-only scanner provider publication (R4.3)."""
 
 import json
 import sqlite3
@@ -78,27 +78,63 @@ def project(tmp_path):
     return root
 
 
-def test_switch_publishes_rust_full_scans_and_survives_hard_kill(tmp_path, project):
+def test_bootstrap_probes_and_publishes_rust(tmp_path, project):
     home = tmp_path / "home"
-    assert run_daemon(home, ["start"]).returncode == 0
+    start = run_daemon(home, ["start"], timeout=60)
+    assert start.returncode == 0, start.stderr
+    try:
+        payload = _wait_for_published(home, "rust")
+        assert payload["scanner"]["desired"] == "rust"
+        assert payload["scanner"]["diagnostic"] is None
+        assert payload["scanner"]["published"]["probe_summary"]
+
+        client = _client(home)
+        submitted = _submit(client, project, "main.py")
+        job = wait_for_terminal(client, submitted["job"]["id"], timeout=60)
+        assert job["status"] == "succeeded", job["error"]
+        assert job["provider"] == "rust"
+        assert job["result"]["outcome"] == "success"
+        assert "main.py" in job["result"]["successful_paths"]
+
+        db = sqlite3.connect(str(project / ".claude" / "logic_index.db"))
+        try:
+            backends = dict(
+                db.execute("SELECT path, parser_backend FROM files")
+            )
+        finally:
+            db.close()
+        assert backends.get("main.py") == "python-tree-sitter"
+    finally:
+        force_cleanup(home)
+
+
+def test_historical_python_row_triggers_probe_wave_and_survives_hard_kill(
+    tmp_path, project
+):
+    home = tmp_path / "home"
+    start = run_daemon(home, ["start"], timeout=60)
+    assert start.returncode == 0, start.stderr
     try:
         client = _client(home)
         first = _submit(client, project, "main.py")
-        wait_for_terminal(client, first["job"]["id"])
-        payload = _wait_for_published(home, "python")
-        assert payload["scanner"]["desired"] == "python"
+        wait_for_terminal(client, first["job"]["id"], timeout=60)
+        _wait_for_published(home, "rust")
 
         assert run_daemon(home, ["stop"]).returncode == 0
         assert wait_for_state(home, False)
-        start = run_daemon(
-            home,
-            ["start"],
-            timeout=60,
-            extra_env={"REMY_SCANNER_PROVIDER": "rust"},
-        )
-        assert start.returncode == 0, start.stderr
+        state_db = sqlite3.connect(str(Path(home) / "state.db"))
+        try:
+            state_db.execute(
+                "UPDATE published_provider SET provider = 'python', "
+                "daemon_version = '0.6.2', probe_summary = '{}' WHERE id = 1"
+            )
+            state_db.commit()
+        finally:
+            state_db.close()
+
+        restart = run_daemon(home, ["start"], timeout=60)
+        assert restart.returncode == 0, restart.stderr
         payload = _wait_for_published(home, "rust")
-        assert payload["scanner"]["desired"] == "rust"
         assert payload["scanner"]["diagnostic"] is None
         assert payload["scanner"]["published"]["probe_summary"]
 
@@ -111,29 +147,9 @@ def test_switch_publishes_rust_full_scans_and_survives_hard_kill(tmp_path, proje
         assert full_scan["result"]["outcome"] == "success"
         assert "main.py" in full_scan["result"]["successful_paths"]
 
-        db = sqlite3.connect(str(project / ".claude" / "logic_index.db"))
-        try:
-            backends = dict(
-                db.execute("SELECT path, parser_backend FROM files")
-            )
-        finally:
-            db.close()
-        assert backends.get("main.py") == "python-tree-sitter"
-
-        (project / "extra.py").write_text("def extra():\n    return 1\n", encoding="utf-8")
-        incremental = _submit(client, project, "extra.py")
-        job = wait_for_terminal(client, incremental["job"]["id"], timeout=60)
-        assert job["status"] == "succeeded", job["error"]
-        assert job["provider"] == "rust"
-
         _hard_kill(home)
-        restart = run_daemon(
-            home,
-            ["start"],
-            timeout=60,
-            extra_env={"REMY_SCANNER_PROVIDER": "rust"},
-        )
-        assert restart.returncode == 0, restart.stderr
+        second_restart = run_daemon(home, ["start"], timeout=60)
+        assert second_restart.returncode == 0, second_restart.stderr
         payload = _wait_for_published(home, "rust")
         assert payload["scanner"]["diagnostic"] is None
         client = _client(home)
@@ -142,17 +158,16 @@ def test_switch_publishes_rust_full_scans_and_survives_hard_kill(tmp_path, proje
         force_cleanup(home)
 
 
-def test_invalid_desired_value_keeps_python_and_reports_diagnostic(tmp_path):
+def test_scanner_provider_env_residue_is_ignored(tmp_path):
     home = tmp_path / "home"
     start = run_daemon(
-        home, ["start"], extra_env={"REMY_SCANNER_PROVIDER": "weird"}
+        home, ["start"], timeout=60, extra_env={"REMY_SCANNER_PROVIDER": "python"}
     )
     assert start.returncode == 0, start.stderr
     try:
-        payload = _status_json(home)
-        assert payload["scanner"]["desired"] == "weird"
-        assert payload["scanner"]["published"] is None
-        assert "REMY_SCANNER_PROVIDER" in payload["scanner"]["diagnostic"]
+        payload = _wait_for_published(home, "rust")
+        assert payload["scanner"]["desired"] == "rust"
+        assert payload["scanner"]["diagnostic"] is None
     finally:
         force_cleanup(home)
 
@@ -160,9 +175,7 @@ def test_invalid_desired_value_keeps_python_and_reports_diagnostic(tmp_path):
 def test_rust_job_cancel_kills_the_scan_subprocess(tmp_path, project):
     home = tmp_path / "home"
     hold_ms = 20_000
-    start = run_daemon(
-        home, ["start"], timeout=120, extra_env={"REMY_SCANNER_PROVIDER": "rust"}
-    )
+    start = run_daemon(home, ["start"], timeout=120)
     assert start.returncode == 0, start.stderr
     try:
         _wait_for_published(home, "rust")
@@ -172,10 +185,7 @@ def test_rust_job_cancel_kills_the_scan_subprocess(tmp_path, project):
             home,
             ["start"],
             timeout=120,
-            extra_env={
-                "REMY_SCANNER_PROVIDER": "rust",
-                "REMY_SCAN_LOCK_HOLD_MS": str(hold_ms),
-            },
+            extra_env={"REMY_SCAN_LOCK_HOLD_MS": str(hold_ms)},
         )
         assert restart.returncode == 0, restart.stderr
 

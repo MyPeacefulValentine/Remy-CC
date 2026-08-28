@@ -9,7 +9,7 @@ use std::thread;
 use crate::clock::Clock;
 use crate::state::{
     CancelResult, Job, JobPriority, JobStatus, ListJobs, ProgressUpdate, PromoteResult, StateError,
-    StateStore, SubmitJob, SubmitResult,
+    StateStore, SubmitJob, SubmitResult, PROVIDER_RUST,
 };
 use crate::worker::{self, WorkerEvent, WorkerOutcome};
 
@@ -79,7 +79,6 @@ impl SchedulerHandle {
 pub fn start(
     store: StateStore,
     clock: Arc<dyn Clock>,
-    provider: String,
 ) -> io::Result<(SchedulerHandle, thread::JoinHandle<()>)> {
     let (sender, receiver) = mpsc::channel();
     let handle = SchedulerHandle {
@@ -87,13 +86,12 @@ pub fn start(
     };
     let thread = thread::Builder::new()
         .name("remy-scheduler".to_string())
-        .spawn(move || run(store, receiver, sender, clock, provider))?;
+        .spawn(move || run(store, receiver, sender, clock))?;
     Ok((handle, thread))
 }
 
 struct ActiveJob {
     job_id: i64,
-    provider: String,
     cancel: Arc<AtomicBool>,
 }
 
@@ -102,10 +100,9 @@ fn run(
     receiver: Receiver<Command>,
     sender: Sender<Command>,
     _clock: Arc<dyn Clock>,
-    provider: String,
 ) {
     let mut active_job = None;
-    if dispatch(&mut store, &sender, &mut active_job, &provider).is_err() {
+    if dispatch(&mut store, &sender, &mut active_job).is_err() {
         return;
     }
     while let Ok(command) = receiver.recv() {
@@ -132,7 +129,6 @@ fn run(
                     if outcome.changed
                         && outcome.job.status == JobStatus::CancelRequested
                         && active.job_id == job_id
-                        && active.provider == crate::state::PROVIDER_RUST
                     {
                         active.cancel.store(true, Ordering::Relaxed);
                     }
@@ -165,7 +161,7 @@ fn run(
             Command::Worker(event) => handle_worker(&mut store, event, &mut active_job),
             Command::Shutdown => break,
         };
-        if result.is_err() || dispatch(&mut store, &sender, &mut active_job, &provider).is_err() {
+        if result.is_err() || dispatch(&mut store, &sender, &mut active_job).is_err() {
             break;
         }
     }
@@ -179,12 +175,11 @@ fn dispatch(
     store: &mut StateStore,
     sender: &Sender<Command>,
     active_job: &mut Option<ActiveJob>,
-    provider: &str,
 ) -> Result<(), StateError> {
     if active_job.is_some() {
         return Ok(());
     }
-    let Some(job) = store.claim_next_pending(provider)? else {
+    let Some(job) = store.claim_next_pending(PROVIDER_RUST)? else {
         return Ok(());
     };
     let (event_sender, event_receiver) = mpsc::channel();
@@ -200,14 +195,12 @@ fn dispatch(
         Ok(cancel) => {
             *active_job = Some(ActiveJob {
                 job_id: job.id,
-                provider: job.provider.clone(),
                 cancel,
             });
         }
         Err(error) => {
             *active_job = Some(ActiveJob {
                 job_id: job.id,
-                provider: job.provider.clone(),
                 cancel: Arc::new(AtomicBool::new(false)),
             });
             sender
@@ -291,7 +284,7 @@ mod tests {
 
     use super::*;
     use crate::clock::fake::FakeClock;
-    use crate::state::{JobPriority, SubmitJob, PROVIDER_PYTHON};
+    use crate::state::{JobPriority, SubmitJob};
 
     fn store_in(home: &Path) -> StateStore {
         let clock = Arc::new(FakeClock::new(
@@ -312,7 +305,7 @@ mod tests {
                 priority: JobPriority::Interactive,
             })
             .unwrap();
-        store.claim_next_pending(PROVIDER_PYTHON).unwrap().unwrap()
+        store.claim_next_pending(PROVIDER_RUST).unwrap().unwrap()
     }
 
     #[test]
@@ -326,7 +319,6 @@ mod tests {
 
         let mut active = Some(ActiveJob {
             job_id: job.id,
-            provider: job.provider.clone(),
             cancel: Arc::new(AtomicBool::new(false)),
         });
         handle_worker(
@@ -354,7 +346,6 @@ mod tests {
 
         let mut active = Some(ActiveJob {
             job_id: job.id,
-            provider: job.provider.clone(),
             cancel: Arc::new(AtomicBool::new(false)),
         });
         handle_worker(
@@ -413,7 +404,7 @@ mod tests {
                 priority: JobPriority::Interactive,
             })
             .unwrap();
-        assert!(store.claim_next_pending(PROVIDER_PYTHON).unwrap().is_none());
+        assert!(store.claim_next_pending(PROVIDER_RUST).unwrap().is_none());
         assert_eq!(store.get(job.id).unwrap().status, JobStatus::Running);
     }
 }

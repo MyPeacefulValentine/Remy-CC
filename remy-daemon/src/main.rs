@@ -237,8 +237,7 @@ fn run_foreground(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
             let sync = provider::sync(&mut state, env!("CARGO_PKG_VERSION"), &logger)?;
             let full_scan_projects = sync.full_scan_project_ids.clone();
             let scanner_status = sync.status.clone();
-            let (scheduler, _scheduler_thread) =
-                scheduler::start(state, Arc::clone(clock), sync.published_provider)?;
+            let (scheduler, _scheduler_thread) = scheduler::start(state, Arc::clone(clock))?;
             for project_id in full_scan_projects {
                 if let Err(error) = scheduler.submit_full_scan(project_id) {
                     logger.log(

@@ -1,4 +1,4 @@
-//! Claude Code hook clients with daemon IPC and Python fallback.
+//! Claude Code hook clients speaking the daemon IPC protocol.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
@@ -6,9 +6,8 @@ use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Component, Path, PathBuf};
-use std::process::{Child, Command, ExitCode, Stdio};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::process::ExitCode;
+use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -21,14 +20,9 @@ use crate::state::{Job, JobPriority, JobStatus, STATE_SCHEMA_VERSION};
 // Read covers one round-trip plus the submit transaction's fsyncs
 // (synchronous=FULL); 3 quanta proved insufficient under CI fsync spikes
 // (M6 recurrence, run 87812349791), so read holds the pre-declared
-// fallback budget of 6 quanta.
+// budget of 6 quanta.
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(35);
 const READ_TIMEOUT: Duration = Duration::from_millis(100);
-const DIRTY_FALLBACK_TIMEOUT: Duration = Duration::from_secs(5);
-const ENRICH_FALLBACK_TIMEOUT: Duration = Duration::from_secs(35);
-const FALLBACK_STDOUT_LIMIT: usize = 1024 * 1024;
-const FALLBACK_STDERR_LIMIT: usize = 64 * 1024;
-const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const CONFIG_SCHEMA_VERSION: &str = "1.0.0";
 const SOURCE_EXTENSIONS: &[&str] = &[
     "py", "c", "h", "cpp", "hpp", "cc", "cxx", "hh", "hxx", "ts", "tsx", "rs",
@@ -101,12 +95,6 @@ struct IpcConnection {
     token: String,
 }
 
-#[derive(Debug)]
-struct Captured {
-    bytes: Vec<u8>,
-    truncated: bool,
-}
-
 pub fn run(kind: HookKind) -> ExitCode {
     let input = match serde_json::from_reader::<_, HookInput>(io::stdin().lock()) {
         Ok(input) => input,
@@ -117,13 +105,10 @@ pub fn run(kind: HookKind) -> ExitCode {
     }
     let output = match run_daemon_path(kind, &input) {
         Ok(output) => output,
-        Err(_) => match run_python_fallback(kind, &input) {
-            Ok(output) => output,
-            Err(error) => {
-                emit_diagnostic(&error);
-                None
-            }
-        },
+        Err(error) => {
+            emit_diagnostic(&error);
+            None
+        }
     };
     if let Some(output) = output {
         if let Ok(encoded) = serde_json::to_string(&output) {
@@ -174,15 +159,7 @@ fn run_daemon_path(kind: HookKind, input: &HookInput) -> Result<Option<Value>, C
             ipc.submit(&root, &config.db_path, &file_path, JobPriority::Background)?;
             Ok(None)
         }
-        HookKind::Enrich => {
-            if dirty_queue_present(&root) {
-                return Err(ClientError::new(
-                    "dirty_queue",
-                    "Python queue recovery required",
-                ));
-            }
-            run_enrichment(&root, &file_path, &config)
-        }
+        HookKind::Enrich => run_enrichment(&root, &file_path, &config),
     }
 }
 
@@ -412,24 +389,6 @@ fn normalize_lexically(path: &Path) -> Option<PathBuf> {
         }
     }
     Some(result)
-}
-
-fn dirty_queue_present(root: &Path) -> bool {
-    let claude = root.join(".claude");
-    if claude.join("logic_index_dirty").exists()
-        || claude.join("logic_index_dirty.processing").exists()
-    {
-        return true;
-    }
-    match fs::read_dir(claude) {
-        Ok(entries) => entries.filter_map(Result::ok).any(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with("logic_index_dirty.pending.")
-        }),
-        Err(error) => error.kind() != io::ErrorKind::NotFound,
-    }
 }
 
 impl IpcConnection {
@@ -863,147 +822,6 @@ fn build_hook_output(
     })))
 }
 
-fn run_python_fallback(kind: HookKind, input: &HookInput) -> Result<Option<Value>, ClientError> {
-    let script = match kind {
-        HookKind::Dirty => "logic_dirty_tracker.py",
-        HookKind::Enrich => "logic_enrichment_hook.py",
-    };
-    let timeout = match kind {
-        HookKind::Dirty => DIRTY_FALLBACK_TIMEOUT,
-        HookKind::Enrich => ENRICH_FALLBACK_TIMEOUT,
-    };
-    let (python, script) = crate::runtime::hook_runtime(script)?;
-    let payload = serde_json::to_vec(input)
-        .map_err(|error| ClientError::new("fallback_input", error.to_string()))?;
-    let mut child = Command::new(python)
-        .arg(script)
-        .current_dir(&input.cwd)
-        .env("PYTHONIOENCODING", "utf-8")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    child
-        .stdin
-        .take()
-        .ok_or_else(|| ClientError::new("fallback_stdin", "fallback stdin is unavailable"))?
-        .write_all(&payload)?;
-    let stdout = read_bounded(
-        child
-            .stdout
-            .take()
-            .ok_or_else(|| ClientError::new("fallback_stdout", "fallback stdout is unavailable"))?,
-        FALLBACK_STDOUT_LIMIT,
-    );
-    let stderr = read_bounded(
-        child
-            .stderr
-            .take()
-            .ok_or_else(|| ClientError::new("fallback_stderr", "fallback stderr is unavailable"))?,
-        FALLBACK_STDERR_LIMIT,
-    );
-    let status = wait_child(&mut child, timeout)?;
-    let stdout = stdout
-        .join()
-        .map_err(|_| ClientError::new("fallback_stdout", "fallback stdout reader panicked"))?;
-    let stderr = stderr
-        .join()
-        .map_err(|_| ClientError::new("fallback_stderr", "fallback stderr reader panicked"))?;
-    if !status.success() {
-        return Err(ClientError::new(
-            "fallback_exit",
-            String::from_utf8_lossy(&stderr.bytes).into_owned(),
-        ));
-    }
-    if stdout.truncated {
-        return Err(ClientError::new(
-            "fallback_stdout",
-            "fallback stdout exceeded 1 MiB",
-        ));
-    }
-    if stderr.truncated {
-        return Err(ClientError::new(
-            "fallback_stderr",
-            "fallback stderr exceeded 64 KiB",
-        ));
-    }
-    let text = std::str::from_utf8(&stdout.bytes)
-        .map_err(|error| ClientError::new("fallback_utf8", error.to_string()))?
-        .trim();
-    if text.is_empty() {
-        return Ok(None);
-    }
-    let output: Value = serde_json::from_str(text)
-        .map_err(|error| ClientError::new("fallback_json", error.to_string()))?;
-    if !valid_hook_output(&output) {
-        return Err(ClientError::new(
-            "fallback_json",
-            "fallback emitted invalid Hook JSON",
-        ));
-    }
-    Ok(Some(output))
-}
-
-fn read_bounded(pipe: impl Read + Send + 'static, limit: usize) -> thread::JoinHandle<Captured> {
-    thread::spawn(move || {
-        let mut reader = BufReader::new(pipe);
-        let mut retained = Vec::new();
-        let mut truncated = false;
-        let mut buffer = [0_u8; 8192];
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) | Err(_) => break,
-                Ok(count) => {
-                    let remaining = limit.saturating_sub(retained.len());
-                    retained.extend_from_slice(&buffer[..count.min(remaining)]);
-                    if count > remaining {
-                        truncated = true;
-                    }
-                }
-            }
-        }
-        Captured {
-            bytes: retained,
-            truncated,
-        }
-    })
-}
-
-fn wait_child(
-    child: &mut Child,
-    timeout: Duration,
-) -> Result<std::process::ExitStatus, ClientError> {
-    let deadline = Instant::now() + timeout;
-    loop {
-        if let Some(status) = child.try_wait()? {
-            return Ok(status);
-        }
-        if Instant::now() >= deadline {
-            child.kill()?;
-            let _ = child.wait();
-            return Err(ClientError::new(
-                "fallback_timeout",
-                "fallback process timed out",
-            ));
-        }
-        thread::sleep(CHILD_POLL_INTERVAL);
-    }
-}
-
-fn valid_hook_output(value: &Value) -> bool {
-    value
-        .get("hookSpecificOutput")
-        .and_then(Value::as_object)
-        .is_some_and(|output| {
-            output.get("hookEventName").and_then(Value::as_str) == Some("PreToolUse")
-                && output.get("permissionDecision").and_then(Value::as_str) == Some("allow")
-                && output
-                    .get("additionalContext")
-                    .and_then(Value::as_str)
-                    .is_some()
-        })
-}
-
 fn emit_diagnostic(error: &ClientError) {
     eprintln!("remy-hook: {}: {}", error.kind, sanitize(&error.detail));
 }
@@ -1077,18 +895,6 @@ mod tests {
     }
 
     #[test]
-    fn fallback_reader_enforces_output_bound() {
-        let captured = read_bounded(
-            std::io::Cursor::new(vec![b'x'; FALLBACK_STDERR_LIMIT + 1]),
-            FALLBACK_STDERR_LIMIT,
-        )
-        .join()
-        .unwrap();
-        assert_eq!(captured.bytes.len(), FALLBACK_STDERR_LIMIT);
-        assert!(captured.truncated);
-    }
-
-    #[test]
     fn every_job_status_has_a_locked_action() {
         assert_eq!(job_action(JobStatus::Succeeded), JobAction::None);
         assert_eq!(job_action(JobStatus::Pending), JobAction::Promote);
@@ -1101,12 +907,5 @@ mod tests {
         ] {
             assert_eq!(job_action(status), JobAction::Retry);
         }
-    }
-
-    #[test]
-    fn invalid_hook_output_is_rejected() {
-        assert!(!valid_hook_output(
-            &json!({"message": "not a hook response"})
-        ));
     }
 }

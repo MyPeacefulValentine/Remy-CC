@@ -1,9 +1,7 @@
 //! Scanner worker supervision with bounded output capture.
 //!
-//! Jobs run under the provider snapshotted at claim time: the python arm
-//! keeps the R2 probe/marker-cancel semantics byte for byte, the rust arm
-//! re-execs the daemon binary's `scan` subcommand, reads its parameters from
-//! rconfig (no python probe, empty secret set) and cancels by kill.
+//! Every job re-execs the daemon binary's `scan` subcommand, reads its
+//! parameters from rconfig and cancels by kill.
 
 use std::env;
 use std::fs;
@@ -18,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use crate::state::{Job, JOB_TYPE_FULL_SCAN, PROVIDER_RUST};
+use crate::state::{Job, JOB_TYPE_FULL_SCAN};
 
 const OUTPUT_LIMIT: usize = 64 * 1024;
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
@@ -44,47 +42,23 @@ pub enum WorkerOutcome {
 }
 
 #[derive(Debug)]
-struct WorkerConfig {
-    lock_timeout: f64,
-    scan_timeout: u64,
-    secret_values: Vec<String>,
-}
-
-#[derive(Debug)]
 struct Captured {
     bytes: Vec<u8>,
     truncated: bool,
 }
 
-enum ScannerRuntime {
-    Python { python: PathBuf, script: PathBuf },
-    Rust { binary: PathBuf },
-}
-
 pub fn spawn(job: Job, sender: Sender<WorkerEvent>) -> io::Result<Arc<AtomicBool>> {
-    let runtime = if job.provider == PROVIDER_RUST {
-        ScannerRuntime::Rust {
-            binary: crate::runtime::rust_scanner_binary()?,
-        }
-    } else {
-        let (python, script) = crate::runtime::scanner_runtime()?;
-        ScannerRuntime::Python { python, script }
-    };
+    let binary = crate::runtime::rust_scanner_binary()?;
     let cancel = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&cancel);
     thread::Builder::new()
         .name(format!("remy-worker-{}", job.id))
-        .spawn(move || supervise(job, runtime, sender, flag))?;
+        .spawn(move || supervise(job, binary, sender, flag))?;
     Ok(cancel)
 }
 
-fn supervise(
-    job: Job,
-    runtime: ScannerRuntime,
-    sender: Sender<WorkerEvent>,
-    cancel: Arc<AtomicBool>,
-) {
-    let outcome = supervise_inner(&job, &runtime, &sender, &cancel)
+fn supervise(job: Job, binary: PathBuf, sender: Sender<WorkerEvent>, cancel: Arc<AtomicBool>) {
+    let outcome = supervise_inner(&job, &binary, &sender, &cancel)
         .unwrap_or_else(|error| WorkerOutcome::Failed(supervisor_error(&error)));
     let _ = sender.send(WorkerEvent::Complete {
         job_id: job.id,
@@ -96,12 +70,7 @@ fn supervisor_error(error: &io::Error) -> Value {
     let message = error.to_string();
     let (kind, stage) = if message.contains("target_db_unavailable") {
         ("target_db_unavailable", "runtime_validation")
-    } else if message.contains("worker configuration")
-        || message.contains("worker_config")
-        || message.contains("lock_timeout missing")
-        || message.contains("scan_timeout missing")
-        || message.contains("secret_values missing")
-    {
+    } else if message.contains("worker configuration") {
         ("config_invalid", "runtime_validation")
     } else if message.contains("lock_timeout") {
         ("lock_timeout", "waiting_for_scan_lock")
@@ -117,7 +86,7 @@ fn supervisor_error(error: &io::Error) -> Value {
 
 fn supervise_inner(
     job: &Job,
-    runtime: &ScannerRuntime,
+    binary: &Path,
     sender: &Sender<WorkerEvent>,
     cancel: &AtomicBool,
 ) -> io::Result<WorkerOutcome> {
@@ -134,68 +103,27 @@ fn supervise_inner(
     }
     validate_target_db(&job.target_db_path)?;
     let full_scan = job.job_type == JOB_TYPE_FULL_SCAN;
-    let (mut command, lock_timeout, scan_timeout, secrets, kill_on_cancel) = match runtime {
-        ScannerRuntime::Python { python, script } => {
-            let config = read_config(&(python.clone(), script.clone()), &job.project_path)?;
-            let scan_timeout = if full_scan {
-                full_scan_timeout(&job.project_path)?
-            } else {
-                config.scan_timeout
-            };
-            let mut command = Command::new(python);
-            command
-                .arg(script)
-                .args([
-                    "--result-json",
-                    "--cwd",
-                    &job.project_path,
-                    "--lock-timeout",
-                    &config.lock_timeout.to_string(),
-                ])
-                .env("REMY_LOGIC_INDEX_DB_PATH", &job.target_db_path)
-                .env("PYTHONIOENCODING", "utf-8");
-            if !full_scan {
-                command.args(["--files", &job.file_path]);
-            }
-            (
-                command,
-                config.lock_timeout,
-                scan_timeout,
-                config.secret_values,
-                false,
-            )
-        }
-        ScannerRuntime::Rust { binary } => {
-            let pconfig =
-                scanner_core::rconfig::load(Path::new(&job.project_path)).map_err(|error| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("worker configuration invalid: {error}"),
-                    )
-                })?;
-            let scan_timeout = if full_scan {
-                pconfig.full_scan_timeout as u64
-            } else {
-                pconfig.struct_scan_timeout as u64
-            };
-            let mut command = Command::new(binary);
-            command
-                .arg("scan")
-                .args(["--root", &job.project_path, "--db", &job.target_db_path])
-                .args(["--result-json", "--progress-json"])
-                .args(["--lock-timeout", &pconfig.scan_lock_timeout.to_string()]);
-            if !full_scan {
-                command.args(["--files", &job.file_path]);
-            }
-            (
-                command,
-                pconfig.scan_lock_timeout,
-                scan_timeout,
-                Vec::new(),
-                true,
-            )
-        }
+    let pconfig = scanner_core::rconfig::load(Path::new(&job.project_path)).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("worker configuration invalid: {error}"),
+        )
+    })?;
+    let scan_timeout = if full_scan {
+        pconfig.full_scan_timeout as u64
+    } else {
+        pconfig.struct_scan_timeout as u64
     };
+    let lock_timeout = pconfig.scan_lock_timeout;
+    let mut command = Command::new(binary);
+    command
+        .arg("scan")
+        .args(["--root", &job.project_path, "--db", &job.target_db_path])
+        .args(["--result-json", "--progress-json"])
+        .args(["--lock-timeout", &lock_timeout.to_string()]);
+    if !full_scan {
+        command.args(["--files", &job.file_path]);
+    }
     let _ = sender.send(WorkerEvent::Progress {
         job_id: job.id,
         current: 1,
@@ -206,7 +134,6 @@ fn supervise_inner(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
-    let kill_flag = kill_on_cancel.then_some(cancel);
     let (lock_sender, lock_receiver) = mpsc::sync_channel(1);
     let stdout = read_stdout(
         child.stdout.take().expect("piped stdout"),
@@ -219,31 +146,20 @@ fn supervise_inner(
         &mut child,
         &lock_receiver,
         Instant::now() + Duration::from_secs_f64(lock_timeout.max(0.0) + 5.0),
-        kill_flag,
+        cancel,
     )? {
         Some(status) => status,
         None => wait_until(
             &mut child,
             Instant::now() + Duration::from_secs(scan_timeout),
             "scan_timeout",
-            kill_flag,
+            cancel,
         )?,
     };
     let finalize_deadline = Instant::now() + FINALIZE_TIMEOUT;
     let stdout = join_reader(stdout, finalize_deadline, "stdout")?;
     let stderr = join_reader(stderr, finalize_deadline, "stderr")?;
-    evaluate(status, stdout, stderr, &secrets, kill_on_cancel)
-}
-
-fn full_scan_timeout(project: &str) -> io::Result<u64> {
-    scanner_core::rconfig::load(Path::new(project))
-        .map(|config| config.full_scan_timeout as u64)
-        .map_err(|error| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("worker configuration invalid: {error}"),
-            )
-        })
+    evaluate(status, stdout, stderr)
 }
 
 fn validate_target_db(value: &str) -> io::Result<()> {
@@ -253,65 +169,6 @@ fn validate_target_db(value: &str) -> io::Result<()> {
     })?;
     fs::create_dir_all(parent)
         .map_err(|error| io::Error::new(error.kind(), format!("target_db_unavailable: {error}")))
-}
-
-fn read_config(runtime: &(PathBuf, PathBuf), project: &str) -> io::Result<WorkerConfig> {
-    let mut child = Command::new(&runtime.0)
-        .arg(&runtime.1)
-        .args(["--worker-config-json", "--cwd", project])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let stdout = read_pipe(child.stdout.take().expect("piped stdout"));
-    let stderr = read_pipe(child.stderr.take().expect("piped stderr"));
-    let status = wait_until(
-        &mut child,
-        Instant::now() + FINALIZE_TIMEOUT,
-        "worker configuration timeout",
-        None,
-    )?;
-    let deadline = Instant::now() + FINALIZE_TIMEOUT;
-    let stdout = join_reader(stdout, deadline, "configuration stdout")?;
-    let stderr = join_reader(stderr, deadline, "configuration stderr")?;
-    if stdout.truncated || stderr.truncated {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "worker configuration output exceeded 65536 bytes",
-        ));
-    }
-    if !status.success() {
-        return Err(io::Error::other(format!(
-            "worker configuration probe failed: {}",
-            String::from_utf8_lossy(&stderr.bytes)
-        )));
-    }
-    let value: Value = serde_json::from_slice(&stdout.bytes)
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    if value.get("type").and_then(Value::as_str) != Some("worker_config")
-        || value.get("schema_version").and_then(Value::as_u64) != Some(1)
-    {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "invalid worker configuration contract",
-        ));
-    }
-    Ok(WorkerConfig {
-        lock_timeout: value["lock_timeout"]
-            .as_f64()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "lock_timeout missing"))?,
-        scan_timeout: value["scan_timeout"]
-            .as_u64()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "scan_timeout missing"))?,
-        secret_values: value["secret_values"]
-            .as_array()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "secret_values missing"))?
-            .iter()
-            .filter_map(Value::as_str)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-            .collect(),
-    })
 }
 
 fn read_stdout(
@@ -384,11 +241,8 @@ fn read_pipe(mut pipe: impl Read + Send + 'static) -> thread::JoinHandle<Capture
     })
 }
 
-fn cancelled_kill(
-    child: &mut Child,
-    cancel: Option<&AtomicBool>,
-) -> io::Result<Option<ExitStatus>> {
-    if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+fn cancelled_kill(child: &mut Child, cancel: &AtomicBool) -> io::Result<Option<ExitStatus>> {
+    if cancel.load(Ordering::Relaxed) {
         child.kill()?;
         return child.wait().map(Some);
     }
@@ -399,7 +253,7 @@ fn wait_for_lock(
     child: &mut Child,
     receiver: &Receiver<()>,
     deadline: Instant,
-    cancel: Option<&AtomicBool>,
+    cancel: &AtomicBool,
 ) -> io::Result<Option<ExitStatus>> {
     loop {
         match receiver.try_recv() {
@@ -426,7 +280,7 @@ fn wait_until(
     child: &mut Child,
     deadline: Instant,
     kind: &'static str,
-    cancel: Option<&AtomicBool>,
+    cancel: &AtomicBool,
 ) -> io::Result<ExitStatus> {
     loop {
         if let Some(status) = child.try_wait()? {
@@ -463,38 +317,27 @@ fn join_reader(
         .map_err(|_| io::Error::other(format!("{name} reader panicked")))
 }
 
-fn valid_progress_line(value: &Value, rust: bool) -> bool {
-    if rust {
-        let Some(object) = value.as_object() else {
-            return false;
-        };
-        object
-            .keys()
-            .all(|key| matches!(key.as_str(), "type" | "stage" | "elapsed_ms" | "files"))
-            && matches!(
-                value.get("stage").and_then(Value::as_str),
-                Some("lock_acquired" | "parse_done" | "postprocess_done")
-            )
-    } else {
-        has_exact_keys(value, &["type", "stage"])
-            && value.get("stage").and_then(Value::as_str) == Some("lock_acquired")
-    }
+fn valid_progress_line(value: &Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    object
+        .keys()
+        .all(|key| matches!(key.as_str(), "type" | "stage" | "elapsed_ms" | "files"))
+        && matches!(
+            value.get("stage").and_then(Value::as_str),
+            Some("lock_acquired" | "parse_done" | "postprocess_done")
+        )
 }
 
-fn evaluate(
-    status: ExitStatus,
-    stdout: Captured,
-    stderr: Captured,
-    secrets: &[String],
-    rust: bool,
-) -> io::Result<WorkerOutcome> {
+fn evaluate(status: ExitStatus, stdout: Captured, stderr: Captured) -> io::Result<WorkerOutcome> {
     if stdout.truncated {
         return Ok(WorkerOutcome::Failed(error_value(
             "invalid_output",
             "worker stdout exceeded 65536 bytes",
             status.code(),
             "finalizing",
-            &sanitize(&String::from_utf8_lossy(&stderr.bytes), secrets),
+            &sanitize(&String::from_utf8_lossy(&stderr.bytes)),
             stderr.truncated,
             Vec::new(),
         )));
@@ -507,7 +350,7 @@ fn evaluate(
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         match value.get("type").and_then(Value::as_str) {
             Some("progress") if terminal.is_none() => {
-                if !valid_progress_line(&value, rust) {
+                if !valid_progress_line(&value) {
                     return Ok(WorkerOutcome::Failed(error_value(
                         "invalid_output",
                         "worker emitted an unknown progress stage",
@@ -543,7 +386,7 @@ fn evaluate(
                     "worker emitted an invalid event sequence",
                     status.code(),
                     "finalizing",
-                    &sanitize(&String::from_utf8_lossy(&stderr.bytes), secrets),
+                    &sanitize(&String::from_utf8_lossy(&stderr.bytes)),
                     stderr.truncated,
                     Vec::new(),
                 )))
@@ -556,7 +399,7 @@ fn evaluate(
             "worker emitted no scan_result",
             status.code(),
             "finalizing",
-            &sanitize(&String::from_utf8_lossy(&stderr.bytes), secrets),
+            &sanitize(&String::from_utf8_lossy(&stderr.bytes)),
             stderr.truncated,
             Vec::new(),
         )));
@@ -582,7 +425,7 @@ fn evaluate(
             "scanner worker failed",
             status.code(),
             "scanning",
-            &sanitize(&String::from_utf8_lossy(&stderr.bytes), secrets),
+            &sanitize(&String::from_utf8_lossy(&stderr.bytes)),
             stderr.truncated,
             result
                 .get("errors")
@@ -631,13 +474,8 @@ fn valid_scan_result(result: &Value) -> bool {
         && valid_error_array(&result["errors"])
 }
 
-fn sanitize(message: &str, secrets: &[String]) -> String {
+fn sanitize(message: &str) -> String {
     let mut output = message.to_string();
-    for secret in secrets {
-        if !secret.is_empty() {
-            output = output.replace(secret, "<redacted>");
-        }
-    }
     if let Some(home) = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE")) {
         output = output.replace(&home.to_string_lossy().to_string(), "~");
     }
@@ -719,21 +557,19 @@ mod tests {
     }
 
     #[test]
-    fn progress_line_validation_is_provider_aware() {
-        let python_line = json!({"type": "progress", "stage": "lock_acquired"});
-        assert!(valid_progress_line(&python_line, false));
-        assert!(valid_progress_line(&python_line, true));
+    fn progress_line_validation_locks_stages_and_keys() {
+        let minimal_line = json!({"type": "progress", "stage": "lock_acquired"});
+        assert!(valid_progress_line(&minimal_line));
 
-        let rust_line = json!({
+        let full_line = json!({
             "type": "progress", "stage": "parse_done", "elapsed_ms": 12, "files": 4,
         });
-        assert!(valid_progress_line(&rust_line, true));
-        assert!(!valid_progress_line(&rust_line, false));
+        assert!(valid_progress_line(&full_line));
 
         let unknown_stage = json!({"type": "progress", "stage": "weird", "elapsed_ms": 1});
-        assert!(!valid_progress_line(&unknown_stage, true));
+        assert!(!valid_progress_line(&unknown_stage));
         let unknown_key = json!({"type": "progress", "stage": "parse_done", "extra": 1});
-        assert!(!valid_progress_line(&unknown_key, true));
+        assert!(!valid_progress_line(&unknown_key));
     }
 
     #[test]
@@ -745,15 +581,12 @@ mod tests {
     }
 
     #[test]
-    fn sanitizer_replaces_secrets_and_home_prefix() {
+    fn sanitizer_replaces_home_prefix() {
         let home = env::var("HOME")
             .or_else(|_| env::var("USERPROFILE"))
             .unwrap();
-        let output = sanitize(
-            &format!("{home}/project token-value"),
-            &["token-value".to_string()],
-        );
-        assert_eq!(output, "~/project <redacted>");
+        let output = sanitize(&format!("{home}/project failed"));
+        assert_eq!(output, "~/project failed");
     }
 
     #[test]

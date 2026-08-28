@@ -1,7 +1,6 @@
 """Integration tests for the remy-daemon protocol v5 and Hook clients."""
 
 import json
-import shutil
 import socket
 import statistics
 import subprocess
@@ -20,6 +19,7 @@ from daemon_test_support import (
     force_cleanup,
     run_daemon,
     skip_reason,
+    wait_for_state,
     wait_for_terminal,
 )
 
@@ -27,7 +27,6 @@ pytestmark = pytest.mark.skipif(skip_reason() is not None, reason=skip_reason() 
 
 HOOK_DIR = Path(__file__).resolve().parent.parent / "hooks"
 INDEX_DIR = Path(__file__).resolve().parent.parent / "skills" / "remy-index"
-REMY_SRC_DIR = Path(__file__).resolve().parent.parent / "remy-src"
 STRUCT_SCAN = INDEX_DIR / "struct_scan.py"
 
 
@@ -100,12 +99,6 @@ def _seed_enrichment_db(project, home):
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-
-
-def _install_index_skill(home):
-    claude_home = Path(home) / ".claude"
-    shutil.copytree(INDEX_DIR, claude_home / "skills" / "remy-index")
-    shutil.copytree(REMY_SRC_DIR, claude_home / "remy-src")
 
 
 def _write_config(path, values):
@@ -212,6 +205,18 @@ def test_business_version_mismatches_are_rejected(daemon_home, tmp_path):
 
 
 def test_submit_get_cancel_and_pending_deduplication(daemon_home, tmp_path):
+    # Restart with a held scan lock so the first job stays running while the
+    # dedupe, get, and cancel assertions execute (the rust scan of a missing
+    # file otherwise reaches a terminal state within milliseconds).
+    assert run_daemon(daemon_home, ["stop"]).returncode == 0
+    assert wait_for_state(daemon_home, False)
+    restart = run_daemon(
+        daemon_home,
+        ["start"],
+        timeout=60,
+        extra_env={"REMY_SCAN_LOCK_HOLD_MS": "20000"},
+    )
+    assert restart.returncode == 0, restart.stderr
     client = connected_client(daemon_home)
     project = tmp_path / "project"
     project.mkdir()
@@ -304,10 +309,10 @@ def test_list_jobs_file_filter_and_status_json_contract(daemon_home, tmp_path):
     assert payload["running"] is True
     assert payload["protocol_version"] == PROTOCOL_VERSION
     assert payload["state_schema_version"] == STATE_SCHEMA_VERSION
-    assert payload["scanner"]["desired"] == "python"
-    assert payload["scanner"]["published"]["provider"] == "python"
+    assert payload["scanner"]["desired"] == "rust"
+    assert payload["scanner"]["published"]["provider"] == "rust"
     assert payload["scanner"]["diagnostic"] is None
-    assert response["jobs"][0]["provider"] == "python"
+    assert response["jobs"][0]["provider"] == "rust"
 
 
 def test_invalid_paths_and_unknown_jobs_have_stable_error_codes(daemon_home, tmp_path):
@@ -362,7 +367,7 @@ def test_hook_dirty_submits_without_writing_dirty_queue(daemon_home, tmp_path):
     assert len(response["jobs"]) == 1
 
 
-def test_hook_dirty_falls_back_when_daemon_is_stopped(tmp_path):
+def test_hook_dirty_emits_diagnostic_when_daemon_is_stopped(tmp_path):
     home = tmp_path / "home"
     project = tmp_path / "project"
     project.mkdir()
@@ -373,43 +378,8 @@ def test_hook_dirty_falls_back_when_daemon_is_stopped(tmp_path):
     )
     assert result.returncode == 0
     assert result.stdout == ""
-    assert (project / ".claude" / "logic_index_dirty").read_text(
-        encoding="utf-8"
-    ).split() == ["main.py"]
-
-
-def test_hook_fallback_prefers_managed_python_descriptor(tmp_path):
-    home = tmp_path / "home with 空格"
-    runtime_dir = home / "runtime"
-    runtime_dir.mkdir(parents=True)
-    runtime_dir.joinpath("python.json").write_text(
-        json.dumps({
-            "schema_version": 1,
-            "executable": sys.executable,
-            "version": list(sys.version_info[:3]),
-            "implementation": "CPython",
-            "platform": sys.platform,
-            "probed_at": "2026-08-13T00:00:00Z",
-        }),
-        encoding="utf-8",
-    )
-    project = tmp_path / "project"
-    project.mkdir()
-    source = project / "main.py"
-    source.write_text("x = 1\n", encoding="utf-8")
-
-    result = run_daemon(
-        home,
-        ["hook", "dirty"],
-        input_data=_hook_payload("Write", project, source),
-        extra_env={"REMY_PYTHON": str(tmp_path / "missing-python")},
-    )
-
-    assert result.returncode == 0
-    assert result.stderr == ""
-    assert (project / ".claude" / "logic_index_dirty").read_text(
-        encoding="utf-8"
-    ).split() == ["main.py"]
+    assert "remy-hook:" in result.stderr
+    assert not (project / ".claude" / "logic_index_dirty").exists()
 
 
 def test_hook_ignores_missing_path_without_creating_queue(tmp_path):
@@ -423,7 +393,7 @@ def test_hook_ignores_missing_path_without_creating_queue(tmp_path):
     assert not (project / ".claude" / "logic_index_dirty").exists()
 
 
-def test_hook_dirty_falls_back_during_partial_endpoint_publication(tmp_path):
+def test_hook_dirty_skips_during_partial_endpoint_publication(tmp_path):
     home = tmp_path / "home"
     run_dir = home / "run"
     run_dir.mkdir(parents=True)
@@ -437,11 +407,12 @@ def test_hook_dirty_falls_back_during_partial_endpoint_publication(tmp_path):
     )
     assert result.returncode == 0
     assert result.stdout == ""
-    assert (project / ".claude" / "logic_index_dirty").exists()
+    assert "remy-hook:" in result.stderr
+    assert not (project / ".claude" / "logic_index_dirty").exists()
 
 
 @pytest.mark.parametrize("mode", ["version", "invalid_json", "disconnect", "timeout"])
-def test_hook_dirty_falls_back_for_unconfirmed_response(tmp_path, mode):
+def test_hook_dirty_skips_for_unconfirmed_response(tmp_path, mode):
     home = tmp_path / "home"
     project = tmp_path / "project"
     project.mkdir()
@@ -471,10 +442,11 @@ def test_hook_dirty_falls_back_for_unconfirmed_response(tmp_path, mode):
     assert result.returncode == 0
     assert result.stdout == ""
     assert "do not expose" not in result.stderr
-    assert (project / ".claude" / "logic_index_dirty").exists()
+    assert "remy-hook:" in result.stderr
+    assert not (project / ".claude" / "logic_index_dirty").exists()
 
 
-def test_response_loss_after_submit_preserves_state_and_dirty_queue(daemon_home, tmp_path):
+def test_response_loss_after_submit_preserves_state_without_dirty_queue(daemon_home, tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     source = project / "main.py"
@@ -512,7 +484,8 @@ def test_response_loss_after_submit_preserves_state_and_dirty_queue(daemon_home,
     assert not thread.is_alive()
     assert observed[0]["type"] == "submitted"
     assert result.returncode == 0
-    assert (project / ".claude" / "logic_index_dirty").exists()
+    assert "remy-hook:" in result.stderr
+    assert not (project / ".claude" / "logic_index_dirty").exists()
     jobs = connected_client(daemon_home).job_request(
         "list_jobs", project_path=str(project), file_path="main.py", limit=10
     )["jobs"]
@@ -574,7 +547,7 @@ def test_rust_and_python_config_precedence_match(daemon_home, tmp_path):
         assert json.loads(rust_result.stdout) == json.loads(python_result.stdout)
 
 
-def test_enrichment_uses_python_when_dirty_queue_exists(daemon_home, tmp_path):
+def test_enrichment_ignores_legacy_dirty_queue_file(daemon_home, tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     source = project / "main.py"
@@ -582,13 +555,12 @@ def test_enrichment_uses_python_when_dirty_queue_exists(daemon_home, tmp_path):
     _seed_enrichment_db(project, daemon_home)
     dirty = project / ".claude" / "logic_index_dirty"
     dirty.write_text("main.py\n", encoding="utf-8")
-    _install_index_skill(daemon_home)
     result = run_daemon(
         daemon_home, ["hook", "enrich"], input_data=_hook_payload("Read", project, source)
     )
     assert result.returncode == 0
     assert result.stderr == ""
-    assert not dirty.exists()
+    assert dirty.exists()
 
 
 def test_hook_timeout_distributions_are_recorded(tmp_path):

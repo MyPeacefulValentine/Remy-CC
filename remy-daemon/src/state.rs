@@ -17,7 +17,6 @@ use crate::clock::Clock;
 pub const STATE_DB_FILE: &str = "state.db";
 pub const STATE_BACKUP_FILE: &str = "state.db.bak";
 pub const STATE_SCHEMA_VERSION: u32 = 2;
-pub const PROVIDER_PYTHON: &str = "python";
 pub const PROVIDER_RUST: &str = "rust";
 pub const JOB_TYPE_INCREMENTAL: &str = "incremental_scan";
 pub const JOB_TYPE_FULL_SCAN: &str = "full_scan";
@@ -587,7 +586,7 @@ impl StateStore {
         daemon_version: &str,
         probe_summary: &str,
     ) -> StateResult<PublishedProvider> {
-        if !matches!(provider, PROVIDER_PYTHON | PROVIDER_RUST) {
+        if provider != PROVIDER_RUST {
             return Err(StateError::InvalidInput(format!(
                 "unsupported provider {provider}"
             )));
@@ -624,7 +623,7 @@ impl StateStore {
     }
 
     pub fn claim_next_pending(&mut self, provider: &str) -> StateResult<Option<Job>> {
-        if !matches!(provider, PROVIDER_PYTHON | PROVIDER_RUST) {
+        if provider != PROVIDER_RUST {
             return Err(StateError::InvalidInput(format!(
                 "unsupported provider {provider}"
             )));
@@ -1738,33 +1737,21 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            store
-                .claim_next_pending(PROVIDER_PYTHON)
-                .unwrap()
-                .unwrap()
-                .id,
+            store.claim_next_pending(PROVIDER_RUST).unwrap().unwrap().id,
             first_interactive.job.id
         );
         store
             .complete_success(first_interactive.job.id, serde_json::json!({"ok": true}))
             .unwrap();
         assert_eq!(
-            store
-                .claim_next_pending(PROVIDER_PYTHON)
-                .unwrap()
-                .unwrap()
-                .id,
+            store.claim_next_pending(PROVIDER_RUST).unwrap().unwrap().id,
             second_interactive.job.id
         );
         store
             .complete_success(second_interactive.job.id, serde_json::json!({"ok": true}))
             .unwrap();
         assert_eq!(
-            store
-                .claim_next_pending(PROVIDER_PYTHON)
-                .unwrap()
-                .unwrap()
-                .id,
+            store.claim_next_pending(PROVIDER_RUST).unwrap().unwrap().id,
             background.job.id
         );
     }
@@ -1783,7 +1770,7 @@ mod tests {
                 JobPriority::Interactive,
             ))
             .unwrap();
-        let claimed = store.claim_next_pending(PROVIDER_PYTHON).unwrap().unwrap();
+        let claimed = store.claim_next_pending(PROVIDER_RUST).unwrap().unwrap();
         assert_eq!(claimed.progress_current, Some(0));
         assert_eq!(claimed.progress_total, Some(3));
         store
@@ -1833,7 +1820,7 @@ mod tests {
             .unwrap();
         assert!(promoted.changed);
         assert_eq!(promoted.job.priority, JobPriority::Interactive);
-        let running = store.claim_next_pending(PROVIDER_PYTHON).unwrap().unwrap();
+        let running = store.claim_next_pending(PROVIDER_RUST).unwrap().unwrap();
         let unchanged = store.promote(running.id, JobPriority::Interactive).unwrap();
         assert!(!unchanged.changed);
         assert_eq!(unchanged.job.status, JobStatus::Running);
@@ -1941,7 +1928,7 @@ mod tests {
 
         let store = store_in(home.path());
         let job = store.get(1).unwrap();
-        assert_eq!(job.provider, PROVIDER_PYTHON);
+        assert_eq!(job.provider, "python");
         assert_eq!(job.status, JobStatus::Pending);
         assert!(home.path().join(STATE_BACKUP_FILE).exists());
         let version: u32 = store
@@ -2038,11 +2025,13 @@ mod tests {
             .unwrap();
         assert_eq!(first.provider, PROVIDER_RUST);
         let second = store
-            .publish_provider(PROVIDER_PYTHON, "0.2.0", "{}")
+            .publish_provider(PROVIDER_RUST, "0.3.0", "{\"files\":4}")
             .unwrap();
-        assert_eq!(second.provider, PROVIDER_PYTHON);
+        assert_eq!(second.daemon_version, "0.3.0");
         let stored = store.published_provider().unwrap().unwrap();
-        assert_eq!(stored.provider, PROVIDER_PYTHON);
+        assert_eq!(stored.provider, PROVIDER_RUST);
+        assert_eq!(stored.daemon_version, "0.3.0");
+        assert!(store.publish_provider("python", "0.2.0", "{}").is_err());
         assert!(store.publish_provider("other", "0.2.0", "{}").is_err());
         let count: i64 = store
             .connection
