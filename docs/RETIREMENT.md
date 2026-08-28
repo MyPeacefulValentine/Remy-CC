@@ -251,7 +251,7 @@ stops routing to the fallback do the Python hook scripts become orphans.
 | # | Ruling |
 | :--- | :--- |
 | 1 | Criterion amendment = ruling A: seven-day window through 2026-09-02, gating deletion commits only (§2.1) |
-| 2 | INV-R1 disposition = pure narrowing; journal-based and spawn-based Rust successors both rejected. Degradation face is Dirty submission only (enrichment injection is a Rust direct read); staleness closes via struct_hash eventual consistency at the next scan; the parent-plan §5.1 race narrative collapses to single-writer |
+| 2 | INV-R1 disposition = pure narrowing; journal-based and spawn-based Rust successors both rejected. Degradation face is Dirty submission only (enrichment injection is a Rust direct read); staleness closes via struct_hash eventual consistency at the next scan; the parent-plan §5.1 race narrative collapses to single-writer. **Execution note (2026-08-28)**: the "Rust direct read" reading missed the freshness segment's IPC connect dependency; `7a884a5` degrades a failed connect to an empty freshness signal, so enrichment output survives daemon downtime |
 | 3 | §2.2 deletion-face wording: arms / flags / routes only; the scanner module set stays alive as development-time owner (§2.2) |
 | 4 | G4 retires whole with the worker arm; no secret-free probe variant (§2.4) |
 | 5 | `struct_scan.py` CLI entry survives; retained surface = human-output arm, `--result-json`, `--files` / `--cwd` / `--lock-timeout` (oracle `bench.py` consumes the human arm) |
@@ -264,6 +264,6 @@ stops routing to the fallback do the Python hook scripts become orphans.
 | 12 | `REMY_SCANNER_PROVIDER` config key deleted; residual user values are zero-noise (Python: unregistered keys fall silently into the unknown bucket; Rust: the read chain is deleted) |
 | 13 | `REMY_MIGRATION_KEEP_JSON` config key deleted with `migrate_json` |
 | 14 | Install `hook_mode="python"` arm deleted; `facade._select_daemon` degradation branch becomes an error with guidance instead of a python fallback |
-| 15 | `state.db` historical `provider='python'` rows: zero migration — provider is snapshotted by UPDATE at claim time and read paths carry no validation; startup sync overwrites published unconditionally with rust |
+| 15 | `state.db` historical `provider='python'` rows: zero migration — provider is snapshotted by UPDATE at claim time and read paths carry no validation; startup sync overwrites published unconditionally with rust. The DDL literal `CHECK (provider IN ('python', 'rust'))` on the jobs and published rows is retained intentionally for historical-row tolerance (state schema v2 not bumped) |
 | 16 | `python.json` runtime descriptor: daemon-side consumer chain deleted this batch; the install-side probe and deployment survive until R4.4 (install.py retirement) |
 | 17 | Acceptance = three-channel reference sweep (grep symbol list + `query_callers` + importlib string scan, since `query_dependencies` cannot see dynamic imports), per-commit full pytest + pyright, cargo fmt/clippy/test after Rust commits, explicit oracle/eval/`.oracle-venv` zero-impact check, on-machine probe preceded by `cargo build --release`, dual-platform CI under user confirmation |

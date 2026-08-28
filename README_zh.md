@@ -236,10 +236,10 @@ python install.py --lang zh-CN   # 简体中文
 ```
 
 安装脚本执行以下操作：
-- 将 Claude Code 发现工件和 Python Hook 回退脚本保留在 `~/.claude/`
+- 将 Claude Code 发现工件和 Python Hook 脚本保留在 `~/.claude/`
 - 将受管理 daemon、Python runtime 描述、事务日志和权威 manifest 部署到 `~/.remy-cc/`
 - 在 `~/.remy-cc/install/manifest.json` 中以根标识（`claude` 或 `remy`）、根内相对路径和 SHA-256 记录每个受管理文件
-- 候选 daemon 验证成功时注册 Rust `hook dirty` 与 `hook enrich`；候选与已部署 daemon 均不可用时记录 `hook_mode=python` 并使用已验证 Python 绝对路径
+- 注册受管理 Rust 二进制的 `hook dirty` 与 `hook enrich`；候选与已部署 daemon 均不可验证时报错中止并给出指引（R4.3 起 `hook_mode=rust` 为唯一安装模式）
 - daemon 正在运行或状态未知时拒绝安装、升级和卸载
 - 只合并本套件认领的 Hook 与 permission 片段；用户修改的受管理文件或 settings 片段不会被覆盖
 - 将用户可配置 Remy 参数保存在 `~/.claude/remy-config.json`，安装事实不写入该文件

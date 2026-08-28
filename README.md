@@ -236,10 +236,10 @@ python install.py --lang zh-CN   # Simplified Chinese
 ```
 
 The installer:
-- Keeps Claude Code discovery files and Python Hook fallbacks under `~/.claude/`
+- Keeps Claude Code discovery files and the Python hooks under `~/.claude/`
 - Deploys the managed daemon, Python runtime descriptor, transaction journal, and authoritative manifest under `~/.remy-cc/`
 - Records every managed file as a root identifier (`claude` or `remy`), a root-relative path, and a SHA-256 digest in `~/.remy-cc/install/manifest.json`
-- Registers `hook dirty` and `hook enrich` with the managed Rust binary when a verified daemon candidate is available; otherwise it records `hook_mode=python` and uses the verified Python executable
+- Registers `hook dirty` and `hook enrich` with the managed Rust binary; when neither a candidate nor the deployed daemon can be verified, the install aborts with guidance (`hook_mode=rust` is the only mode since R4.3)
 - Rejects install, upgrade, and uninstall while the daemon is running or its status cannot be established
 - Merges only owned Hook and permission fragments into `~/.claude/settings.json`; modified owned files or settings fragments are never overwritten
 - Stores user-configurable Remy settings in `~/.claude/remy-config.json`; installation facts remain outside that file

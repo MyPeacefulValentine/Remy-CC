@@ -205,7 +205,7 @@ rmcp 3.1.4，per-session stdio；INV-R2 拓扑不变）。退役范围为**仅�
 | # | 裁定 |
 | :--- | :--- |
 | 1 | 判据修订=裁定 A：7 天时间窗至 2026-09-02，仅门控删除提交（§2.1） |
-| 2 | INV-R1 处置=纯收窄；journal 与 spawn 两种 Rust 承接形态均否决。降级面仅为 Dirty 提交（enrichment 注入为 Rust 直读）；陈旧窗口由下次扫描经 struct_hash 最终一致闭合；父计划 §5.1 竞态叙述收窄为单写者 |
+| 2 | INV-R1 处置=纯收窄；journal 与 spawn 两种 Rust 承接形态均否决。降级面仅为 Dirty 提交（enrichment 注入为 Rust 直读）；陈旧窗口由下次扫描经 struct_hash 最终一致闭合；父计划 §5.1 竞态叙述收窄为单写者。**执行注记（2026-08-28）**："Rust 直读"判读未覆盖 freshness 段的 IPC connect 依赖；`7a884a5` 把 connect 失败降级为空新鲜度信号，daemon 停止时 enrichment 照常输出 |
 | 3 | §2.2 删除面措辞：严格限于臂/旗标/路由；scanner 模块集整体存活为开发期 owner（§2.2） |
 | 4 | G4 随 worker 臂整体退役；不保留去 secret 探针变体（§2.4） |
 | 5 | `struct_scan.py` CLI 入口存活；保留面=人类输出臂、`--result-json`、`--files` / `--cwd` / `--lock-timeout`（oracle `bench.py` 消费人类臂） |
@@ -218,6 +218,6 @@ rmcp 3.1.4，per-session stdio；INV-R2 拓扑不变）。退役范围为**仅�
 | 12 | `REMY_SCANNER_PROVIDER` 配置键删除；用户残值零噪声（Python 侧未注册键静默入 unknown 桶；Rust 侧读取链删除） |
 | 13 | `REMY_MIGRATION_KEEP_JSON` 配置键随 `migrate_json` 删除 |
 | 14 | install `hook_mode="python"` 臂删除；`facade._select_daemon` 降级分支改为报错中止并给出指引 |
-| 15 | `state.db` 历史 `provider='python'` 行零迁移——provider 在 claim 时经 UPDATE 快照写入，读路径无校验；启动 sync 无条件以 rust 覆写 published |
+| 15 | `state.db` 历史 `provider='python'` 行零迁移——provider 在 claim 时经 UPDATE 快照写入，读路径无校验；启动 sync 无条件以 rust 覆写 published。jobs 与 published 行的 DDL 字面 `CHECK (provider IN ('python', 'rust'))` 为容忍历史行而有意保留（state schema v2 不 bump） |
 | 16 | `python.json` 运行时描述符：daemon 侧消费链本批删除；install 侧探测与部署保留至 R4.4（install.py 退役时统一处置） |
 | 17 | 验收=三通道引用扫描（grep 符号清单 + `query_callers` + importlib 字符串扫描，`query_dependencies` 对动态导入不可见）、每提交独立全量 pytest + pyright、Rust 提交后 cargo fmt/clippy/test、oracle/eval/`.oracle-venv` 零波及显式核对、实机探针前先 `cargo build --release`、双平台 CI（用户确认制） |

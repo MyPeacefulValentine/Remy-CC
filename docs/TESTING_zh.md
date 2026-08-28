@@ -416,16 +416,15 @@ Edit的软提醒；lock文件警告；无任何路径的载荷静默退出；std
 
 ### hook与安装器模块覆盖
 
-此前记录为零行为覆盖的三个模块现已有测试：
+此前记录为零行为覆盖的三个模块曾补齐测试；R4.3 起其中两套保留：
 
 ```
-python -m pytest Remy-CC/tests/test_logic_dirty_tracker.py Remy-CC/tests/test_enforcer_hook.py Remy-CC/tests/test_patch_descriptions.py -v
+python -m pytest Remy-CC/tests/test_enforcer_hook.py Remy-CC/tests/test_patch_descriptions.py -v
 ```
 
-`tests/test_logic_dirty_tracker.py`通过subprocess stdin驱动PostToolUse hook：
-Write与Edit把归一化的项目相对路径写入`.claude/logic_index_dirty`；只读工具、缺
-`file_path`的载荷、非源码扩展名和项目外路径均不记录；stdin非法时静默退出0。
-`HOME`/`USERPROFILE`指向临时目录，加载器因此回退到仓库的`skills/remy-index`副本。
+**已移除（R4.3）**：`tests/test_logic_dirty_tracker.py` 随脏队列 hook 一并退役
+（`9d1d3e8`）；PostToolUse 脏路径现为经 IPC 的 `remy-daemon hook dirty`，由
+`tests/test_daemon_ipc.py` 覆盖。
 
 `tests/test_enforcer_hook.py`把hook复制到临时目录以控制reminder文件集合：
 `REMY_LANG=zh-CN`选择`reminder_prompt_zh.md`，`en`（或未设置语言）选择英文文件，
@@ -493,6 +492,11 @@ cargo test --workspace --manifest-path Remy-CC/remy-daemon/Cargo.toml
 ```
 
 ## R3.5b daemon provider 切换测试
+
+**R4.3 注记**：provider 选择与 python 臂已退役（`424943c`/`9d1d3e8`），
+`REMY_SCANNER_PROVIDER` 已从 PARAM_REGISTRY 删除；`test_daemon_provider.py`
+现为 rust 单臂套（bootstrap 两级探针、历史 python 行容忍、环境残值零噪声、
+取消即杀）。本节其余内容为 R3.5b 验收期历史记录。
 
 R3.5b 引入 state schema v2（`jobs.provider` claim 快照列、`full_scan` job_type、
 `published_provider` 表）、`provider.rs` 两级候选探针（`--version` 握手 + 编译期

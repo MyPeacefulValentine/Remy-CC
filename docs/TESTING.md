@@ -537,20 +537,16 @@ dropping the export precondition, and dropping the preamble-marker skip) broke
 
 ### Hook and installer module coverage
 
-The three modules previously listed here as having no behavioural coverage are
-now tested:
+The three modules previously listed here as having no behavioural coverage
+gained tests; two of the suites remain since R4.3:
 
 ```
-python -m pytest Remy-CC/tests/test_logic_dirty_tracker.py Remy-CC/tests/test_enforcer_hook.py Remy-CC/tests/test_patch_descriptions.py -v
+python -m pytest Remy-CC/tests/test_enforcer_hook.py Remy-CC/tests/test_patch_descriptions.py -v
 ```
 
-`tests/test_logic_dirty_tracker.py` drives the PostToolUse hook through
-subprocess stdin: Write and Edit record the normalized project-relative path
-into `.claude/logic_index_dirty`; read-only tools, payloads without
-`file_path`, non-source extensions, and paths outside the project record
-nothing; malformed stdin exits 0 silently. `HOME`/`USERPROFILE` point at a
-temporary directory, so the loader falls back to the repository's
-`skills/remy-index` copy.
+**Removed (R4.3)**: `tests/test_logic_dirty_tracker.py` retired together with
+the dirty-queue hook (`9d1d3e8`); the PostToolUse dirty path is now
+`remy-daemon hook dirty` over IPC, covered by `tests/test_daemon_ipc.py`.
 
 `tests/test_enforcer_hook.py` copies the hook into a temporary directory to
 control the reminder file set: `REMY_LANG=zh-CN` selects
