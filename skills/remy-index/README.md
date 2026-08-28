@@ -105,7 +105,7 @@ After extraction, `_resolve_call_edges` resolves callee names to qualified refer
 
 ### Passive Enrichment Hook
 
-`hooks/logic_enrichment_hook.py` is a PreToolUse hook triggered on Read/Glob/Grep operations. It first consumes any dirty file entries (written by the PostToolUse dirty tracker after Edit/Write operations), triggers incremental `struct_scan` for affected files, then queries `logic_index.db` for the target file and outputs:
+`remy-daemon hook enrich` is a PreToolUse hook command triggered on Read/Glob/Grep operations (registered by the installer; R4.3 removed the python hook scripts). It queries `logic_index.db` for the target file directly — prefixed with an index-freshness line when the daemon reports pending or running scan jobs — and outputs:
 
 ```
 [Logic Context] services/auth.py (Service Layer)
@@ -334,4 +334,4 @@ Install `tree-sitter` packages. Call graph extraction requires AST precision tha
 Edit `.claude/logic_index_config` to customize layer patterns. Delete lines you don't need and add your own. Unmatched files default to "Core".
 
 ### Q: Hook enrichment not appearing?
-Verify that `~/.claude/settings.json` contains a `hooks.PreToolUse` entry with matcher `Read|Glob|Grep`. A manifest with `hook_mode=rust` uses the managed `remy-daemon hook enrich` command; `hook_mode=python` uses the managed Python executable and `logic_enrichment_hook.py`. Run `remy-cc verify` or `python install.py --verify` to validate the recorded mode and command.
+Verify that `~/.claude/settings.json` contains a `hooks.PreToolUse` entry with matcher `Read|Glob|Grep` pointing at the managed `remy-daemon hook enrich` command (`hook_mode=rust` is the only install mode since R4.3). Run `remy-cc verify` or `python install.py --verify` to validate the recorded mode and command.

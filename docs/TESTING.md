@@ -766,6 +766,22 @@ Window discipline (until the R4.3 Python exit):
    `tests/ladder_samples.py`, shared by the ladder tests and the rebuild
    tests; no pre-generated database binaries are committed.
 
+**Window closed (R4.3)**: the ladder, `migrate_json`, and their suites
+(`test_migration_ladder.py`, `ladder_samples.py`) are deleted.
+`initialize_database` now refuses every non-current schema version with the
+database preserved and points at `remy-daemon scan` as the schema owner;
+`tests/test_initialize_database.py` asserts the refusal against the frozen
+DDL snapshots in `tests/schema_snapshots.py` (v6/v7/v10, iterdump-identical
+before and after), and `tests/test_run_routing.py` covers the run.py
+routing that spawns `remy-daemon scan` for the structural segment and gates
+the semantic segment on `schema.VERSION`. The dirty queue, its hooks
+(`logic_dirty_tracker.py`, `logic_enrichment_hook.py`), the
+`--consume-dirty`/`--worker-config-json` arms, and the daemon's python
+provider arm are deleted in the same batch; the daemon suites run rust-only
+(`test_daemon_provider.py`), hook IPC failures emit diagnostics instead of
+falling back, and enrichment stays available without a running daemon
+(INV-R1, `test_daemon_ipc.py`).
+
 ## query_dependencies dedicated suite (Rust single-implementation)
 
 `tests/test_mcp_dependencies.py` is the acceptance surface for the

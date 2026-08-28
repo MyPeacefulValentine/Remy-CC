@@ -38,7 +38,7 @@ Python 服务器（`index_mcp_server.py`，FastMCP）作为 H.4 差分套（`tes
                                                      └──────────────────────────┘
 ```
 
-**数据流向**：扫描器（生产为 Rust `remy-daemon scan`；Python `struct_scan.py` 为保留回退臂）在项目扫描锁保护下向 `logic_index.db` 写入符号、边和模式。MCP 服务器为每次查询打开短生命周期只读连接（WAL + `busy_timeout=3000`，无写路径——INV-R2）；MCP 读取可与当前写入者并发。查询语义按 H.4 基线（`docs/MCP_RUST_PARITY_BASELINE_zh.md`）自 Python owner 模块逐字节迁移。
+**数据流向**：Rust `remy-daemon scan` 扫描器（Python `struct_scan.py` 仅作为 oracle 与测试的开发期工具保留）在项目扫描锁保护下向 `logic_index.db` 写入符号、边和模式。MCP 服务器为每次查询打开短生命周期只读连接（WAL + `busy_timeout=3000`，无写路径——INV-R2）；MCP 读取可与当前写入者并发。查询语义按 H.4 基线（`docs/MCP_RUST_PARITY_BASELINE_zh.md`）自 Python owner 模块逐字节迁移。
 
 ## 启动与注册
 

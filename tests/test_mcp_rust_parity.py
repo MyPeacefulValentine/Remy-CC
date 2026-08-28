@@ -8,6 +8,10 @@ JSON-RPC. Skipped when the release binary is absent.
 Comparison layers (docs/MCP_RUST_PARITY_BASELINE.md §4):
 - byte-for-byte after stripping the freshness-warning prefix (10 tools);
 - semantic layer for search/navigate: ordered node_ref sequence only.
+
+RUST_ONLY_TOOLS (H.4 §4.2) lists tools with a single Rust implementation and
+no oracle counterpart; they are excluded from the differential matrix and are
+accepted by their own suites (query_dependencies: test_mcp_dependencies.py).
 """
 import hashlib
 import json

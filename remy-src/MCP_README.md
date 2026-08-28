@@ -38,7 +38,7 @@ If `REMY_MCP_SERVER_ENABLED=false`, the server prints a note to stderr and exits
                                                      └──────────────────────────┘
 ```
 
-**Data flow**: scanners (Rust `remy-daemon scan` in production; Python `struct_scan.py` as the retained fallback arm) write symbols, edges, and patterns into `logic_index.db` under the project scan lock. The MCP server opens short-lived read connections (WAL + `busy_timeout=3000`, no write path — INV-R2) per query; MCP reads remain concurrent with the active writer. Query semantics were migrated from the Python owner modules byte-for-byte (H.4 baseline, `docs/MCP_RUST_PARITY_BASELINE.md`).
+**Data flow**: the Rust `remy-daemon scan` scanner (Python `struct_scan.py` remains a development-period tool for the oracle and tests) writes symbols, edges, and patterns into `logic_index.db` under the project scan lock. The MCP server opens short-lived read connections (WAL + `busy_timeout=3000`, no write path — INV-R2) per query; MCP reads remain concurrent with the active writer. Query semantics were migrated from the Python owner modules byte-for-byte (H.4 baseline, `docs/MCP_RUST_PARITY_BASELINE.md`).
 
 ## Startup & Registration
 

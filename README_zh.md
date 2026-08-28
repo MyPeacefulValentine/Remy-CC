@@ -263,7 +263,7 @@ python install.py --lang zh-CN   # 简体中文
 | `remy-cc daemon start\|stop\|status [--json]` | 控制常驻 daemon；`status --json` 报告作业与扫描器 provider 状态（`desired`/`published`/`diagnostic`） |
 | `remy-cc version` | 显示版本号 |
 
-daemon 从 `REMY_SCANNER_PROVIDER` 选择扫描器 provider（默认 `python`，可选 `rust`）。变更在下次 daemon 启动生效：候选先经两级探针（版本握手 + 内嵌微语料扫描）验证再发布，实际切换会对每个已注册项目提交一个后台全量重扫作业。验证失败保持先前已发布的 provider。
+rust 扫描器是唯一的生产 provider（R4.3）。daemon 启动时，状态库若无已发布的 rust 行——全新库或携带历史 python 行——会触发两级探针（版本握手 + 内嵌微语料扫描）；只有验证通过的二进制才会发布，实际发布会对每个已注册项目提交一个后台全量重扫作业。验证失败不发布任何 provider，并在 `remy-cc daemon status --json` 中给出诊断。
 
 配置编辑器只管理Python运行时Remy参数。Claude Code凭据和技能协议参数继续由Claude设置管理。项目配置继承用户值，并可覆盖单个非密钥字段。
 

@@ -263,7 +263,7 @@ After installation, the `remy-cc` command is available system-wide:
 | `remy-cc daemon start\|stop\|status [--json]` | Control the resident daemon; `status --json` reports jobs plus the scanner provider state (`desired`/`published`/`diagnostic`) |
 | `remy-cc version` | Print installed version |
 
-The daemon selects its scanner provider from `REMY_SCANNER_PROVIDER` (`python` default, `rust` opt-in). A change takes effect at the next daemon start: the candidate is validated by a two-level probe (version handshake plus an embedded micro-corpus scan) before publication, and an actual switch schedules one background full rescan per registered project. Validation failure keeps the previously published provider.
+The rust scanner is the sole production provider (R4.3). At daemon start, a state database without a published rust row — fresh, or carrying a historical python row — triggers a two-level probe (version handshake plus an embedded micro-corpus scan); only a validated binary is published, and an actual publication schedules one background full rescan per registered project. Validation failure publishes nothing and surfaces a diagnostic in `remy-cc daemon status --json`.
 
 The settings editor manages Python runtime Remy parameters only. Claude Code credentials and skill-protocol settings remain in Claude's settings. Project settings inherit user values and can override individual non-secret fields.
 

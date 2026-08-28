@@ -648,6 +648,19 @@ R4.2 裁定（权威文本 RETIREMENT §2.5）：Rust owner（`writer.rs::open_d
 3. 驻留态样本工厂单源于 `tests/ladder_samples.py`，ladder 测试与重建测试
    共用；不提交预生成 DB 二进制。
 
+**窗口已关闭（R4.3）**：ladder、`migrate_json` 及其套件
+（`test_migration_ladder.py`、`ladder_samples.py`）已删除。
+`initialize_database` 现在拒绝一切非当前 schema 版本并保留数据库，错误信息
+指向 schema owner `remy-daemon scan`；`tests/test_initialize_database.py`
+以 `tests/schema_snapshots.py` 的冻结 DDL 快照（v6/v7/v10）断言拒绝前后
+iterdump 一致，`tests/test_run_routing.py` 覆盖 run.py 路由（结构段 spawn
+`remy-daemon scan`、语义段按 `schema.VERSION` 把关）。脏队列及其 hook
+（`logic_dirty_tracker.py`、`logic_enrichment_hook.py`）、
+`--consume-dirty`/`--worker-config-json` 臂与 daemon 的 python provider 臂
+同批删除；daemon 套件转 rust 单臂（`test_daemon_provider.py`），hook IPC
+失败改输出诊断而非回退，enrichment 在 daemon 停止时仍可用
+（INV-R1，`test_daemon_ipc.py`）。
+
 ## query_dependencies 专项套（Rust 单实现）
 
 `tests/test_mcp_dependencies.py` 是 `query_dependencies` MCP tool 的验收面。
