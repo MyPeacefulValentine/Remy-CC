@@ -48,6 +48,12 @@ oracle 重生成工具 ← Python scanner ← Python full_scan 臂 ← provider 
 不自动决定——Python worker 臂与 G4 探针通道（§2.4）的删除；该删除由 §8
 审计记录结清。
 
+**已执行（2026-08-28；CI 全绿 2026-08-29）**：时间窗经用户显式授权提前解除，
+门控证据先于日历满足（`provider_sync` 全量行恒 `published=rust` /
+`diagnostic=null`，status 快照干净）。回切能力随 `424943c` 退役（provider
+选择、`validate_python`、`ScannerRuntime::Python`），Python worker 臂的
+spawn 链一并移除。删除后探针：daemon 0.7.0 发布 rust，`diagnostic=null`。
+
 ### 2.2 Python hook fallback 与 INV-R1
 
 `hook_client.rs`（`run()`）：daemon IPC 路径失败时回退 `run_python_fallback`，
@@ -71,6 +77,14 @@ journal 与 spawn 两种 Rust 承接形态均否决），hook fallback 与 Pytho
 `struct_scan.py` 入口）整体存活为开发期 owner——`oracle/manifest.py` 经
 `sys.path` 进程内导入模块集，`oracle/bench.py` 消费人类输出 CLI 臂。
 
+**已执行（2026-08-28；CI 全绿 2026-08-29）**：`run_python_fallback` 与回退
+路由随 `424943c` 退役；两个 hook 脚本（`logic_dirty_tracker.py`、
+`logic_enrichment_hook.py`）与 dirty queue 随 `9d1d3e8` 删除；`7a884a5` 使
+enrichment 对齐收窄后的 INV-R1（IPC connect 失败降级为空新鲜度信号，不再
+抑制输出）。权衡记载：daemon 停止时 enrichment 无陈旧提示为有意设计——
+逐次 stderr 提示已评估并否决（该 hook 在每次 Read/Glob/Grep 触发，会在
+会话中重复出现）；陈旧窗口由下次扫描闭合。
+
 ### 2.3 兼容壳
 
 - `index_mcp_queries.py` 为纯再导出壳（A1.2），是 `index_mcp_server.py:28` 的
@@ -92,6 +106,10 @@ R4.3 同批复审退役。在此之前的现行缓解为操作性约束（不在
 探针消费端（`provider.rs::validate_python`）归 daemon 侧退役提交删除，
 `--worker-config-json` 臂与 `_worker_config` 归 Python 侧删除提交。不保留
 去 secret 的探针变体；删除提交受 §2.1 时间窗门控。
+
+**已执行（2026-08-28；CI 全绿 2026-08-29）**：`provider.rs::validate_python`
+随 `424943c` 删除；`--worker-config-json` 臂与 `_worker_config` 随 `9d1d3e8`
+删除。明文 secret 通道不复存在，操作性缓解随之作废。
 
 ### 2.5 兼容底线
 

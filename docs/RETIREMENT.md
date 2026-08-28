@@ -55,6 +55,14 @@ evidence (2026-08-28 sweep): every `provider_sync` since the switch shows
 not itself decide — deletion of the Python worker arm and the G4 probe channel
 (§2.4); those deletions are settled by the §8 audit record.
 
+**Executed (2026-08-28; CI green 2026-08-29)**: the window was lifted early by
+explicit user authorization, with the gate evidence satisfied ahead of the
+calendar (full `provider_sync` sweep constant `published=rust` /
+`diagnostic=null`, status snapshot clean). Switch-back capability retired in
+`424943c` (provider selection, `validate_python`, `ScannerRuntime::Python`);
+the Python worker arm's spawn chain went with it. Post-deletion probe: daemon
+0.7.0 publishes rust with `diagnostic=null`.
+
 ### 2.2 Python hook fallback and INV-R1
 
 `hook_client.rs` (`run()`): the daemon IPC path falls back to
@@ -87,6 +95,16 @@ stays alive whole as the development-time owner — `oracle/manifest.py` imports
 the module set in-process via `sys.path`, and `oracle/bench.py` consumes the
 human-output CLI arm.
 
+**Executed (2026-08-28; CI green 2026-08-29)**: `run_python_fallback` and the
+fallback routing retired in `424943c`; the two hook scripts
+(`logic_dirty_tracker.py`, `logic_enrichment_hook.py`) and the dirty queue
+deleted in `9d1d3e8`; `7a884a5` aligned enrichment with the narrowed INV-R1
+(a failed IPC connect degrades to an empty freshness signal instead of
+suppressing output). Recorded trade-off: when the daemon is down, enrichment
+carries no staleness hint by design — a per-invocation stderr line was
+considered and rejected (the hook fires on every Read/Glob/Grep and would
+repeat in transcripts); the staleness window closes at the next scan.
+
 ### 2.3 Compatibility shells
 
 - `index_mcp_queries.py` is a pure re-export shell (A1.2) and the live import
@@ -114,6 +132,11 @@ worker arm — the Rust probe consumer (`provider.rs::validate_python`) is
 deleted in the daemon-side retirement commit, the `--worker-config-json` arm
 and `_worker_config` in the Python-side deletion commit. No secret-free probe
 variant is retained; deletion commits are gated by the §2.1 window.
+
+**Executed (2026-08-28; CI green 2026-08-29)**: `provider.rs::validate_python`
+deleted in `424943c`; the `--worker-config-json` arm and `_worker_config`
+deleted in `9d1d3e8`. The plaintext-secret channel no longer exists; the
+operational mitigation is obsolete.
 
 ### 2.5 Compatibility floor
 
