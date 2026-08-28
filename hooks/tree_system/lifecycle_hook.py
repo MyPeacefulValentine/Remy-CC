@@ -163,9 +163,9 @@ def run_struct_scan(cwd):
     config = remy_config.load_config(cwd, strict=False)
     db_file = str(config.get("REMY_LOGIC_INDEX_DB_PATH"))
     json_file = os.path.join(cwd, ".claude", "logic_index.json")
+    sweep_legacy_dirty_queue(cwd)
     if not os.path.exists(db_file) and not os.path.exists(json_file):
         return None
-    sweep_legacy_dirty_queue(cwd)
     binary = find_daemon_binary()
     if binary is None:
         print("[StructScan] remy-daemon binary not found; skipping scan "

@@ -63,6 +63,18 @@ def test_run_struct_scan_spawns_daemon_scan_with_custom_db_path(tmp_path, monkey
     assert not legacy_pending.exists()
 
 
+def test_run_struct_scan_sweeps_legacy_queue_even_without_index(tmp_path):
+    project = tmp_path / "project"
+    _write_config(project, "state/index.db")
+    legacy_queue = project / ".claude" / "logic_index_dirty"
+    legacy_queue.write_text("main.py\n", encoding="utf-8")
+    legacy_lock = project / ".claude" / "logic_index_dirty.lock"
+    legacy_lock.write_text("", encoding="utf-8")
+    assert lifecycle.run_struct_scan(str(project)) is None
+    assert not legacy_queue.exists()
+    assert not legacy_lock.exists()
+
+
 def test_run_struct_scan_skips_when_daemon_binary_is_missing(tmp_path, monkeypatch, capsys):
     project = tmp_path / "project"
     custom = project / "state" / "index.db"
