@@ -39,11 +39,21 @@ oracle regeneration tooling ← Python scanner ← Python full_scan arm ← prov
   a development-time owner; it is excluded from deletion accounting, not counted
   as a blocker.
 
-**Re-examination criterion (R4.3)**: switch-back may be retired when the rust
-provider has served as the sole production provider for one full release cycle
-with `diagnostic` empty, and the residual-risk register carries no open entry
-against it. Retiring switch-back unlocks — but does not itself decide — deletion
-of the Python worker arm and the G4 probe channel (§2.4).
+**Re-examination criterion (R4.3 — amended by ruling A, 2026-08-28)**: the
+original "one full release cycle" wording carried no operational definition,
+and reading "the next release event" as the gate was circular (the next release
+is v2.0.0, owned by R4.4, which postdates R4.3). Amended criterion: a seven-day
+window — 2026-08-26 (R4.1 close) through 2026-09-02 — during which the rust
+provider serves as the sole production provider with `diagnostic` empty. The
+window gates **deletion commits only**; non-deletion work (pre-research, audit,
+INV-R1 amendment, sample-source replacement) starts immediately. Operational
+definition: deletion commits land only after 2026-09-02, and only after a
+tail-of-window re-check of the diagnostic evidence (full `provider_sync` line
+sweep of `daemon.log` plus `remy-cc daemon status --json`). Window-opening
+evidence (2026-08-28 sweep): every `provider_sync` since the switch shows
+`published=rust` / `diagnostic=null`. Retiring switch-back unlocks — but does
+not itself decide — deletion of the Python worker arm and the G4 probe channel
+(§2.4); those deletions are settled by the §8 audit record.
 
 ### 2.2 Python hook fallback and INV-R1
 
@@ -67,6 +77,16 @@ is the over-redundancy threshold: at that point the fallback must be either
 retired together with the scanner or explicitly re-justified against a rewritten
 INV-R1.
 
+**Settled (R4.3 audit, 2026-08-28 — §8)**: INV-R1 was amended first (pure
+narrowing, parent plan §2; no journal or spawn-based Rust successor), and the
+hook fallback retires together with the Python *production arm*. "Retired
+together with the scanner" is read as the production arm, not as in-repo module
+deletion: the deletion face is arms / flags / routes only. The scanner module
+set (`scanner.py`, `parsers/`, `schema.py`, and the `struct_scan.py` entry)
+stays alive whole as the development-time owner — `oracle/manifest.py` imports
+the module set in-process via `sys.path`, and `oracle/bench.py` consumes the
+human-output CLI arm.
+
 ### 2.3 Compatibility shells
 
 - `index_mcp_queries.py` is a pure re-export shell (A1.2) and the live import
@@ -89,6 +109,12 @@ channel shares the Python worker arm's lifecycle: it is reviewed and retired in
 the same R4.3 batch. Until then, the standing mitigation is operational (no
 manual invocation in logged terminals).
 
+**Settled (R4.3 audit, 2026-08-28 — §8)**: the channel retires whole with the
+worker arm — the Rust probe consumer (`provider.rs::validate_python`) is
+deleted in the daemon-side retirement commit, the `--worker-config-json` arm
+and `_worker_config` in the Python-side deletion commit. No secret-free probe
+variant is retained; deletion commits are gated by the §2.1 window.
+
 ### 2.5 Compatibility floor
 
 - Minimum supported starting point: **v1.4.0** (logic index schema 6.0.0;
@@ -110,6 +136,15 @@ manual invocation in logged terminals).
   the single exception is a synchronized segment addition if a schema bump
   ships inside the window (the Rust rebuild floor tracks `SCHEMA_VERSION`
   automatically and needs no change).
+- **Settled (R4.3 audit, 2026-08-28 — §8)**: the six ladder segments,
+  `MIGRATION_HANDLERS`, `_resolve_migration_path`, and `migrate_json` are
+  deleted in the Python-side deletion commit; `initialize_database` becomes
+  fail-closed (any non-current version errors out with the database preserved
+  unchanged), closing the lossless-upgrade channel as an intentional act
+  confirmed by explicit refusal tests. The rebuild-test sample source moves
+  from the ladder factories to frozen DDL snapshots
+  (`tests/schema_snapshots.py`, v6/v7/v10), landed inside the window before
+  any deletion; `ladder_samples.py` is not rewritten inside the window.
 - daemon state schema v1→v2 migration and the installer's legacy manifest
   translation layer (`facade._parse_legacy_manifest`) remain until the v2.0.0
   release audit rules on the legacy-install population (H8-B2/B6).
@@ -142,8 +177,8 @@ change) second; the two never overlapped.
 
 | Item | Destination |
 | :--- | :--- |
-| Switch-back + hook fallback + G4 channel joint review | R4.3 |
-| `struct_scan.py` consumer-set emptying (hooks, worker, run.py) | R4.3 |
+| Switch-back + hook fallback + G4 channel joint review | R4.3 — audited 2026-08-28 (§8); deletion commits gated to after 2026-09-02 |
+| `struct_scan.py` consumer-set emptying (hooks, worker, run.py) | R4.3 — audited 2026-08-28 (§8); routes move to `remy-daemon scan` |
 | `index_mcp_queries.py` shell retirement (import rewiring first) | first substantive release after v1.7.1 |
 | Migration ladder ownership (current-version rebuild semantics; ladder not replicated) | R4.2 — settled 2026-08-25 (§2.5) |
 | Legacy manifest translation window closure | v2.0.0 release audit (H8-B2/B6) |
@@ -201,3 +236,34 @@ Retirement is **deployment-face only**, consistent with the §6 boundary:
   sequence). Re-examination point: if the Python oracle modules ever lose
   their last development-time consumer, they retire as a normal class-4
   cleanup, no new audit required.
+
+## 8. R4.3 audit record (2026-08-28)
+
+Audit date: 2026-08-28 (packet `task_20260828_020823`, anchor `a474e5f`).
+Seventeen rulings locked across three `AskUserQuestion` rounds plus a scenario
+confirmation gate. Commit sequence: 0 (INV-R1 amendment, parent plan) → 1 (this
+record and the ruling texts) → 2 (sample source) land inside the window;
+3a (Rust-side retirement) → 3b (consumer route changes) → 3c (Python-side
+deletion) → 4 (doc-sync) land after 2026-09-02, each preceded by the §2.1
+tail-of-window diagnostic re-check. 3a precedes 3c: only after the Rust side
+stops routing to the fallback do the Python hook scripts become orphans.
+
+| # | Ruling |
+| :--- | :--- |
+| 1 | Criterion amendment = ruling A: seven-day window through 2026-09-02, gating deletion commits only (§2.1) |
+| 2 | INV-R1 disposition = pure narrowing; journal-based and spawn-based Rust successors both rejected. Degradation face is Dirty submission only (enrichment injection is a Rust direct read); staleness closes via struct_hash eventual consistency at the next scan; the parent-plan §5.1 race narrative collapses to single-writer |
+| 3 | §2.2 deletion-face wording: arms / flags / routes only; the scanner module set stays alive as development-time owner (§2.2) |
+| 4 | G4 retires whole with the worker arm; no secret-free probe variant (§2.4) |
+| 5 | `struct_scan.py` CLI entry survives; retained surface = human-output arm, `--result-json`, `--files` / `--cwd` / `--lock-timeout` (oracle `bench.py` consumes the human arm) |
+| 6 | Rebuild-test sample source = new `tests/schema_snapshots.py` frozen DDL snapshot factories (v6/v7/v10), built once from the live handlers and fixed via normalized `iterdump`, with a one-time equivalence verification inside the commit; `ladder_samples.py` must not be rewritten inside the window |
+| 7 | Ladder deletion: six segments + `MIGRATION_HANDLERS` + `_resolve_migration_path` go; `initialize_database` becomes fail-closed with explicit refusal tests (§2.5) |
+| 8 | `migrate_json` deleted; the TESTING R4.2 window-discipline entry is closed in the doc-sync commit as the intentional-closure record |
+| 9 | `run.py` route (both arms): structure phase becomes `remy-daemon scan --result-json` via subprocess; the semantic phase opens its own connection (WAL, busy_timeout, `meta.version == 12.0.0` assertion) and does not create or replay schema; the lock window between the two phases admits other writers without correctness impact |
+| 10 | `lifecycle_hook.run_struct_scan` spawns `remy-daemon scan` isomorphically: binary discovery `~/.remy-cc/bin/` plus dev-tree `target/{release,debug}` fallback, timeout = `REMY_STRUCT_SCAN_TIMEOUT` + `REMY_INDEX_SCAN_LOCK_TIMEOUT` + 5 s, `--lock-timeout` passthrough, missing binary → one stderr line and skip |
+| 11 | Python dirty queue retires end to end (`DirtyQueue` / `DirtyClaim` / `manage_dirty` / `--consume-dirty` / both hook files); lifecycle adds a one-shot sweep of `.claude/logic_index_dirty*` residues |
+| 12 | `REMY_SCANNER_PROVIDER` config key deleted; residual user values are zero-noise (Python: unregistered keys fall silently into the unknown bucket; Rust: the read chain is deleted) |
+| 13 | `REMY_MIGRATION_KEEP_JSON` config key deleted with `migrate_json` |
+| 14 | Install `hook_mode="python"` arm deleted; `facade._select_daemon` degradation branch becomes an error with guidance instead of a python fallback |
+| 15 | `state.db` historical `provider='python'` rows: zero migration — provider is snapshotted by UPDATE at claim time and read paths carry no validation; startup sync overwrites published unconditionally with rust |
+| 16 | `python.json` runtime descriptor: daemon-side consumer chain deleted this batch; the install-side probe and deployment survive until R4.4 (install.py retirement) |
+| 17 | Acceptance = three-channel reference sweep (grep symbol list + `query_callers` + importlib string scan, since `query_dependencies` cannot see dynamic imports), per-commit full pytest + pyright, cargo fmt/clippy/test after Rust commits, explicit oracle/eval/`.oracle-venv` zero-impact check, on-machine probe preceded by `cargo build --release`, dual-platform CI under user confirmation |
