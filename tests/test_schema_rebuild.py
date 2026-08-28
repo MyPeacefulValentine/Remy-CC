@@ -21,7 +21,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from ladder_samples import _make_v6_db, _make_v7_db, _make_v10_db
+from schema_snapshots import _make_v6_db, _make_v7_db, _make_v10_db
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PY_CORPUS = REPO_ROOT / "oracle" / "fixtures" / "corpus" / "python"
