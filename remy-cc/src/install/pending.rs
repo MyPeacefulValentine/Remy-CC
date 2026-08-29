@@ -1,8 +1,7 @@
-//! Deferred-deletion register shared with the Python installer during the
-//! dual-installer window.
+//! Deferred-deletion register.
 //!
-//! File format and semantics are the v1 contract from
-//! `install_runtime/transaction.py` (`{"schema_version": 1, "paths": [...]}`
+//! File format and semantics are the v1 contract the retired v3 installer
+//! also wrote (`{"schema_version": 1, "paths": [...]}`
 //! at `<remy root>/install/pending_deletes.json`): registration merges and
 //! deduplicates preserving order and tolerates a corrupt register; sweeping
 //! silently drops entries outside the two managed roots, keeps entries whose

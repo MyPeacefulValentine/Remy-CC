@@ -6,7 +6,7 @@
 //! rust arm is the only world) and `artifact_sha256` records the sha256 of
 //! the downloaded release asset (`null` for installs from a local build).
 //! `files` and `settings_claim` keep the v3 record shapes; validation
-//! messages match `install_runtime/storage.py::validate_manifest`.
+//! messages keep the retired v3 validator's texts verbatim.
 
 use std::path::{Path, PathBuf};
 

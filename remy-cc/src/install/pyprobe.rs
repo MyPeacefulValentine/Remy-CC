@@ -3,7 +3,7 @@
 //! Python 3.10+ is a runtime prerequisite of the suite, not an install
 //! prerequisite (R4.4 audit disposition (b)3): a failed probe downgrades to
 //! a warning and the descriptor file is simply not refreshed. Descriptor
-//! shape and validation mirror `install_runtime/probes.py::probe_python`.
+//! shape and validation keep the retired v3 prober's contract.
 
 use std::io::Read;
 use std::path::Path;

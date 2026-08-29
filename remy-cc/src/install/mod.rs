@@ -19,9 +19,8 @@ pub(crate) mod storage;
 pub(crate) mod update;
 pub(crate) mod util;
 
-/// Managed roots, resolved like `install_runtime.probes.roots_from_environment`:
-/// `CLAUDE_CONFIG_DIR` / `REMY_CC_HOME` override the defaults under the user
-/// home (`HOME`, then `USERPROFILE`).
+/// Managed roots: `CLAUDE_CONFIG_DIR` / `REMY_CC_HOME` override the
+/// defaults under the user home (`HOME`, then `USERPROFILE`).
 #[derive(Debug, Clone)]
 pub(crate) struct Roots {
     pub(crate) claude: PathBuf,
@@ -164,9 +163,9 @@ pub(crate) fn run_install(lang: Option<String>, non_interactive: bool) -> ExitCo
     }
 }
 
-/// Error taxonomy mirroring `install_runtime.models`: `Metadata` corresponds
-/// to `MetadataError` (managed metadata lacks required structure), `Runtime`
-/// to plain `InstallRuntimeError` (a precondition or ownership check failed).
+/// Error taxonomy inherited from the retired v3 installer: `Metadata` means
+/// managed metadata lacks required structure, `Runtime` means a precondition
+/// or ownership check failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ErrorKind {
     Metadata,

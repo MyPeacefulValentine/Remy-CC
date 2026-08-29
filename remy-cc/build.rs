@@ -6,25 +6,20 @@
 //! standalone install templates land in `OUT_DIR` and are pulled in with
 //! `include_bytes!`/`include_str!` by `src/install/embedded.rs`.
 //!
-//! The entry set mirrors `install.py::_build_install_candidates` minus the
-//! install-time products (generated `language.md`, merged `settings.json`,
-//! the retired shim): `DEPLOY_DIRS` + `DEPLOY_FILES_MAP`, with the same
-//! ignore rules as its `shutil.ignore_patterns` call.
+//! The entry set is the deploy surface itself — `DEPLOY_DIRS` +
+//! `DEPLOY_FILES` under the ignore rules below. Install-time products
+//! (the generated `language.md`, the merged `settings.json`) are excluded:
+//! they are rendered at install time, not shipped.
 
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-/// Directories deployed verbatim under `~/.claude/` (install.py DEPLOY_DIRS).
-const DEPLOY_DIRS: &[&str] = &[
-    "hooks",
-    "skills",
-    "output-styles",
-    "remy-src/install_runtime",
-];
+/// Directories deployed verbatim under `~/.claude/`.
+const DEPLOY_DIRS: &[&str] = &["hooks", "skills", "output-styles"];
 
-/// Single files deployed under `~/.claude/` (install.py DEPLOY_FILES_MAP;
-/// source path equals destination path for every current entry).
+/// Single files deployed under `~/.claude/`; source path equals destination
+/// path for every entry.
 const DEPLOY_FILES: &[&str] = &[
     "CLAUDE.md",
     "style.md",
@@ -123,7 +118,7 @@ fn main() {
     }
 }
 
-/// Recursive enumeration with install.py's ignore rules
+/// Recursive enumeration with the deploy ignore rules
 /// (`__pycache__`, `*.pyc`, `*.pyo`, `.claude`, `*.db*`, `*.lock`, `*.bak*`).
 fn collect_dir(directory: &Path, prefix: &str, entries: &mut Vec<(String, PathBuf)>) {
     for item in

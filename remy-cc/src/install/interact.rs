@@ -2,9 +2,10 @@
 //! and the post-install configuration pointer.
 //!
 //! Scope per the H8-B4 disposition: language and PATH prompts are native
-//! (isatty-gated, EOF falls back to the deployed configuration, mirroring
-//! `install.py::prompt_language`/`register_path`); the interactive API-key
-//! flow is not ported — configuration stays owned by `remy-cc config`.
+//! (isatty-gated, EOF falls back to the deployed configuration, with the
+//! semantics inherited from the retired v3 installer); the interactive
+//! API-key flow is not ported — configuration stays owned by `remy-cc
+//! config`.
 
 use std::io::{BufRead, IsTerminal, Write};
 use std::path::Path;
@@ -71,9 +72,9 @@ pub(crate) fn save_language(claude_root: &Path, lang: &str) -> std::io::Result<(
     storage::atomic_write_json(&path, &document)
 }
 
-/// PATH registration for `<remy root>/bin` (port of `install.py::
-/// register_path` with the v4 target directory). Interactive-only side
-/// effects: non-interactive runs print the manual instruction.
+/// PATH registration for `<remy root>/bin` (the retired v3 installer's
+/// register_path semantics with the v4 target directory). Interactive-only
+/// side effects: non-interactive runs print the manual instruction.
 pub(crate) fn register_path(bin_dir: &Path, non_interactive: bool) {
     let bin_text = bin_dir.to_string_lossy().into_owned();
     if path_contains(&bin_text) {

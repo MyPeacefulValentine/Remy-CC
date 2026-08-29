@@ -1,6 +1,6 @@
 //! Canonical JSON serialization and atomic file writes for managed metadata.
 //!
-//! Byte-compatible with `install_runtime/storage.py`: `json.dumps(document,
+//! Byte-compatible with the retired v3 storage layer: `json.dumps(document,
 //! ensure_ascii=False, indent=2, sort_keys=True) + "\n"` — serde_json's
 //! default map is sorted and its pretty printer uses two-space indentation,
 //! so the shapes coincide; writes go through a same-directory temp file,

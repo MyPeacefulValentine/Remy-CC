@@ -1,8 +1,8 @@
 //! Claude settings.json ownership: template rendering, claim-tracked merge,
 //! claim verification and removal.
 //!
-//! Behavioral port of `remy-src/install_runtime/settings.py` (the v3 test
-//! surface in `tests/test_install_manifest.py` is the reference); error
+//! Behavioral port of the retired v3 installer's settings module (its
+//! pytest surface was the porting reference); error
 //! message texts are kept verbatim. Two deliberate divergences, both turning
 //! latent Python crashes into controlled errors: a fresh install against a
 //! non-object `hooks` value reports the metadata error instead of an

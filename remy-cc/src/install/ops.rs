@@ -526,8 +526,6 @@ fn role_for(path: &str) -> &'static str {
         "claude_skill"
     } else if path.starts_with("output-styles/") {
         "output_style"
-    } else if path.starts_with("remy-src/install_runtime/") {
-        "install_runtime"
     } else if path.starts_with("remy-src/") {
         "cli_runtime"
     } else {
@@ -683,9 +681,8 @@ fn post_commit(params: &InstallParams, pending: &PendingDeletes, report: &mut In
     }
 }
 
-/// Port of `install.py::register_mcp_server`: renders the embedded MCP
-/// template against the resolved roots and merges it into the user-level
-/// `.claude.json` next to the Claude home.
+/// Renders the embedded MCP template against the resolved roots and merges
+/// it into the user-level `.claude.json` next to the Claude home.
 pub(crate) fn register_mcp(claude_root: &Path, remy_root: &Path) -> Result<(), InstallError> {
     let mut template: Value = serde_json::from_str(embedded::MCP_TEMPLATE)
         .map_err(|_| InstallError::metadata("MCP template is invalid"))?;

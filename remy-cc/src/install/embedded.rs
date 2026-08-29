@@ -105,17 +105,11 @@ mod tests {
             "tools_ref.md",
             "remy-src/cli.py",
             "remy-src/remy_config.py",
-            "remy-src/install_runtime/models.py",
             SKILL_DESCRIPTIONS_ENTRY,
         ] {
             assert!(names.contains(marker), "missing: {marker}");
         }
-        for prefix in [
-            "hooks/",
-            "skills/",
-            "output-styles/",
-            "remy-src/install_runtime/",
-        ] {
+        for prefix in ["hooks/", "skills/", "output-styles/"] {
             assert!(
                 names.iter().any(|n| n.starts_with(prefix)),
                 "empty prefix: {prefix}"
@@ -139,7 +133,7 @@ mod tests {
     }
 
     /// Differential reconciliation: an independent enumeration of the source
-    /// tree with install.py's deploy rules must equal the archive entry set.
+    /// tree with the deploy rules must equal the archive entry set.
     #[test]
     fn archive_reconciles_with_source_tree() {
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -164,12 +158,7 @@ mod tests {
             );
             expected.insert(file.to_string());
         }
-        for directory in [
-            "hooks",
-            "skills",
-            "output-styles",
-            "remy-src/install_runtime",
-        ] {
+        for directory in ["hooks", "skills", "output-styles"] {
             walk(&repo_root.join(directory), directory, &mut expected);
         }
         assert_eq!(expected, archive_names());
