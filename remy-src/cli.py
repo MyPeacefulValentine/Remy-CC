@@ -238,7 +238,6 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     p_config = sub.add_parser("config", help="Open configuration UI (global by default, or --path for project)")
     p_config.add_argument("--path", default=None, help="Project root directory (opens project-level config)")
-    p_config.add_argument("--global", dest="global_flag", action="store_true", help="Explicitly open global config")
 
     p_rebuild = sub.add_parser("summary-rebuild", help="Rebuild file/cluster summaries (full bootstrap or targeted node)")
     p_rebuild.add_argument("--path", default=None, help="Project root directory (default: current directory)")
