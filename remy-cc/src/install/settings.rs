@@ -144,7 +144,7 @@ pub(crate) fn hook_commands(remy_root: &Path) -> Result<HookCommands, InstallErr
     })
 }
 
-fn managed_exe_name(remy_root: &Path) -> &'static str {
+pub(crate) fn managed_exe_name(remy_root: &Path) -> &'static str {
     if is_windows_path(remy_root) {
         "remy-cc.exe"
     } else {

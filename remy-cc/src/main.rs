@@ -78,6 +78,16 @@ enum DaemonCommand {
     },
     /// Serve the remy-index MCP read path over stdio (per-session, R4.1)
     Mcp,
+    /// Install the suite: deploy the embedded Claude Code artifacts, this
+    /// binary, and the managed settings entries (idempotent rerun, R4.4)
+    Install {
+        /// Interface language for the deployed artifacts
+        #[arg(long, value_parser = ["en", "zh-CN"])]
+        lang: Option<String>,
+        /// Skip prompts; fall back to the deployed configuration
+        #[arg(long)]
+        non_interactive: bool,
+    },
     /// Scan a source tree into a logic index database (R3.4+: four-language
     /// per-file facts plus the single-transaction global postprocess;
     /// R3.5a: project scan lock, incremental exclusion/identity semantics)
@@ -124,6 +134,12 @@ fn main() -> ExitCode {
         DaemonCommand::Mcp => {
             return mcp::run();
         }
+        DaemonCommand::Install {
+            lang,
+            non_interactive,
+        } => {
+            return install::run_install(lang, non_interactive);
+        }
         DaemonCommand::Hook { command } => {
             return hook_client::run(match command {
                 HookCommand::Dirty => hook_client::HookKind::Dirty,
@@ -169,7 +185,10 @@ fn main() -> ExitCode {
         DaemonCommand::Start { foreground: false } => start_detached(&home, &clock),
         DaemonCommand::Stop => stop(&home, &clock),
         DaemonCommand::Status { json } => status(&home, json),
-        DaemonCommand::Hook { .. } | DaemonCommand::Scan { .. } | DaemonCommand::Mcp => {
+        DaemonCommand::Hook { .. }
+        | DaemonCommand::Scan { .. }
+        | DaemonCommand::Mcp
+        | DaemonCommand::Install { .. } => {
             unreachable!("dispatched before daemon home resolution")
         }
     };
