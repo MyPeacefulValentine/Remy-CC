@@ -6,12 +6,25 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   create-release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Version consistency gate
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          FILE_VERSION="$(tr -d '[:space:]' < VERSION)"
+          DAEMON_VERSION="$(grep -m1 '^version' remy-daemon/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
+          SCANNER_VERSION="$(grep -m1 '^version' remy-daemon/scanner-core/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
+          echo "tag=$TAG_VERSION VERSION=$FILE_VERSION remy-daemon=$DAEMON_VERSION scanner-core=$SCANNER_VERSION"
+          if [ "$TAG_VERSION" != "$FILE_VERSION" ] || [ "$TAG_VERSION" != "$DAEMON_VERSION" ] || [ "$TAG_VERSION" != "$SCANNER_VERSION" ]; then
+            echo "::error::version mismatch: tag=$TAG_VERSION VERSION=$FILE_VERSION remy-daemon=$DAEMON_VERSION scanner-core=$SCANNER_VERSION"
+            exit 1
+          fi
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -61,6 +74,17 @@ jobs:
           $asset = "remy-daemon-${{ github.ref_name }}-${{ matrix.target }}.zip"
           Compress-Archive -Path "remy-daemon/target/${{ matrix.target }}/release/remy-daemon.exe" -DestinationPath $asset
           "$((Get-FileHash $asset -Algorithm SHA256).Hash.ToLower())  $asset" | Set-Content "$asset.sha256" -Encoding ascii
+
+      - name: Attest build provenance (Unix)
+        if: runner.os != 'Windows'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: remy-daemon-*.tar.gz
+      - name: Attest build provenance (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: remy-daemon-*.zip
 
       - name: Upload assets
         env:
