@@ -1,6 +1,6 @@
 # remy-index MCP 服务器
 
-基于 stdio 的 [Model Context Protocol](https://modelcontextprotocol.io/) 服务器，从 remy-index SQLite 数据库暴露代码智能查询。自 R4.1 起，生产宿主为 Rust 二进制——`remy-daemon mcp`（rmcp 3.1.4），由安装器部署到 `~/.remy-cc/bin/`。Claude Code 通过 JSON-RPC 与之通信，查询符号定义、调用图和影响分析，无需子进程。
+基于 stdio 的 [Model Context Protocol](https://modelcontextprotocol.io/) 服务器，从 remy-index SQLite 数据库暴露代码智能查询。自 R4.1 起，生产宿主为 Rust 二进制——`remy-cc mcp`（rmcp 3.1.4），由安装器部署到 `~/.remy-cc/bin/`。Claude Code 通过 JSON-RPC 与之通信，查询符号定义、调用图和影响分析，无需子进程。
 
 Python 服务器（`index_mcp_server.py`，FastMCP）作为 H.4 差分套（`tests/test_mcp_rust_parity.py`）的开发期渲染 oracle 保留在仓内，不再部署。
 
@@ -8,7 +8,7 @@ Python 服务器（`index_mcp_server.py`，FastMCP）作为 H.4 差分套（`tes
 
 | 依赖 | 说明 |
 | :--- | :--- |
-| `remy-daemon` 二进制 | 由 `install.py` 部署到 `~/.remy-cc/bin/` |
+| `remy-cc` 二进制 | 由 `install.py` 部署到 `~/.remy-cc/bin/` |
 | `logic_index.db` | 由 `/remy-index` 或 `struct_scan.py` 生成 |
 
 若 `REMY_MCP_SERVER_ENABLED=false`，服务器向 stderr 输出提示并以 exit code 0 退出。
@@ -17,7 +17,7 @@ Python 服务器（`index_mcp_server.py`，FastMCP）作为 H.4 差分套（`tes
 
 ```
 ┌─────────────────────┐       JSON-RPC (stdio)       ┌──────────────────────────┐
-│   Claude Code       │ ◄──────────────────────────► │  remy-daemon mcp         │
+│   Claude Code       │ ◄──────────────────────────► │  remy-cc mcp         │
 │   (MCP 客户端)      │                              │  (rmcp，每会话一进程)    │
 └─────────────────────┘                              │  ├─ init_freshness()     │
                                                      │  ├─ 13 个tool handler    │
@@ -38,7 +38,7 @@ Python 服务器（`index_mcp_server.py`，FastMCP）作为 H.4 差分套（`tes
                                                      └──────────────────────────┘
 ```
 
-**数据流向**：Rust `remy-daemon scan` 扫描器（Python `struct_scan.py` 仅作为 oracle 与测试的开发期工具保留）在项目扫描锁保护下向 `logic_index.db` 写入符号、边和模式。MCP 服务器为每次查询打开短生命周期只读连接（WAL + `busy_timeout=3000`，无写路径——INV-R2）；MCP 读取可与当前写入者并发。查询语义按 H.4 基线（`docs/MCP_RUST_PARITY_BASELINE_zh.md`）自 Python owner 模块逐字节迁移。
+**数据流向**：Rust `remy-cc scan` 扫描器（Python `struct_scan.py` 仅作为 oracle 与测试的开发期工具保留）在项目扫描锁保护下向 `logic_index.db` 写入符号、边和模式。MCP 服务器为每次查询打开短生命周期只读连接（WAL + `busy_timeout=3000`，无写路径——INV-R2）；MCP 读取可与当前写入者并发。查询语义按 H.4 基线（`docs/MCP_RUST_PARITY_BASELINE_zh.md`）自 Python owner 模块逐字节迁移。
 
 ## 启动与注册
 
@@ -49,7 +49,7 @@ Python 服务器（`index_mcp_server.py`，FastMCP）作为 H.4 差分套（`tes
   "mcpServers": {
     "remy-index": {
       "type": "stdio",
-      "command": "~/.remy-cc/bin/remy-daemon",
+      "command": "~/.remy-cc/bin/remy-cc",
       "args": ["mcp"]
     }
   }
@@ -446,7 +446,7 @@ Python运行时参数保存在`~/.claude/remy-config.json`，项目覆盖保存�
 
 ## 索引新鲜度检测
 
-启动时，`init_freshness()`（`remy-daemon/src/mcp/freshness.rs`）检查索引是否最新：
+启动时，`init_freshness()`（`remy-cc/src/mcp/freshness.rs`）检查索引是否最新：
 
 ```
 ┌─────────────────────────────┐
@@ -509,13 +509,13 @@ symbols matching 'parse_file' (1 results)
 ### MCP 服务器未启动
 
 检查：
-1. `~/.remy-cc/bin/remy-daemon --version` 可运行并报告部署版本
+1. `~/.remy-cc/bin/remy-cc --version` 可运行并报告部署版本
 2. `~/.claude.json` 的 `mcpServers` 中包含 `remy-index` 条目（command = daemon 二进制，args `["mcp"]`）
 3. `REMY_MCP_SERVER_ENABLED` 未设为 `false`
 
 诊断：手动运行并检查 stderr（配置诊断与禁用提示均输出到 stderr）：
 ```bash
-~/.remy-cc/bin/remy-daemon mcp
+~/.remy-cc/bin/remy-cc mcp
 ```
 
 ### 首次 tool call 挂起（历史——仅适用开发期 Python oracle）
@@ -524,7 +524,7 @@ symbols matching 'parse_file' (1 results)
 
 ## 开发者指南
 
-### 源文件（Rust 宿主，`remy-daemon/src/mcp/`）
+### 源文件（Rust 宿主，`remy-cc/src/mcp/`）
 
 | 模块 | 职责 |
 | :--- | :--- |
@@ -554,7 +554,7 @@ Python oracle 对应模块（`index_mcp_server.py` + `index_mcp_common/facts/gra
 
 ### 新增 Tool
 
-1. 在 `remy-daemon/src/mcp/` 下对应职责域模块中实现 `query_xxx_impl(...)`（新域则新建模块，如 `deps.rs`）。
+1. 在 `remy-cc/src/mcp/` 下对应职责域模块中实现 `query_xxx_impl(...)`（新域则新建模块，如 `deps.rs`）。
 2. 在 `mod.rs` 注册：`Params` 结构体（serde 默认值 + schemars）+ 以 `self.wrap(...)` 包装 impl 的 `#[tool]` 方法 + INSTRUCTIONS 增一行。
 3. 按 `docs/MCP_RUST_PARITY_BASELINE_zh.md` §4.2 裁定验证面：有 Python oracle 臂的 tool 入差分矩阵；Rust 单实现 tool 建专项套（参照 `tests/test_mcp_dependencies.py`）并加入 parity 的 `RUST_ONLY_TOOLS` 白名单。
 4. 权限已被 `settings.example.json` 的 `mcp__remy-index__*` 通配符覆盖。

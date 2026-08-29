@@ -423,7 +423,7 @@ python -m pytest Remy-CC/tests/test_enforcer_hook.py Remy-CC/tests/test_patch_de
 ```
 
 **已移除（R4.3）**：`tests/test_logic_dirty_tracker.py` 随脏队列 hook 一并退役
-（`9d1d3e8`）；PostToolUse 脏路径现为经 IPC 的 `remy-daemon hook dirty`，由
+（`9d1d3e8`）；PostToolUse 脏路径现为经 IPC 的 `remy-cc hook dirty`，由
 `tests/test_daemon_ipc.py` 覆盖。
 
 `tests/test_enforcer_hook.py`把hook复制到临时目录以控制reminder文件集合：
@@ -455,9 +455,9 @@ daemon运行/状态未知拒绝、未持有旧lock处理、相同版本不同has
 ```bash
 python -m pytest Remy-CC/tests/test_install_manifest.py Remy-CC/tests/test_cli_manifest.py Remy-CC/tests/test_cli_daemon.py Remy-CC/tests/test_daemon_ipc.py -q -p no:cacheprovider
 pyright -p Remy-CC/pyrightconfig.json
-cargo fmt --check --manifest-path Remy-CC/remy-daemon/Cargo.toml
-cargo clippy --workspace --manifest-path Remy-CC/remy-daemon/Cargo.toml --all-targets -- -D warnings
-cargo test --workspace --manifest-path Remy-CC/remy-daemon/Cargo.toml
+cargo fmt --check --manifest-path Remy-CC/remy-cc/Cargo.toml
+cargo clippy --workspace --manifest-path Remy-CC/remy-cc/Cargo.toml --all-targets -- -D warnings
+cargo test --workspace --manifest-path Remy-CC/remy-cc/Cargo.toml
 ```
 
 2026-08-13 Windows验证通过130项定向Python测试（1项skip）、957项全量Python测试（3项skip）、
@@ -488,7 +488,7 @@ R3.5a 修复双侧检索投影谓词（`(file_path, name)` 列等值 + concat �
 
 ```bash
 python -m pytest Remy-CC/tests/test_scanner_core_diff.py Remy-CC/tests/test_index_state.py Remy-CC/tests/test_fts_three_layer.py Remy-CC/tests/test_postprocess_parity.py -q -p no:cacheprovider
-cargo test --workspace --manifest-path Remy-CC/remy-daemon/Cargo.toml
+cargo test --workspace --manifest-path Remy-CC/remy-cc/Cargo.toml
 ```
 
 ## R3.5b daemon provider 切换测试
@@ -521,7 +521,7 @@ R3.5b 引入 state schema v2（`jobs.provider` claim 快照列、`full_scan` job
 
 ```bash
 python -m pytest Remy-CC/tests/test_daemon_provider.py Remy-CC/tests/test_daemon_ipc.py Remy-CC/tests/test_remy_config.py Remy-CC/tests/test_postprocess_parity.py -q -p no:cacheprovider
-cargo test --workspace --manifest-path Remy-CC/remy-daemon/Cargo.toml
+cargo test --workspace --manifest-path Remy-CC/remy-cc/Cargo.toml
 ```
 
 ## F.1 增量后处理（scanner-core 0.2.0）
@@ -655,10 +655,10 @@ R4.2 裁定（权威文本 RETIREMENT §2.5）：Rust owner（`writer.rs::open_d
 **窗口已关闭（R4.3）**：ladder、`migrate_json` 及其套件
 （`test_migration_ladder.py`、`ladder_samples.py`）已删除。
 `initialize_database` 现在拒绝一切非当前 schema 版本并保留数据库，错误信息
-指向 schema owner `remy-daemon scan`；`tests/test_initialize_database.py`
+指向 schema owner `remy-cc scan`；`tests/test_initialize_database.py`
 以 `tests/schema_snapshots.py` 的冻结 DDL 快照（v6/v7/v10）断言拒绝前后
 iterdump 一致，`tests/test_run_routing.py` 覆盖 run.py 路由（结构段 spawn
-`remy-daemon scan`、语义段按 `schema.VERSION` 把关）。脏队列及其 hook
+`remy-cc scan`、语义段按 `schema.VERSION` 把关）。脏队列及其 hook
 （`logic_dirty_tracker.py`、`logic_enrichment_hook.py`）、
 `--consume-dirty`/`--worker-config-json` 臂与 daemon 的 python provider 臂
 同批删除；daemon 套件转 rust 单臂（`test_daemon_provider.py`），hook IPC
@@ -669,7 +669,7 @@ iterdump 一致，`tests/test_run_routing.py` 覆盖 run.py 路由（结构段 s
 
 `tests/test_mcp_dependencies.py` 是 `query_dependencies` MCP tool 的验收面。
 该 tool 无 Python oracle 臂，不入 H.4 差分矩阵（MCP_RUST_PARITY_BASELINE_zh.md
-§4.2）。套件驱动 release `remy-daemon mcp` 二进制（未构建时跳过），在专用
+§4.2）。套件驱动 release `remy-cc mcp` 二进制（未构建时跳过），在专用
 语料上断言：存量+派生边合并（golden 渲染）、唯一后缀派生（stdlib 短路、
 多重命中丢弃）、悬挂条目 `(not indexed)` 标记、up/down 对偶、导入环终止、
 深度钳制至 `REMY_MCP_BFS_MAX_DEPTH`、非法 direction 错误文本、重复调用

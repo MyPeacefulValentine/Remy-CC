@@ -546,7 +546,7 @@ python -m pytest Remy-CC/tests/test_enforcer_hook.py Remy-CC/tests/test_patch_de
 
 **Removed (R4.3)**: `tests/test_logic_dirty_tracker.py` retired together with
 the dirty-queue hook (`9d1d3e8`); the PostToolUse dirty path is now
-`remy-daemon hook dirty` over IPC, covered by `tests/test_daemon_ipc.py`.
+`remy-cc hook dirty` over IPC, covered by `tests/test_daemon_ipc.py`.
 
 `tests/test_enforcer_hook.py` copies the hook into a temporary directory to
 control the reminder file set: `REMY_LANG=zh-CN` selects
@@ -587,9 +587,9 @@ permissions, stable JSON results, and exit codes 0 through 4.
 ```bash
 python -m pytest Remy-CC/tests/test_install_manifest.py Remy-CC/tests/test_cli_manifest.py Remy-CC/tests/test_cli_daemon.py Remy-CC/tests/test_daemon_ipc.py -q -p no:cacheprovider
 pyright -p Remy-CC/pyrightconfig.json
-cargo fmt --check --manifest-path Remy-CC/remy-daemon/Cargo.toml
-cargo clippy --workspace --manifest-path Remy-CC/remy-daemon/Cargo.toml --all-targets -- -D warnings
-cargo test --workspace --manifest-path Remy-CC/remy-daemon/Cargo.toml
+cargo fmt --check --manifest-path Remy-CC/remy-cc/Cargo.toml
+cargo clippy --workspace --manifest-path Remy-CC/remy-cc/Cargo.toml --all-targets -- -D warnings
+cargo test --workspace --manifest-path Remy-CC/remy-cc/Cargo.toml
 ```
 
 The 2026-08-13 Windows verification passed 130 targeted Python tests with 1
@@ -765,11 +765,11 @@ Window discipline (until the R4.3 Python exit):
 **Window closed (R4.3)**: the ladder, `migrate_json`, and their suites
 (`test_migration_ladder.py`, `ladder_samples.py`) are deleted.
 `initialize_database` now refuses every non-current schema version with the
-database preserved and points at `remy-daemon scan` as the schema owner;
+database preserved and points at `remy-cc scan` as the schema owner;
 `tests/test_initialize_database.py` asserts the refusal against the frozen
 DDL snapshots in `tests/schema_snapshots.py` (v6/v7/v10, iterdump-identical
 before and after), and `tests/test_run_routing.py` covers the run.py
-routing that spawns `remy-daemon scan` for the structural segment and gates
+routing that spawns `remy-cc scan` for the structural segment and gates
 the semantic segment on `schema.VERSION`. The dirty queue, its hooks
 (`logic_dirty_tracker.py`, `logic_enrichment_hook.py`), the
 `--consume-dirty`/`--worker-config-json` arms, and the daemon's python
@@ -783,7 +783,7 @@ falling back, and enrichment stays available without a running daemon
 `tests/test_mcp_dependencies.py` is the acceptance surface for the
 `query_dependencies` MCP tool, which has no Python oracle arm and is excluded
 from the H.4 differential matrix (MCP_RUST_PARITY_BASELINE.md §4.2). It drives
-the release `remy-daemon mcp` binary (skipped when not built) against a
+the release `remy-cc mcp` binary (skipped when not built) against a
 purpose-built corpus and asserts: stored-plus-derived edge merging with a
 golden rendering, unique-suffix derivation (stdlib short-circuit, multi-hit
 drop), the `(not indexed)` dangling marker, up/down duality, cycle

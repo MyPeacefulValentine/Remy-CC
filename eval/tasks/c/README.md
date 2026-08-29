@@ -25,7 +25,7 @@ Build a dedicated DB that includes tee_canary, then point the CLI at it:
 
 ```bash
 # from the workspace root (do not cd into Remy-CC/)
-remy-daemon scan --root Remy-CC --db Remy-CC/eval/.scoped/c_logic_index.db --result-json
+remy-cc scan --root Remy-CC --db Remy-CC/eval/.scoped/c_logic_index.db --result-json
 PYTHONPATH=Remy-CC python -m eval.cli --tasks Remy-CC/eval/tasks/c \
     --db Remy-CC/eval/.scoped/c_logic_index.db --reps 3 --save
 ```
