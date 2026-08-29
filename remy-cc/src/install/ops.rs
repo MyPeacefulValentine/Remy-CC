@@ -223,6 +223,189 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
     Ok(report)
 }
 
+/// `remy-cc verify`: v4 manifest hash reconciliation, settings claim check,
+/// runtime descriptor probe, and a running-daemon version comparison.
+/// Returns the warning list; empty means the installation verifies clean.
+pub(crate) fn verify(claude_root: &Path, remy_root: &Path) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let manifest = match manifest::load(remy_root) {
+        Ok(Some(LoadedManifest::Current(manifest))) => Some(manifest),
+        Ok(Some(LoadedManifest::V3Migration(_))) => {
+            warnings
+                .push("install manifest is schema v3; run remy-cc install to migrate".to_string());
+            None
+        }
+        Ok(None) => {
+            warnings.push("install manifest is missing".to_string());
+            None
+        }
+        Err(error) => {
+            warnings.push(error.message);
+            None
+        }
+    };
+    if let Some(manifest) = &manifest {
+        for record in &manifest.files {
+            let root = if record.root == manifest::ROOT_CLAUDE {
+                claude_root
+            } else {
+                remy_root
+            };
+            let target = root.join(&record.path);
+            match storage::sha256_file(&target) {
+                Ok(digest) if digest == record.sha256 => {}
+                Ok(_) => warnings.push(format!("an owned file was modified: {}", record.path)),
+                Err(_) => warnings.push(format!("an owned file is missing: {}", record.path)),
+            }
+        }
+        match load_settings(&claude_root.join("settings.json")) {
+            Ok(settings_doc) => {
+                if let Err(error) =
+                    settings::verify_settings_claim(&settings_doc, &manifest.settings_claim)
+                {
+                    warnings.push(error.message);
+                }
+            }
+            Err(error) => warnings.push(error.message),
+        }
+    }
+    let descriptor_path = remy_root.join("runtime").join("python.json");
+    match storage::load_json(&descriptor_path) {
+        Ok(descriptor) => {
+            let executable = descriptor.get("executable").and_then(Value::as_str);
+            match executable {
+                Some(executable) => {
+                    if let Err(error) = pyprobe::probe_executable(executable) {
+                        warnings.push(error.message);
+                    }
+                }
+                None => warnings.push("runtime descriptor is invalid".to_string()),
+            }
+        }
+        Err(_) => warnings.push(
+            "runtime descriptor is missing (Python 3.10+ is a runtime prerequisite)".to_string(),
+        ),
+    }
+    if let Some(running) = running_daemon_version(remy_root) {
+        if running != env!("CARGO_PKG_VERSION") {
+            warnings.push(format!(
+                "daemon runs {running} but this binary is {}; run remy-cc daemon restart",
+                env!("CARGO_PKG_VERSION")
+            ));
+        }
+    }
+    warnings
+}
+
+fn running_daemon_version(remy_root: &Path) -> Option<String> {
+    let run_dir = remy_root.join("run");
+    if !crate::single_instance::is_held(&run_dir).unwrap_or(false) {
+        return None;
+    }
+    let hello = crate::protocol::Request::Hello {
+        protocol_version: crate::protocol::PROTOCOL_VERSION,
+        token: crate::server::read_token(&run_dir).unwrap_or_default(),
+    };
+    match crate::ipc_roundtrip(&run_dir, &hello) {
+        Some(crate::protocol::Response::Hello { daemon_version, .. }) => Some(daemon_version),
+        _ => None,
+    }
+}
+
+/// `remy-cc uninstall`: precise removal by the manifest (v4, or v3 as
+/// migration input), claim-lenient settings cleanup, and optional engine
+/// state purge. Files already gone are skipped (forward-recovery rerun);
+/// locked files leave through rename-aside plus the pending register.
+pub(crate) fn uninstall(
+    claude_root: &Path,
+    remy_root: &Path,
+    purge_state: bool,
+) -> Result<InstallReport, InstallError> {
+    let mut report = InstallReport::default();
+    {
+        let _lock = lock::acquire(remy_root)?;
+        let pending = PendingDeletes::new(claude_root, remy_root);
+        let manifest = match manifest::load(remy_root)? {
+            Some(LoadedManifest::Current(manifest))
+            | Some(LoadedManifest::V3Migration(manifest)) => manifest,
+            None => return Err(InstallError::runtime("install manifest is missing")),
+        };
+        let run_dir = remy_root.join("run");
+        if crate::single_instance::is_held(&run_dir).unwrap_or(false) {
+            return Err(InstallError::runtime(
+                "daemon must be stopped before uninstall; run: remy-cc daemon stop",
+            ));
+        }
+
+        let mut parents: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
+        for record in &manifest.files {
+            let root = if record.root == manifest::ROOT_CLAUDE {
+                claude_root
+            } else {
+                remy_root
+            };
+            let target = root.join(&record.path);
+            if !target.is_file() {
+                continue;
+            }
+            remove_or_defer(&target, &pending, &mut report.warnings);
+            report
+                .changed
+                .push(format!("{}/{}", record.root, record.path));
+            let mut parent = target.parent();
+            while let Some(directory) = parent {
+                if directory == root {
+                    break;
+                }
+                parents.insert(directory.to_path_buf());
+                parent = directory.parent();
+            }
+        }
+        for directory in parents.iter().rev() {
+            let _ = fs::remove_dir(directory);
+        }
+
+        let settings_path = claude_root.join("settings.json");
+        if settings_path.is_file() {
+            match load_settings(&settings_path) {
+                Ok(settings_doc) => {
+                    let cleaned = settings::remove_settings_claim_lenient(
+                        &settings_doc,
+                        &manifest.settings_claim,
+                    );
+                    let bytes = storage::canonical_json_bytes(&cleaned);
+                    let unchanged = storage::sha256_file(&settings_path)
+                        .map(|digest| digest == storage::sha256_hex(&bytes))
+                        .unwrap_or(false);
+                    if !unchanged {
+                        staged_write(&settings_path, &bytes, false, true, &pending)
+                            .map_err(io_error)?;
+                        report.changed.push("claude/settings.json".to_string());
+                    }
+                }
+                Err(error) => report
+                    .warnings
+                    .push(format!("settings cleanup skipped: {}", error.message)),
+            }
+        }
+
+        let manifest_file = manifest::manifest_path(remy_root);
+        remove_or_defer(&manifest_file, &pending, &mut report.warnings);
+    }
+    if purge_state {
+        match fs::remove_dir_all(remy_root) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => {
+                return Err(InstallError::runtime(
+                    "uninstall committed but engine-state cleanup is incomplete",
+                ))
+            }
+        }
+    }
+    Ok(report)
+}
+
 fn plan_claude_contents(language: &str) -> Result<Vec<PlannedFile>, InstallError> {
     let mut contents: Vec<(String, Vec<u8>)> = Vec::new();
     embedded::for_each_entry(|path, data| {
@@ -880,5 +1063,109 @@ mod tests {
             "old registration must be gone"
         );
         assert!(text.contains("hook enrich"));
+    }
+
+    #[test]
+    fn verify_is_clean_after_install_and_flags_every_drift_class() {
+        let env = setup("en");
+        install(&env.params).expect("install");
+        let warnings = verify(&env.params.claude_root, &env.params.remy_root);
+        assert_eq!(
+            warnings,
+            vec![
+                "runtime descriptor is missing (Python 3.10+ is a runtime prerequisite)"
+                    .to_string()
+            ],
+            "python was not probed in this environment"
+        );
+
+        fs::write(env.params.claude_root.join("CLAUDE.md"), b"drift").expect("modify");
+        fs::remove_file(env.params.claude_root.join("style.md")).expect("delete");
+        let warnings = verify(&env.params.claude_root, &env.params.remy_root);
+        assert!(warnings
+            .iter()
+            .any(|w| w == "an owned file was modified: CLAUDE.md"));
+        assert!(warnings
+            .iter()
+            .any(|w| w == "an owned file is missing: style.md"));
+
+        let settings_path = env.params.claude_root.join("settings.json");
+        let mut settings_doc = storage::load_json(&settings_path).expect("settings");
+        settings_doc["hooks"]["PreToolUse"][0]["hooks"][0]["command"] =
+            Value::String("tampered".to_string());
+        fs::write(
+            &settings_path,
+            serde_json::to_string(&settings_doc).expect("serialize"),
+        )
+        .expect("write");
+        let warnings = verify(&env.params.claude_root, &env.params.remy_root);
+        assert!(warnings
+            .iter()
+            .any(|w| w == "a managed settings Hook was modified"));
+    }
+
+    #[test]
+    fn verify_reports_a_missing_manifest() {
+        let env = setup("en");
+        let warnings = verify(&env.params.claude_root, &env.params.remy_root);
+        assert!(warnings.iter().any(|w| w == "install manifest is missing"));
+    }
+
+    #[test]
+    fn uninstall_removes_managed_state_and_preserves_user_data() {
+        let env = setup("en");
+        install(&env.params).expect("install");
+        let user_file = env.params.claude_root.join("projects").join("user.txt");
+        fs::create_dir_all(user_file.parent().unwrap()).expect("dirs");
+        fs::write(&user_file, b"user").expect("user file");
+        let state = env.params.remy_root.join("state.db");
+        fs::write(&state, b"state").expect("state");
+
+        let report =
+            uninstall(&env.params.claude_root, &env.params.remy_root, false).expect("uninstall");
+        assert!(!report.changed.is_empty());
+
+        assert!(!env.params.claude_root.join("CLAUDE.md").exists());
+        assert!(
+            !env.params.claude_root.join("hooks").exists(),
+            "emptied dirs are removed"
+        );
+        assert!(user_file.exists());
+        assert!(state.exists(), "engine state survives a default uninstall");
+        assert!(env.params.claude_root.join("remy-config.json").exists());
+        assert!(manifest::load(&env.params.remy_root)
+            .expect("load")
+            .is_none());
+        let settings_doc =
+            storage::load_json(&env.params.claude_root.join("settings.json")).expect("settings");
+        let text = serde_json::to_string(&settings_doc).expect("serialize");
+        assert!(!text.contains("hook enrich"), "managed hooks removed");
+    }
+
+    #[test]
+    fn uninstall_purge_removes_the_remy_root_only() {
+        let env = setup("en");
+        install(&env.params).expect("install");
+        fs::write(env.params.remy_root.join("state.db"), b"state").expect("state");
+        uninstall(&env.params.claude_root, &env.params.remy_root, true).expect("uninstall");
+        assert!(!env.params.remy_root.exists());
+        assert!(env.params.claude_root.exists());
+    }
+
+    #[test]
+    fn uninstall_skips_files_already_gone() {
+        let env = setup("en");
+        install(&env.params).expect("install");
+        fs::remove_file(env.params.claude_root.join("CLAUDE.md")).expect("pre-delete");
+        uninstall(&env.params.claude_root, &env.params.remy_root, false)
+            .expect("uninstall tolerates missing targets");
+    }
+
+    #[test]
+    fn uninstall_without_a_manifest_rejects() {
+        let env = setup("en");
+        let error = uninstall(&env.params.claude_root, &env.params.remy_root, false)
+            .expect_err("no manifest");
+        assert_eq!(error.message, "install manifest is missing");
     }
 }

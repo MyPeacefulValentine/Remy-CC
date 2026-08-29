@@ -88,6 +88,19 @@ enum DaemonCommand {
         #[arg(long)]
         non_interactive: bool,
     },
+    /// Verify the installation: manifest hash reconciliation, settings
+    /// claim, runtime descriptor, and daemon version comparison
+    Verify,
+    /// Remove the managed installation (project data and user settings
+    /// entries are preserved)
+    Uninstall {
+        /// Also delete the engine state root (~/.remy-cc)
+        #[arg(long)]
+        purge_state: bool,
+        /// Skip the confirmation prompt
+        #[arg(long)]
+        yes: bool,
+    },
     /// Scan a source tree into a logic index database (R3.4+: four-language
     /// per-file facts plus the single-transaction global postprocess;
     /// R3.5a: project scan lock, incremental exclusion/identity semantics)
@@ -140,6 +153,12 @@ fn main() -> ExitCode {
         } => {
             return install::run_install(lang, non_interactive);
         }
+        DaemonCommand::Verify => {
+            return install::run_verify();
+        }
+        DaemonCommand::Uninstall { purge_state, yes } => {
+            return install::run_uninstall(purge_state, yes);
+        }
         DaemonCommand::Hook { command } => {
             return hook_client::run(match command {
                 HookCommand::Dirty => hook_client::HookKind::Dirty,
@@ -188,7 +207,9 @@ fn main() -> ExitCode {
         DaemonCommand::Hook { .. }
         | DaemonCommand::Scan { .. }
         | DaemonCommand::Mcp
-        | DaemonCommand::Install { .. } => {
+        | DaemonCommand::Install { .. }
+        | DaemonCommand::Verify
+        | DaemonCommand::Uninstall { .. } => {
             unreachable!("dispatched before daemon home resolution")
         }
     };
@@ -477,7 +498,10 @@ fn stop(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
 /// One-shot IPC exchange: connect to the port published in `run_dir`, send a
 /// single request line, read a single response line. `None` on any transport
 /// or parse failure — callers fall back to the R1.1 lock/pid paths (INV-R1).
-fn ipc_roundtrip(run_dir: &Path, request: &protocol::Request) -> Option<protocol::Response> {
+pub(crate) fn ipc_roundtrip(
+    run_dir: &Path,
+    request: &protocol::Request,
+) -> Option<protocol::Response> {
     let port = server::read_port(run_dir)?;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let stream = TcpStream::connect_timeout(&addr, IPC_TIMEOUT).ok()?;

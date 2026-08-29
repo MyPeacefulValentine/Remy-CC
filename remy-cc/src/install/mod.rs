@@ -35,6 +35,74 @@ pub(crate) fn resolve_roots() -> Result<Roots, String> {
     Ok(Roots { claude, remy })
 }
 
+/// `remy-cc verify` entry.
+pub(crate) fn run_verify() -> ExitCode {
+    let roots = match resolve_roots() {
+        Ok(roots) => roots,
+        Err(message) => {
+            eprintln!("remy-cc verify: {message}");
+            return ExitCode::from(2);
+        }
+    };
+    let warnings = ops::verify(&roots.claude, &roots.remy);
+    if warnings.is_empty() {
+        println!("remy-cc verify: passed");
+        ExitCode::SUCCESS
+    } else {
+        for warning in &warnings {
+            println!("  [!] {warning}");
+        }
+        eprintln!("remy-cc verify: {} issue(s) found", warnings.len());
+        ExitCode::from(1)
+    }
+}
+
+/// `remy-cc uninstall` entry.
+pub(crate) fn run_uninstall(purge_state: bool, yes: bool) -> ExitCode {
+    use std::io::{BufRead, IsTerminal};
+    let roots = match resolve_roots() {
+        Ok(roots) => roots,
+        Err(message) => {
+            eprintln!("remy-cc uninstall: {message}");
+            return ExitCode::from(2);
+        }
+    };
+    if !yes {
+        if !std::io::stdin().is_terminal() {
+            eprintln!("remy-cc uninstall: confirmation required; pass --yes");
+            return ExitCode::from(1);
+        }
+        print!("This will remove all Remy-CC files and settings. Continue? [y/N] ");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        let mut line = String::new();
+        let confirmed = std::io::stdin()
+            .lock()
+            .read_line(&mut line)
+            .map(|read| read > 0 && line.trim().eq_ignore_ascii_case("y"))
+            .unwrap_or(false);
+        if !confirmed {
+            println!("Uninstall cancelled.");
+            return ExitCode::SUCCESS;
+        }
+    }
+    match ops::uninstall(&roots.claude, &roots.remy, purge_state) {
+        Ok(report) => {
+            println!(
+                "remy-cc uninstall: completed ({} file(s) removed)",
+                report.changed.len()
+            );
+            for warning in &report.warnings {
+                println!("  [!] {warning}");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("remy-cc uninstall: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
 fn user_home() -> Result<PathBuf, String> {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))

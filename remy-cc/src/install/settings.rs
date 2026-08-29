@@ -337,11 +337,23 @@ pub(crate) fn remove_settings_claim(
     existing: &Value,
     claim: &SettingsClaim,
 ) -> Result<Value, InstallError> {
+    verify_settings_claim(existing, claim)?;
+    remove_settings_claim_inner(existing, claim)
+        .ok_or_else(|| InstallError::metadata("settings.json must be an object"))
+}
+
+/// Claim removal without the presence verification: removes whatever claimed
+/// entries still exist and leaves everything else alone. Used by uninstall,
+/// whose forward-recovery rerun may find entries already gone (the v3 arm
+/// relied on transactional atomicity instead); a user-modified managed entry
+/// is left in place rather than blocking the uninstall.
+pub(crate) fn remove_settings_claim_lenient(existing: &Value, claim: &SettingsClaim) -> Value {
+    remove_settings_claim_inner(existing, claim).unwrap_or_else(|| existing.clone())
+}
+
+fn remove_settings_claim_inner(existing: &Value, claim: &SettingsClaim) -> Option<Value> {
     let mut result = existing.clone();
-    verify_settings_claim(&result, claim)?;
-    let result_object = result
-        .as_object_mut()
-        .ok_or_else(|| InstallError::metadata("settings.json must be an object"))?;
+    let result_object = result.as_object_mut()?;
     if let Some(hooks) = result_object
         .get_mut("hooks")
         .and_then(Value::as_object_mut)
@@ -399,7 +411,7 @@ pub(crate) fn remove_settings_claim(
             result_object.remove("permissions");
         }
     }
-    Ok(result)
+    Some(result)
 }
 
 pub(crate) fn verify_settings_claim(
