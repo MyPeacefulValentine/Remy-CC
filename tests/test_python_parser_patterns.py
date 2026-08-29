@@ -129,7 +129,7 @@ class Printer:
 class TestTreeCacheOnSyntaxError:
     """Regression: the tree cache must never serve a stale AST.
 
-    Before the R3.3 fix, _get_tree stored the source hash before ast.parse
+    Previously, _get_tree stored the source hash before ast.parse
     could raise, so every later channel call for the same broken source hit
     the cache and received the previously parsed file's tree (scan order
     dependent facts) or None (AttributeError on the first file).

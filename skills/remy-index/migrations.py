@@ -1,8 +1,8 @@
 """SQLite schema initialization for the current schema version only.
 
 The Python migration ladder (v6..v12) and the legacy JSON import were
-retired in R4.3; `remy-cc scan` (writer.rs::open_db) is the schema
-owner and rebuilds non-current databases. This module refuses every
+retired (docs/RETIREMENT.md §2.5); `remy-cc scan` (writer.rs::open_db) is
+the schema owner and rebuilds non-current databases. This module refuses every
 non-current version and leaves the database unchanged.
 """
 

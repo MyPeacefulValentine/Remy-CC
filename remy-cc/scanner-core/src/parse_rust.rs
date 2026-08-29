@@ -5,7 +5,7 @@
 //!
 //! Contracts replicated here:
 //!
-//! - **Symbol scope**: the R3.0b support matrix — free functions, impl
+//! - **Symbol scope**: free functions, impl
 //!   methods (type-qualified), struct/enum/trait/type alias,
 //!   `macro_rules!`, modules (recursive), trait method signatures.
 //! - **Source extent**: contiguous immediately-preceding `attribute_item`
@@ -19,7 +19,7 @@
 //!   unique short-name fallback). Every impl block additionally emits a
 //!   `rust_trait_impl` pattern fact; the global postprocess re-derives
 //!   bases from those facts and the synthesizer resolves cross-file impls
-//!   through them (R3.4).
+//!   through them.
 //! - **Imports**: `mod x;` file-existence mapping plus deterministic `use`
 //!   resolution — `crate::` anchors at the nearest lib.rs/main.rs ancestor,
 //!   `self`/`super` walk module directories, and bare heads are external

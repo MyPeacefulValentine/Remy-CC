@@ -22,14 +22,14 @@ pub enum OpenOutcome {
     Rebuilt,
 }
 
-/// Schema owner guard (R4.2 ruling, docs/RETIREMENT.md §2.5): the Rust
+/// Schema owner guard (ruling: docs/RETIREMENT.md §2.5): the Rust
 /// owner supports the current schema version only. A fresh (or empty)
 /// database gets the schema and version stamp; a database below the
 /// current version — or holding tables but no version row — is backed up
 /// to `.bak` (SQLite backup API) and rebuilt from the current schema; a
 /// database at or above the current version whose version string does not
-/// match exactly, or cannot be parsed, is refused unchanged. Lossless
-/// 6→12 migration stays with the frozen Python ladder until R4.3.
+/// match exactly, or cannot be parsed, is refused unchanged. There is no
+/// lossless in-place migration path.
 pub fn open_db(path: &std::path::Path) -> Result<(Connection, OpenOutcome), String> {
     let db_existed = path.exists();
     let conn = open_raw(path)?;
@@ -75,7 +75,7 @@ pub fn open_db(path: &std::path::Path) -> Result<(Connection, OpenOutcome), Stri
 }
 
 /// Read-only schema version probe: None when the database has no meta
-/// table or no version row. Also the read-path check entry (R4.1 mcp).
+/// table or no version row. Also the mcp read-path check entry.
 pub fn schema_version(conn: &Connection) -> Option<String> {
     conn.query_row("SELECT value FROM meta WHERE key='version'", [], |row| {
         row.get(0)

@@ -4,7 +4,7 @@
 //! registry with strict=True, so an invalid value fails the Python scan
 //! before postprocessing runs; failing the Rust scan at load time
 //! replicates that outcome for the replicated subset. Fields outside this
-//! subset are not validated here (same narrowing as the R2.3 HookConfig).
+//! subset are not validated here (same narrowing as HookConfig).
 
 use serde_json::Value;
 use std::collections::HashMap;
@@ -31,9 +31,9 @@ pub struct PostprocessConfig {
     pub file_kind_low_cohesion_threshold: f64,
     pub scan_lock_timeout: f64,
     /// Parsed for contract parity with PARAM_REGISTRY; the consumer is the
-    /// R3.5b daemon worker (scan-job timeout), not the scanner itself.
+    /// daemon worker (scan-job timeout), not the scanner itself.
     pub struct_scan_timeout: i64,
-    /// Full-scan job timeout (R3.5b daemon worker consumer).
+    /// Full-scan job timeout (daemon worker consumer).
     pub full_scan_timeout: i64,
 }
 

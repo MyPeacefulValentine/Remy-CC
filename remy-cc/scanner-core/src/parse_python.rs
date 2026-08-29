@@ -1,8 +1,8 @@
 //! `PythonParser` replication.
 //!
 //! The Python oracle is the only parser that runs on CPython's `ast` module
-//! rather than tree-sitter, so this is the highest-equivalence-risk language
-//! of R3.3. Contracts replicated here:
+//! rather than tree-sitter, so this is the highest-equivalence-risk
+//! language. Contracts replicated here:
 //!
 //! - **Symbol scope**: module-level functions/classes plus one level of class
 //!   methods (`Class.method`); nested and conditionally defined functions are
@@ -16,11 +16,11 @@
 //!   channel catches it, so the `files` row stays in place with empty
 //!   symbols/imports/bindings/edges, while patterns are still extracted (the
 //!   oracle's `extract_patterns` runs its regexes on the raw source
-//!   regardless). Deterministic only since the parser's R3.3 cache fix
+//!   regardless). Deterministic only since the parser's cache fix
 //!   (contract version 2): the frozen v1 tree cache handed later channels a
 //!   stale tree from the previously parsed file.
 //! - **Hash input**: the docstring literal is spliced out first (contract
-//!   v3, C2 ruling), then `re.sub(r'#[^\n]*', '', segment)` — the `#` strip
+//!   v3), then `re.sub(r'#[^\n]*', '', segment)` — the `#` strip
 //!   inside string literals is frozen oracle behaviour, reproduced verbatim.
 
 use crate::facts::{CacheIdentity, EdgeInfo, PatternFact, SymbolInfo};

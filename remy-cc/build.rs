@@ -1,8 +1,8 @@
 //! Packs the Claude Code text artifacts into a gzip tar archive at build
 //! time so `remy-cc install` can deploy them without a source checkout.
 //!
-//! Paths are anchored on `CARGO_MANIFEST_DIR` (the R4.0 E.4 lesson: relative
-//! includes silently break under directory moves); the archive and the two
+//! Paths are anchored on `CARGO_MANIFEST_DIR` (relative includes silently
+//! break under directory moves); the archive and the two
 //! standalone install templates land in `OUT_DIR` and are pulled in with
 //! `include_bytes!`/`include_str!` by `src/install/embedded.rs`.
 //!

@@ -39,7 +39,7 @@ pub fn acquire(run_dir: &Path) -> io::Result<AcquireOutcome> {
 ///
 /// The probe briefly acquires and releases the lock, so a concurrent `start`
 /// inside that window can be rejected as already-running. This race is benign
-/// for a diagnostic command and disappears with the R1.2 IPC ping.
+/// for a diagnostic command and does not exist on the IPC ping path.
 pub fn is_held(run_dir: &Path) -> io::Result<bool> {
     match acquire(run_dir)? {
         AcquireOutcome::Acquired(guard) => {

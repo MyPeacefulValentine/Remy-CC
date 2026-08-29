@@ -1,6 +1,6 @@
 """H.4 differential suite: Rust MCP server vs the Python rendering oracle.
 
-Long-lived regression asset (R4.1). The Python side runs in-process against
+Long-lived regression asset. The Python side runs in-process against
 the *_impl functions (the same call surface the FastMCP wrappers use); the
 Rust side is the release `remy-cc mcp` binary spoken to over stdio
 JSON-RPC. Skipped when the release binary is absent.

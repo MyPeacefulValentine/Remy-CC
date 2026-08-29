@@ -1,13 +1,13 @@
-//! `remy-cc update`: binary self-update over the GitHub Releases API
-//! (R4.4 audit disposition (a)1 — the git-clone side channel is folded into
-//! this path; T1 verification chain: sha256 is mandatory and hard-rejects,
-//! attestation verification is opportunistic via the gh CLI).
+//! `remy-cc update`: binary self-update over the GitHub Releases API —
+//! the sole update channel (the git-clone side channel is folded into
+//! this path). Verification chain: sha256 is mandatory and hard-rejects,
+//! attestation verification is opportunistic via the gh CLI.
 //!
 //! Flow: probe the latest release; compare versions (one shared sequence
 //! from v2.0.0); download `remy-cc-{tag}-{target}` plus its `.sha256`;
 //! verify; extract; sanity-run the new binary; swap it into
 //! `~/.remy-cc/bin` (rename-and-replace, the displaced image goes to the
-//! pending-deletes register — REQ-5); run the new binary's own
+//! pending-deletes register); run the new binary's own
 //! `install --non-interactive`; restart the daemon when one was running.
 //! Any failure before the swap leaves the local installation unchanged.
 
@@ -288,7 +288,7 @@ pub(crate) fn parse_release(payload: &Value) -> Option<Release> {
     Some(Release { tag, assets })
 }
 
-/// `remy-cc-{tag}-{target}.tar.gz|zip` — the C5-frozen naming from
+/// `remy-cc-{tag}-{target}.tar.gz|zip` — the naming frozen in
 /// release.yml (`tag` keeps its `v` prefix, matching `github.ref_name`).
 pub(crate) fn asset_name(tag: &str, target: &str) -> String {
     let extension = if target.contains("windows") {

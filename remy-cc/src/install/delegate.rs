@@ -1,6 +1,6 @@
 //! Delegation of the configuration and summary command families to the
-//! deployed Python CLI (H.5 disposition: the summary runtime and config UI
-//! stay Python-owned; the binary only routes).
+//! deployed Python CLI (the summary runtime and config UI stay
+//! Python-owned; the binary only routes).
 //!
 //! Python resolution order: the recorded runtime descriptor, then `python`
 //! and `python3` from PATH. A missing interpreter or missing deployed CLI

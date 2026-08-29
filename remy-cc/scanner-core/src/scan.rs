@@ -1,8 +1,8 @@
 //! Scan orchestration: discovery → parallel parse workers → bounded
 //! channel → single writer thread owning the connection, one transaction
-//! per scan (R3.2 decision: parse pool + mpsc + single writer; full scans
+//! per scan (parse pool + mpsc + single writer; full scans
 //! write tables first and rebuild indexes afterwards). The global
-//! postprocess (R3.4) runs inside the same transaction, so any failure
+//! postprocess runs inside the same transaction, so any failure
 //! rolls the database back to its pre-scan state.
 
 use crate::config::ScanConfig;

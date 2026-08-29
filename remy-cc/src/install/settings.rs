@@ -7,7 +7,7 @@
 //! latent Python crashes into controlled errors: a fresh install against a
 //! non-object `hooks` value reports the metadata error instead of an
 //! AttributeError, and claim removal tolerates a missing `permissions`
-//! section instead of a KeyError. One addition for the R4.4 rename: the old
+//! section instead of a KeyError. One addition for the binary rename: the old
 //! `remy-daemon hook …` default commands are cleared as legacy exactly like
 //! the retired python-script defaults.
 

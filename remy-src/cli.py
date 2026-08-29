@@ -2,8 +2,8 @@
 """Delegated Python CLI: configuration UI and summary maintenance.
 
 The remy-cc binary owns the full command surface and spawns this module
-for the config and summary families only (H.5 disposition: the summary
-runtime and config UI stay Python-owned).
+for the config and summary families only (the summary runtime and config
+UI stay Python-owned).
 """
 import argparse
 import json

@@ -1,7 +1,7 @@
 //! Interactive install surfaces: language resolution, PATH registration,
 //! and the post-install configuration pointer.
 //!
-//! Scope per the H8-B4 disposition: language and PATH prompts are native
+//! Scope: language and PATH prompts are native
 //! (isatty-gated, EOF falls back to the deployed configuration, with the
 //! semantics inherited from the retired v3 installer); the interactive
 //! API-key flow is not ported — configuration stays owned by `remy-cc
@@ -209,7 +209,7 @@ fn register_path_platform(bin_text: &str) {
 }
 
 /// Post-install pointer: interactive API configuration is owned by
-/// `remy-cc config` (single configuration owner; H8-B4 disposition).
+/// `remy-cc config` (single configuration owner).
 pub(crate) fn print_config_guidance(lang: &str) {
     if lang == "zh-CN" {
         println!("  [i] 运行 remy-cc config 配置 LLM API（摘要与导航功能需要）。");

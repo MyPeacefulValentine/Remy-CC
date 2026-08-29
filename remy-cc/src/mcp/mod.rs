@@ -1,4 +1,4 @@
-//! `remy-cc mcp` — the Rust host for the remy-index MCP read path (R4.1).
+//! `remy-cc mcp` — the Rust host for the remy-index MCP read path.
 //! Per-session stdio transport, WAL read-only-style direct SQLite access
 //! (INV-R2: no daemon involvement); the Python server at
 //! remy-src/index_mcp_server.py is the byte-level rendering oracle.

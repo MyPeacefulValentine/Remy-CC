@@ -1,4 +1,4 @@
-"""Summary-invalidation and postprocess-parity assertions (R3.4).
+"""Summary-invalidation and postprocess-parity assertions.
 
 The blocking diff deliberately excludes the DIAGNOSTIC tables, so the
 summary state machine (stale transitions, initial summaries, change

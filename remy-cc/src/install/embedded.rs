@@ -3,7 +3,7 @@
 //! `build.rs` packs the deployable Claude Code text artifacts into a gzip
 //! tar archive (deterministic order and headers) and copies the two install
 //! templates next to it in `OUT_DIR`; everything is pulled in here by
-//! absolute `OUT_DIR` paths (R4.0 E.4: no source-relative includes).
+//! absolute `OUT_DIR` paths (no source-relative includes).
 
 use std::io::{self, Read};
 

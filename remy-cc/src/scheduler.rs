@@ -223,7 +223,7 @@ fn dispatch(
     Ok(())
 }
 
-/// Terminal-state guard (R3.5 decision 13): a late worker event for a job
+/// Terminal-state guard: a late worker event for a job
 /// that already reached a terminal state is dropped instead of overwriting
 /// it or killing the scheduler loop.
 fn handle_worker(

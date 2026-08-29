@@ -1,7 +1,7 @@
 """Frozen pre-current sample databases (v6 / v7 / v10).
 
 Generated once from the live migration handlers and verified equivalent by
-normalized iterdump at freeze time (R4.3 sample-source replacement,
+normalized iterdump at freeze time (sample-source replacement,
 docs/RETIREMENT.md §8 ruling 6, anchor `a474e5f`). Virtual tables are created
 natively with external-content FTS rebuilt, because iterdump's
 writable_schema replay does not run under executescript. Each factory returns

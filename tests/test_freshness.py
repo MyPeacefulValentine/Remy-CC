@@ -167,7 +167,7 @@ class TestInitFreshness:
 
 
 class TestDeterministicSample:
-    """H.4 N2 seed seam: REMY_FRESHNESS_SAMPLE_SEED selects a sorted, rotated
+    """H.4 seed seam: REMY_FRESHNESS_SAMPLE_SEED selects a sorted, rotated
     subset instead of random.sample, so both implementations pick the same files."""
 
     def _reset(self):

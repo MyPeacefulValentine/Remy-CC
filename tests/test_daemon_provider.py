@@ -1,4 +1,4 @@
-"""End-to-end tests for the rust-only scanner provider publication (R4.3)."""
+"""End-to-end tests for the rust-only scanner provider publication."""
 
 import json
 import sqlite3

@@ -2,7 +2,7 @@
 //! Oracle: index_mcp_server._resolve_git_head / _init_freshness. Runs once
 //! before serving, like the Python server (which must probe before the event
 //! loop for Windows asyncio reasons; the timing is kept for parity). Warning
-//! strings are byte-identical. REMY_FRESHNESS_SAMPLE_SEED (H.4 N2 test seam)
+//! strings are byte-identical. REMY_FRESHNESS_SAMPLE_SEED (H.4 test seam)
 //! switches the hash-sampling fallback to a sorted, seed-rotated subset.
 
 use std::path::Path;

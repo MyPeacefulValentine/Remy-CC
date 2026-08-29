@@ -1,8 +1,8 @@
 //! scanner-core — Rust replication of the frozen Python oracle: per-file
-//! fact extraction for all four languages (R3.2/R3.3) plus the global
-//! postprocess (R3.4: direct-edge disambiguation, import-binding
-//! derivation, inferred-edge synthesis, file kinds, clusters, summary
-//! invalidation, and the retrieval projection).
+//! fact extraction for all four languages plus the global postprocess
+//! (direct-edge disambiguation, import-binding derivation, inferred-edge
+//! synthesis, file kinds, clusters, summary invalidation, and the
+//! retrieval projection).
 //!
 //! Cross-implementation contracts replicated here:
 //! - JSON column encoding: Python `json.dumps` default format

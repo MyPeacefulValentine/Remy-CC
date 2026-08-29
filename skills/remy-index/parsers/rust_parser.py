@@ -4,7 +4,7 @@ Rust language parser.
 Requires tree-sitter with the pinned tree-sitter-rust grammar. There is no
 regex fallback: when the grammar is unavailable every parse entry point
 raises, scan_file records a StageError, and previously indexed rows are
-preserved (R3.0b rejection semantics). The cache identity marks the missing
+preserved (rejection semantics, no fallback). The cache identity marks the missing
 backend so installing the grammar triggers a rescan through the existing
 identity-invalidation channel.
 """
@@ -187,7 +187,7 @@ class RustParser(LanguageParser):
         return parser.parse(source_bytes)
 
     # ------------------------------------------------------------------
-    # Symbol hash input (hash contract, mirrored by the R3.2+ Rust scanner)
+    # Symbol hash input (hash contract, mirrored by the Rust scanner)
     # ------------------------------------------------------------------
 
     def symbol_hash_input(self, source_segment):
@@ -327,7 +327,7 @@ class RustParser(LanguageParser):
 
         Exact full-name match first; otherwise a unique short-name match
         among this file's struct/enum symbols. Cross-file impl blocks are a
-        documented R3.0b limitation.
+        documented limitation.
         """
         if not trait_impls:
             return

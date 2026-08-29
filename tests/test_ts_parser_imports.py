@@ -1,6 +1,6 @@
 """Regression tests for TSParser.resolve_imports ordering determinism.
 
-Before the R3.3 fix the raw specifier collection used a set, so the
+Previously the raw specifier collection used a set, so the
 files.imports column order followed the process's string-hash
 randomization (different across PYTHONHASHSEED values). Deduplication now
 preserves source match order: import-from matches first, require matches

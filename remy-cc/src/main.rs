@@ -1,8 +1,9 @@
-//! remy-cc — Remy-CC resident daemon.
+//! remy-cc — Remy-CC resident daemon and command-line entry point.
 //!
-//! Scope (R1 + R2.1): single-instance lifecycle, JSON line logging, loopback
-//! IPC version handshake, and persistent job registration/query/cancellation.
-//! Scanner workers and hook clients remain outside this binary at R2.1.
+//! One binary carries the daemon lifecycle (single-instance, JSON line
+//! logging, loopback IPC, persistent job registration/query/cancellation),
+//! the production scanner, the MCP read host, the Claude Code hook
+//! clients, and the self-installer.
 //!
 //! Exit codes: 0 = success; 1 = already running (`start`) / not running
 //! (`status`); 2 = unexpected error or timeout.
@@ -87,10 +88,10 @@ enum DaemonCommand {
         #[command(subcommand)]
         command: HookCommand,
     },
-    /// Serve the remy-index MCP read path over stdio (per-session, R4.1)
+    /// Serve the remy-index MCP read path over stdio (per-session)
     Mcp,
     /// Install the suite: deploy the embedded Claude Code artifacts, this
-    /// binary, and the managed settings entries (idempotent rerun, R4.4)
+    /// binary, and the managed settings entries (idempotent rerun)
     Install {
         /// Interface language for the deployed artifacts
         #[arg(long, value_parser = ["en", "zh-CN"])]
@@ -135,9 +136,9 @@ enum DaemonCommand {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Scan a source tree into a logic index database (R3.4+: four-language
-    /// per-file facts plus the single-transaction global postprocess;
-    /// R3.5a: project scan lock, incremental exclusion/identity semantics)
+    /// Scan a source tree into a logic index database: four-language
+    /// per-file facts plus the single-transaction global postprocess,
+    /// under the project scan lock
     Scan {
         /// Project root to scan
         #[arg(long)]
@@ -611,7 +612,7 @@ fn stop(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
 
 /// One-shot IPC exchange: connect to the port published in `run_dir`, send a
 /// single request line, read a single response line. `None` on any transport
-/// or parse failure — callers fall back to the R1.1 lock/pid paths (INV-R1).
+/// or parse failure — callers fall back to the lock/pid paths (INV-R1).
 pub(crate) fn ipc_roundtrip(
     run_dir: &Path,
     request: &protocol::Request,

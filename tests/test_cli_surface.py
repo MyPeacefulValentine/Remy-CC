@@ -1,6 +1,6 @@
 """Surface guard for the delegated Python CLI.
 
-H.5 disposition: cli.py keeps only the config and summary families as the
+cli.py keeps only the config and summary families as the
 delegation target of the remy-cc binary; every retired subcommand must be
 rejected and the module must not depend on the retired install_runtime
 package.

@@ -1,9 +1,9 @@
 //! IPC protocol types: JSON Lines requests and tagged responses.
 //!
-//! PROTOCOL_VERSION history: 1 (R1.2 initial), 2 (R2.1 persistent jobs),
-//! 3 (R2.2 scheduling, job listing, and status snapshot),
-//! 4 (R2.3 file-filtered job queries for hook clients),
-//! 5 (R3.5b scanner provider fields on jobs and status, full_scan job type).
+//! PROTOCOL_VERSION history: 1 (initial), 2 (persistent jobs),
+//! 3 (scheduling, job listing, and status snapshot),
+//! 4 (file-filtered job queries for hook clients),
+//! 5 (scanner provider fields on jobs and status, full_scan job type).
 
 use serde::{Deserialize, Serialize};
 

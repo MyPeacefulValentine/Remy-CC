@@ -1,5 +1,5 @@
-//! The v4 install manifest (Rust single owner, R4.4 audit disposition
-//! H8-B3) and the read-only v3 parser used as first-run migration input.
+//! The v4 install manifest (Rust single owner) and the read-only v3
+//! parser used as first-run migration input.
 //!
 //! v4 field set: `{schema_version: 4, suite_version, installed_at,
 //! artifact_sha256, files, settings_claim}` — `hook_mode` is dropped (the

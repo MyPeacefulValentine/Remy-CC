@@ -1,6 +1,6 @@
 """Rust schema-owner dispatch matrix, end to end through `remy-cc scan`.
 
-R4.2 ruling (docs/RETIREMENT.md §2.5): the Rust owner supports the current
+Ruling (docs/RETIREMENT.md §2.5): the Rust owner supports the current
 schema version only. Below-current or versionless-with-tables databases are
 backed up to `.bak` and rebuilt, with an incremental entry escalating to
 the full file set inside the same call; at-current databases open without

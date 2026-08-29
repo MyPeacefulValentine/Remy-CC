@@ -1,5 +1,4 @@
-//! `remy-cc install` orchestration: the idempotent-rerun self-install
-//! (R4.4 audit disposition (b)1, REQ-1..7).
+//! `remy-cc install` orchestration: the idempotent-rerun self-install.
 //!
 //! Model: no journal replay — recovery direction is forward. Every content
 //! write is a staged same-directory file plus an atomic rename; the v4

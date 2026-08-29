@@ -135,7 +135,7 @@ def _init_freshness():
         sample_size = min(10, max(1, math.ceil(len(all_files) * 0.1)))
         seed_raw = os.environ.get("REMY_FRESHNESS_SAMPLE_SEED")
         if seed_raw is not None:
-            # Test seam (H.4 N2): deterministic, RNG-free selection so both
+            # Test seam (H.4): deterministic, RNG-free selection so both
             # implementations pick the same files — sort by path, rotate by seed.
             try:
                 start = int(seed_raw)

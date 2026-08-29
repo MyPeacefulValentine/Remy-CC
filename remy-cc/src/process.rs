@@ -7,8 +7,8 @@
 //!   write-ends owned by a caller capturing our output — into the long-lived
 //!   daemon, so that caller would never observe EOF. ShellExecuteEx does not
 //!   inherit arbitrary handles and breaks that chain;
-//! - terminate: platform utility (`taskkill` / `kill`) as the R1.1 seam,
-//!   replaced by the IPC shutdown command in R1.2.
+//! - terminate: platform utility (`taskkill` / `kill`), the fallback seam
+//!   behind the primary IPC shutdown command.
 
 use std::io;
 use std::path::Path;

@@ -133,7 +133,7 @@ class PythonParser(LanguageParser):
 
         The cache key is updated only after a successful parse: a SyntaxError
         must propagate on every call, never hand back a stale tree from a
-        previously parsed source (cache-poisoning defect fixed in R3.3).
+        previously parsed source (cache-poisoning guard).
         """
         h = hashlib.md5(source.encode('utf-8')).hexdigest()
         if h != self._cached_hash:
