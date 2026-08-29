@@ -19,6 +19,12 @@ tokio = { version = "1", features = ["rt-multi-thread", "io-std", "macros"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
 sha2 = "0.10"
 md-5 = "0.10"
+tar = "0.4"
+flate2 = "1"
+
+[build-dependencies]
+tar = "0.4"
+flate2 = "1"
 
 [dev-dependencies]
 tempfile = "3"

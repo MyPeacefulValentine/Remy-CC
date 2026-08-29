@@ -9,6 +9,7 @@
 
 mod clock;
 mod hook_client;
+mod install;
 mod logging;
 mod mcp;
 mod process;
