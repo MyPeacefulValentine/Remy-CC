@@ -88,8 +88,8 @@ pub(crate) fn run_uninstall(purge_state: bool, yes: bool) -> ExitCode {
         }
         print!("This will remove all Remy-CC files and settings. Continue? [y/N] ");
         let _ = std::io::Write::flush(&mut std::io::stdout());
-        let confirmed = interact::read_stdin_line()
-            .is_some_and(|line| line.eq_ignore_ascii_case("y"));
+        let confirmed =
+            interact::read_stdin_line().is_some_and(|line| line.eq_ignore_ascii_case("y"));
         if !confirmed {
             println!("Uninstall cancelled.");
             return ExitCode::SUCCESS;

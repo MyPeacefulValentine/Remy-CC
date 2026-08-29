@@ -354,9 +354,7 @@ fn remove_settings_claim_inner(existing: &Value, claim: &SettingsClaim) -> Optio
                         continue;
                     }
                     if let Some(list) = entry.get_mut("hooks").and_then(Value::as_array_mut) {
-                        list.retain(|hook| {
-                            !hook_command(hook).is_some_and(|c| c == item.command)
-                        });
+                        list.retain(|hook| !hook_command(hook).is_some_and(|c| c == item.command));
                     }
                 }
                 retain_nonempty_entries(entries);

@@ -573,9 +573,7 @@ fn load_json_object_or_empty(path: &Path, label: &str) -> Result<Value, InstallE
     let value: Value = serde_json::from_str(&text)
         .map_err(|_| InstallError::metadata(format!("{label} is invalid")))?;
     if !value.is_object() {
-        return Err(InstallError::metadata(format!(
-            "{label} must be an object"
-        )));
+        return Err(InstallError::metadata(format!("{label} must be an object")));
     }
     Ok(value)
 }
@@ -735,11 +733,7 @@ pub(crate) fn register_mcp(claude_root: &Path, remy_root: &Path) -> Result<(), I
         super::BIN_DIR,
         settings::managed_exe_name(remy_root)
     );
-    let daemon_placeholder = format!(
-        "{}{}/remy-cc",
-        super::REMY_HOME_PLACEHOLDER,
-        super::BIN_DIR
-    );
+    let daemon_placeholder = format!("{}{}/remy-cc", super::REMY_HOME_PLACEHOLDER, super::BIN_DIR);
     let expand = |value: &str| -> String {
         if value == daemon_placeholder {
             daemon_command.clone()
