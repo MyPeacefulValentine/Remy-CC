@@ -59,7 +59,7 @@ pub(crate) fn run_verify() -> ExitCode {
 
 /// `remy-cc uninstall` entry.
 pub(crate) fn run_uninstall(purge_state: bool, yes: bool) -> ExitCode {
-    use std::io::{BufRead, IsTerminal};
+    use std::io::IsTerminal;
     let roots = match resolve_roots() {
         Ok(roots) => roots,
         Err(message) => {
@@ -74,12 +74,8 @@ pub(crate) fn run_uninstall(purge_state: bool, yes: bool) -> ExitCode {
         }
         print!("This will remove all Remy-CC files and settings. Continue? [y/N] ");
         let _ = std::io::Write::flush(&mut std::io::stdout());
-        let mut line = String::new();
-        let confirmed = std::io::stdin()
-            .lock()
-            .read_line(&mut line)
-            .map(|read| read > 0 && line.trim().eq_ignore_ascii_case("y"))
-            .unwrap_or(false);
+        let confirmed = interact::read_stdin_line()
+            .is_some_and(|line| line.eq_ignore_ascii_case("y"));
         if !confirmed {
             println!("Uninstall cancelled.");
             return ExitCode::SUCCESS;

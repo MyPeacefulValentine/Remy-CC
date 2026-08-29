@@ -17,6 +17,13 @@ use super::util;
 use super::InstallError;
 
 pub(crate) const RUNTIME_SCHEMA_VERSION: u64 = 1;
+
+/// PATH probe order shared by the install probe and the delegation fallback.
+pub(crate) const PATH_CANDIDATES: &[&str] = &["python", "python3"];
+
+/// Manifest-relative location of the runtime descriptor under the remy root.
+pub(crate) const DESCRIPTOR_RELATIVE_PATH: &str = "runtime/python.json";
+
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const PROBE_SCRIPT: &str = "import json,platform,sys;print(json.dumps({'executable':sys.executable,'version':list(sys.version_info[:3]),'implementation':platform.python_implementation(),'platform':sys.platform}))";
 
@@ -42,10 +49,15 @@ impl RuntimeDescriptor {
     }
 }
 
+/// The runtime descriptor file under the given remy root.
+pub(crate) fn descriptor_path(remy_root: &Path) -> std::path::PathBuf {
+    remy_root.join(DESCRIPTOR_RELATIVE_PATH)
+}
+
 /// Probes `python` then `python3` from PATH.
 pub(crate) fn probe() -> Result<RuntimeDescriptor, InstallError> {
     let mut last = InstallError::runtime("Python interpreter probe failed");
-    for candidate in ["python", "python3"] {
+    for candidate in PATH_CANDIDATES {
         match probe_executable(candidate) {
             Ok(descriptor) => return Ok(descriptor),
             Err(error) => last = error,

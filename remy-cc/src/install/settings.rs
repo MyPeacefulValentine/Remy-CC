@@ -246,13 +246,10 @@ pub(crate) fn merge_settings_document(
                         InstallError::metadata("settings hook command must be a string")
                     })?;
                 let command = command.trim().to_string();
-                if !hooks.iter().any(|current| {
-                    current
-                        .as_object()
-                        .and_then(|c| c.get("command"))
-                        .and_then(Value::as_str)
-                        .is_some_and(|c| c.trim() == command)
-                }) {
+                if !hooks
+                    .iter()
+                    .any(|current| hook_command(current).is_some_and(|c| c == command))
+                {
                     hooks.push(hook.clone());
                 }
                 claim.hooks.push(ClaimedHook {
@@ -356,21 +353,11 @@ fn remove_settings_claim_inner(existing: &Value, claim: &SettingsClaim) -> Optio
                     }
                     if let Some(list) = entry.get_mut("hooks").and_then(Value::as_array_mut) {
                         list.retain(|hook| {
-                            !hook
-                                .as_object()
-                                .and_then(|h| h.get("command"))
-                                .and_then(Value::as_str)
-                                .is_some_and(|c| c.trim() == item.command)
+                            !hook_command(hook).is_some_and(|c| c == item.command)
                         });
                     }
                 }
-                entries.retain(|entry| {
-                    entry
-                        .as_object()
-                        .and_then(|e| e.get("hooks"))
-                        .and_then(Value::as_array)
-                        .is_some_and(|list| !list.is_empty())
-                });
+                retain_nonempty_entries(entries);
                 if entries.is_empty() {
                     hooks.remove(&item.event);
                 }
@@ -422,10 +409,7 @@ pub(crate) fn verify_settings_claim(
                             .and_then(Value::as_array)
                             .is_some_and(|list| {
                                 list.iter().any(|hook| {
-                                    hook.as_object()
-                                        .and_then(|h| h.get("command"))
-                                        .and_then(Value::as_str)
-                                        .is_some_and(|c| c.trim() == item.command)
+                                    hook_command(hook).is_some_and(|c| c == item.command)
                                 })
                             })
                 })
@@ -528,11 +512,7 @@ fn remove_prior_target_hooks(
             };
             let mut retained = Vec::new();
             for hook in list.drain(..) {
-                let command = hook
-                    .as_object()
-                    .and_then(|h| h.get("command"))
-                    .and_then(Value::as_str)
-                    .map(|c| c.trim().to_string());
+                let command = hook_command(&hook);
                 let Some(command) = command else {
                     retained.push(hook);
                     continue;
@@ -554,13 +534,7 @@ fn remove_prior_target_hooks(
             }
             *list = retained;
         }
-        entries.retain(|entry| {
-            entry
-                .as_object()
-                .and_then(|e| e.get("hooks"))
-                .and_then(Value::as_array)
-                .is_some_and(|list| !list.is_empty())
-        });
+        retain_nonempty_entries(entries);
         if entries.is_empty() {
             hooks.remove(*event);
         }
@@ -589,6 +563,25 @@ fn is_legacy_daemon_default(command: &str, remy_root: &Path) -> bool {
     let normalized = command.replace('\\', "/");
     let prefix = prefix.replace('\\', "/");
     normalized == format!("{prefix} hook enrich") || normalized == format!("{prefix} hook dirty")
+}
+
+/// Trimmed `command` string of a hook entry, when present.
+fn hook_command(hook: &Value) -> Option<String> {
+    hook.as_object()?
+        .get("command")?
+        .as_str()
+        .map(|command| command.trim().to_string())
+}
+
+/// Drops matcher entries whose hooks list emptied out.
+fn retain_nonempty_entries(entries: &mut Vec<Value>) {
+    entries.retain(|entry| {
+        entry
+            .as_object()
+            .and_then(|e| e.get("hooks"))
+            .and_then(Value::as_array)
+            .is_some_and(|list| !list.is_empty())
+    });
 }
 
 /// Python `str(value)` coercion used for matcher comparison: strings pass

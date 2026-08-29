@@ -14,6 +14,15 @@ use serde_json::Value;
 
 use super::storage;
 
+/// One trimmed stdin line; `None` on EOF or a read error.
+pub(crate) fn read_stdin_line() -> Option<String> {
+    let mut line = String::new();
+    match std::io::stdin().lock().read_line(&mut line) {
+        Ok(0) | Err(_) => None,
+        Ok(_) => Some(line.trim().to_string()),
+    }
+}
+
 /// `--lang` flag > non-interactive/non-tty fallback to the deployed config >
 /// bilingual prompt (EOF falls back to the deployed config).
 pub(crate) fn resolve_language(
@@ -34,11 +43,10 @@ pub(crate) fn resolve_language(
     println!("  2. 简体中文");
     print!("Choice / 选择 [1]: ");
     let _ = std::io::stdout().flush();
-    let mut line = String::new();
-    match std::io::stdin().lock().read_line(&mut line) {
-        Ok(0) | Err(_) => existing_config_lang(claude_root),
-        Ok(_) if line.trim() == "2" => "zh-CN".to_string(),
-        Ok(_) => "en".to_string(),
+    match read_stdin_line() {
+        None => existing_config_lang(claude_root),
+        Some(line) if line == "2" => "zh-CN".to_string(),
+        Some(_) => "en".to_string(),
     }
 }
 
@@ -87,11 +95,9 @@ pub(crate) fn register_path(bin_dir: &Path, non_interactive: bool) {
     }
     print!("Add {bin_text} to PATH? / 将其加入 PATH？ [Y/n]: ");
     let _ = std::io::stdout().flush();
-    let mut line = String::new();
-    let answer = match std::io::stdin().lock().read_line(&mut line) {
-        Ok(0) | Err(_) => String::new(),
-        Ok(_) => line.trim().to_lowercase(),
-    };
+    let answer = read_stdin_line()
+        .map(|line| line.to_lowercase())
+        .unwrap_or_default();
     if answer == "n" {
         println!("  [i] Add {bin_text} to PATH manually to invoke remy-cc directly.");
         return;

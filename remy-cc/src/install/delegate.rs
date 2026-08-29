@@ -61,7 +61,7 @@ pub(crate) fn delegated_status(
 
 /// The recorded runtime descriptor wins; PATH probing is the fallback.
 pub(crate) fn resolve_python(remy_root: &Path) -> Option<String> {
-    let descriptor_path = remy_root.join("runtime").join("python.json");
+    let descriptor_path = pyprobe::descriptor_path(remy_root);
     if let Ok(descriptor) = storage::load_json(&descriptor_path) {
         if let Some(executable) = descriptor.get("executable").and_then(Value::as_str) {
             if pyprobe::probe_executable(executable).is_ok() {
@@ -69,7 +69,7 @@ pub(crate) fn resolve_python(remy_root: &Path) -> Option<String> {
             }
         }
     }
-    for candidate in ["python", "python3"] {
+    for candidate in pyprobe::PATH_CANDIDATES {
         if pyprobe::probe_executable(candidate).is_ok() {
             return Some(candidate.to_string());
         }

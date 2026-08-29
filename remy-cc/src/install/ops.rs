@@ -77,11 +77,11 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
     planned.push(plan_binary(params, exe_name)?);
     match &params.python {
         Ok(descriptor) => {
-            let target = params.remy_root.join("runtime").join("python.json");
+            let target = pyprobe::descriptor_path(&params.remy_root);
             let bytes = pyprobe::descriptor_bytes(descriptor, &target);
             planned.push(PlannedFile {
                 root: manifest::ROOT_REMY,
-                path: "runtime/python.json".to_string(),
+                path: pyprobe::DESCRIPTOR_RELATIVE_PATH.to_string(),
                 digest: storage::sha256_hex(&bytes),
                 payload: Payload::Bytes(bytes),
                 role: "runtime_descriptor",
@@ -248,12 +248,7 @@ pub(crate) fn verify(claude_root: &Path, remy_root: &Path) -> Vec<String> {
     };
     if let Some(manifest) = &manifest {
         for record in &manifest.files {
-            let root = if record.root == manifest::ROOT_CLAUDE {
-                claude_root
-            } else {
-                remy_root
-            };
-            let target = root.join(&record.path);
+            let target = root_for(claude_root, remy_root, &record.root).join(&record.path);
             match storage::sha256_file(&target) {
                 Ok(digest) if digest == record.sha256 => {}
                 Ok(_) => warnings.push(format!("an owned file was modified: {}", record.path)),
@@ -271,7 +266,7 @@ pub(crate) fn verify(claude_root: &Path, remy_root: &Path) -> Vec<String> {
             Err(error) => warnings.push(error.message),
         }
     }
-    let descriptor_path = remy_root.join("runtime").join("python.json");
+    let descriptor_path = pyprobe::descriptor_path(remy_root);
     match storage::load_json(&descriptor_path) {
         Ok(descriptor) => {
             let executable = descriptor.get("executable").and_then(Value::as_str);
@@ -361,11 +356,7 @@ pub(crate) fn uninstall(
 
         let mut parents: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
         for record in &manifest.files {
-            let root = if record.root == manifest::ROOT_CLAUDE {
-                claude_root
-            } else {
-                remy_root
-            };
+            let root = root_for(claude_root, remy_root, &record.root);
             let target = root.join(&record.path);
             if !target.is_file() {
                 continue;
@@ -553,26 +544,38 @@ fn role_for(path: &str) -> &'static str {
     }
 }
 
-fn root_dir<'a>(params: &'a InstallParams, root: &str) -> &'a Path {
+fn root_for<'a>(claude_root: &'a Path, remy_root: &'a Path, root: &str) -> &'a Path {
     if root == manifest::ROOT_CLAUDE {
-        &params.claude_root
+        claude_root
     } else {
-        &params.remy_root
+        remy_root
     }
 }
 
-fn load_settings(path: &Path) -> Result<Value, InstallError> {
+fn root_dir<'a>(params: &'a InstallParams, root: &str) -> &'a Path {
+    root_for(&params.claude_root, &params.remy_root, root)
+}
+
+/// Reads a JSON object, treating a missing file as an empty object. The
+/// error texts name the document via `label` (v3 message shapes).
+fn load_json_object_or_empty(path: &Path, label: &str) -> Result<Value, InstallError> {
     if !path.is_file() {
         return Ok(Value::Object(serde_json::Map::new()));
     }
-    let text =
-        fs::read_to_string(path).map_err(|_| InstallError::metadata("settings.json is invalid"))?;
+    let text = fs::read_to_string(path)
+        .map_err(|_| InstallError::metadata(format!("{label} is invalid")))?;
     let value: Value = serde_json::from_str(&text)
-        .map_err(|_| InstallError::metadata("settings.json is invalid"))?;
+        .map_err(|_| InstallError::metadata(format!("{label} is invalid")))?;
     if !value.is_object() {
-        return Err(InstallError::metadata("settings.json must be an object"));
+        return Err(InstallError::metadata(format!(
+            "{label} must be an object"
+        )));
     }
     Ok(value)
+}
+
+fn load_settings(path: &Path) -> Result<Value, InstallError> {
+    load_json_object_or_empty(path, "settings.json")
 }
 
 /// Staged same-directory write plus atomic rename. POSIX modes follow the
@@ -762,18 +765,7 @@ pub(crate) fn register_mcp(claude_root: &Path, remy_root: &Path) -> Result<(), I
         .parent()
         .unwrap_or_else(|| Path::new("."))
         .join(".claude.json");
-    let mut existing = if claude_json_path.exists() {
-        let text = fs::read_to_string(&claude_json_path)
-            .map_err(|_| InstallError::metadata(".claude.json is invalid"))?;
-        let value: Value = serde_json::from_str(&text)
-            .map_err(|_| InstallError::metadata(".claude.json is invalid"))?;
-        if !value.is_object() {
-            return Err(InstallError::metadata(".claude.json must be an object"));
-        }
-        value
-    } else {
-        Value::Object(serde_json::Map::new())
-    };
+    let mut existing = load_json_object_or_empty(&claude_json_path, ".claude.json")?;
     let object = existing.as_object_mut().expect("checked above");
     let servers_section = object
         .entry("mcpServers")
