@@ -18,7 +18,7 @@ use serde_json::Value;
 use super::embedded;
 use super::lock;
 use super::manifest::{self, FileRecord, LoadedManifest, Manifest};
-use super::pending::PendingDeletes;
+use super::pending::{self, PendingDeletes};
 use super::pyprobe::{self, RuntimeDescriptor};
 use super::settings;
 use super::storage;
@@ -584,10 +584,9 @@ fn load_settings(path: &Path) -> Result<Value, InstallError> {
     load_json_object_or_empty(path, "settings.json")
 }
 
-/// Staged same-directory write plus atomic rename. POSIX modes follow the
-/// v3 rule: an existing target keeps its mode; a new settings.json gets
-/// 0600; a new executable gets 0755. A rename onto a locked target moves
-/// the target aside and registers the residue for deferred deletion.
+/// Staged same-directory write plus atomic rename for the bulk content
+/// surface. Deliberately no fsync — recovery is the idempotent rerun;
+/// durable metadata goes through `storage::atomic_write` instead.
 fn staged_write(
     target: &Path,
     bytes: &[u8],
@@ -607,6 +606,8 @@ fn staged_write(
     rename_over(&stage, target, pending)
 }
 
+/// POSIX modes, v3 rule: an existing target keeps its mode; a new
+/// settings.json gets 0600; a new executable gets 0755.
 #[cfg(unix)]
 fn apply_mode(stage: &Path, target: &Path, executable: bool, private: bool) {
     use std::os::unix::fs::PermissionsExt;
@@ -634,14 +635,11 @@ fn rename_over(stage: &Path, target: &Path, pending: &PendingDeletes) -> std::io
     match fs::rename(stage, target) {
         Ok(()) => Ok(()),
         Err(_) => {
-            let aside = target.with_extension(format!("old-{}", std::process::id()));
+            let aside = pending::aside_path(target);
             match fs::rename(target, &aside) {
                 Ok(()) => {
-                    if pending.register(std::slice::from_ref(&aside)).is_err() {
-                        eprintln!(
-                            "  [!] could not record {} for deferred deletion; remove it manually",
-                            aside.display()
-                        );
+                    if let Some(warning) = pending.register_or_warn(&aside) {
+                        eprintln!("  [!] {warning}");
                     }
                     fs::rename(stage, target)
                 }
@@ -675,17 +673,14 @@ fn remove_or_defer(target: &Path, pending: &PendingDeletes, warnings: &mut Vec<S
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(_) => {
-            let aside = target.with_extension(format!("old-{}", std::process::id()));
+            let aside = pending::aside_path(target);
             let residue = if fs::rename(target, &aside).is_ok() {
                 aside
             } else {
                 target.to_path_buf()
             };
-            if pending.register(std::slice::from_ref(&residue)).is_err() {
-                warnings.push(format!(
-                    "could not record {} for deferred deletion; remove it manually",
-                    residue.display()
-                ));
+            if let Some(warning) = pending.register_or_warn(&residue) {
+                warnings.push(warning);
             }
             warnings.push(format!(
                 "cleanup deferred for a locked file: {}",

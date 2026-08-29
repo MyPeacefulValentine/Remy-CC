@@ -41,6 +41,9 @@ fn sorted_keys(value: &Value) -> Value {
     }
 }
 
+/// Durable single-point write for managed metadata: temp file, fsync,
+/// rename, parent-directory sync on Unix. Counterpart of
+/// `ops::staged_write` (bulk content, no fsync).
 pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent)?;

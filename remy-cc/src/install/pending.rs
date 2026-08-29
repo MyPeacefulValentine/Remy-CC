@@ -10,12 +10,42 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use serde_json::{json, Value};
 
 use super::storage;
 
 pub(crate) const PENDING_SCHEMA_VERSION: u64 = 1;
+
+/// Age gate for the orphan sweep: younger staging files may belong to a
+/// live writer and are left alone.
+const STALE_STAGING_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// The `.old-{pid}` aside name (`with_extension`: the final extension is
+/// replaced, not appended).
+pub(crate) fn aside_path(target: &Path) -> PathBuf {
+    target.with_extension(format!("old-{}", std::process::id()))
+}
+
+/// The two staging shapes an interrupted run leaves behind:
+/// `.{name}.remy-stage-{pid}` and `.{name}.{pid}.tmp`. Dot prefix plus a
+/// pure-digit pid segment keeps deployed files and the Python-side
+/// `.{name}.tmp.{pid}.{tid}` shape out of the match.
+fn is_stale_staging_name(name: &str) -> bool {
+    if !name.starts_with('.') {
+        return false;
+    }
+    if let Some((_, pid)) = name.rsplit_once(".remy-stage-") {
+        return !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit());
+    }
+    if let Some(rest) = name.strip_suffix(".tmp") {
+        if let Some((_, pid)) = rest.rsplit_once('.') {
+            return !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit());
+        }
+    }
+    false
+}
 
 pub(crate) fn pending_deletes_path(remy_root: &Path) -> PathBuf {
     remy_root
@@ -69,8 +99,28 @@ impl PendingDeletes {
         )
     }
 
-    /// Best-effort deletion of registered residues; see the module contract.
+    /// Registers one residue, returning the warning text (no output
+    /// prefix) on failure; the caller picks the reporting channel.
+    pub(crate) fn register_or_warn(&self, residue: &Path) -> Option<String> {
+        let paths = [residue.to_path_buf()];
+        if self.register(&paths).is_err() {
+            Some(format!(
+                "could not record {} for deferred deletion; remove it manually",
+                residue.display()
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// Best-effort deletion of registered residues and stale staging
+    /// orphans; see the module contract.
     pub(crate) fn sweep(&self) {
+        self.sweep_register();
+        self.sweep_stale_staging();
+    }
+
+    fn sweep_register(&self) {
         if !self.path.exists() {
             return;
         }
@@ -108,6 +158,41 @@ impl PendingDeletes {
                 &self.path,
                 &json!({"schema_version": PENDING_SCHEMA_VERSION, "paths": remaining}),
             );
+        }
+    }
+
+    /// Deletes staging orphans under the two managed roots: name matches a
+    /// staging shape AND age exceeds the gate. Unreadable metadata skips
+    /// the file; unreadable directories are skipped silently.
+    fn sweep_stale_staging(&self) {
+        let now = SystemTime::now();
+        for root in [&self.claude_root, &self.remy_root] {
+            let mut stack = vec![root.to_path_buf()];
+            while let Some(directory) = stack.pop() {
+                let Ok(entries) = fs::read_dir(&directory) else {
+                    continue;
+                };
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
+                        stack.push(path);
+                        continue;
+                    }
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    if !is_stale_staging_name(&name) {
+                        continue;
+                    }
+                    let stale = entry
+                        .metadata()
+                        .and_then(|metadata| metadata.modified())
+                        .ok()
+                        .and_then(|mtime| now.duration_since(mtime).ok())
+                        .is_some_and(|age| age > STALE_STAGING_MAX_AGE);
+                    if stale {
+                        let _ = fs::remove_file(&path);
+                    }
+                }
+            }
         }
     }
 
@@ -168,6 +253,56 @@ mod tests {
         pending.register(&[claude.join("x.bak")]).expect("register");
         let document = storage::load_json(&pending.path).expect("load");
         assert_eq!(document["paths"].as_array().expect("paths").len(), 1);
+    }
+
+    #[test]
+    fn staging_name_predicate_matches_only_the_two_rust_shapes() {
+        assert!(is_stale_staging_name(".CLAUDE.md.remy-stage-123"));
+        assert!(is_stale_staging_name(".manifest.json.99.tmp"));
+        assert!(is_stale_staging_name("..claude.json.99.tmp"));
+        assert!(!is_stale_staging_name("CLAUDE.md"));
+        assert!(!is_stale_staging_name(".gitignore"));
+        assert!(!is_stale_staging_name(".remy-config.json.tmp.123.456"));
+        assert!(!is_stale_staging_name(".x.remy-stage-12a"));
+        assert!(!is_stale_staging_name(".x..tmp"));
+        assert!(!is_stale_staging_name("CLAUDE.old-123"));
+    }
+
+    #[test]
+    fn sweep_removes_only_aged_staging_orphans() {
+        let (_dir, pending, claude, remy) = setup();
+        let nested = claude.join("hooks");
+        fs::create_dir_all(&nested).expect("nested dir");
+        let aged_stage = nested.join(".pre_tool_guard.py.remy-stage-4242");
+        let aged_tmp = remy.join(".manifest.json.4242.tmp");
+        let fresh_stage = claude.join(".CLAUDE.md.remy-stage-4242");
+        let aged_python_shape = claude.join(".remy-config.json.tmp.4242.7");
+        let deployed = nested.join("pre_tool_guard.py");
+        for file in [
+            &aged_stage,
+            &aged_tmp,
+            &fresh_stage,
+            &aged_python_shape,
+            &deployed,
+        ] {
+            fs::write(file, b"x").expect("write");
+        }
+        let old = SystemTime::now() - Duration::from_secs(48 * 60 * 60);
+        for file in [&aged_stage, &aged_tmp, &aged_python_shape] {
+            let handle = fs::OpenOptions::new().write(true).open(file).expect("open");
+            handle
+                .set_times(fs::FileTimes::new().set_modified(old))
+                .expect("set mtime");
+        }
+        pending.sweep();
+        assert!(!aged_stage.exists(), "aged stage orphan must be removed");
+        assert!(!aged_tmp.exists(), "aged tmp orphan must be removed");
+        assert!(fresh_stage.exists(), "fresh staging must survive");
+        assert!(
+            aged_python_shape.exists(),
+            "python-shape staging must survive"
+        );
+        assert!(deployed.exists(), "deployed files must survive");
     }
 
     #[test]

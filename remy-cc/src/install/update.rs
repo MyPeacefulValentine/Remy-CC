@@ -17,7 +17,8 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use super::pending::PendingDeletes;
+use super::lock;
+use super::pending::{self, PendingDeletes};
 use super::settings;
 use super::storage;
 use super::{resolve_roots, InstallError};
@@ -193,10 +194,20 @@ pub(crate) fn run_update() -> ExitCode {
         }
     };
     let deployed = roots.remy_root.join(super::BIN_DIR).join(exe_name);
-    let pending = PendingDeletes::new(&roots.claude_root, &roots.remy_root);
-    if let Err(error) = swap_binary(&new_binary, &deployed, &pending) {
-        eprintln!("remy-cc update: {error}");
-        return ExitCode::from(1);
+    {
+        // Scope ends before the child install run, which takes the same lock.
+        let _lock = match lock::acquire(&roots.remy_root) {
+            Ok(lock) => lock,
+            Err(error) => {
+                eprintln!("remy-cc update: {error}");
+                return ExitCode::from(1);
+            }
+        };
+        let pending = PendingDeletes::new(&roots.claude_root, &roots.remy_root);
+        if let Err(error) = swap_binary(&new_binary, &deployed, &pending) {
+            eprintln!("remy-cc update: {error}");
+            return ExitCode::from(1);
+        }
     }
     println!("remy-cc update: binary replaced; running the new installer");
 
@@ -478,16 +489,13 @@ pub(crate) fn swap_binary(
         let _ = std::fs::set_permissions(&incoming, std::fs::Permissions::from_mode(0o755));
     }
     if deployed.exists() {
-        let aside = deployed.with_extension(format!("old-{}", std::process::id()));
+        let aside = pending::aside_path(deployed);
         std::fs::rename(deployed, &aside).map_err(|error| {
             let _ = std::fs::remove_file(&incoming);
             InstallError::runtime(format!("cannot move the running image aside: {error}"))
         })?;
-        if pending.register(std::slice::from_ref(&aside)).is_err() {
-            eprintln!(
-                "  [!] could not record {} for deferred deletion; remove it manually",
-                aside.display()
-            );
+        if let Some(warning) = pending.register_or_warn(&aside) {
+            eprintln!("  [!] {warning}");
         }
     }
     std::fs::rename(&incoming, deployed)
