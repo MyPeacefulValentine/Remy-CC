@@ -110,7 +110,7 @@ Stage 2: LLM 摘要生成（依赖 API，手动调用）
 
 ### 被动富化 Hook
 
-`remy-cc hook enrich` 是在 Read/Glob/Grep 操作时触发的 PreToolUse Hook 命令（由安装器注册；R4.3 删除了 python hook 脚本）。它直接查询 `logic_index.db` 中的目标文件——当 daemon 报告有待处理或进行中的扫描作业时前缀一行索引新鲜度提示——并输出：
+`remy-cc hook enrich` 是在 Read/Glob/Grep 操作时触发的 PreToolUse Hook 命令（由安装器注册；python hook 脚本已退役）。它直接查询 `logic_index.db` 中的目标文件——当 daemon 报告有待处理或进行中的扫描作业时前缀一行索引新鲜度提示——并输出：
 
 ```
 [Logic Context] services/auth.py (Service Layer)
@@ -336,4 +336,4 @@ LLM通道仅使用OpenAI兼容的Chat Completions协议。Anthropic将其OpenAI�
 编辑 `.claude/logic_index_config` 自定义层模式。删除不需要的行并添加自定义规则。未匹配的文件默认归入 "Core"。
 
 ### Q: Hook 富化信息未出现？
-确认`~/.claude/settings.json`包含matcher为`Read|Glob|Grep`的`hooks.PreToolUse`条目，指向受管理的`remy-cc hook enrich`命令（R4.3 起 `hook_mode=rust` 是唯一安装模式）。运行`remy-cc verify`校验记录模式和命令。
+确认`~/.claude/settings.json`包含matcher为`Read|Glob|Grep`的`hooks.PreToolUse`条目，指向受管理的`remy-cc hook enrich`命令（二进制 hook 客户端是唯一安装模式）。运行`remy-cc verify`校验安装。

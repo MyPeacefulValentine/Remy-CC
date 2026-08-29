@@ -52,7 +52,7 @@ The system is built on four coordinated layers:
 
 - **System prompts** (`CLAUDE.md`, `style.md`, output styles) define engineering principles, communication constraints, and prohibited behaviors. They form the static behavioral baseline, loaded at session start.
 - **Runtime hooks** fire automatically on Claude Code events — before every tool call, on every user message, and at session lifecycle boundaries. They re-inject behavioral rules to counteract instruction decay, normalize paths and shell environments, enrich file reads with caller/callee context from the logic index, and keep the project tree snapshot current. Hooks are the continuous enforcement layer: they run without user intervention.
-- **MCP server** (`remy-cc mcp`, Rust host since R4.1; the Python oracle lives at `remy-src/index_mcp_server.py` for development-time differential testing) is a stdio-based Model Context Protocol server launched automatically at session start. It exposes 13 code intelligence query tools (`query_symbol`, `query_symbol_summary`, `query_file_summary`, `query_callers`, `query_callees`, `query_impact`, `query_patterns`, `query_search`, `query_flow`, `query_cluster_summary`, `query_cluster_files`, `query_navigate`, `query_dependencies`), giving Claude direct access to the semantic code graph without subprocess overhead. The injection system uses the MCP Minimal view: a cluster overview plus MCP tool usage hints, with details queried on demand.
+- **MCP server** (`remy-cc mcp`, hosted by the Rust binary; the Python oracle lives at `remy-src/index_mcp_server.py` for development-time differential testing) is a stdio-based Model Context Protocol server launched automatically at session start. It exposes 13 code intelligence query tools (`query_symbol`, `query_symbol_summary`, `query_file_summary`, `query_callers`, `query_callees`, `query_impact`, `query_patterns`, `query_search`, `query_flow`, `query_cluster_summary`, `query_cluster_files`, `query_navigate`, `query_dependencies`), giving Claude direct access to the semantic code graph without subprocess overhead. The injection system uses the MCP Minimal view: a cluster overview plus MCP tool usage hints, with details queried on demand.
 - **Skills** are slash commands (`/remy-plan`, `/remy-patch`, `/remy-audit`, etc.) that you invoke manually to execute structured, multi-step development tasks. Each skill defines its own workflow with explicit inputs, outputs, and stop conditions.
 
 These layers are coupled by design. Hooks maintain the context that skills depend on — file tree, semantic code index, and session history are all updated automatically through lifecycle events. The MCP server and hooks share the SQLite database (`logic_index.db`) with WAL-mode concurrency. Skills produce artifacts (task packets, changelogs, audit reports) that hooks validate at tool-call time. For example, `/remy-plan` writes a task packet that constrains which files `/remy-patch` is allowed to edit, and `pre_tool_guard` enforces that boundary on every `Edit` call.
@@ -247,7 +247,7 @@ Uninstall accepts `--purge-state` to remove `~/.remy-cc/` engine state while pre
 
 ### Binary command surface
 
-Since v2.0.0 the `remy-cc` binary is the only installer (`install.py` retired with R4.4 segment 3); the bootstrap scripts download the release asset, enforce its sha256 checksum, and hand over to it:
+Since v2.0.0 the `remy-cc` binary is the only installer (`install.py` is retired); the bootstrap scripts download the release asset, enforce its sha256 checksum, and hand over to it:
 
 | Binary command | Description |
 | :--- | :--- |
@@ -270,7 +270,7 @@ After installation, the `remy-cc` command is available system-wide:
 | `remy-cc scan --root <dir> --db <path> [...]` | Scan a source tree into a logic index database |
 | `remy-cc -V` | Print the binary version |
 
-The rust scanner is the sole production provider (R4.3). At daemon start, a state database without a published rust row — fresh, or carrying a historical python row — triggers a two-level probe (version handshake plus an embedded micro-corpus scan); only a validated binary is published, and an actual publication schedules one background full rescan per registered project. Validation failure publishes nothing and surfaces a diagnostic in `remy-cc status --json`.
+The rust scanner is the sole production provider. At daemon start, a state database without a published rust row — fresh, or carrying a historical python row — triggers a two-level probe (version handshake plus an embedded micro-corpus scan); only a validated binary is published, and an actual publication schedules one background full rescan per registered project. Validation failure publishes nothing and surfaces a diagnostic in `remy-cc status --json`.
 
 The settings editor manages Python runtime Remy parameters only. Claude Code credentials and skill-protocol settings remain in Claude's settings. Project settings inherit user values and can override individual non-secret fields.
 
