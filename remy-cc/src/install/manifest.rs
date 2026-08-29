@@ -25,7 +25,9 @@ pub(crate) const ROOT_REMY: &str = "remy";
 /// `<remy root>/install/manifest.json` — shared with the v3 arm; the schema
 /// version inside the document decides how it is read.
 pub(crate) fn manifest_path(remy_root: &Path) -> PathBuf {
-    remy_root.join("install").join("manifest.json")
+    remy_root
+        .join(super::INSTALL_STATE_DIR)
+        .join("manifest.json")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -18,21 +18,35 @@ pub(crate) mod storage;
 pub(crate) mod update;
 pub(crate) mod util;
 
+/// Directory segment holding the deployed binary under the remy root.
+pub(crate) const BIN_DIR: &str = "bin";
+
+/// Directory segment holding installer state (manifest, lock, pending
+/// deletes) under the remy root.
+pub(crate) const INSTALL_STATE_DIR: &str = "install";
+
+/// Template placeholder prefixes expanded against the resolved roots.
+pub(crate) const CLAUDE_HOME_PLACEHOLDER: &str = "~/.claude/";
+pub(crate) const REMY_HOME_PLACEHOLDER: &str = "~/.remy-cc/";
+
 /// Managed roots: `CLAUDE_CONFIG_DIR` / `REMY_CC_HOME` override the
 /// defaults under the user home (`HOME`, then `USERPROFILE`).
 #[derive(Debug, Clone)]
 pub(crate) struct Roots {
-    pub(crate) claude: PathBuf,
-    pub(crate) remy: PathBuf,
+    pub(crate) claude_root: PathBuf,
+    pub(crate) remy_root: PathBuf,
 }
 
 pub(crate) fn resolve_roots() -> Result<Roots, String> {
-    let remy = crate::remy_home()?;
-    let claude = match std::env::var_os("CLAUDE_CONFIG_DIR") {
+    let remy_root = crate::remy_home()?;
+    let claude_root = match std::env::var_os("CLAUDE_CONFIG_DIR") {
         Some(value) if !value.is_empty() => PathBuf::from(value),
         _ => user_home()?.join(".claude"),
     };
-    Ok(Roots { claude, remy })
+    Ok(Roots {
+        claude_root,
+        remy_root,
+    })
 }
 
 /// `remy-cc verify` entry.
@@ -44,7 +58,7 @@ pub(crate) fn run_verify() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let warnings = ops::verify(&roots.claude, &roots.remy);
+    let warnings = ops::verify(&roots.claude_root, &roots.remy_root);
     if warnings.is_empty() {
         println!("remy-cc verify: passed");
         ExitCode::SUCCESS
@@ -81,7 +95,7 @@ pub(crate) fn run_uninstall(purge_state: bool, yes: bool) -> ExitCode {
             return ExitCode::SUCCESS;
         }
     }
-    match ops::uninstall(&roots.claude, &roots.remy, purge_state) {
+    match ops::uninstall(&roots.claude_root, &roots.remy_root, purge_state) {
         Ok(report) => {
             println!(
                 "remy-cc uninstall: completed ({} file(s) removed)",
@@ -108,7 +122,7 @@ fn user_home() -> Result<PathBuf, String> {
 
 /// `remy-cc install` entry: interactive resolution, the core operation, and
 /// the post-install PATH/config surfaces.
-pub(crate) fn run_install(lang: Option<String>, non_interactive: bool) -> ExitCode {
+pub(crate) fn run_install(language: Option<String>, non_interactive: bool) -> ExitCode {
     let roots = match resolve_roots() {
         Ok(roots) => roots,
         Err(message) => {
@@ -116,7 +130,8 @@ pub(crate) fn run_install(lang: Option<String>, non_interactive: bool) -> ExitCo
             return ExitCode::from(2);
         }
     };
-    let language = interact::resolve_language(lang.as_deref(), non_interactive, &roots.claude);
+    let language =
+        interact::resolve_language(language.as_deref(), non_interactive, &roots.claude_root);
     let source_binary = match std::env::current_exe() {
         Ok(path) => path,
         Err(error) => {
@@ -125,8 +140,8 @@ pub(crate) fn run_install(lang: Option<String>, non_interactive: bool) -> ExitCo
         }
     };
     let params = ops::InstallParams {
-        claude_root: roots.claude.clone(),
-        remy_root: roots.remy.clone(),
+        claude_root: roots.claude_root.clone(),
+        remy_root: roots.remy_root.clone(),
         language: language.clone(),
         suite_version: env!("CARGO_PKG_VERSION").to_string(),
         source_binary,
@@ -142,7 +157,7 @@ pub(crate) fn run_install(lang: Option<String>, non_interactive: bool) -> ExitCo
             for warning in &report.warnings {
                 println!("  [!] {warning}");
             }
-            interact::register_path(&roots.remy.join("bin"), non_interactive);
+            interact::register_path(&roots.remy_root.join(BIN_DIR), non_interactive);
             interact::print_config_guidance(&language);
             if report.post_commit_failed {
                 eprintln!("remy-cc install: committed but post-install configuration failed");

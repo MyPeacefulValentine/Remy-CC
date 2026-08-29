@@ -70,13 +70,13 @@ pub(crate) fn existing_config_lang(claude_root: &Path) -> String {
 
 /// Persists `REMY_LANG` into the deployed remy-config.json, preserving other
 /// values; a missing or corrupt document is replaced with a fresh one.
-pub(crate) fn save_language(claude_root: &Path, lang: &str) -> std::io::Result<()> {
+pub(crate) fn save_language(claude_root: &Path, language: &str) -> std::io::Result<()> {
     let path = claude_root.join("remy-config.json");
     let mut document = storage::load_json(&path)
         .ok()
         .filter(|value| value.get("values").is_some_and(Value::is_object))
         .unwrap_or_else(|| serde_json::json!({"schema_version": "1.0.0", "values": {}}));
-    document["values"]["REMY_LANG"] = Value::String(lang.to_string());
+    document["values"]["REMY_LANG"] = Value::String(language.to_string());
     storage::atomic_write_json(&path, &document)
 }
 
@@ -123,6 +123,11 @@ fn normalize_path_entry(entry: &str) -> String {
     }
 }
 
+/// `setx` truncates values beyond this length; longer PATHs are left to
+/// manual registration.
+#[cfg(windows)]
+const SETX_MAX_VALUE_LENGTH: usize = 1024;
+
 #[cfg(windows)]
 fn register_path_platform(bin_text: &str) {
     use std::process::Command;
@@ -146,7 +151,7 @@ fn register_path_platform(bin_text: &str) {
     } else {
         format!("{current};{bin_text}")
     };
-    if new_path.len() > 1024 {
+    if new_path.len() > SETX_MAX_VALUE_LENGTH {
         println!("  [!] User PATH is too long for setx; add {bin_text} manually.");
         return;
     }
@@ -216,8 +221,8 @@ fn register_path_platform(bin_text: &str) {
 
 /// Post-install pointer: interactive API configuration is owned by
 /// `remy-cc config` (single configuration owner).
-pub(crate) fn print_config_guidance(lang: &str) {
-    if lang == "zh-CN" {
+pub(crate) fn print_config_guidance(language: &str) {
+    if language == "zh-CN" {
         println!("  [i] 运行 remy-cc config 配置 LLM API（摘要与导航功能需要）。");
     } else {
         println!("  [i] Run `remy-cc config` to configure the LLM API (used by summaries and navigation).");

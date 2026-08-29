@@ -18,7 +18,9 @@ use super::storage;
 pub(crate) const PENDING_SCHEMA_VERSION: u64 = 1;
 
 pub(crate) fn pending_deletes_path(remy_root: &Path) -> PathBuf {
-    remy_root.join("install").join("pending_deletes.json")
+    remy_root
+        .join(super::INSTALL_STATE_DIR)
+        .join("pending_deletes.json")
 }
 
 pub(crate) struct PendingDeletes {

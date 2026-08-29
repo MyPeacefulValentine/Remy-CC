@@ -11,7 +11,7 @@ use super::InstallError;
 pub(crate) const LOCK_FILE: &str = "install.lock";
 
 pub(crate) fn install_lock_path(remy_root: &Path) -> PathBuf {
-    remy_root.join("install").join(LOCK_FILE)
+    remy_root.join(super::INSTALL_STATE_DIR).join(LOCK_FILE)
 }
 
 /// Held for the duration of an install-family operation; dropping releases.

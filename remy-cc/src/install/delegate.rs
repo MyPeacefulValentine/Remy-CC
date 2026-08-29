@@ -21,7 +21,7 @@ pub(crate) fn run_delegated(subcommand: &str, args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let cli = roots.claude.join("remy-src").join("cli.py");
+    let cli = roots.claude_root.join("remy-src").join("cli.py");
     if !cli.is_file() {
         eprintln!(
             "remy-cc {subcommand}: deployed Python CLI is missing at {}; run remy-cc install first",
@@ -29,7 +29,7 @@ pub(crate) fn run_delegated(subcommand: &str, args: &[String]) -> ExitCode {
         );
         return ExitCode::from(2);
     }
-    let Some(python) = resolve_python(&roots.remy) else {
+    let Some(python) = resolve_python(&roots.remy_root) else {
         eprintln!(
             "remy-cc {subcommand}: no usable Python interpreter found; Python 3.10+ is a runtime prerequisite for the configuration and summary commands"
         );

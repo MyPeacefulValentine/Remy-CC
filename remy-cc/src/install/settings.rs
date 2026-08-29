@@ -132,7 +132,9 @@ pub(crate) fn quote_command_arg(value: &str) -> Result<String, InstallError> {
 /// `<remy_root>/bin/remy-cc[.exe]` (extension by path shape, matching the
 /// Python `_is_windows_path` rule so tests behave identically per platform).
 pub(crate) fn hook_commands(remy_root: &Path) -> Result<HookCommands, InstallError> {
-    let executable = remy_root.join("bin").join(managed_exe_name(remy_root));
+    let executable = remy_root
+        .join(super::BIN_DIR)
+        .join(managed_exe_name(remy_root));
     let prefix = quote_command_arg(&executable.to_string_lossy())?;
     Ok(HookCommands {
         enrich: format!("{prefix} hook enrich"),
@@ -463,7 +465,7 @@ fn render_template(template: &Value, claude_root: &Path, commands: &HookCommands
                     let command = command
                         .replace(ENRICH_PLACEHOLDER, &commands.enrich)
                         .replace(DIRTY_PLACEHOLDER, &commands.dirty)
-                        .replace("~/.claude/", &claude_prefix);
+                        .replace(super::CLAUDE_HOME_PLACEHOLDER, &claude_prefix);
                     hook.insert("command".to_string(), Value::String(command));
                 }
             }
@@ -549,14 +551,20 @@ fn is_legacy_default(command: &str, claude_root: &Path, script_name: &str) -> bo
         .join(script_name)
         .to_string_lossy()
         .replace('\\', "/");
-    normalized == format!("python \"~/.claude/hooks/{script_name}\"")
+    normalized
+        == format!(
+            "python \"{}hooks/{script_name}\"",
+            super::CLAUDE_HOME_PLACEHOLDER
+        )
         || normalized == format!("python \"{absolute}\"")
 }
 
 /// Clears the pre-rename managed defaults (`"<remy>/bin/remy-daemon[.exe]"
 /// hook enrich|dirty`) the same way the python-script defaults are cleared.
 fn is_legacy_daemon_default(command: &str, remy_root: &Path) -> bool {
-    let executable = remy_root.join("bin").join(legacy_exe_name(remy_root));
+    let executable = remy_root
+        .join(super::BIN_DIR)
+        .join(legacy_exe_name(remy_root));
     let Ok(prefix) = quote_command_arg(&executable.to_string_lossy()) else {
         return false;
     };

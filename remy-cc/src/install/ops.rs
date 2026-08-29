@@ -27,6 +27,12 @@ use super::InstallError;
 
 pub(crate) const LEGACY_MANIFEST_NAME: &str = ".installer_manifest.json";
 
+const SETTINGS_FILE_NAME: &str = "settings.json";
+
+/// `patch_descriptions` scans this many leading SKILL.md lines for the
+/// `description:` line (the `patch_descriptions.py` contract).
+const DESCRIPTION_SCAN_LINES: usize = 8;
+
 pub(crate) struct InstallParams {
     pub(crate) claude_root: PathBuf,
     pub(crate) remy_root: PathBuf,
@@ -151,7 +157,7 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
         }
     }
 
-    let settings_path = params.claude_root.join("settings.json");
+    let settings_path = params.claude_root.join(SETTINGS_FILE_NAME);
     let existing_settings = load_settings(&settings_path)?;
     let template: Value = serde_json::from_str(embedded::SETTINGS_TEMPLATE)
         .map_err(|_| InstallError::metadata("settings template is invalid"))?;
@@ -255,7 +261,7 @@ pub(crate) fn verify(claude_root: &Path, remy_root: &Path) -> Vec<String> {
                 Err(_) => warnings.push(format!("an owned file is missing: {}", record.path)),
             }
         }
-        match load_settings(&claude_root.join("settings.json")) {
+        match load_settings(&claude_root.join(SETTINGS_FILE_NAME)) {
             Ok(settings_doc) => {
                 if let Err(error) =
                     settings::verify_settings_claim(&settings_doc, &manifest.settings_claim)
@@ -378,7 +384,7 @@ pub(crate) fn uninstall(
             let _ = fs::remove_dir(directory);
         }
 
-        let settings_path = claude_root.join("settings.json");
+        let settings_path = claude_root.join(SETTINGS_FILE_NAME);
         if settings_path.is_file() {
             match load_settings(&settings_path) {
                 Ok(settings_doc) => {
@@ -447,8 +453,8 @@ fn plan_claude_contents(language: &str) -> Result<Vec<PlannedFile>, InstallError
 }
 
 /// Port of `patch_descriptions.py::patch`: replace the `description:` line
-/// within the first eight lines of each skill's SKILL.md with the selected
-/// language's text (falling back to English).
+/// within the first `DESCRIPTION_SCAN_LINES` lines of each skill's SKILL.md
+/// with the selected language's text (falling back to English).
 fn patch_descriptions(
     contents: &mut [(String, Vec<u8>)],
     language: &str,
@@ -488,7 +494,7 @@ fn patch_descriptions(
         };
         let mut lines: Vec<&str> = text.split_inclusive('\n').collect();
         let mut replaced: Option<(usize, String)> = None;
-        for (index, line) in lines.iter().take(8).enumerate() {
+        for (index, line) in lines.iter().take(DESCRIPTION_SCAN_LINES).enumerate() {
             if let Some(rest) = line.strip_prefix("description:") {
                 if rest.starts_with(' ')
                     || rest.trim_end_matches(['\r', '\n']).is_empty()
@@ -522,7 +528,7 @@ fn plan_binary(params: &InstallParams, exe_name: &str) -> Result<PlannedFile, In
     let digest = storage::sha256_file(&params.source_binary).map_err(io_error)?;
     Ok(PlannedFile {
         root: manifest::ROOT_REMY,
-        path: format!("bin/{exe_name}"),
+        path: format!("{}/{exe_name}", super::BIN_DIR),
         digest,
         payload: Payload::File(params.source_binary.clone()),
         role: "daemon_binary",
@@ -701,7 +707,10 @@ fn post_commit(params: &InstallParams, pending: &PendingDeletes, report: &mut In
     if legacy.is_file() {
         remove_or_defer(&legacy, pending, &mut report.warnings);
     }
-    let v3_transaction = params.remy_root.join("install").join("transaction.json");
+    let v3_transaction = params
+        .remy_root
+        .join(super::INSTALL_STATE_DIR)
+        .join("transaction.json");
     if v3_transaction.is_file() {
         remove_or_defer(&v3_transaction, pending, &mut report.warnings);
     }
@@ -727,16 +736,22 @@ pub(crate) fn register_mcp(claude_root: &Path, remy_root: &Path) -> Result<(), I
     let claude_prefix = claude_root.to_string_lossy().replace('\\', "/");
     let remy_prefix = remy_root.to_string_lossy().replace('\\', "/");
     let daemon_command = format!(
-        "{remy_prefix}/bin/{}",
+        "{remy_prefix}/{}/{}",
+        super::BIN_DIR,
         settings::managed_exe_name(remy_root)
     );
+    let daemon_placeholder = format!(
+        "{}{}/remy-cc",
+        super::REMY_HOME_PLACEHOLDER,
+        super::BIN_DIR
+    );
     let expand = |value: &str| -> String {
-        if value == "~/.remy-cc/bin/remy-cc" {
+        if value == daemon_placeholder {
             daemon_command.clone()
-        } else if value.contains("~/.claude/") {
-            value.replace("~/.claude/", &format!("{claude_prefix}/"))
-        } else if value.contains("~/.remy-cc/") {
-            value.replace("~/.remy-cc/", &format!("{remy_prefix}/"))
+        } else if value.contains(super::CLAUDE_HOME_PLACEHOLDER) {
+            value.replace(super::CLAUDE_HOME_PLACEHOLDER, &format!("{claude_prefix}/"))
+        } else if value.contains(super::REMY_HOME_PLACEHOLDER) {
+            value.replace(super::REMY_HOME_PLACEHOLDER, &format!("{remy_prefix}/"))
         } else {
             value.to_string()
         }
@@ -934,7 +949,7 @@ mod tests {
         .expect("skill md");
         let description_line = skill_md
             .lines()
-            .take(8)
+            .take(DESCRIPTION_SCAN_LINES)
             .find(|line| line.starts_with("description:"))
             .expect("description line");
         assert_eq!(description_line, format!("description: {expected}"));

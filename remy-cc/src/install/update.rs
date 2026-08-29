@@ -64,7 +64,7 @@ pub(crate) fn run_update() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let timeout = update_timeout(&roots.claude);
+    let timeout = update_timeout(&roots.claude_root);
 
     let release = match latest_release(timeout) {
         Ok(release) => release,
@@ -159,7 +159,7 @@ pub(crate) fn run_update() -> ExitCode {
     }
     verify_attestation(&archive_path);
 
-    let exe_name = settings::managed_exe_name(&roots.remy);
+    let exe_name = settings::managed_exe_name(&roots.remy_root);
     let new_binary = match extract_binary(&archive_path, exe_name, staging.path()) {
         Ok(path) => path,
         Err(message) => {
@@ -183,7 +183,7 @@ pub(crate) fn run_update() -> ExitCode {
         }
     }
 
-    let daemon_was_running = match crate::single_instance::is_held(&roots.remy.join("run")) {
+    let daemon_was_running = match crate::single_instance::is_held(&roots.remy_root.join("run")) {
         Ok(held) => held,
         Err(error) => {
             println!(
@@ -192,8 +192,8 @@ pub(crate) fn run_update() -> ExitCode {
             false
         }
     };
-    let deployed = roots.remy.join("bin").join(exe_name);
-    let pending = PendingDeletes::new(&roots.claude, &roots.remy);
+    let deployed = roots.remy_root.join(super::BIN_DIR).join(exe_name);
+    let pending = PendingDeletes::new(&roots.claude_root, &roots.remy_root);
     if let Err(error) = swap_binary(&new_binary, &deployed, &pending) {
         eprintln!("remy-cc update: {error}");
         return ExitCode::from(1);
