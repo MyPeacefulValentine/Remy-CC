@@ -56,7 +56,6 @@ struct PlannedFile {
     digest: String,
     role: &'static str,
     executable: bool,
-    write: bool,
 }
 
 pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallError> {
@@ -87,7 +86,6 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
                 payload: Payload::Bytes(bytes),
                 role: "runtime_descriptor",
                 executable: false,
-                write: true,
             });
         }
         Err(error) => {
@@ -108,7 +106,8 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
         })
         .unwrap_or_default();
 
-    for file in &mut planned {
+    let mut writes: Vec<bool> = Vec::with_capacity(planned.len());
+    for file in &planned {
         let target = root_dir(params, file.root).join(&file.path);
         let disk = if target.is_file() {
             Some(storage::sha256_file(&target).map_err(io_error)?)
@@ -116,7 +115,7 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
             None
         };
         let old = old_records.remove(&(file.root.to_string(), file.path.clone()));
-        file.write = match (&disk, &old) {
+        writes.push(match (&disk, &old) {
             (None, _) => true,
             (Some(disk), _) if *disk == file.digest => false,
             (Some(disk), Some(old)) if *disk == old.sha256 => true,
@@ -130,10 +129,10 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
                     "an unmanaged target has different content",
                 ))
             }
-        };
+        });
     }
 
-    let mut obsolete: Vec<(PathBuf, FileRecord)> = Vec::new();
+    let mut obsolete: Vec<PathBuf> = Vec::new();
     for ((root, path), record) in old_records {
         let target = root_dir(params, &root).join(&path);
         let disk = if target.is_file() {
@@ -143,7 +142,7 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
         };
         match disk {
             None => {}
-            Some(disk) if disk == record.sha256 => obsolete.push((target, record)),
+            Some(disk) if disk == record.sha256 => obsolete.push(target),
             Some(_) => {
                 return Err(InstallError::runtime(
                     "an obsolete managed target was modified",
@@ -171,8 +170,8 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
         || storage::sha256_file(&settings_path).map_err(io_error)?
             != storage::sha256_hex(&settings_bytes);
 
-    for file in &planned {
-        if !file.write {
+    for (file, write) in planned.iter().zip(&writes) {
+        if !*write {
             continue;
         }
         let target = root_dir(params, file.root).join(&file.path);
@@ -191,7 +190,7 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
         report.changed.push("claude/settings.json".to_string());
     }
 
-    for (target, _record) in &obsolete {
+    for target in &obsolete {
         remove_or_defer(target, &pending, &mut report.warnings);
     }
 
@@ -452,7 +451,6 @@ fn plan_claude_contents(language: &str) -> Result<Vec<PlannedFile>, InstallError
             payload: Payload::Bytes(bytes),
             path,
             executable: false,
-            write: true,
         })
         .collect())
 }
@@ -538,7 +536,6 @@ fn plan_binary(params: &InstallParams, exe_name: &str) -> Result<PlannedFile, In
         payload: Payload::File(params.source_binary.clone()),
         role: "daemon_binary",
         executable: true,
-        write: true,
     })
 }
 

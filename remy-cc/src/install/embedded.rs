@@ -12,9 +12,6 @@ use flate2::read::GzDecoder;
 /// Gzip tar archive of every deployable file, path-relative to `~/.claude/`.
 pub(crate) const ARCHIVE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/cc_artifacts.tar.gz"));
 
-/// Newline-separated archive entry names, in archive order.
-pub(crate) const ENTRY_LIST: &str = include_str!(concat!(env!("OUT_DIR"), "/cc_artifacts.list"));
-
 /// Install input: settings.json merge template (repo `settings.example.json`).
 pub(crate) const SETTINGS_TEMPLATE: &str =
     include_str!(concat!(env!("OUT_DIR"), "/settings.example.json"));
@@ -24,10 +21,6 @@ pub(crate) const MCP_TEMPLATE: &str = include_str!(concat!(env!("OUT_DIR"), "/re
 
 /// Path of the per-skill description translations inside the archive.
 pub(crate) const SKILL_DESCRIPTIONS_ENTRY: &str = "skills/skill_descriptions.json";
-
-pub(crate) fn entry_names() -> Vec<&'static str> {
-    ENTRY_LIST.lines().filter(|line| !line.is_empty()).collect()
-}
 
 /// Streams every archive entry as `(relative_path, bytes)`.
 pub(crate) fn for_each_entry(
@@ -45,6 +38,7 @@ pub(crate) fn for_each_entry(
 }
 
 /// Returns one entry's bytes, or `None` when the path is not in the archive.
+#[cfg(test)]
 pub(crate) fn entry_bytes(name: &str) -> io::Result<Option<Vec<u8>>> {
     let mut found = None;
     for_each_entry(|path, data| {
@@ -61,6 +55,13 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
     use std::path::{Path, PathBuf};
+
+    /// Newline-separated archive entry names, in archive order.
+    const ENTRY_LIST: &str = include_str!(concat!(env!("OUT_DIR"), "/cc_artifacts.list"));
+
+    fn entry_names() -> Vec<&'static str> {
+        ENTRY_LIST.lines().filter(|line| !line.is_empty()).collect()
+    }
 
     fn archive_names() -> BTreeSet<String> {
         let mut names = BTreeSet::new();

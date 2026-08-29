@@ -1,6 +1,5 @@
 //! Self-install subsystem: embedded Claude Code artifacts plus the
 //! install/update/verify/uninstall machinery built on top of them.
-#![allow(dead_code)]
 
 use std::fmt;
 use std::path::PathBuf;
@@ -163,32 +162,24 @@ pub(crate) fn run_install(lang: Option<String>, non_interactive: bool) -> ExitCo
     }
 }
 
-/// Error taxonomy inherited from the retired v3 installer: `Metadata` means
-/// managed metadata lacks required structure, `Runtime` means a precondition
-/// or ownership check failed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ErrorKind {
-    Metadata,
-    Runtime,
-}
-
+/// Error taxonomy inherited from the retired v3 installer: `metadata` means
+/// managed metadata lacks required structure, `runtime` means a precondition
+/// or ownership check failed. The constructors keep that classification in
+/// the source; the error itself carries only the message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct InstallError {
-    pub(crate) kind: ErrorKind,
     pub(crate) message: String,
 }
 
 impl InstallError {
     pub(crate) fn metadata(message: impl Into<String>) -> Self {
         Self {
-            kind: ErrorKind::Metadata,
             message: message.into(),
         }
     }
 
     pub(crate) fn runtime(message: impl Into<String>) -> Self {
         Self {
-            kind: ErrorKind::Runtime,
             message: message.into(),
         }
     }

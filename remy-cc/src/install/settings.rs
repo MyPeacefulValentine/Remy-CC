@@ -27,10 +27,6 @@ const TARGET_HOOKS: &[(&str, &str, &str)] = &[
     ("PostToolUse", "Edit|Write", "logic_dirty_tracker.py"),
 ];
 
-/// The pre-rename managed executable name whose default commands are now
-/// cleared as legacy.
-const LEGACY_DAEMON_STEM: &str = "remy-daemon";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HookCommands {
     pub(crate) enrich: String,
@@ -333,15 +329,6 @@ pub(crate) fn merge_settings_document(
     Ok((result, claim))
 }
 
-pub(crate) fn remove_settings_claim(
-    existing: &Value,
-    claim: &SettingsClaim,
-) -> Result<Value, InstallError> {
-    verify_settings_claim(existing, claim)?;
-    remove_settings_claim_inner(existing, claim)
-        .ok_or_else(|| InstallError::metadata("settings.json must be an object"))
-}
-
 /// Claim removal without the presence verification: removes whatever claimed
 /// entries still exist and leaves everything else alone. Used by uninstall,
 /// whose forward-recovery rerun may find entries already gone (the v3 arm
@@ -617,9 +604,12 @@ fn string_view(value: Option<&Value>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::install::ErrorKind;
     use serde_json::json;
     use std::path::PathBuf;
+
+    /// The pre-rename managed executable name whose default commands are
+    /// cleared as legacy.
+    const LEGACY_DAEMON_STEM: &str = "remy-daemon";
 
     fn roots() -> (PathBuf, PathBuf) {
         if cfg!(windows) {
@@ -759,7 +749,6 @@ mod tests {
             Value::String(format!("{command} --user-change"));
         let error = verify_settings_claim(&first, &claim).expect_err("modified");
         assert_eq!(error.message, "a managed settings Hook was modified");
-        assert_eq!(error.kind, ErrorKind::Runtime);
     }
 
     #[test]
@@ -767,7 +756,6 @@ mod tests {
         let claim = SettingsClaim::default();
         let error = verify_settings_claim(&json!({"hooks": []}), &claim).expect_err("invalid");
         assert_eq!(error.message, "settings hooks must be an object");
-        assert_eq!(error.kind, ErrorKind::Metadata);
         let (claude, remy) = roots();
         let commands = hook_commands(&remy).expect("commands");
         let error = merge_settings_document(
@@ -873,7 +861,7 @@ mod tests {
             "permissions": {"allow": ["Skill(user-skill)"]},
         });
         let (merged, claim) = merge(existing, None);
-        let cleaned = remove_settings_claim(&merged, &claim).expect("remove");
+        let cleaned = remove_settings_claim_lenient(&merged, &claim);
         let commands = all_commands(&cleaned);
         assert_eq!(commands, vec!["python user_hook.py".to_string()]);
         let allow = cleaned["permissions"]["allow"].as_array().expect("allow");
@@ -884,7 +872,7 @@ mod tests {
     #[test]
     fn remove_claim_drops_empty_sections_entirely() {
         let (merged, claim) = merge(json!({}), None);
-        let cleaned = remove_settings_claim(&merged, &claim).expect("remove");
+        let cleaned = remove_settings_claim_lenient(&merged, &claim);
         assert!(cleaned.get("hooks").is_none());
         assert!(cleaned.get("permissions").is_none());
     }
@@ -895,7 +883,7 @@ mod tests {
             hooks: Vec::new(),
             permissions: Vec::new(),
         };
-        let cleaned = remove_settings_claim(&json!({"env": {}}), &claim).expect("remove");
+        let cleaned = remove_settings_claim_lenient(&json!({"env": {}}), &claim);
         assert_eq!(cleaned, json!({"env": {}}));
     }
 
