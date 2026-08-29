@@ -170,7 +170,7 @@ pub(crate) fn run_update() -> ExitCode {
     match Command::new(&new_binary).arg("--version").output() {
         Ok(output) if output.status.success() => {
             let banner = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !banner.contains(&tag_version) {
+            if !banner_matches_version(&banner, &tag_version) {
                 eprintln!(
                     "remy-cc update: downloaded binary reports \"{banner}\", expected version {tag_version}"
                 );
@@ -315,6 +315,15 @@ pub(crate) fn parse_version_triple(text: &str) -> Option<(u64, u64, u64)> {
     let minor = parts.next()?.parse().ok()?;
     let patch = parts.next()?.parse().ok()?;
     parts.next().is_none().then_some((major, minor, patch))
+}
+
+/// A `--version` banner passes when some whitespace token equals the tag
+/// version exactly (a leading `v` on the token is tolerated). Substring
+/// matching would accept collisions such as `12.0.01` for `2.0.0`.
+pub(crate) fn banner_matches_version(banner: &str, tag_version: &str) -> bool {
+    banner
+        .split_whitespace()
+        .any(|token| token.trim_start_matches('v') == tag_version)
 }
 
 /// First whitespace-delimited token must be a 64-digit lowercase hex digest
@@ -501,6 +510,16 @@ mod tests {
         assert_eq!(parse_sha256_file("<html>not found</html>"), None);
         assert_eq!(parse_sha256_file(""), None);
         assert_eq!(parse_sha256_file("abc123"), None);
+    }
+
+    #[test]
+    fn banner_matching_requires_an_exact_version_token() {
+        assert!(banner_matches_version("remy-cc 2.0.0", "2.0.0"));
+        assert!(banner_matches_version("remy-cc v2.0.0", "2.0.0"));
+        assert!(banner_matches_version("2.0.0", "2.0.0"));
+        assert!(!banner_matches_version("remy-cc 12.0.01", "2.0.0"));
+        assert!(!banner_matches_version("remy-cc 2.0.0-beta.1", "2.0.0"));
+        assert!(!banner_matches_version("", "2.0.0"));
     }
 
     #[test]
