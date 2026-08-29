@@ -1,30 +1,34 @@
 #!/usr/bin/env python3
+"""Delegated Python CLI: configuration UI and summary maintenance.
+
+The remy-cc binary owns the full command surface and spawns this module
+for the config and summary families only (H.5 disposition: the summary
+runtime and config UI stay Python-owned).
+"""
 import argparse
 import json
 import os
-import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import remy_config
-from install_runtime import InstallRuntime, InstallRuntimeError, OperationResult, roots_from_environment
-from install_runtime.facade import result_for_error
 
 
-def get_claude_home():
-    return roots_from_environment().claude
-
-
-def get_version():
-    runtime = InstallRuntime(roots_from_environment())
+def _user_home() -> Path:
     try:
-        manifest = runtime.load_manifest()
-    except InstallRuntimeError:
-        return "unknown"
-    return str(manifest.get("suite_version", "unknown")) if manifest else "unknown"
+        return Path.home()
+    except RuntimeError:
+        value = os.environ.get("HOME") or os.environ.get("USERPROFILE")
+        if not value:
+            print("Cannot determine home directory. Set $HOME and retry.", file=sys.stderr)
+            raise SystemExit(1)
+        return Path(value)
+
+
+def get_claude_home() -> Path:
+    value = os.environ.get("CLAUDE_CONFIG_DIR")
+    return Path(value) if value else _user_home() / ".claude"
 
 
 def _load_config_ui():
@@ -42,18 +46,6 @@ def _load_config_ui():
     return mod
 
 
-def cmd_ui(_args):
-    _load_config_ui().main()
-
-
-def cmd_project(args):
-    project_dir = Path(args.path).resolve()
-    if not project_dir.is_dir():
-        print("Error: directory not found: " + str(project_dir), file=sys.stderr)
-        sys.exit(1)
-    _load_config_ui().main(mode="project", target_path=str(project_dir))
-
-
 def cmd_config(args):
     if args.path:
         project_dir = Path(args.path).resolve()
@@ -63,65 +55,6 @@ def cmd_config(args):
         _load_config_ui().main(mode="project", target_path=str(project_dir))
     else:
         _load_config_ui().main()
-
-
-def _emit_runtime_result(result, json_mode=False):
-    if json_mode:
-        print(json.dumps(result.to_dict(), ensure_ascii=False, sort_keys=True))
-    else:
-        for warning in result.warnings:
-            print("  [X] " + warning)
-        if result.exit_code == 0:
-            print("Verification passed." if result.operation == "verify" else "Operation completed.")
-    if result.exit_code:
-        raise SystemExit(result.exit_code)
-
-
-def cmd_verify_runtime(args):
-    runtime = InstallRuntime(roots_from_environment())
-    result = runtime.verify_environment()
-    _emit_runtime_result(result, bool(getattr(args, "json", False)))
-
-
-def cmd_uninstall_runtime(args):
-    if not getattr(args, "yes", False) and not getattr(args, "non_interactive", False) and not getattr(args, "json", False):
-        try:
-            answer = input(_um("confirm")).strip().lower()
-        except EOFError:
-            answer = ""
-        if answer != "y":
-            print(_um("aborted"))
-            return
-    runtime = InstallRuntime(roots_from_environment())
-    try:
-        result = runtime.uninstall(purge_state=bool(getattr(args, "purge_state", False)))
-    except InstallRuntimeError as exc:
-        result = result_for_error("uninstall", exc)
-    _emit_runtime_result(result, bool(getattr(args, "json", False)))
-
-
-def cmd_version(_args):
-    print("Remy v{}".format(get_version()))
-
-
-def _remy_cc_home():
-    try:
-        return roots_from_environment().remy
-    except InstallRuntimeError:
-        print("Cannot determine home directory. Set $HOME and retry.", file=sys.stderr)
-        raise SystemExit(1)
-
-
-def cmd_daemon(args):
-    exe_name = "remy-cc.exe" if sys.platform == "win32" else "remy-cc"
-    exe = _remy_cc_home() / "bin" / exe_name
-    if not exe.exists():
-        print("Error: remy-cc binary not found at {}".format(exe), file=sys.stderr)
-        print("Build it with: cargo build --release --manifest-path <repo>/remy-cc/Cargo.toml", file=sys.stderr)
-        print("Then copy target/release/{} to {}".format(exe_name, exe.parent), file=sys.stderr)
-        sys.exit(1)
-    result = subprocess.run([str(exe)] + list(args.daemon_args))
-    sys.exit(result.returncode)
 
 
 def _load_summary_modules():
@@ -300,126 +233,8 @@ def cmd_summary_audit(args):
         db.close()
 
 
-REPO_URL = "https://github.com/MyPeacefulValentine/Remy-CC.git"
-BRANCH = "main"
-VERSION_RAW_URL = "https://raw.githubusercontent.com/MyPeacefulValentine/Remy-CC/{}/VERSION".format(BRANCH)
-
-
-def _fetch_remote_version():
-    import urllib.error
-    import urllib.request
-    try:
-        req = urllib.request.Request(VERSION_RAW_URL, headers={"User-Agent": "remy-cc"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            raw = resp.read().decode("utf-8", errors="ignore").strip()
-            if not raw or len(raw) > 20 or "<" in raw:
-                return None
-            return raw
-    except (OSError, urllib.error.URLError):
-        return None
-
-
-def cmd_update(args):
-    json_mode = bool(getattr(args, "json", False))
-
-    def log(message):
-        print(message, file=sys.stderr if json_mode else sys.stdout)
-
-    if not shutil.which("git"):
-        _emit_runtime_result(
-            result_for_error("update", InstallRuntimeError("git is required for update")),
-            json_mode,
-        )
-
-    local_ver = get_version()
-    remote_ver = _fetch_remote_version()
-
-    if remote_ver and local_ver == remote_ver:
-        hook_mode = None
-        try:
-            hook_mode = InstallRuntime(roots_from_environment()).load_manifest().get("hook_mode")
-        except InstallRuntimeError:
-            pass
-        _emit_runtime_result(
-            OperationResult(
-                operation="update",
-                status="ok",
-                exit_code=0,
-                hook_mode=hook_mode,
-                warnings=[],
-            ),
-            json_mode,
-        )
-        return
-
-    if remote_ver:
-        log("[*] Update available: v{} -> v{}".format(local_ver, remote_ver))
-    else:
-        log("[*] Could not determine remote version. Proceeding with update...")
-
-    tmp_dir = tempfile.mkdtemp(prefix="remy-cc-update-")
-    clone_dir = os.path.join(tmp_dir, "remy-cc")
-    try:
-        log("[*] Fetching latest version...")
-        result = subprocess.run(
-            ["git", "clone", "--depth", "1", "--branch", BRANCH, REPO_URL, clone_dir],
-            capture_output=True, text=True,
-        )
-        if result.returncode != 0:
-            _emit_runtime_result(
-                result_for_error("update", InstallRuntimeError("git clone failed")),
-                json_mode,
-            )
-
-        log("[*] Running installer...")
-        installer = os.path.join(clone_dir, "install.py")
-        installer_args = [sys.executable, installer]
-        if getattr(args, "non_interactive", False) or json_mode:
-            installer_args.append("--non-interactive")
-        if json_mode:
-            installer_args.append("--json")
-        rc = subprocess.run(installer_args).returncode
-        if rc != 0:
-            raise SystemExit(rc)
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-
-
-# ── Uninstall ─────────────────────────────────────────────────
-
-_UNINSTALL_MSG = {
-    "en": {
-        "confirm": "This will remove all Remy-CC files and settings. Continue? [y/N] ",
-        "aborted": "Uninstall cancelled.",
-    },
-    "zh-CN": {
-        "confirm": "此操作将移除所有 Remy-CC 文件和配置。是否继续？[y/N] ",
-        "aborted": "卸载已取消。",
-    },
-}
-
-
-def _get_lang():
-    return str(remy_config.load_config(strict=False).get("REMY_LANG", "en"))
-
-
-def _um(key, **kwargs):
-    lang = _get_lang()
-    msgs = _UNINSTALL_MSG.get(lang, _UNINSTALL_MSG["en"])
-    fallback = _UNINSTALL_MSG["en"].get(key) or key
-    template = msgs.get(key) or fallback
-    return template.format(**kwargs) if kwargs else template
-
-
-def main():
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "ui":
-            sys.argv[1:2] = ["config"]
-        elif sys.argv[1] == "project" and len(sys.argv) > 2:
-            project_path = sys.argv[2]
-            sys.argv[1:3] = ["config", "--path", project_path]
-
-    parser = argparse.ArgumentParser(prog="remy-cc", description="Remy - CLI for Claude Code configuration")
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="remy-cc", description="Remy - delegated CLI for configuration and summary maintenance")
     sub = parser.add_subparsers(dest="command")
     p_config = sub.add_parser("config", help="Open configuration UI (global by default, or --path for project)")
     p_config.add_argument("--path", default=None, help="Project root directory (opens project-level config)")
@@ -440,21 +255,11 @@ def main():
     p_audit.add_argument("node_kind", choices=["symbol", "file", "cluster"], help="Node kind to audit")
     p_audit.add_argument("node_ref", help="Node ref (file::name, file path, or cluster name)")
     p_audit.add_argument("--path", default=None, help="Project root directory (default: current directory)")
+    return parser
 
-    p_daemon = sub.add_parser("daemon", help="Control the Remy-CC daemon")
-    p_daemon.add_argument("daemon_args", nargs=argparse.REMAINDER, help="Arguments passed to remy-cc")
 
-    p_update = sub.add_parser("update", help="Fetch and install latest version from remote")
-    p_update.add_argument("--non-interactive", action="store_true", help="Disable installer prompts")
-    p_update.add_argument("--json", action="store_true", help="Emit installer JSON result")
-    p_uninstall = sub.add_parser("uninstall", help="Remove all Remy-CC files and settings")
-    p_uninstall.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
-    p_uninstall.add_argument("--non-interactive", action="store_true", help="Disable prompts")
-    p_uninstall.add_argument("--json", action="store_true", help="Emit one JSON result object")
-    p_uninstall.add_argument("--purge-state", action="store_true", help="Also remove user-level engine state")
-    p_verify = sub.add_parser("verify", help="Verify installation integrity")
-    p_verify.add_argument("--json", action="store_true", help="Emit one JSON result object")
-    sub.add_parser("version", help="Show installed version")
+def main() -> None:
+    parser = build_parser()
     args = parser.parse_args()
 
     commands = {
@@ -462,11 +267,6 @@ def main():
         "summary-rebuild": cmd_summary_rebuild,
         "summary-vacuum": cmd_summary_vacuum,
         "summary-audit": cmd_summary_audit,
-        "daemon": cmd_daemon,
-        "update": cmd_update,
-        "uninstall": cmd_uninstall_runtime,
-        "verify": cmd_verify_runtime,
-        "version": cmd_version,
     }
     handler = commands.get(args.command)
     if handler:

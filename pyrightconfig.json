@@ -26,7 +26,7 @@
     "remy-src/index_mcp_facts.py",
     "remy-src/index_mcp_navigate.py",
     "remy-src/cli.py",
-    "tests/test_cli_daemon.py",
+    "tests/test_cli_surface.py",
     "hooks/doc_manager/injector.py",
     "hooks/permission_gate.py",
     "tests/test_permission_gate.py",
