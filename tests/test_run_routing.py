@@ -1,4 +1,4 @@
-"""run.py production routing (R4.3): daemon-scan spawn and the semantic gate."""
+"""run.py production routing: daemon-scan spawn and the semantic gate."""
 
 import json
 import sqlite3

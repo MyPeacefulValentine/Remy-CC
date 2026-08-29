@@ -439,7 +439,7 @@ fn find_file(root: &Path, name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Rename-and-replace (REQ-5): the new binary lands next to the target,
+/// Rename-and-replace: the new binary lands next to the target,
 /// the displaced image is renamed aside and registered for deferred
 /// deletion, and the new file is renamed into place.
 pub(crate) fn swap_binary(

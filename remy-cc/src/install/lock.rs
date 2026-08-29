@@ -1,4 +1,4 @@
-//! Single-instance guard for install-family operations (REQ-6): one
+//! Single-instance guard for install-family operations: one
 //! install/update/uninstall at a time per `~/.remy-cc`, via the same OS
 //! advisory file-lock mechanism as the daemon lock (released by the OS on
 //! process death — no stale-lock recovery path is needed, INV-R3).

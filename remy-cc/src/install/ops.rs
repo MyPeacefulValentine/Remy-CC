@@ -4,7 +4,7 @@
 //! write is a staged same-directory file plus an atomic rename; the v4
 //! manifest write is the commit point; obsolete deletions run before it so
 //! an interrupted run converges on rerun; a locked target is renamed aside
-//! and registered for deferred deletion (REQ-5). Ownership guards keep the
+//! and registered for deferred deletion. Ownership guards keep the
 //! v3 texts, with two idempotency deviations from `facade.py::
 //! _build_install_changes`: a planned target already holding the incoming
 //! content is accepted (interrupted-run convergence), and an obsolete

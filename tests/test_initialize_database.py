@@ -1,4 +1,4 @@
-"""initialize_database fail-closed dispatch (R4.3).
+"""initialize_database fail-closed dispatch.
 
 The Python migration ladder is retired: every non-current schema version is
 refused with the database preserved byte-for-byte at the logical level, and
