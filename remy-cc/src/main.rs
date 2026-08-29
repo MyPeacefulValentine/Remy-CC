@@ -48,7 +48,7 @@ const IPC_TIMEOUT: Duration = Duration::from_secs(2);
 #[command(
     name = "remy-cc",
     version,
-    about = "Remy-CC resident daemon (R1.1 skeleton)"
+    about = "Remy-CC runtime: resident daemon, scanner, MCP server, and installer"
 )]
 struct Cli {
     #[command(subcommand)]
