@@ -112,6 +112,26 @@ enum DaemonCommand {
         #[arg(long)]
         yes: bool,
     },
+    /// Open the configuration UI (delegated to the deployed Python CLI)
+    Config {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Recompute hierarchical summaries (delegated to the deployed Python CLI)
+    SummaryRebuild {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Show a node's summary version history (delegated to the deployed Python CLI)
+    SummaryAudit {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Prune old judge-cache entries (delegated to the deployed Python CLI)
+    SummaryVacuum {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Scan a source tree into a logic index database (R3.4+: four-language
     /// per-file facts plus the single-transaction global postprocess;
     /// R3.5a: project scan lock, incremental exclusion/identity semantics)
@@ -170,6 +190,18 @@ fn main() -> ExitCode {
         DaemonCommand::Uninstall { purge_state, yes } => {
             return install::run_uninstall(purge_state, yes);
         }
+        DaemonCommand::Config { args } => {
+            return install::delegate::run_delegated("config", &args);
+        }
+        DaemonCommand::SummaryRebuild { args } => {
+            return install::delegate::run_delegated("summary-rebuild", &args);
+        }
+        DaemonCommand::SummaryAudit { args } => {
+            return install::delegate::run_delegated("summary-audit", &args);
+        }
+        DaemonCommand::SummaryVacuum { args } => {
+            return install::delegate::run_delegated("summary-vacuum", &args);
+        }
         DaemonCommand::Hook { command } => {
             return hook_client::run(match command {
                 HookCommand::Dirty => hook_client::HookKind::Dirty,
@@ -222,7 +254,11 @@ fn main() -> ExitCode {
         | DaemonCommand::Mcp
         | DaemonCommand::Install { .. }
         | DaemonCommand::Verify
-        | DaemonCommand::Uninstall { .. } => {
+        | DaemonCommand::Uninstall { .. }
+        | DaemonCommand::Config { .. }
+        | DaemonCommand::SummaryRebuild { .. }
+        | DaemonCommand::SummaryAudit { .. }
+        | DaemonCommand::SummaryVacuum { .. } => {
             unreachable!("dispatched before daemon home resolution")
         }
     };

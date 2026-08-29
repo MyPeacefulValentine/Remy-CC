@@ -6,6 +6,7 @@ use std::fmt;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+pub(crate) mod delegate;
 pub(crate) mod embedded;
 pub(crate) mod interact;
 pub(crate) mod lock;
