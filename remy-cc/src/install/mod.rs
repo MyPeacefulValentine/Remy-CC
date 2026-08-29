@@ -5,7 +5,11 @@
 use std::fmt;
 
 pub(crate) mod embedded;
+pub(crate) mod lock;
+pub(crate) mod manifest;
+pub(crate) mod pending;
 pub(crate) mod settings;
+pub(crate) mod storage;
 
 /// Error taxonomy mirroring `install_runtime.models`: `Metadata` corresponds
 /// to `MetadataError` (managed metadata lacks required structure), `Runtime`
