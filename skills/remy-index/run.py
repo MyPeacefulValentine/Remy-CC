@@ -47,7 +47,8 @@ MAX_CTX_CHARS = 200000
 
 DAEMON_BINARY_GUIDANCE = (
     "remy-cc binary not found; build it with 'cargo build --release' under "
-    "remy-cc/ or reinstall Remy-CC so install.py deploys it to ~/.remy-cc/bin."
+    "remy-cc/ or reinstall Remy-CC ('remy-cc install' from a release binary) "
+    "so it is deployed to ~/.remy-cc/bin."
 )
 
 
