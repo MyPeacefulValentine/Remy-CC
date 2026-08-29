@@ -336,4 +336,4 @@ LLM通道仅使用OpenAI兼容的Chat Completions协议。Anthropic将其OpenAI�
 编辑 `.claude/logic_index_config` 自定义层模式。删除不需要的行并添加自定义规则。未匹配的文件默认归入 "Core"。
 
 ### Q: Hook 富化信息未出现？
-确认`~/.claude/settings.json`包含matcher为`Read|Glob|Grep`的`hooks.PreToolUse`条目，指向受管理的`remy-cc hook enrich`命令（R4.3 起 `hook_mode=rust` 是唯一安装模式）。运行`remy-cc verify`或`python install.py --verify`校验记录模式和命令。
+确认`~/.claude/settings.json`包含matcher为`Read|Glob|Grep`的`hooks.PreToolUse`条目，指向受管理的`remy-cc hook enrich`命令（R4.3 起 `hook_mode=rust` 是唯一安装模式）。运行`remy-cc verify`校验记录模式和命令。

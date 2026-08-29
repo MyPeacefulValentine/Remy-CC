@@ -205,12 +205,11 @@ For small, low-risk changes, steps 3–6 can be skipped.
 | Requirement | Purpose |
 | :--- | :--- |
 | Claude Code CLI ≥ 2.1.139 | Event hooks and skill invocation |
-| Python 3.10+ | Hook scripts, installer, MCP server |
+| Python 3.10+ | Hook scripts, skills, and the delegated config/summary commands (runtime prerequisite, not an install prerequisite) |
 | OpenAI-compatible LLM API | Semantic summarization for `/remy-index` |
 | Conda or Mamba (optional) | Auto-injected into shell environment when present |
 | `gh` CLI (optional) | Required by `/remy-reposcout` and `/remy-ci` GitHub Actions mode |
 | tree-sitter Python packages (optional) | Higher-precision C/C++/TypeScript parsing, Rust parsing (required, no fallback), and call graph extraction |
-| `mcp` Python package | Required for the remy-index MCP server; the installer installs it automatically and aborts on failure, and both `remy-cc verify` and `python install.py --verify` report its absence as an error |
 
 Language is configured through `REMY_LANG` in `~/.claude/remy-config.json` or through `remy-cc config`.
 
@@ -226,32 +225,29 @@ curl -fsSL https://raw.githubusercontent.com/MyPeacefulValentine/Remy-CC/main/in
 irm https://raw.githubusercontent.com/MyPeacefulValentine/Remy-CC/main/install.ps1 | iex
 ```
 
-Or install from source:
+Or download the release asset for your platform from the [releases page](https://github.com/MyPeacefulValentine/Remy-CC/releases/latest), check it against its `.sha256` companion, and run the binary directly:
 
 ```bash
-git clone https://github.com/MyPeacefulValentine/Remy-CC.git
-cd Remy-CC
-python install.py                # English (default)
-python install.py --lang zh-CN   # Simplified Chinese
+remy-cc install                  # English (default)
+remy-cc install --lang zh-CN     # Simplified Chinese
 ```
 
+A source build works the same way: `cargo build --release --manifest-path remy-cc/Cargo.toml`, then run `target/release/remy-cc install`.
+
 The installer:
-- Keeps Claude Code discovery files and the Python hooks under `~/.claude/`
-- Deploys the managed daemon, Python runtime descriptor, transaction journal, and authoritative manifest under `~/.remy-cc/`
-- Records every managed file as a root identifier (`claude` or `remy`), a root-relative path, and a SHA-256 digest in `~/.remy-cc/install/manifest.json`
-- Registers `hook dirty` and `hook enrich` with the managed Rust binary; when neither a candidate nor the deployed daemon can be verified, the install aborts with guidance (`hook_mode=rust` is the only mode since R4.3)
-- Rejects install, upgrade, and uninstall while the daemon is running or its status cannot be established
-- Merges only owned Hook and permission fragments into `~/.claude/settings.json`; modified owned files or settings fragments are never overwritten
-- Stores user-configurable Remy settings in `~/.claude/remy-config.json`; installation facts remain outside that file
-- Registers the remy-index MCP server in `~/.claude.json`
-- Prompts for optional dependencies and LLM API configuration in interactive mode; `--non-interactive` only validates dependencies and performs no pip, API, or PATH changes
-- Creates the `remy-cc` CLI command and optionally adds it to system PATH
+- Deploys the embedded Claude Code artifacts (hooks, skills, output styles, root protocol files, and the delegated Python CLI) under `~/.claude/`, and copies itself into `~/.remy-cc/bin/`
+- Records every managed file as a root identifier (`claude` or `remy`), a root-relative path, and a SHA-256 digest in the v4 manifest at `~/.remy-cc/install/manifest.json`; `artifact_sha256` records the downloaded release asset hash (`null` for local builds)
+- Migrates an install.py-era (v3) installation in place: the old manifest is read once as migration input, obsolete files — the retired Python shim included — are removed by manifest diff, and the v3 manifest is deleted after commit
+- Registers `hook dirty` and `hook enrich` and the remy-index MCP server (`~/.claude.json`) against the absolute binary path
+- Merges only owned hook and permission fragments into `~/.claude/settings.json`
+- Runs with idempotent-rerun semantics: no journal, recovery direction is forward — rerunning the installer after an interruption converges to the same state
+- Prompts for language and PATH registration in interactive mode and points at `remy-cc config` for API configuration; `--non-interactive` skips prompts and falls back to the deployed configuration
 
-Automation entry points accept `--non-interactive` and `--json`; JSON mode implies non-interactive mode and writes exactly one result object to stdout. Uninstall accepts `--purge-state` to remove `~/.remy-cc/` engine state while preserving every project index. Exit codes are stable: `0` success, `1` preflight rejection, `2` pre-commit failure with successful rollback, `3` committed install with pending cleanup, and `4` incomplete recovery or rollback.
+Uninstall accepts `--purge-state` to remove `~/.remy-cc/` engine state while preserving every project index.
 
-### Rust self-install (R4.4 transition window)
+### Binary command surface
 
-Since R4.4 segment 1 the `remy-cc` binary carries the install family natively and is the authoritative path while `python install.py` remains available (its thin-shell retirement lands with segment 2/3):
+Since v2.0.0 the `remy-cc` binary is the only installer (`install.py` retired with R4.4 segment 3); the bootstrap scripts download the release asset, enforce its sha256 checksum, and hand over to it:
 
 | Binary command | Description |
 | :--- | :--- |
@@ -267,15 +263,14 @@ After installation, the `remy-cc` command is available system-wide:
 
 | Command | Description |
 | :--- | :--- |
-| `remy-cc ui` | Open the user Remy settings editor for `~/.claude/remy-config.json` |
-| `remy-cc project <path>` | Open the project Remy settings editor for `<path>/.claude/remy-config.json` |
-| `remy-cc update [--non-interactive] [--json]` | Fetch and install the latest version while preserving installer exit codes |
-| `remy-cc uninstall [--yes] [--json] [--purge-state]` | Remove managed files and settings fragments; preserve engine state unless explicitly purged |
-| `remy-cc verify [--json]` | Check manifest, file hashes, settings claims, and the managed Python runtime |
-| `remy-cc daemon start\|stop\|status [--json]` | Control the resident daemon; `status --json` reports jobs plus the scanner provider state (`desired`/`published`/`diagnostic`) |
-| `remy-cc version` | Print installed version |
+| `remy-cc config` | Open the user Remy settings editor for `~/.claude/remy-config.json` |
+| `remy-cc config --path <path>` | Open the project Remy settings editor for `<path>/.claude/remy-config.json` |
+| `remy-cc start\|stop\|restart\|status [--json]` | Control the resident daemon; `status --json` reports jobs plus the scanner provider state (`desired`/`published`/`diagnostic`) |
+| `remy-cc logs [--tail N] [--follow]` | Print the daemon log |
+| `remy-cc scan --root <dir> --db <path> [...]` | Scan a source tree into a logic index database |
+| `remy-cc -V` | Print the binary version |
 
-The rust scanner is the sole production provider (R4.3). At daemon start, a state database without a published rust row — fresh, or carrying a historical python row — triggers a two-level probe (version handshake plus an embedded micro-corpus scan); only a validated binary is published, and an actual publication schedules one background full rescan per registered project. Validation failure publishes nothing and surfaces a diagnostic in `remy-cc daemon status --json`.
+The rust scanner is the sole production provider (R4.3). At daemon start, a state database without a published rust row — fresh, or carrying a historical python row — triggers a two-level probe (version handshake plus an embedded micro-corpus scan); only a validated binary is published, and an actual publication schedules one background full rescan per registered project. Validation failure publishes nothing and surfaces a diagnostic in `remy-cc status --json`.
 
 The settings editor manages Python runtime Remy parameters only. Claude Code credentials and skill-protocol settings remain in Claude's settings. Project settings inherit user values and can override individual non-secret fields.
 

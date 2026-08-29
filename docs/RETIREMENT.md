@@ -290,3 +290,35 @@ stops routing to the fallback do the Python hook scripts become orphans.
 | 15 | `state.db` historical `provider='python'` rows: zero migration — provider is snapshotted by UPDATE at claim time and read paths carry no validation; startup sync overwrites published unconditionally with rust. The DDL literal `CHECK (provider IN ('python', 'rust'))` on the jobs and published rows is retained intentionally for historical-row tolerance (state schema v2 not bumped) |
 | 16 | `python.json` runtime descriptor: daemon-side consumer chain deleted this batch; the install-side probe and deployment survive until R4.4 (install.py retirement) |
 | 17 | Acceptance = three-channel reference sweep (grep symbol list + `query_callers` + importlib string scan, since `query_dependencies` cannot see dynamic imports), per-commit full pytest + pyright, cargo fmt/clippy/test after Rust commits, explicit oracle/eval/`.oracle-venv` zero-impact check, on-machine probe preceded by `cargo build --release`, dual-platform CI under user confirmation |
+
+## 9. R4.4 Packet C settlement (2026-08-30)
+
+Execution date: 2026-08-30 (packet `task_20260829_021608`; pre-execution
+re-review rulings, user-confirmed: pure guidance shell, zero-length shell
+window, bootstrap scripts rewritten as release-binary bootstrappers, full
+cli.py deletion list).
+
+| Component | Disposition | Commit |
+| :--- | :--- | :--- |
+| `install.py` v3 implementation (1072 lines) + `tests/test_install_manifest.py` (88 collected cases) | Retired to a dependency-free bilingual guidance shell, non-zero exit | `9e2756c` |
+| `install.sh` / `install.ps1` git-clone bootstrap | Rewritten: platform target detection, release-asset download, mandatory sha256 companion check (no bypass flag), hand-over to `remy-cc install`; `--update`/`--json` retire with the v3 contract | `feb3c79` |
+| `cli.py` update/verify/uninstall/daemon/version arms, ui/project aliases, `REPO_URL`/`VERSION_RAW_URL` git-clone update channel; `tests/test_cli_manifest.py` (3) / `test_cli_daemon.py` (7) | Retired; cli.py keeps the delegated config/summary surface with an inline `CLAUDE_CONFIG_DIR` home resolution matching the Rust side, guarded by `tests/test_cli_surface.py` (14) | `ff9e65a` |
+| `remy-src/install_runtime/` (facade, models, probes, settings, storage, transaction, package init) | Deleted; embedded deploy surface (`build.rs`, `embedded.rs`) synchronized, `role_for` drops the unreachable branch; deployed copies removed by v4 manifest diff on the next install | `289f16d` |
+| `install.py` guidance shell | Deleted; `run.py` missing-binary guidance points at `remy-cc install` | `8869a58` |
+
+Closure notes:
+
+- §6 (H.6) update: the cli.py subcommand family recorded there as "not
+  exiting as a whole" now exits for every arm the binary carries natively;
+  the config and summary families remain the Python-owned delegation
+  surface (H.5 unchanged). The shim question (H8-B5) is settled: no shim,
+  single `remy-cc` binary name.
+- §8 ruling 16 completion: the install-side `python.json` probe and
+  deployment moved to the Rust installer (`pyprobe.rs`) in Packet B; no part
+  of the descriptor chain remains Python-owned.
+- Whitelisted historical references: the `oracle/__init__.py` docstring
+  (oracle zero-impact discipline) and the TESTING R-era chapters keep their
+  install.py/install_runtime mentions as frozen history, not live contract.
+- The `mcp` Python package lost its production consumer with the R4.1
+  Python MCP deployment retirement; the Rust installer neither installs nor
+  verifies it, and the README requirement row is removed in this batch.

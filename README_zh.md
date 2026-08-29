@@ -205,12 +205,11 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | 要求 | 用途 |
 | :--- | :--- |
 | Claude Code CLI ≥ 2.1.139 | 事件 Hooks 和 Skill 调用 |
-| Python 3.10+ | Hook 脚本、安装器、MCP 服务器 |
+| Python 3.10+ | Hook 脚本、技能与被委派的 config/summary 命令（运行前置，非安装前置） |
 | OpenAI 兼容的 LLM API | `/remy-index` 的语义摘要生成 |
 | Conda 或 Mamba（可选） | 存在时自动注入到 Shell 环境 |
 | `gh` CLI（可选） | `/remy-reposcout` 和 `/remy-ci` GitHub Actions 模式依赖 |
 | tree-sitter Python 包（可选） | C/C++/TypeScript 的高精度解析与调用图提取；Rust 解析必需该依赖（无回退） |
-| `mcp` Python 包 | remy-index MCP 服务器所需；安装器自动安装，失败即中止；`remy-cc verify` 与 `python install.py --verify` 均将其缺失记为错误 |
 
 语言通过`~/.claude/remy-config.json`中的`REMY_LANG`或`remy-cc config`设置。
 
@@ -226,32 +225,29 @@ curl -fsSL https://raw.githubusercontent.com/MyPeacefulValentine/Remy-CC/main/in
 irm https://raw.githubusercontent.com/MyPeacefulValentine/Remy-CC/main/install.ps1 | iex
 ```
 
-或者从源码安装：
+或者从[发布页](https://github.com/MyPeacefulValentine/Remy-CC/releases/latest)下载对应平台的资产，比对 `.sha256` 伴随文件后直接运行二进制：
 
 ```bash
-git clone https://github.com/MyPeacefulValentine/Remy-CC.git
-cd Remy-CC
-python install.py                # 默认英文
-python install.py --lang zh-CN   # 简体中文
+remy-cc install                  # 默认英文
+remy-cc install --lang zh-CN     # 简体中文
 ```
 
-安装脚本执行以下操作：
-- 将 Claude Code 发现工件和 Python Hook 脚本保留在 `~/.claude/`
-- 将受管理 daemon、Python runtime 描述、事务日志和权威 manifest 部署到 `~/.remy-cc/`
-- 在 `~/.remy-cc/install/manifest.json` 中以根标识（`claude` 或 `remy`）、根内相对路径和 SHA-256 记录每个受管理文件
-- 注册受管理 Rust 二进制的 `hook dirty` 与 `hook enrich`；候选与已部署 daemon 均不可验证时报错中止并给出指引（R4.3 起 `hook_mode=rust` 为唯一安装模式）
-- daemon 正在运行或状态未知时拒绝安装、升级和卸载
-- 只合并本套件认领的 Hook 与 permission 片段；用户修改的受管理文件或 settings 片段不会被覆盖
-- 将用户可配置 Remy 参数保存在 `~/.claude/remy-config.json`，安装事实不写入该文件
-- 将 remy-index MCP 服务器注册到 `~/.claude.json`
-- 交互模式保留可选依赖和 LLM API 配置提示；`--non-interactive` 只验证依赖，不执行 pip、API 配置或 PATH 修改
-- 创建 `remy-cc` CLI 命令，可选将其加入系统 PATH
+源码构建同理：`cargo build --release --manifest-path remy-cc/Cargo.toml`，然后运行 `target/release/remy-cc install`。
 
-自动化入口支持 `--non-interactive` 与 `--json`；JSON 模式隐含非交互模式，stdout 只写入一个结果对象。卸载支持 `--purge-state`，用于删除 `~/.remy-cc/` 引擎状态，同时保留所有项目索引。退出码固定为：`0` 成功、`1` 预检拒绝、`2` 提交前失败且回滚成功、`3` 已提交但清理未完成、`4` 恢复或回滚未完成。
+安装器执行以下操作：
+- 将嵌入的 Claude Code 工件（hooks、skills、output styles、根协议文件与被委派的 Python CLI）部署到 `~/.claude/`，并把二进制自身拷贝到 `~/.remy-cc/bin/`
+- 在 v4 manifest（`~/.remy-cc/install/manifest.json`）中以根标识（`claude` 或 `remy`）、根内相对路径和 SHA-256 记录每个受管理文件；`artifact_sha256` 记录下载资产的哈希（本地构建安装记 `null`）
+- 就地迁移 install.py 时代（v3）的安装：旧 manifest 只读取一次作为迁移输入，过时文件（含已退役的 Python shim）按 manifest 差集删除，提交后删除 v3 manifest
+- 以二进制绝对路径注册 `hook dirty` 与 `hook enrich`，并将 remy-index MCP 服务器注册到 `~/.claude.json`
+- 只合并本套件认领的 Hook 与 permission 片段到 `~/.claude/settings.json`
+- 幂等重跑语义：无 journal，恢复方向向前——任意中断后重跑安装器收敛到同一状态
+- 交互模式询问语言与 PATH 注册，API 配置指向 `remy-cc config`；`--non-interactive` 跳过询问并回落已部署配置
 
-### Rust 自安装（R4.4 过渡窗口）
+卸载支持 `--purge-state`，用于删除 `~/.remy-cc/` 引擎状态，同时保留所有项目索引。
 
-自 R4.4 段 1 起，`remy-cc` 二进制原生承载安装命令族，双安装器并存窗口内以 Rust 路径为准（`python install.py` 仍可用，薄壳化与退役归段 2/3）：
+### 二进制命令面
+
+自 v2.0.0 起 `remy-cc` 二进制是唯一安装器（`install.py` 随 R4.4 段 3 退役）；引导脚本下载发布资产、强制校验 sha256 后交棒给它：
 
 | 二进制命令 | 说明 |
 | :--- | :--- |
@@ -267,15 +263,14 @@ python install.py --lang zh-CN   # 简体中文
 
 | 命令 | 说明 |
 | :--- | :--- |
-| `remy-cc ui` | 打开用户Remy配置编辑器，编辑`~/.claude/remy-config.json` |
-| `remy-cc project <路径>` | 打开项目Remy配置编辑器，编辑`<路径>/.claude/remy-config.json` |
-| `remy-cc update [--non-interactive] [--json]` | 获取并安装最新版本，同时保留安装器退出码 |
-| `remy-cc uninstall [--yes] [--json] [--purge-state]` | 删除受管理文件和 settings 片段；仅在显式指定时删除引擎状态 |
-| `remy-cc verify [--json]` | 检查 manifest、文件 hash、settings 认领和受管理 Python runtime |
-| `remy-cc daemon start\|stop\|status [--json]` | 控制常驻 daemon；`status --json` 报告作业与扫描器 provider 状态（`desired`/`published`/`diagnostic`） |
-| `remy-cc version` | 显示版本号 |
+| `remy-cc config` | 打开用户Remy配置编辑器，编辑`~/.claude/remy-config.json` |
+| `remy-cc config --path <路径>` | 打开项目Remy配置编辑器，编辑`<路径>/.claude/remy-config.json` |
+| `remy-cc start\|stop\|restart\|status [--json]` | 控制常驻 daemon；`status --json` 报告作业与扫描器 provider 状态（`desired`/`published`/`diagnostic`） |
+| `remy-cc logs [--tail N] [--follow]` | 读取 daemon 日志 |
+| `remy-cc scan --root <目录> --db <路径> [...]` | 扫描源码树生成逻辑索引数据库 |
+| `remy-cc -V` | 显示二进制版本 |
 
-rust 扫描器是唯一的生产 provider（R4.3）。daemon 启动时，状态库若无已发布的 rust 行——全新库或携带历史 python 行——会触发两级探针（版本握手 + 内嵌微语料扫描）；只有验证通过的二进制才会发布，实际发布会对每个已注册项目提交一个后台全量重扫作业。验证失败不发布任何 provider，并在 `remy-cc daemon status --json` 中给出诊断。
+rust 扫描器是唯一的生产 provider（R4.3）。daemon 启动时，状态库若无已发布的 rust 行——全新库或携带历史 python 行——会触发两级探针（版本握手 + 内嵌微语料扫描）；只有验证通过的二进制才会发布，实际发布会对每个已注册项目提交一个后台全量重扫作业。验证失败不发布任何 provider，并在 `remy-cc status --json` 中给出诊断。
 
 配置编辑器只管理Python运行时Remy参数。Claude Code凭据和技能协议参数继续由Claude设置管理。项目配置继承用户值，并可覆盖单个非密钥字段。
 

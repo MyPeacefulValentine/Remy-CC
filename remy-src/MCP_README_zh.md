@@ -8,7 +8,7 @@ Python 服务器（`index_mcp_server.py`，FastMCP）作为 H.4 差分套（`tes
 
 | 依赖 | 说明 |
 | :--- | :--- |
-| `remy-cc` 二进制 | 由 `install.py` 部署到 `~/.remy-cc/bin/` |
+| `remy-cc` 二进制 | 由 `remy-cc install` 部署到 `~/.remy-cc/bin/` |
 | `logic_index.db` | 由 `/remy-index` 或 `struct_scan.py` 生成 |
 
 若 `REMY_MCP_SERVER_ENABLED=false`，服务器向 stderr 输出提示并以 exit code 0 退出。

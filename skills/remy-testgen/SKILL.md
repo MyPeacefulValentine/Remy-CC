@@ -34,7 +34,7 @@ Generate persistent unit tests and write them into the project's test directory.
 
 ## Optional Dependency: Jinja2
 
-`render.py` attempts `import jinja2`. If unavailable, all templates are rendered via built-in string formatting. Jinja2 can be installed via `install.py` (optional step).
+`render.py` attempts `import jinja2`. If unavailable, all templates are rendered via built-in string formatting. Jinja2 is optional; install it with `pip install jinja2`.
 
 ## 0. Configuration
 

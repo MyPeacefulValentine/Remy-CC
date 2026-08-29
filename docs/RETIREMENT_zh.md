@@ -239,3 +239,29 @@ rmcp 3.1.4，per-session stdio；INV-R2 拓扑不变）。退役范围为**仅�
 | 15 | `state.db` 历史 `provider='python'` 行零迁移——provider 在 claim 时经 UPDATE 快照写入，读路径无校验；启动 sync 无条件以 rust 覆写 published。jobs 与 published 行的 DDL 字面 `CHECK (provider IN ('python', 'rust'))` 为容忍历史行而有意保留（state schema v2 不 bump） |
 | 16 | `python.json` 运行时描述符：daemon 侧消费链本批删除；install 侧探测与部署保留至 R4.4（install.py 退役时统一处置） |
 | 17 | 验收=三通道引用扫描（grep 符号清单 + `query_callers` + importlib 字符串扫描，`query_dependencies` 对动态导入不可见）、每提交独立全量 pytest + pyright、Rust 提交后 cargo fmt/clippy/test、oracle/eval/`.oracle-venv` 零波及显式核对、实机探针前先 `cargo build --release`、双平台 CI（用户确认制） |
+
+## 9. R4.4 Packet C 结算记录（2026-08-30）
+
+执行日期：2026-08-30（packet `task_20260829_021608`；执行前重审四裁定经用户
+确认：纯指引壳、薄壳窗口=0、引导脚本改写为发布二进制引导、cli.py 全清单瘦身）。
+
+| 组件 | 处置 | 提交 |
+| :--- | :--- | :--- |
+| `install.py` v3 实现（1072 行）+ `tests/test_install_manifest.py`（88 收集项） | 降级为零依赖双语指引壳，非零退出 | `9e2756c` |
+| `install.sh` / `install.ps1` git clone 引导 | 改写：平台 target 检测、发布资产下载、sha256 伴随文件强制校验（无旁路旗标）、交棒 `remy-cc install`；`--update`/`--json` 随 v3 契约退役 | `feb3c79` |
+| `cli.py` update/verify/uninstall/daemon/version 臂、ui/project 别名、`REPO_URL`/`VERSION_RAW_URL` git clone 更新通道；`tests/test_cli_manifest.py`（3）/ `test_cli_daemon.py`（7） | 退役；cli.py 保留被委派的 config/summary 面，内联 `CLAUDE_CONFIG_DIR` 根解析与 Rust 侧同语义，由 `tests/test_cli_surface.py`（14）守卫 | `ff9e65a` |
+| `remy-src/install_runtime/`（facade、models、probes、settings、storage、transaction、包入口） | 整目录删除；嵌入部署面（`build.rs`、`embedded.rs`）同步，`role_for` 删除不可达分支；部署副本由下次 install 的 v4 manifest 差集删除 | `289f16d` |
+| `install.py` 指引壳 | 删除；`run.py` 缺二进制指引改指 `remy-cc install` | `8869a58` |
+
+结清注记：
+
+- §6（H.6）更新：该处记为"整体非退场"的 cli.py 子命令族，凡二进制原生承载的
+  臂均已退场；config 与 summary 族维持 Python 所有的被委派面（H.5 不变）。
+  shim 归属问题（H8-B5）出清：无 shim，单一 `remy-cc` 二进制名。
+- §8 裁定 16 收尾：install 侧 `python.json` 探测与部署已随 Packet B 移入
+  Rust 安装器（`pyprobe.rs`）；描述符链无任何 Python 所有残余。
+- 历史引用白名单：`oracle/__init__.py` docstring（oracle 零波及纪律）与
+  TESTING 各 R 时代章节保留 install.py/install_runtime 提述，读作冻结历史而
+  非现行契约。
+- `mcp` Python 包的生产消费者已随 R4.1 Python MCP 退部署消失；Rust 安装器
+  不安装也不校验该包，README 需求行本批删除。

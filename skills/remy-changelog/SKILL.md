@@ -23,7 +23,7 @@ All content MUST follow the loaded `language.md` directive.
 
 ## Optional Dependency: Jinja2
 
-`render.py` attempts `import jinja2`. If unavailable, all templates are rendered via built-in string formatting (functionally equivalent, but templates are not externally editable in fallback mode). Jinja2 can be installed via `install.py` (optional step).
+`render.py` attempts `import jinja2`. If unavailable, all templates are rendered via built-in string formatting (functionally equivalent, but templates are not externally editable in fallback mode). Jinja2 is optional; install it with `pip install jinja2`.
 
 ## 1. Input Analysis
 - **Task ID**: $1

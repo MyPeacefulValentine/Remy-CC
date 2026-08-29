@@ -140,7 +140,9 @@ python -m pytest Remy-CC/tests/test_llm_client.py Remy-CC/tests/test_propagation
 且不激活。安装器无条件安装`mcp`包，pip失败或Python低于3.10时中止。校验有两个
 独立入口，二者必须遵守同一契约：源码目录的`install.py --verify`与已安装
 shim背后的`cli.py::cmd_verify_runtime`（`remy-cc verify`）。两者都把缺失的
-`mcp`包记为错误并以退出码1结束，也都要求Python 3.10。
+`mcp`包记为错误并以退出码1结束，也都要求Python 3.10。（自 R4.4 Packet C
+起为历史记载：两个 v3 入口均已退役，`remy-cc verify` 为单一入口；`mcp`
+包探测随之退役——其生产消费者已随 R4.1 Python MCP 服务器退出部署集。）
 
 ## query_impact渲染与计数
 

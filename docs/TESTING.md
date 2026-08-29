@@ -179,7 +179,10 @@ and aborts when pip fails or Python is older than 3.10. Verification has two
 independent entry points that must agree on this contract: `install.py
 --verify` (source checkout) and `cli.py::cmd_verify_runtime` behind
 `remy-cc verify` (installed shim). Both report a missing `mcp` package as an
-error and exit 1, and both require Python 3.10.
+error and exit 1, and both require Python 3.10. (Historical since R4.4
+Packet C: both v3 entry points retired; `remy-cc verify` is the single
+entry, and the `mcp`-package probe retired with them — its production
+consumer left the deployment set with the Python MCP server in R4.1.)
 
 ## query_impact rendering and counting
 
