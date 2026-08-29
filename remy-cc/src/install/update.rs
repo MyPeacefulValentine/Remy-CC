@@ -78,6 +78,19 @@ pub(crate) fn run_update() -> ExitCode {
         println!("remy-cc update: already up to date ({})", release.tag);
         return ExitCode::SUCCESS;
     }
+    if let (Some(remote), Some(local)) = (
+        parse_version_triple(&tag_version),
+        parse_version_triple(env!("CARGO_PKG_VERSION")),
+    ) {
+        if remote < local {
+            eprintln!(
+                "remy-cc update: the latest release {} is older than the installed {}; refusing to downgrade. To install an older version deliberately, use the bootstrap script with REMY_CC_TAG.",
+                release.tag,
+                env!("CARGO_PKG_VERSION")
+            );
+            return ExitCode::from(1);
+        }
+    }
     println!(
         "remy-cc update: {} -> {} available",
         env!("CARGO_PKG_VERSION"),
@@ -286,6 +299,17 @@ pub(crate) fn asset_name(tag: &str, target: &str) -> String {
     format!("remy-cc-{tag}-{target}.{extension}")
 }
 
+/// `x.y.z` as a comparable numeric triple. `None` for any other shape
+/// (pre-release suffixes and the like): direction is then unknown and the
+/// caller keeps the not-equal-means-update behavior.
+pub(crate) fn parse_version_triple(text: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = text.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    parts.next().is_none().then_some((major, minor, patch))
+}
+
 /// First whitespace-delimited token must be a 64-digit lowercase hex digest
 /// (`sha256sum` / release.yml output shape).
 pub(crate) fn parse_sha256_file(text: &str) -> Option<String> {
@@ -443,7 +467,12 @@ pub(crate) fn swap_binary(
             let _ = std::fs::remove_file(&incoming);
             InstallError::runtime(format!("cannot move the running image aside: {error}"))
         })?;
-        let _ = pending.register(std::slice::from_ref(&aside));
+        if pending.register(std::slice::from_ref(&aside)).is_err() {
+            eprintln!(
+                "  [!] could not record {} for deferred deletion; remove it manually",
+                aside.display()
+            );
+        }
     }
     std::fs::rename(&incoming, deployed)
         .map_err(|error| InstallError::runtime(format!("cannot activate the new binary: {error}")))
@@ -465,6 +494,15 @@ mod tests {
         assert_eq!(parse_sha256_file("<html>not found</html>"), None);
         assert_eq!(parse_sha256_file(""), None);
         assert_eq!(parse_sha256_file("abc123"), None);
+    }
+
+    #[test]
+    fn version_triples_compare_numerically_and_reject_other_shapes() {
+        assert_eq!(parse_version_triple("2.0.0"), Some((2, 0, 0)));
+        assert!(parse_version_triple("2.10.0") > parse_version_triple("2.9.9"));
+        assert_eq!(parse_version_triple("2.0"), None);
+        assert_eq!(parse_version_triple("2.0.0-beta.1"), None);
+        assert_eq!(parse_version_triple("2.0.0.1"), None);
     }
 
     #[test]

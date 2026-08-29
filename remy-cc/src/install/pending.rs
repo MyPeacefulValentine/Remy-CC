@@ -39,7 +39,9 @@ impl PendingDeletes {
     /// Merge-registers `paths`, deduplicating while preserving order; a
     /// corrupt register is replaced. Failures are reported to the caller
     /// (registration is the one pending-deletes step whose failure matters:
-    /// losing it strands residue forever).
+    /// losing it strands residue forever); callers surface a failed
+    /// registration as a warning naming the stranded path instead of
+    /// aborting the operation.
     pub(crate) fn register(&self, paths: &[PathBuf]) -> std::io::Result<()> {
         let mut merged: Vec<String> = Vec::new();
         if let Ok(document) = storage::load_json(&self.path) {

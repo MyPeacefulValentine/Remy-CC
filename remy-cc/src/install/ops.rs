@@ -603,7 +603,12 @@ fn rename_over(stage: &Path, target: &Path, pending: &PendingDeletes) -> std::io
             let aside = target.with_extension(format!("old-{}", std::process::id()));
             match fs::rename(target, &aside) {
                 Ok(()) => {
-                    let _ = pending.register(std::slice::from_ref(&aside));
+                    if pending.register(std::slice::from_ref(&aside)).is_err() {
+                        eprintln!(
+                            "  [!] could not record {} for deferred deletion; remove it manually",
+                            aside.display()
+                        );
+                    }
                     fs::rename(stage, target)
                 }
                 Err(error) => {
@@ -642,7 +647,12 @@ fn remove_or_defer(target: &Path, pending: &PendingDeletes, warnings: &mut Vec<S
             } else {
                 target.to_path_buf()
             };
-            let _ = pending.register(std::slice::from_ref(&residue));
+            if pending.register(std::slice::from_ref(&residue)).is_err() {
+                warnings.push(format!(
+                    "could not record {} for deferred deletion; remove it manually",
+                    residue.display()
+                ));
+            }
             warnings.push(format!(
                 "cleanup deferred for a locked file: {}",
                 residue.display()

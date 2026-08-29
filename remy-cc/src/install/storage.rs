@@ -1,10 +1,10 @@
 //! Canonical JSON serialization and atomic file writes for managed metadata.
 //!
 //! Byte-compatible with the retired v3 storage layer: `json.dumps(document,
-//! ensure_ascii=False, indent=2, sort_keys=True) + "\n"` — serde_json's
-//! default map is sorted and its pretty printer uses two-space indentation,
-//! so the shapes coincide; writes go through a same-directory temp file,
-//! fsync, and rename.
+//! ensure_ascii=False, indent=2, sort_keys=True) + "\n"` — an explicit
+//! recursive key sort (`sorted_keys`; the workspace compiles serde_json with
+//! `preserve_order`) plus the two-space pretty printer reproduce that shape;
+//! writes go through a same-directory temp file, fsync, and rename.
 
 use std::fs;
 use std::io::{self, Write};

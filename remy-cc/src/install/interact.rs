@@ -120,23 +120,21 @@ fn normalize_path_entry(entry: &str) -> String {
 #[cfg(windows)]
 fn register_path_platform(bin_text: &str) {
     use std::process::Command;
-    let query = Command::new("reg")
-        .args(["query", "HKCU\\Environment", "/v", "PATH"])
-        .output();
-    let mut current = String::new();
-    if let Ok(output) = query {
-        if output.status.success() {
-            for line in String::from_utf8_lossy(&output.stdout).lines() {
-                let upper = line.to_uppercase();
-                if upper.contains("PATH") && upper.contains("REG_") {
-                    let parts: Vec<&str> = line.split("    ").collect();
-                    if parts.len() >= 3 {
-                        current = parts.last().unwrap_or(&"").trim().to_string();
-                    }
-                }
-            }
+    // Empty-read guard: an empty baseline is accepted only when a successful
+    // listing proves the value is absent. The key itself always exists, so a
+    // failed query is never proof of an absent value — writing on top of one
+    // would replace a populated user PATH with just the bin directory.
+    let output = match Command::new("reg")
+        .args(["query", "HKCU\\Environment"])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        _ => {
+            println!("  [!] Could not read the user PATH; add {bin_text} manually.");
+            return;
         }
-    }
+    };
+    let current = parse_reg_path_value(&String::from_utf8_lossy(&output.stdout));
     let new_path = if current.is_empty() {
         bin_text.to_string()
     } else {
@@ -153,6 +151,30 @@ fn register_path_platform(bin_text: &str) {
         }
         _ => println!("  [!] Could not update PATH; add {bin_text} manually."),
     }
+}
+
+/// Extracts the PATH data from a `reg query HKCU\Environment` listing.
+/// A value line is `<name> <REG_ type> <data>`; the data keeps any internal
+/// whitespace (the old four-space split truncated data containing runs of
+/// spaces). Returns an empty string when no PATH value line is present —
+/// with a successful listing that is proof of absence, the one legitimate
+/// empty baseline.
+#[cfg(windows)]
+fn parse_reg_path_value(stdout: &str) -> String {
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        let mut tokens = trimmed.split_whitespace();
+        let (name, kind) = match (tokens.next(), tokens.next()) {
+            (Some(name), Some(kind)) => (name, kind),
+            _ => continue,
+        };
+        if !name.eq_ignore_ascii_case("path") || !kind.starts_with("REG_") {
+            continue;
+        }
+        let after_name = trimmed[name.len()..].trim_start();
+        return after_name[kind.len()..].trim().to_string();
+    }
+    String::new()
 }
 
 #[cfg(not(windows))]
@@ -264,5 +286,20 @@ mod tests {
         } else {
             assert_eq!(normalize_path_entry("/usr/local/bin/"), "/usr/local/bin");
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn reg_path_parsing_keeps_internal_whitespace_and_detects_absence() {
+        let listing = "\r\nHKEY_CURRENT_USER\\Environment\r\n    Path    REG_EXPAND_SZ    C:\\a b;C:\\c    d;%USERPROFILE%\\bin\r\n    TEMP    REG_SZ    C:\\t\r\n";
+        assert_eq!(
+            parse_reg_path_value(listing),
+            "C:\\a b;C:\\c    d;%USERPROFILE%\\bin"
+        );
+        let upper = "    PATH    REG_SZ    C:\\only\r\n";
+        assert_eq!(parse_reg_path_value(upper), "C:\\only");
+        let absent = "HKEY_CURRENT_USER\\Environment\r\n    TEMP    REG_SZ    C:\\t\r\n";
+        assert_eq!(parse_reg_path_value(absent), "");
+        assert_eq!(parse_reg_path_value(""), "");
     }
 }
