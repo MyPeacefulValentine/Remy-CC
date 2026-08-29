@@ -51,7 +51,7 @@ def test_registry_owns_llm_defaults(config_home):
 def test_registry_ui_metadata_contract(config_home):
     _ = config_home
     registry = remy_config.registry_for_ui()
-    assert len(registry) == 57
+    assert len(registry) == 58
     group_ids = [group["id"] for group in remy_config.GROUPS]
     assert group_ids == ["llm_api", "index_generation", "injection", "mcp", "summary", "timeline", "system"]
     counts = {group_id: 0 for group_id in group_ids}
@@ -64,7 +64,7 @@ def test_registry_ui_metadata_contract(config_home):
         "mcp": 9,
         "summary": 11,
         "timeline": 2,
-        "system": 7,
+        "system": 8,
     }
     for row in registry:
         assert row["label_en"] and row["label_zh"]
@@ -128,6 +128,7 @@ def test_registry_ui_metadata_contract(config_home):
             "REMY_LANG", "REMY_BANNER_ENABLED", "REMY_PERMISSION_GATE",
             "REMY_REPO_AUDIT_ROOT",
             "REMY_STRUCT_SCAN_TIMEOUT", "REMY_FULL_SCAN_TIMEOUT",
+            "REMY_UPDATE_TIMEOUT",
             "REMY_INDEX_SCAN_LOCK_TIMEOUT",
         ],
     }

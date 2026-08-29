@@ -16,6 +16,7 @@ pub(crate) mod pending;
 pub(crate) mod pyprobe;
 pub(crate) mod settings;
 pub(crate) mod storage;
+pub(crate) mod update;
 pub(crate) mod util;
 
 /// Managed roots, resolved like `install_runtime.probes.roots_from_environment`:

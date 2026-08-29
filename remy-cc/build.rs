@@ -43,6 +43,10 @@ const TEMPLATE_FILES: &[&str] = &["settings.example.json", "remy_mcp.json"];
 const ARCHIVE_NAME: &str = "cc_artifacts.tar.gz";
 
 fn main() {
+    println!(
+        "cargo:rustc-env=REMY_TARGET={}",
+        std::env::var("TARGET").expect("TARGET")
+    );
     let manifest_dir =
         PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let repo_root = manifest_dir

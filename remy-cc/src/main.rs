@@ -102,6 +102,9 @@ enum DaemonCommand {
     /// Verify the installation: manifest hash reconciliation, settings
     /// claim, runtime descriptor, and daemon version comparison
     Verify,
+    /// Self-update from the latest GitHub release (sha256 verified;
+    /// provenance attestation checked when the gh CLI is available)
+    Update,
     /// Remove the managed installation (project data and user settings
     /// entries are preserved)
     Uninstall {
@@ -187,6 +190,9 @@ fn main() -> ExitCode {
         DaemonCommand::Verify => {
             return install::run_verify();
         }
+        DaemonCommand::Update => {
+            return install::update::run_update();
+        }
         DaemonCommand::Uninstall { purge_state, yes } => {
             return install::run_uninstall(purge_state, yes);
         }
@@ -254,6 +260,7 @@ fn main() -> ExitCode {
         | DaemonCommand::Mcp
         | DaemonCommand::Install { .. }
         | DaemonCommand::Verify
+        | DaemonCommand::Update
         | DaemonCommand::Uninstall { .. }
         | DaemonCommand::Config { .. }
         | DaemonCommand::SummaryRebuild { .. }
