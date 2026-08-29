@@ -33,7 +33,7 @@ pub(crate) struct InstallParams {
     pub(crate) language: String,
     pub(crate) suite_version: String,
     pub(crate) source_binary: PathBuf,
-    pub(crate) python: Option<RuntimeDescriptor>,
+    pub(crate) python: Result<RuntimeDescriptor, InstallError>,
     pub(crate) artifact_sha256: Option<String>,
 }
 
@@ -76,22 +76,26 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
     let mut planned = plan_claude_contents(&params.language)?;
     let exe_name = settings::managed_exe_name(&params.remy_root);
     planned.push(plan_binary(params, exe_name)?);
-    if let Some(descriptor) = &params.python {
-        let target = params.remy_root.join("runtime").join("python.json");
-        let bytes = pyprobe::descriptor_bytes(descriptor, &target);
-        planned.push(PlannedFile {
-            root: manifest::ROOT_REMY,
-            path: "runtime/python.json".to_string(),
-            digest: storage::sha256_hex(&bytes),
-            payload: Payload::Bytes(bytes),
-            role: "runtime_descriptor",
-            executable: false,
-            write: true,
-        });
-    } else {
-        report
-            .warnings
-            .push("python probe unavailable; runtime descriptor not refreshed (Python 3.10+ is a runtime prerequisite)".to_string());
+    match &params.python {
+        Ok(descriptor) => {
+            let target = params.remy_root.join("runtime").join("python.json");
+            let bytes = pyprobe::descriptor_bytes(descriptor, &target);
+            planned.push(PlannedFile {
+                root: manifest::ROOT_REMY,
+                path: "runtime/python.json".to_string(),
+                digest: storage::sha256_hex(&bytes),
+                payload: Payload::Bytes(bytes),
+                role: "runtime_descriptor",
+                executable: false,
+                write: true,
+            });
+        }
+        Err(error) => {
+            report.warnings.push(format!(
+                "python probe unavailable ({}); runtime descriptor not refreshed (Python 3.10+ is a runtime prerequisite)",
+                error.message
+            ));
+        }
     }
 
     let mut old_records: std::collections::BTreeMap<(String, String), FileRecord> = old_manifest
@@ -285,7 +289,7 @@ pub(crate) fn verify(claude_root: &Path, remy_root: &Path) -> Vec<String> {
             "runtime descriptor is missing (Python 3.10+ is a runtime prerequisite)".to_string(),
         ),
     }
-    if let Some(running) = running_daemon_version(remy_root) {
+    if let Some(running) = running_daemon_version(remy_root, &mut warnings) {
         if running != env!("CARGO_PKG_VERSION") {
             warnings.push(format!(
                 "daemon runs {running} but this binary is {}; run remy-cc daemon restart",
@@ -296,14 +300,28 @@ pub(crate) fn verify(claude_root: &Path, remy_root: &Path) -> Vec<String> {
     warnings
 }
 
-fn running_daemon_version(remy_root: &Path) -> Option<String> {
+fn running_daemon_version(remy_root: &Path, warnings: &mut Vec<String>) -> Option<String> {
     let run_dir = remy_root.join("run");
-    if !crate::single_instance::is_held(&run_dir).unwrap_or(false) {
-        return None;
+    match crate::single_instance::is_held(&run_dir) {
+        Ok(true) => {}
+        Ok(false) => return None,
+        Err(error) => {
+            warnings.push(format!(
+                "cannot probe the daemon lock: {error}; daemon version check skipped"
+            ));
+            return None;
+        }
     }
+    let Some(token) = crate::server::read_token(&run_dir) else {
+        warnings.push(
+            "daemon is running but its token is unreadable; daemon version check skipped"
+                .to_string(),
+        );
+        return None;
+    };
     let hello = crate::protocol::Request::Hello {
         protocol_version: crate::protocol::PROTOCOL_VERSION,
-        token: crate::server::read_token(&run_dir).unwrap_or_default(),
+        token,
     };
     match crate::ipc_roundtrip(&run_dir, &hello) {
         Some(crate::protocol::Response::Hello { daemon_version, .. }) => Some(daemon_version),
@@ -330,10 +348,16 @@ pub(crate) fn uninstall(
             None => return Err(InstallError::runtime("install manifest is missing")),
         };
         let run_dir = remy_root.join("run");
-        if crate::single_instance::is_held(&run_dir).unwrap_or(false) {
-            return Err(InstallError::runtime(
-                "daemon must be stopped before uninstall; run: remy-cc daemon stop",
-            ));
+        match crate::single_instance::is_held(&run_dir) {
+            Ok(true) => {
+                return Err(InstallError::runtime(
+                    "daemon must be stopped before uninstall; run: remy-cc daemon stop",
+                ))
+            }
+            Ok(false) => {}
+            Err(error) => report.warnings.push(format!(
+                "cannot probe the daemon lock: {error}; continuing (locked files defer to the pending register)"
+            )),
         }
 
         let mut parents: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
@@ -589,7 +613,12 @@ fn apply_mode(stage: &Path, target: &Path, executable: bool, private: bool) {
     } else {
         return;
     };
-    let _ = fs::set_permissions(stage, fs::Permissions::from_mode(mode));
+    if let Err(error) = fs::set_permissions(stage, fs::Permissions::from_mode(mode)) {
+        eprintln!(
+            "  [!] could not apply mode {mode:o} to {}: {error}",
+            target.display()
+        );
+    }
 }
 
 #[cfg(not(unix))]
@@ -789,7 +818,7 @@ mod tests {
                 language: language.to_string(),
                 suite_version: "0.8.0".to_string(),
                 source_binary: source,
-                python: None,
+                python: Err(InstallError::runtime("Python interpreter probe failed")),
                 artifact_sha256: None,
             },
             _dir: dir,

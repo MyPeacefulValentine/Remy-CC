@@ -135,7 +135,7 @@ pub(crate) fn run_install(lang: Option<String>, non_interactive: bool) -> ExitCo
         language: language.clone(),
         suite_version: env!("CARGO_PKG_VERSION").to_string(),
         source_binary,
-        python: pyprobe::probe().ok(),
+        python: pyprobe::probe(),
         artifact_sha256: None,
     };
     match ops::install(&params) {

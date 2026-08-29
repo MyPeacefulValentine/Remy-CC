@@ -116,8 +116,12 @@ def cmd_summary_rebuild(args):
     summarizer = modules["summarizer"]
     lock = modules["index_state"].project_scan_lock(str(cwd))
     lock.acquire()
-    llm_call = _default_llm_call()
-    db = _open_logic_db(cwd)
+    try:
+        llm_call = _default_llm_call()
+        db = _open_logic_db(cwd)
+    except BaseException:
+        lock.release()
+        raise
     try:
         if args.node_kind and args.node_ref:
             if args.node_kind == "file":
@@ -156,7 +160,11 @@ def cmd_summary_vacuum(args):
     lock = modules["index_state"].project_scan_lock(str(cwd))
     projection = modules["retrieval_projection"]
     lock.acquire()
-    db = _open_logic_db(cwd)
+    try:
+        db = _open_logic_db(cwd)
+    except BaseException:
+        lock.release()
+        raise
     try:
         from datetime import datetime, timedelta
         days = args.older_than

@@ -183,8 +183,15 @@ pub(crate) fn run_update() -> ExitCode {
         }
     }
 
-    let daemon_was_running =
-        crate::single_instance::is_held(&roots.remy.join("run")).unwrap_or(false);
+    let daemon_was_running = match crate::single_instance::is_held(&roots.remy.join("run")) {
+        Ok(held) => held,
+        Err(error) => {
+            println!(
+                "  [!] cannot probe the daemon lock: {error}; skipping the automatic daemon restart"
+            );
+            false
+        }
+    };
     let deployed = roots.remy.join("bin").join(exe_name);
     let pending = PendingDeletes::new(&roots.claude, &roots.remy);
     if let Err(error) = swap_binary(&new_binary, &deployed, &pending) {
