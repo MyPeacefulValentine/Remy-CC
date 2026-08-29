@@ -1161,6 +1161,27 @@ mod tests {
             .expect("uninstall tolerates missing targets");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn posix_modes_follow_the_v3_rule() {
+        use std::os::unix::fs::PermissionsExt;
+        let env = setup("en");
+        install(&env.params).expect("install");
+        let settings_mode = std::fs::metadata(env.params.claude_root.join("settings.json"))
+            .expect("settings")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(settings_mode, 0o600, "fresh settings.json must be private");
+        let exe = settings::managed_exe_name(&env.params.remy_root);
+        let binary_mode = std::fs::metadata(env.params.remy_root.join("bin").join(exe))
+            .expect("binary")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(binary_mode, 0o755, "deployed binary must be executable");
+    }
+
     #[test]
     fn uninstall_without_a_manifest_rejects() {
         let env = setup("en");
