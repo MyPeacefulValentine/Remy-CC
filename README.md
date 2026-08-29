@@ -249,6 +249,18 @@ The installer:
 
 Automation entry points accept `--non-interactive` and `--json`; JSON mode implies non-interactive mode and writes exactly one result object to stdout. Uninstall accepts `--purge-state` to remove `~/.remy-cc/` engine state while preserving every project index. Exit codes are stable: `0` success, `1` preflight rejection, `2` pre-commit failure with successful rollback, `3` committed install with pending cleanup, and `4` incomplete recovery or rollback.
 
+### Rust self-install (R4.4 transition window)
+
+Since R4.4 segment 1 the `remy-cc` binary carries the install family natively and is the authoritative path while `python install.py` remains available (its thin-shell retirement lands with segment 2/3):
+
+| Binary command | Description |
+| :--- | :--- |
+| `remy-cc install [--lang en\|zh-CN] [--non-interactive]` | Idempotent self-install: deploys the embedded Claude Code artifacts and this binary, merges settings, registers MCP, and migrates a v3 manifest to the v4 contract (schema 4, Rust single owner, `artifact_sha256`, no `hook_mode`) |
+| `remy-cc update` | Self-update from the latest GitHub release: sha256 verification is mandatory and hard-rejects; provenance attestation is verified opportunistically when the gh CLI is present; the running image is replaced via rename-and-replace and the daemon is restarted when one was running |
+| `remy-cc verify` / `remy-cc uninstall [--yes] [--purge-state]` | v4 manifest hash reconciliation and precise removal (project data, user settings entries, and engine state are preserved by default) |
+| `remy-cc restart` / `remy-cc logs [--tail N] [--follow]` | systemctl-style daemon restart (equals start when stopped); daemon log access |
+| `remy-cc config` / `remy-cc summary-rebuild\|summary-audit\|summary-vacuum` | Delegated to the deployed Python CLI (Python 3.10+ is a runtime prerequisite) |
+
 ### CLI & Configuration
 
 After installation, the `remy-cc` command is available system-wide:

@@ -249,6 +249,18 @@ python install.py --lang zh-CN   # 简体中文
 
 自动化入口支持 `--non-interactive` 与 `--json`；JSON 模式隐含非交互模式，stdout 只写入一个结果对象。卸载支持 `--purge-state`，用于删除 `~/.remy-cc/` 引擎状态，同时保留所有项目索引。退出码固定为：`0` 成功、`1` 预检拒绝、`2` 提交前失败且回滚成功、`3` 已提交但清理未完成、`4` 恢复或回滚未完成。
 
+### Rust 自安装（R4.4 过渡窗口）
+
+自 R4.4 段 1 起，`remy-cc` 二进制原生承载安装命令族，双安装器并存窗口内以 Rust 路径为准（`python install.py` 仍可用，薄壳化与退役归段 2/3）：
+
+| 二进制命令 | 说明 |
+| :--- | :--- |
+| `remy-cc install [--lang en\|zh-CN] [--non-interactive]` | 幂等自安装：部署嵌入的 Claude Code 工件与二进制自身、合并 settings、注册 MCP，并把 v3 manifest 迁移到 v4 契约（schema 4、Rust 单 owner、`artifact_sha256`、无 `hook_mode`） |
+| `remy-cc update` | 从最新 GitHub release 自更新：sha256 校验强制且失败硬拒绝；gh CLI 可用时机会性验证 provenance attestation；在用映像经 rename-and-replace 替换，daemon 原本运行时自动重启 |
+| `remy-cc verify` / `remy-cc uninstall [--yes] [--purge-state]` | v4 manifest 哈希对账与按 manifest 精确卸载（默认保留项目数据、用户 settings 条目与引擎状态） |
+| `remy-cc restart` / `remy-cc logs [--tail N] [--follow]` | systemctl 语义的 daemon 重启（未运行时等于 start）；daemon 日志读取 |
+| `remy-cc config` / `remy-cc summary-rebuild\|summary-audit\|summary-vacuum` | 委派部署侧 Python CLI 执行（Python 3.10+ 为运行前置） |
+
 ### 命令与配置
 
 安装完成后，`remy-cc` 命令在系统全局可用：

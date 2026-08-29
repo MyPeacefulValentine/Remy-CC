@@ -794,6 +794,27 @@ error, byte-identical repeated calls, and an unchanged DB snapshot hash.
 python -m pytest Remy-CC/tests/test_mcp_dependencies.py -v
 ```
 
+## R4.4 segment 1: self-install module (Rust)
+
+The `src/install/` module family ships its own unit surface inside the crate
+(part of `cargo test --workspace`): archive reconciliation against an
+independent source-tree enumeration plus ignore/safety/size invariants
+(`embedded`), the settings merge family behaviorally ported from
+`install_runtime/settings.py` with verbatim error texts (`settings`), v4
+manifest validation with read-only v3 parsing (`manifest`), pending-deletes
+v1 interop (`pending`), the install lock (`lock`), canonical JSON parity —
+the workspace compiles serde_json with `preserve_order`, so key sorting is
+explicit (`storage`) — and the install/verify/uninstall operations
+end-to-end in temp roots including v3 migration and legacy hook clearing
+(`ops`, `update`). `tests/daemon_cli.rs` adds `restart`/`logs` integration.
+The release-binary probe matrix (temp roots, 12 items) covers fresh install,
+clean verify, idempotent rerun, drift and tamper rejection, interrupted-run
+convergence, daemon start/restart/logs/stop on the deployed binary,
+default-uninstall preservation (project data, user config, engine state),
+rename-aside deferral of the running image with a later pending sweep, v3
+manifest migration (shim and pre-rename binary removed), and
+`--purge-state`.
+
 ## Boundaries
 
 Committed tests use synthetic source or the fixed MulanPSL-2.0 TEE fixture, temporary directories, and temporary SQLite databases. They do not require an LLM API key or network access. P0.3 compares normalized full and incremental states. P0.4 adds fixed-revision symbols and relationships, repeated full-scan idempotency, handler rename/delete comparisons, parser-backend reporting, and local full-project measurement commands. P0.5 moves the structural implementation into `schema.py`, `symbol_names.py`, `migrations.py`, and `scanner.py`; `struct_scan.py` remains the stable CLI/import entry point. P0.6 rejects scalar and byte arrays before emitting positional registration facts, rejects numeric and expression handler values, preserves Unicode word identifiers, reports pattern types and sources, and checks the three known image arrays in the fixed full project. The fixed project has no known function-pointer struct table that omits inner aggregate braces; that C form remains outside the verified parser contract. Migration tests import without parser modules, while the full suite, Pyright, compatibility exports, both fixture backends, and the three fixed full-project scans verify the current behavior.
