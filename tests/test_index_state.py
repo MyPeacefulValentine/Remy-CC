@@ -21,11 +21,11 @@ from index_state import (
     normalize_source_path,
 )
 
-_TARGET_DIR = Path(__file__).resolve().parent.parent / "remy-daemon" / "target"
+_TARGET_DIR = Path(__file__).resolve().parent.parent / "remy-cc" / "target"
 
 
 def _daemon_binary():
-    name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    name = "remy-cc.exe" if sys.platform == "win32" else "remy-cc"
     candidates = [_TARGET_DIR / profile / name for profile in ("release", "debug")]
     existing = [path for path in candidates if path.is_file()]
     if not existing:
@@ -91,7 +91,7 @@ def test_file_lock_blocks_and_releases_after_process_exit(tmp_path):
         assert True
 
 
-@pytest.mark.skipif(BINARY is None, reason="remy-daemon binary not built")
+@pytest.mark.skipif(BINARY is None, reason="remy-cc binary not built")
 class TestScanLockInterop:
     """Python msvcrt/flock byte lock vs Rust std File::try_lock on the same
     `.claude/logic_index_scan.lock` must exclude each other both ways."""

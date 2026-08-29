@@ -44,7 +44,7 @@ def test_run_daemon_scan_maps_the_terminal_scan_result(tmp_path, monkeypatch):
             returncode=2, stdout=json.dumps(payload) + "\n", stderr=""
         )
 
-    binary = tmp_path / "remy-daemon.exe"
+    binary = tmp_path / "remy-cc.exe"
     monkeypatch.setattr(run_module, "find_daemon_binary", lambda: str(binary))
     monkeypatch.setattr(run_module.subprocess, "run", fake_run)
 
@@ -72,7 +72,7 @@ def test_run_daemon_scan_missing_binary_fails_with_guidance(tmp_path, monkeypatc
 
     assert result.status == RunStatus.FAILED
     assert result.postprocess_complete is False
-    assert "remy-daemon binary not found" in result.errors[0].message
+    assert "remy-cc binary not found" in result.errors[0].message
 
 
 def test_run_daemon_scan_without_terminal_json_fails(tmp_path, monkeypatch):

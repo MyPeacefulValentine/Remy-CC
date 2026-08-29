@@ -1,4 +1,4 @@
-"""Integration tests for remy-daemon via remy-cc CLI."""
+"""Integration tests for remy-cc via remy-cc CLI."""
 
 import errno
 import json

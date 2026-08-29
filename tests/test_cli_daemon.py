@@ -61,13 +61,13 @@ def test_cmd_daemon_missing_binary_exits_1_with_guidance(monkeypatch, tmp_path, 
 
     assert exc.value.code == 1
     err = capsys.readouterr().err
-    assert "remy-daemon binary not found" in err
+    assert "remy-cc binary not found" in err
     assert "cargo build --release" in err
     assert str(tmp_path) in err
 
 
 def test_cmd_daemon_forwards_args_and_exit_code(monkeypatch, tmp_path):
-    exe_name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    exe_name = "remy-cc.exe" if sys.platform == "win32" else "remy-cc"
     exe = tmp_path / "bin" / exe_name
     exe.parent.mkdir(parents=True)
     exe.write_bytes(b"placeholder")

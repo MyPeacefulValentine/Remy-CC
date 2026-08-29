@@ -46,16 +46,16 @@ VERSION = "4.0.0"
 MAX_CTX_CHARS = 200000
 
 DAEMON_BINARY_GUIDANCE = (
-    "remy-daemon binary not found; build it with 'cargo build --release' under "
-    "remy-daemon/ or reinstall Remy-CC so install.py deploys it to ~/.remy-cc/bin."
+    "remy-cc binary not found; build it with 'cargo build --release' under "
+    "remy-cc/ or reinstall Remy-CC so install.py deploys it to ~/.remy-cc/bin."
 )
 
 
 def find_daemon_binary():
-    """Locate remy-daemon: a development-tree build wins over the deployed copy."""
-    name = "remy-daemon.exe" if os.name == "nt" else "remy-daemon"
+    """Locate remy-cc: a development-tree build wins over the deployed copy."""
+    name = "remy-cc.exe" if os.name == "nt" else "remy-cc"
     target_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "remy-daemon", "target")
+        os.path.join(os.path.dirname(__file__), "..", "..", "remy-cc", "target")
     )
     dev_builds = [
         path
@@ -72,7 +72,7 @@ def find_daemon_binary():
 
 
 def run_daemon_scan(root_dir, db_path, config):
-    """Run `remy-daemon scan` and translate its terminal scan_result line."""
+    """Run `remy-cc scan` and translate its terminal scan_result line."""
     binary = find_daemon_binary()
     if binary is None:
         return ScanResult(

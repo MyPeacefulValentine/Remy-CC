@@ -137,7 +137,7 @@ class TestInitDb:
         db.commit()
         db.close()
 
-        with pytest.raises(RuntimeError, match="remy-daemon scan"):
+        with pytest.raises(RuntimeError, match="remy-cc scan"):
             StructScanner(str(tmp_path))
 
         db = sqlite3.connect(str(db_path))
@@ -161,7 +161,7 @@ class TestInitDb:
         db.commit()
         db.close()
 
-        with pytest.raises(RuntimeError, match="remy-daemon scan"):
+        with pytest.raises(RuntimeError, match="remy-cc scan"):
             StructScanner(str(tmp_path))
 
         db = sqlite3.connect(str(db_path))

@@ -28,7 +28,7 @@ def quote_command_arg(value: str) -> str:
 def hook_commands(roots: RootPaths, hook_mode: str, python_executable: str) -> dict[str, str]:
     del python_executable
     if hook_mode == "rust":
-        executable = roots.remy / "bin" / ("remy-daemon.exe" if _is_windows_path(roots.remy) else "remy-daemon")
+        executable = roots.remy / "bin" / ("remy-cc.exe" if _is_windows_path(roots.remy) else "remy-cc")
         prefix = quote_command_arg(str(executable))
         return {"enrich": prefix + " hook enrich", "dirty": prefix + " hook dirty"}
     raise InstallRuntimeError("unsupported Hook mode")
@@ -231,7 +231,7 @@ def _remove_prior_target_hooks(
                 command = str(hook.get("command", "")).strip()
                 if command in claimed_commands or _is_legacy_default(command, roots, script_name):
                     continue
-                if script_name in command or ("remy-daemon" in command and " hook " in command):
+                if script_name in command or ("remy-cc" in command and " hook " in command):
                     raise InstallRuntimeError("an existing target Hook command was modified")
                 retained.append(hook)
             entry["hooks"] = retained

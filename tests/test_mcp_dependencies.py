@@ -2,7 +2,7 @@
 
 The tool has no Python oracle arm and is excluded from the H.4 differential
 matrix (docs/MCP_RUST_PARITY_BASELINE.md §4.2); this suite is its acceptance
-surface. It drives the release `remy-daemon mcp` binary over stdio against a
+surface. It drives the release `remy-cc mcp` binary over stdio against a
 purpose-built corpus exercising: stored resolved imports, unique-suffix
 derivation from import_bindings, stdlib short-circuit, multi-hit ambiguity
 drop, dangling entries, import cycles, depth clamping, and read-only access.
@@ -24,7 +24,7 @@ import os
 
 pytestmark = pytest.mark.skipif(
     not os.path.exists(RUST_BIN),
-    reason="release remy-daemon binary not built (cargo build --release)",
+    reason="release remy-cc binary not built (cargo build --release)",
 )
 
 # Chain length exceeds the default REMY_MCP_BFS_MAX_DEPTH (5) so the clamp

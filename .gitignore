@@ -13,7 +13,7 @@ __pycache__/
 *.so
 
 # Rust
-remy-daemon/target/
+remy-cc/target/
 
 # Logs
 *.log

@@ -1,4 +1,4 @@
-//! End-to-end tests driving the built binary via `CARGO_BIN_EXE_remy-daemon`.
+//! End-to-end tests driving the built binary via `CARGO_BIN_EXE_remy-cc`.
 //!
 //! Real sleeps below are bounded readiness polling (process synchronization),
 //! not time-behavior assertions; guideline §5.6 applies to the latter.
@@ -12,7 +12,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(50);
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
 
 fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_remy-daemon")
+    env!("CARGO_BIN_EXE_remy-cc")
 }
 
 fn run(home: &Path, args: &[&str]) -> Output {
@@ -20,7 +20,7 @@ fn run(home: &Path, args: &[&str]) -> Output {
         .args(args)
         .env("REMY_CC_HOME", home)
         .output()
-        .expect("run remy-daemon")
+        .expect("run remy-cc")
 }
 
 fn exit_code(output: &Output) -> i32 {

@@ -2,7 +2,7 @@
 
 Long-lived regression asset (R4.1). The Python side runs in-process against
 the *_impl functions (the same call surface the FastMCP wrappers use); the
-Rust side is the release `remy-daemon mcp` binary spoken to over stdio
+Rust side is the release `remy-cc mcp` binary spoken to over stdio
 JSON-RPC. Skipped when the release binary is absent.
 
 Comparison layers (docs/MCP_RUST_PARITY_BASELINE.md §4):
@@ -25,14 +25,14 @@ import pytest
 _REMY_ROOT = os.path.join(os.path.dirname(__file__), "..")
 RUST_BIN = os.path.abspath(
     os.path.join(
-        _REMY_ROOT, "remy-daemon", "target", "release",
-        "remy-daemon.exe" if os.name == "nt" else "remy-daemon",
+        _REMY_ROOT, "remy-cc", "target", "release",
+        "remy-cc.exe" if os.name == "nt" else "remy-cc",
     )
 )
 
 pytestmark = pytest.mark.skipif(
     not os.path.exists(RUST_BIN),
-    reason="release remy-daemon binary not built (cargo build --release)",
+    reason="release remy-cc binary not built (cargo build --release)",
 )
 
 from struct_scan import SCHEMA_SQL

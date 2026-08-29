@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn rust_probe_rejects_missing_binary() {
-        let error = validate_rust(Path::new("remy-daemon-does-not-exist"), "0.2.0").unwrap_err();
+        let error = validate_rust(Path::new("remy-cc-does-not-exist"), "0.2.0").unwrap_err();
         assert!(error.contains("probe spawn failed"), "{error}");
     }
 }

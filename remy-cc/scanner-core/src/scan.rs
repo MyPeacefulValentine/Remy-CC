@@ -555,7 +555,7 @@ pub fn scan_files(
     ))
 }
 
-/// CLI entry shared by `remy-daemon scan`.
+/// CLI entry shared by `remy-cc scan`.
 pub struct ScanArgs {
     pub root: PathBuf,
     pub db: PathBuf,

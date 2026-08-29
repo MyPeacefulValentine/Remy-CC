@@ -18,11 +18,11 @@ jobs:
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           FILE_VERSION="$(tr -d '[:space:]' < VERSION)"
-          DAEMON_VERSION="$(grep -m1 '^version' remy-daemon/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
-          SCANNER_VERSION="$(grep -m1 '^version' remy-daemon/scanner-core/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
-          echo "tag=$TAG_VERSION VERSION=$FILE_VERSION remy-daemon=$DAEMON_VERSION scanner-core=$SCANNER_VERSION"
+          DAEMON_VERSION="$(grep -m1 '^version' remy-cc/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
+          SCANNER_VERSION="$(grep -m1 '^version' remy-cc/scanner-core/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
+          echo "tag=$TAG_VERSION VERSION=$FILE_VERSION remy-cc=$DAEMON_VERSION scanner-core=$SCANNER_VERSION"
           if [ "$TAG_VERSION" != "$FILE_VERSION" ] || [ "$TAG_VERSION" != "$DAEMON_VERSION" ] || [ "$TAG_VERSION" != "$SCANNER_VERSION" ]; then
-            echo "::error::version mismatch: tag=$TAG_VERSION VERSION=$FILE_VERSION remy-daemon=$DAEMON_VERSION scanner-core=$SCANNER_VERSION"
+            echo "::error::version mismatch: tag=$TAG_VERSION VERSION=$FILE_VERSION remy-cc=$DAEMON_VERSION scanner-core=$SCANNER_VERSION"
             exit 1
           fi
       - env:
@@ -51,7 +51,7 @@ jobs:
       - run: rustup target add ${{ matrix.target }}
       - if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - run: cargo build --release --manifest-path remy-daemon/Cargo.toml --target ${{ matrix.target }}
+      - run: cargo build --release --manifest-path remy-cc/Cargo.toml --target ${{ matrix.target }}
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
 
@@ -59,9 +59,9 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          ASSET="remy-daemon-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
-          BIN_DIR="remy-daemon/target/${{ matrix.target }}/release"
-          tar -czf "$ASSET" -C "$BIN_DIR" remy-daemon
+          ASSET="remy-cc-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
+          BIN_DIR="remy-cc/target/${{ matrix.target }}/release"
+          tar -czf "$ASSET" -C "$BIN_DIR" remy-cc
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "$ASSET" > "$ASSET.sha256"
           else
@@ -71,23 +71,23 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $asset = "remy-daemon-${{ github.ref_name }}-${{ matrix.target }}.zip"
-          Compress-Archive -Path "remy-daemon/target/${{ matrix.target }}/release/remy-daemon.exe" -DestinationPath $asset
+          $asset = "remy-cc-${{ github.ref_name }}-${{ matrix.target }}.zip"
+          Compress-Archive -Path "remy-cc/target/${{ matrix.target }}/release/remy-cc.exe" -DestinationPath $asset
           "$((Get-FileHash $asset -Algorithm SHA256).Hash.ToLower())  $asset" | Set-Content "$asset.sha256" -Encoding ascii
 
       - name: Attest build provenance (Unix)
         if: runner.os != 'Windows'
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: remy-daemon-*.tar.gz
+          subject-path: remy-cc-*.tar.gz
       - name: Attest build provenance (Windows)
         if: runner.os == 'Windows'
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: remy-daemon-*.zip
+          subject-path: remy-cc-*.zip
 
       - name: Upload assets
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: gh release upload "${{ github.ref_name }}" remy-daemon-* --clobber
+        run: gh release upload "${{ github.ref_name }}" remy-cc-* --clobber

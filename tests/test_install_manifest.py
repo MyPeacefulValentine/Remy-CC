@@ -310,7 +310,7 @@ def daemon_env(tmp_path, monkeypatch):
     """Fake built daemon binary + isolated REMY_CC_HOME."""
     src_dir = tmp_path / "release"
     src_dir.mkdir()
-    exe_name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    exe_name = "remy-cc.exe" if sys.platform == "win32" else "remy-cc"
     exe = src_dir / exe_name
     exe.write_bytes(b"fake-daemon-binary")
     remy_home = tmp_path / "remy-cc-home"
@@ -417,7 +417,7 @@ class _StatusRaisesRun:
 
 
 def test_daemon_deploy_skipped_when_version_check_times_out(daemon_env, monkeypatch, capsys):
-    exc = install.subprocess.TimeoutExpired(cmd="remy-daemon --version", timeout=install.DAEMON_PROBE_TIMEOUT)
+    exc = install.subprocess.TimeoutExpired(cmd="remy-cc --version", timeout=install.DAEMON_PROBE_TIMEOUT)
     monkeypatch.setattr(install.subprocess, "run", _RaisingVersionRun(exc))
     records = []
     install.deploy_daemon_binary(records)
@@ -455,7 +455,7 @@ def test_cleanup_skips_records_outside_claude_home(claude_home, tmp_path):
     deploy_daemon_binary overwrites it instead of cleanup deleting and rebuilding it."""
     inside = claude_home / "hooks" / "pre_tool_guard.py"
     h_inside = _seed_file(inside, "hook")
-    outside = tmp_path / "remy-cc-home" / "bin" / "remy-daemon"
+    outside = tmp_path / "remy-cc-home" / "bin" / "remy-cc"
     h_outside = _seed_file(outside, "daemon")
 
     install.cleanup_from_manifest(
@@ -647,15 +647,15 @@ def test_v3_install_writes_dual_root_manifest_and_runtime(v3_runtime, tmp_path):
         for entry in entries
         for hook in entry["hooks"]
     ]
-    assert any("remy-daemon" in command and command.endswith("hook enrich") for command in commands)
-    assert any("remy-daemon" in command and command.endswith("hook dirty") for command in commands)
+    assert any("remy-cc" in command and command.endswith("hook enrich") for command in commands)
+    assert any("remy-cc" in command and command.endswith("hook dirty") for command in commands)
 
 
 def test_v3_install_without_daemon_binary_is_rejected(tmp_path):
     roots = RootPaths(tmp_path / "claude root", tmp_path / "remy root")
     runtime = InstallRuntime(roots)
 
-    with pytest.raises(InstallRuntimeError, match="remy-daemon"):
+    with pytest.raises(InstallRuntimeError, match="remy-cc"):
         runtime.install(_v3_request(tmp_path))
 
     assert not (roots.remy / "install" / "manifest.json").exists()
@@ -1163,7 +1163,7 @@ def test_v3_unknown_daemon_state_rejects_before_write(v3_runtime, tmp_path, monk
 
 
 def test_v3_missing_binary_with_endpoint_residue_is_unknown(tmp_path):
-    executable = tmp_path / "remy" / "bin" / "remy-daemon.exe"
+    executable = tmp_path / "remy" / "bin" / "remy-cc.exe"
     run_dir = executable.parent.parent / "run"
     run_dir.mkdir(parents=True)
     (run_dir / "daemon.port").write_text("1234", encoding="ascii")
@@ -1172,7 +1172,7 @@ def test_v3_missing_binary_with_endpoint_residue_is_unknown(tmp_path):
 
 
 def test_v3_missing_binary_with_unheld_lock_is_stopped(tmp_path):
-    executable = tmp_path / "remy" / "bin" / "remy-daemon.exe"
+    executable = tmp_path / "remy" / "bin" / "remy-cc.exe"
     run_dir = executable.parent.parent / "run"
     run_dir.mkdir(parents=True)
     (run_dir / "daemon.lock").write_bytes(b"")
@@ -1182,7 +1182,7 @@ def test_v3_missing_binary_with_unheld_lock_is_stopped(tmp_path):
 
 def test_v3_same_version_different_daemon_hash_is_rejected(v3_runtime, tmp_path, monkeypatch):
     runtime, roots = v3_runtime
-    deployed = roots.remy / "bin" / ("remy-daemon.exe" if sys.platform == "win32" else "remy-daemon")
+    deployed = roots.remy / "bin" / ("remy-cc.exe" if sys.platform == "win32" else "remy-cc")
     deployed.parent.mkdir(parents=True, exist_ok=True)
     deployed.write_bytes(b"deployed")
     candidate = tmp_path / deployed.name
@@ -1329,12 +1329,12 @@ class _LegacyDaemonRun:
                 returncode=2, stdout="", stderr="error: unexpected argument '--json'"
             )
         if cmd[-1] == "--version":
-            return types.SimpleNamespace(returncode=0, stdout="remy-daemon 0.1.0\n", stderr="")
+            return types.SimpleNamespace(returncode=0, stdout="remy-cc 0.1.0\n", stderr="")
         return types.SimpleNamespace(returncode=self.plain_rc, stdout="", stderr="")
 
 
 def _legacy_probe(tmp_path, monkeypatch, plain_rc):
-    executable = tmp_path / "remy-daemon.exe"
+    executable = tmp_path / "remy-cc.exe"
     executable.write_bytes(b"legacy-daemon")
     fake = _LegacyDaemonRun(plain_rc)
     monkeypatch.setattr(probes_module.subprocess, "run", fake)
@@ -1360,7 +1360,7 @@ def test_probe_daemon_legacy_binary_odd_exit_stays_unknown(tmp_path, monkeypatch
 
 
 def test_probe_daemon_non_json_without_exit_two_stays_unknown(tmp_path, monkeypatch):
-    executable = tmp_path / "remy-daemon.exe"
+    executable = tmp_path / "remy-cc.exe"
     executable.write_bytes(b"broken-daemon")
     calls = []
 

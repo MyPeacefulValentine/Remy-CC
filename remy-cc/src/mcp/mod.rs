@@ -1,4 +1,4 @@
-//! `remy-daemon mcp` — the Rust host for the remy-index MCP read path (R4.1).
+//! `remy-cc mcp` — the Rust host for the remy-index MCP read path (R4.1).
 //! Per-session stdio transport, WAL read-only-style direct SQLite access
 //! (INV-R2: no daemon involvement); the Python server at
 //! remy-src/index_mcp_server.py is the byte-level rendering oracle.
@@ -390,7 +390,7 @@ pub fn run() -> ExitCode {
     let runtime = match tokio::runtime::Runtime::new() {
         Ok(runtime) => runtime,
         Err(error) => {
-            eprintln!("remy-daemon mcp: runtime start failed: {error}");
+            eprintln!("remy-cc mcp: runtime start failed: {error}");
             return ExitCode::from(2);
         }
     };
@@ -405,7 +405,7 @@ pub fn run() -> ExitCode {
     match outcome {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("remy-daemon mcp: {error}");
+            eprintln!("remy-cc mcp: {error}");
             ExitCode::from(2)
         }
     }

@@ -39,7 +39,7 @@ def test_run_struct_scan_spawns_daemon_scan_with_custom_db_path(tmp_path, monkey
     legacy_queue.write_text("main.py\n", encoding="utf-8")
     legacy_pending = project / ".claude" / "logic_index_dirty.pending.123"
     legacy_pending.write_text("a.py\n", encoding="utf-8")
-    binary = tmp_path / "remy-daemon.exe"
+    binary = tmp_path / "remy-cc.exe"
     observed = {}
 
     def run(args, **kwargs):
@@ -82,4 +82,4 @@ def test_run_struct_scan_skips_when_daemon_binary_is_missing(tmp_path, monkeypat
     _write_db(custom)
     monkeypatch.setattr(lifecycle, "find_daemon_binary", lambda: None)
     assert lifecycle.run_struct_scan(str(project)) is None
-    assert "remy-daemon binary not found" in capsys.readouterr().err
+    assert "remy-cc binary not found" in capsys.readouterr().err

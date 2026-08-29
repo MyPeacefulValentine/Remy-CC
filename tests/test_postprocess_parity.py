@@ -22,7 +22,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-TARGET_DIR = REPO_ROOT / "remy-daemon" / "target"
+TARGET_DIR = REPO_ROOT / "remy-cc" / "target"
 
 sys.path.insert(0, str(REPO_ROOT / "remy-src"))
 import remy_config
@@ -36,7 +36,7 @@ except Exception:  # pragma: no cover - import environment issues equal skip
 
 
 def _daemon_binary() -> Path | None:
-    name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    name = "remy-cc.exe" if sys.platform == "win32" else "remy-cc"
     candidates = [TARGET_DIR / profile / name for profile in ("release", "debug")]
     existing = [path for path in candidates if path.is_file()]
     if not existing:
@@ -46,7 +46,7 @@ def _daemon_binary() -> Path | None:
 
 BINARY = _daemon_binary()
 
-pytestmark = pytest.mark.skipif(BINARY is None, reason="remy-daemon binary not built")
+pytestmark = pytest.mark.skipif(BINARY is None, reason="remy-cc binary not built")
 
 
 def _python_scan_all(root: Path) -> None:

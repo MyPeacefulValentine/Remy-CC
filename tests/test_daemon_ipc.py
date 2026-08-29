@@ -1,4 +1,4 @@
-"""Integration tests for the remy-daemon protocol v5 and Hook clients."""
+"""Integration tests for the remy-cc protocol v5 and Hook clients."""
 
 import json
 import socket

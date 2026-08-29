@@ -10,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-DAEMON_SOURCE = Path(__file__).resolve().parent.parent / "remy-daemon"
+DAEMON_SOURCE = Path(__file__).resolve().parent.parent / "remy-cc"
 PROTOCOL_VERSION = 5
 STATE_SCHEMA_VERSION = 2
 
@@ -20,7 +20,7 @@ def has_rust_toolchain():
 
 
 def daemon_bin():
-    name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    name = "remy-cc.exe" if sys.platform == "win32" else "remy-cc"
     return DAEMON_SOURCE / "target" / "debug" / name
 
 
@@ -32,7 +32,7 @@ def skip_reason():
     if not has_rust_toolchain():
         return "cargo/rustc not found in PATH"
     if not daemon_binary_exists():
-        return "remy-daemon binary not built; run cargo build first"
+        return "remy-cc binary not built; run cargo build first"
     return None
 
 

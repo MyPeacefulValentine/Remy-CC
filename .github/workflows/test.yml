@@ -69,10 +69,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup component add rustfmt clippy
-      - run: cargo fmt --manifest-path remy-daemon/Cargo.toml --all -- --check
-      - run: cargo clippy --workspace --manifest-path remy-daemon/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --workspace --manifest-path remy-daemon/Cargo.toml
-      - run: cargo build --workspace --manifest-path remy-daemon/Cargo.toml
+      - run: cargo fmt --manifest-path remy-cc/Cargo.toml --all -- --check
+      - run: cargo clippy --workspace --manifest-path remy-cc/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --workspace --manifest-path remy-cc/Cargo.toml
+      - run: cargo build --workspace --manifest-path remy-cc/Cargo.toml
       - name: verify static musl binary (linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -80,8 +80,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
           rustup target add x86_64-unknown-linux-musl
-          cargo build --release --manifest-path remy-daemon/Cargo.toml --target x86_64-unknown-linux-musl
-          binary="remy-daemon/target/x86_64-unknown-linux-musl/release/remy-daemon"
+          cargo build --release --manifest-path remy-cc/Cargo.toml --target x86_64-unknown-linux-musl
+          binary="remy-cc/target/x86_64-unknown-linux-musl/release/remy-cc"
           sha256sum "$binary"
           ldd_output=$(ldd "$binary" 2>&1 || true)
           printf '%s\n' "$ldd_output"
@@ -96,8 +96,8 @@ jobs:
         env:
           RUSTFLAGS: -C target-feature=+crt-static
         run: |
-          cargo build --release --manifest-path remy-daemon/Cargo.toml
-          $bytes = [System.IO.File]::ReadAllBytes("remy-daemon/target/release/remy-daemon.exe")
+          cargo build --release --manifest-path remy-cc/Cargo.toml
+          $bytes = [System.IO.File]::ReadAllBytes("remy-cc/target/release/remy-cc.exe")
           if ([System.Text.Encoding]::ASCII.GetString($bytes).Contains("VCRUNTIME140")) {
             throw "release binary references VCRUNTIME140 (dynamic CRT); expected crt-static"
           }

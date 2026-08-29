@@ -113,11 +113,11 @@ def _remy_cc_home():
 
 
 def cmd_daemon(args):
-    exe_name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    exe_name = "remy-cc.exe" if sys.platform == "win32" else "remy-cc"
     exe = _remy_cc_home() / "bin" / exe_name
     if not exe.exists():
-        print("Error: remy-daemon binary not found at {}".format(exe), file=sys.stderr)
-        print("Build it with: cargo build --release --manifest-path <repo>/remy-daemon/Cargo.toml", file=sys.stderr)
+        print("Error: remy-cc binary not found at {}".format(exe), file=sys.stderr)
+        print("Build it with: cargo build --release --manifest-path <repo>/remy-cc/Cargo.toml", file=sys.stderr)
         print("Then copy target/release/{} to {}".format(exe_name, exe.parent), file=sys.stderr)
         sys.exit(1)
     result = subprocess.run([str(exe)] + list(args.daemon_args))
@@ -442,7 +442,7 @@ def main():
     p_audit.add_argument("--path", default=None, help="Project root directory (default: current directory)")
 
     p_daemon = sub.add_parser("daemon", help="Control the Remy-CC daemon")
-    p_daemon.add_argument("daemon_args", nargs=argparse.REMAINDER, help="Arguments passed to remy-daemon")
+    p_daemon.add_argument("daemon_args", nargs=argparse.REMAINDER, help="Arguments passed to remy-cc")
 
     p_update = sub.add_parser("update", help="Fetch and install latest version from remote")
     p_update.add_argument("--non-interactive", action="store_true", help="Disable installer prompts")

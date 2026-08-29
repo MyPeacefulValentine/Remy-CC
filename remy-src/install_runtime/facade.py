@@ -400,8 +400,8 @@ class InstallRuntime:
         if deployed_version:
             return "rust", None
         raise InstallRuntimeError(
-            "no usable remy-daemon binary was found; build it with "
-            "'cargo build --release' under remy-daemon/ (install.py deploys "
+            "no usable remy-cc binary was found; build it with "
+            "'cargo build --release' under remy-cc/ (install.py deploys "
             "target/release) or download a release with the daemon binary"
         )
 

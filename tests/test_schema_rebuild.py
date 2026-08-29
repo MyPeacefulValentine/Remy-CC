@@ -1,11 +1,11 @@
-"""Rust schema-owner dispatch matrix, end to end through `remy-daemon scan`.
+"""Rust schema-owner dispatch matrix, end to end through `remy-cc scan`.
 
 R4.2 ruling (docs/RETIREMENT.md §2.5): the Rust owner supports the current
 schema version only. Below-current or versionless-with-tables databases are
 backed up to `.bak` and rebuilt, with an incremental entry escalating to
 the full file set inside the same call; at-current databases open without
 a rebuild; newer or unparseable versions are refused unchanged. Requires a
-built remy-daemon binary; every test skips when it is unavailable.
+built remy-cc binary; every test skips when it is unavailable.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from schema_snapshots import _make_v6_db, _make_v7_db, _make_v10_db
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PY_CORPUS = REPO_ROOT / "oracle" / "fixtures" / "corpus" / "python"
-TARGET_DIR = REPO_ROOT / "remy-daemon" / "target"
+TARGET_DIR = REPO_ROOT / "remy-cc" / "target"
 
 SAMPLE_FACTORIES = {
     "6.0.0": _make_v6_db,
@@ -35,7 +35,7 @@ SAMPLE_FACTORIES = {
 
 
 def _daemon_binary() -> Path | None:
-    name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    name = "remy-cc.exe" if sys.platform == "win32" else "remy-cc"
     candidates = [TARGET_DIR / profile / name for profile in ("release", "debug")]
     existing = [path for path in candidates if path.is_file()]
     if not existing:
@@ -45,7 +45,7 @@ def _daemon_binary() -> Path | None:
 
 BINARY = _daemon_binary()
 
-pytestmark = pytest.mark.skipif(BINARY is None, reason="remy-daemon binary not built")
+pytestmark = pytest.mark.skipif(BINARY is None, reason="remy-cc binary not built")
 
 
 @pytest.fixture

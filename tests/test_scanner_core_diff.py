@@ -1,6 +1,6 @@
 """Cross-implementation diff tests: Rust scanner-core vs the Python oracle.
 
-Requires a built remy-daemon binary (cargo build --workspace); every test
+Requires a built remy-cc binary (cargo build --workspace); every test
 skips when the binary or the tree-sitter backend is unavailable, so plain
 Python CI legs are unaffected.
 """
@@ -26,7 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 CORPUS_ROOT = REPO_ROOT / "oracle" / "fixtures" / "corpus"
 C_CORPUS = CORPUS_ROOT / "c"
 LANGUAGE_CORPORA = ("c", "python", "ts", "rust")
-TARGET_DIR = REPO_ROOT / "remy-daemon" / "target"
+TARGET_DIR = REPO_ROOT / "remy-cc" / "target"
 
 try:
     import parsers.c_cpp_parser as c_cpp_parser
@@ -37,7 +37,7 @@ except Exception:  # pragma: no cover - import environment issues equal skip
 
 
 def _daemon_binary() -> Path | None:
-    name = "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    name = "remy-cc.exe" if sys.platform == "win32" else "remy-cc"
     candidates = [
         TARGET_DIR / profile / name for profile in ("release", "debug")
     ]
@@ -50,7 +50,7 @@ def _daemon_binary() -> Path | None:
 BINARY = _daemon_binary()
 
 pytestmark = [
-    pytest.mark.skipif(BINARY is None, reason="remy-daemon binary not built"),
+    pytest.mark.skipif(BINARY is None, reason="remy-cc binary not built"),
     pytest.mark.skipif(
         not TREE_SITTER_AVAILABLE, reason="tree-sitter backend unavailable"
     ),

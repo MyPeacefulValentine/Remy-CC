@@ -1,7 +1,7 @@
 """SQLite schema initialization for the current schema version only.
 
 The Python migration ladder (v6..v12) and the legacy JSON import were
-retired in R4.3; `remy-daemon scan` (writer.rs::open_db) is the schema
+retired in R4.3; `remy-cc scan` (writer.rs::open_db) is the schema
 owner and rebuilds non-current databases. This module refuses every
 non-current version and leaves the database unchanged.
 """
@@ -37,7 +37,7 @@ def initialize_database(root_dir, db_path):
         db.close()
         raise RuntimeError(
             f"Existing logic_index.db at {db_path} has no schema version. "
-            "The database is preserved unchanged; run 'remy-daemon scan' "
+            "The database is preserved unchanged; run 'remy-cc scan' "
             "(the schema owner) to rebuild it."
         )
     version_row = db.execute("SELECT value FROM meta WHERE key='version'").fetchone()
@@ -45,7 +45,7 @@ def initialize_database(root_dir, db_path):
         db.close()
         raise RuntimeError(
             f"Existing logic_index.db at {db_path} has no schema version. "
-            "The database is preserved unchanged; run 'remy-daemon scan' "
+            "The database is preserved unchanged; run 'remy-cc scan' "
             "(the schema owner) to rebuild it."
         )
     if version_row[0] != VERSION:
@@ -53,7 +53,7 @@ def initialize_database(root_dir, db_path):
         raise RuntimeError(
             f"Existing logic_index.db at {db_path} has schema version "
             f"{version_row[0]}; this module only supports {VERSION}. "
-            "The database is preserved unchanged; run 'remy-daemon scan' "
+            "The database is preserved unchanged; run 'remy-cc scan' "
             "(the schema owner) to rebuild it."
         )
     db.executescript(SCHEMA_SQL)

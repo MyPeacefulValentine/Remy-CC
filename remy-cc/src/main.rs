@@ -1,4 +1,4 @@
-//! remy-daemon — Remy-CC resident daemon.
+//! remy-cc — Remy-CC resident daemon.
 //!
 //! Scope (R1 + R2.1): single-instance lifecycle, JSON line logging, loopback
 //! IPC version handshake, and persistent job registration/query/cancellation.
@@ -45,7 +45,7 @@ const IPC_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Parser)]
 #[command(
-    name = "remy-daemon",
+    name = "remy-cc",
     version,
     about = "Remy-CC resident daemon (R1.1 skeleton)"
 )]
@@ -158,7 +158,7 @@ fn main() -> ExitCode {
     let home = match remy_home() {
         Ok(home) => home,
         Err(message) => {
-            eprintln!("remy-daemon: {message}");
+            eprintln!("remy-cc: {message}");
             return ExitCode::from(2);
         }
     };
@@ -176,7 +176,7 @@ fn main() -> ExitCode {
     match result {
         Ok(code) => code,
         Err(err) => {
-            eprintln!("remy-daemon: {err}");
+            eprintln!("remy-cc: {err}");
             ExitCode::from(2)
         }
     }
@@ -202,7 +202,7 @@ fn run_foreground(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
     let run_dir = run_dir(home);
     match single_instance::acquire(&run_dir)? {
         AcquireOutcome::Held => {
-            eprintln!("remy-daemon: already running");
+            eprintln!("remy-cc: already running");
             Ok(ExitCode::from(1))
         }
         AcquireOutcome::Acquired(_guard) => {
@@ -263,7 +263,7 @@ fn run_foreground(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
 fn start_detached(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
     let run_dir = run_dir(home);
     if single_instance::is_held(&run_dir)? {
-        eprintln!("remy-daemon: already running{}", pid_suffix(&run_dir));
+        eprintln!("remy-cc: already running{}", pid_suffix(&run_dir));
         return Ok(ExitCode::from(1));
     }
 
@@ -276,13 +276,13 @@ fn start_detached(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
             && server::read_port(&run_dir).is_some()
             && server::read_token(&run_dir).is_some()
         {
-            println!("remy-daemon: started{}", pid_suffix(&run_dir));
+            println!("remy-cc: started{}", pid_suffix(&run_dir));
             return Ok(ExitCode::SUCCESS);
         }
         let elapsed = clock.now().duration_since(started_at).unwrap_or_default();
         if elapsed >= START_WAIT {
             eprintln!(
-                "remy-daemon: start timed out after {}s; check {}",
+                "remy-cc: start timed out after {}s; check {}",
                 START_WAIT.as_secs(),
                 home.join("log").join(logging::LOG_FILE).display()
             );
@@ -309,7 +309,7 @@ fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
                 )
             );
         } else {
-            println!("remy-daemon: not running");
+            println!("remy-cc: not running");
         }
         return Ok(ExitCode::from(1));
     }
@@ -357,7 +357,7 @@ fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
                 }
             } else {
                 println!(
-                    "remy-daemon: running{} (version {daemon_version})",
+                    "remy-cc: running{} (version {daemon_version})",
                     pid_suffix(&run_dir)
                 );
             }
@@ -378,7 +378,7 @@ fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
                 );
             } else {
                 println!(
-                    "remy-daemon: running{} (ipc-unresponsive)",
+                    "remy-cc: running{} (ipc-unresponsive)",
                     pid_suffix(&run_dir)
                 );
             }
@@ -412,7 +412,7 @@ fn status_json(
 fn stop(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
     let run_dir = run_dir(home);
     if !single_instance::is_held(&run_dir)? {
-        println!("remy-daemon: not running");
+        println!("remy-cc: not running");
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -426,12 +426,12 @@ fn stop(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
     if !acknowledged {
         let Some(pid) = single_instance::read_pid(&run_dir) else {
             eprintln!(
-                "remy-daemon: running but pid file is unreadable; terminate the process manually"
+                "remy-cc: running but pid file is unreadable; terminate the process manually"
             );
             return Ok(ExitCode::from(2));
         };
         if !process::terminate(pid)? {
-            eprintln!("remy-daemon: failed to terminate pid {pid}");
+            eprintln!("remy-cc: failed to terminate pid {pid}");
             return Ok(ExitCode::from(2));
         }
     }
@@ -439,13 +439,13 @@ fn stop(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
     let requested_at = clock.now();
     loop {
         if !single_instance::is_held(&run_dir)? {
-            println!("remy-daemon: stopped");
+            println!("remy-cc: stopped");
             return Ok(ExitCode::SUCCESS);
         }
         let elapsed = clock.now().duration_since(requested_at).unwrap_or_default();
         if elapsed >= STOP_WAIT {
             eprintln!(
-                "remy-daemon: daemon still holds the lock after {}s",
+                "remy-cc: daemon still holds the lock after {}s",
                 STOP_WAIT.as_secs()
             );
             return Ok(ExitCode::from(2));

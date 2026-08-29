@@ -2,7 +2,7 @@
 
 The Python migration ladder is retired: every non-current schema version is
 refused with the database preserved byte-for-byte at the logical level, and
-the error points at `remy-daemon scan` as the schema owner.
+the error points at `remy-cc scan` as the schema owner.
 """
 
 import sqlite3
@@ -39,7 +39,7 @@ def test_non_current_version_is_refused_and_preserved(tmp_path, version):
     SNAPSHOT_FACTORIES[version](db_path).close()
     before = _dump(db_path)
 
-    with pytest.raises(RuntimeError, match="remy-daemon scan"):
+    with pytest.raises(RuntimeError, match="remy-cc scan"):
         initialize_database(str(tmp_path), str(db_path))
 
     assert _dump(db_path) == before

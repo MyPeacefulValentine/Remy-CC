@@ -131,10 +131,10 @@ def generate_language_md(cwd=None):
         print(f"[LifecycleHook] Failed to generate language.md: {e}", file=sys.stderr)
 
 def find_daemon_binary():
-    """Locate remy-daemon: a development-tree build wins over the deployed copy."""
-    name = "remy-daemon.exe" if os.name == "nt" else "remy-daemon"
+    """Locate remy-cc: a development-tree build wins over the deployed copy."""
+    name = "remy-cc.exe" if os.name == "nt" else "remy-cc"
     target_dir = os.path.abspath(os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "..", "remy-daemon", "target"
+        os.path.dirname(os.path.abspath(__file__)), "..", "..", "remy-cc", "target"
     ))
     dev_builds = [
         path
@@ -168,8 +168,8 @@ def run_struct_scan(cwd):
         return None
     binary = find_daemon_binary()
     if binary is None:
-        print("[StructScan] remy-daemon binary not found; skipping scan "
-              "(reinstall Remy-CC or build remy-daemon)", file=sys.stderr)
+        print("[StructScan] remy-cc binary not found; skipping scan "
+              "(reinstall Remy-CC or build remy-cc)", file=sys.stderr)
         return None
     scan_timeout = config.get_int("REMY_STRUCT_SCAN_TIMEOUT")
     lock_timeout = config.get_float("REMY_INDEX_SCAN_LOCK_TIMEOUT")

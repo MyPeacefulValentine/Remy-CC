@@ -184,7 +184,7 @@ def _lock_file_is_held(path: Path) -> Optional[bool]:
 
 
 def default_daemon_name() -> str:
-    return "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    return "remy-cc.exe" if sys.platform == "win32" else "remy-cc"
 
 
 def _user_home() -> Path:

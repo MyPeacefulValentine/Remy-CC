@@ -103,7 +103,7 @@ DEPRECATED_PERMISSIONS = {
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
-DAEMON_SOURCE_DIR = SCRIPT_DIR / "remy-daemon" / "target" / "release"
+DAEMON_SOURCE_DIR = SCRIPT_DIR / "remy-cc" / "target" / "release"
 DAEMON_PROBE_TIMEOUT = 10
 
 # ── Bilingual UI Messages ─────────────────────────────────────
@@ -149,11 +149,11 @@ UI = {
         "path_set_unix": "  [+] Added to ~/{rc} (run 'source ~/{rc}' or restart terminal)",
         "err_home_not_found": "  [!] Cannot determine home directory. Set $HOME and retry.",
         "err_permission": "\n  [!] Permission denied: {err}\n      Check directory permissions or avoid running with sudo.",
-        "daemon_src_missing": "  [i] remy-daemon binary not built; skipping daemon deployment.\n      Build it with: cargo build --release --manifest-path remy-daemon/Cargo.toml, then re-run install.py",
-        "daemon_verify_failed": "  [!] remy-daemon binary failed the --version check ({err}); skipped deployment.",
-        "daemon_running": "  [!] A remy-daemon instance is running; skipped deploying the new binary.\n      Stop it and re-run install: remy-cc daemon stop",
-        "daemon_deployed": "  [+] remy-daemon binary deployed: {path}",
-        "daemon_copy_failed": "  [!] Could not write the remy-daemon binary ({err}); kept the existing one.",
+        "daemon_src_missing": "  [i] remy-cc binary not built; skipping daemon deployment.\n      Build it with: cargo build --release --manifest-path remy-cc/Cargo.toml, then re-run install.py",
+        "daemon_verify_failed": "  [!] remy-cc binary failed the --version check ({err}); skipped deployment.",
+        "daemon_running": "  [!] A remy-cc instance is running; skipped deploying the new binary.\n      Stop it and re-run install: remy-cc daemon stop",
+        "daemon_deployed": "  [+] remy-cc binary deployed: {path}",
+        "daemon_copy_failed": "  [!] Could not write the remy-cc binary ({err}); kept the existing one.",
     },
     "zh-CN": {
         "settings_corrupted": "  [!] settings.json 格式损坏，已备份至 {name}",
@@ -195,11 +195,11 @@ UI = {
         "path_set_unix": "  [+] 已添加到 ~/{rc}（运行 'source ~/{rc}' 或重启终端生效）",
         "err_home_not_found": "  [!] 无法确定用户主目录。请设置 $HOME 环境变量后重试。",
         "err_permission": "\n  [!] 权限不足: {err}\n      请检查目录权限，或避免使用 sudo 执行。",
-        "daemon_src_missing": "  [i] 未找到已构建的 remy-daemon 二进制，跳过 daemon 部署。\n      构建命令: cargo build --release --manifest-path remy-daemon/Cargo.toml，然后重新运行 install.py",
-        "daemon_verify_failed": "  [!] remy-daemon 二进制 --version 验证失败（{err}），已跳过部署。",
-        "daemon_running": "  [!] 检测到 remy-daemon 正在运行，已跳过二进制部署。\n      请执行 remy-cc daemon stop 后重新运行 install.py",
-        "daemon_deployed": "  [+] remy-daemon 二进制已部署: {path}",
-        "daemon_copy_failed": "  [!] 无法写入 remy-daemon 二进制（{err}），保留原有版本。",
+        "daemon_src_missing": "  [i] 未找到已构建的 remy-cc 二进制，跳过 daemon 部署。\n      构建命令: cargo build --release --manifest-path remy-cc/Cargo.toml，然后重新运行 install.py",
+        "daemon_verify_failed": "  [!] remy-cc 二进制 --version 验证失败（{err}），已跳过部署。",
+        "daemon_running": "  [!] 检测到 remy-cc 正在运行，已跳过二进制部署。\n      请执行 remy-cc daemon stop 后重新运行 install.py",
+        "daemon_deployed": "  [+] remy-cc 二进制已部署: {path}",
+        "daemon_copy_failed": "  [!] 无法写入 remy-cc 二进制（{err}），保留原有版本。",
     },
 }
 
@@ -638,7 +638,7 @@ def register_mcp_server(claude_home: Path) -> None:
     def _expand(value):
         if not isinstance(value, str):
             return value
-        if value == "~/.remy-cc/bin/remy-daemon":
+        if value == "~/.remy-cc/bin/remy-cc":
             return daemon_command
         if "~/.claude/" in value:
             return value.replace("~/.claude/", abs_prefix + "/")
@@ -884,7 +884,7 @@ def _remy_cc_home() -> Path:
 
 
 def _daemon_exe_name() -> str:
-    return "remy-daemon.exe" if sys.platform == "win32" else "remy-daemon"
+    return "remy-cc.exe" if sys.platform == "win32" else "remy-cc"
 
 
 def _daemon_status(exe: Path) -> Optional[bool]:
@@ -918,7 +918,7 @@ def _reclaim_deployed_daemon(records: list) -> None:
 
 
 def deploy_daemon_binary(records: list) -> None:
-    """Deploy a locally built remy-daemon binary to ~/.remy-cc/bin/.
+    """Deploy a locally built remy-cc binary to ~/.remy-cc/bin/.
 
     Skips (with a printed reason) when the source binary is absent, fails the
     --version check, or a daemon instance is currently running (overwriting a
