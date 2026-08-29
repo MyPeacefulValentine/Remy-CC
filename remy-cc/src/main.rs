@@ -65,6 +65,17 @@ enum DaemonCommand {
     },
     /// Stop a running daemon
     Stop,
+    /// Restart the daemon (equivalent to start when it is not running)
+    Restart,
+    /// Print the daemon log (~/.remy-cc/log/daemon.log)
+    Logs {
+        /// Only print the last N lines
+        #[arg(long)]
+        tail: Option<usize>,
+        /// Keep the log open and print appended lines
+        #[arg(long)]
+        follow: bool,
+    },
     /// Report whether a daemon is running (exit 0 = running, 1 = not)
     Status {
         /// Emit a stable JSON diagnostic object
@@ -203,6 +214,8 @@ fn main() -> ExitCode {
         DaemonCommand::Start { foreground: true } => run_foreground(&home, &clock),
         DaemonCommand::Start { foreground: false } => start_detached(&home, &clock),
         DaemonCommand::Stop => stop(&home, &clock),
+        DaemonCommand::Restart => restart(&home, &clock),
+        DaemonCommand::Logs { tail, follow } => logs(&home, tail, follow),
         DaemonCommand::Status { json } => status(&home, json),
         DaemonCommand::Hook { .. }
         | DaemonCommand::Scan { .. }
@@ -448,6 +461,64 @@ fn status_json(
         "scanner": scanner,
         "diagnostic_error": diagnostic.map(|(kind, message)| json!({"kind": kind, "message": message})),
     })
+}
+
+/// systemctl semantics: a running daemon is stopped first; a stopped one
+/// simply starts.
+fn restart(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
+    if single_instance::is_held(&run_dir(home))? {
+        let _ = stop(home, clock)?;
+        if single_instance::is_held(&run_dir(home))? {
+            eprintln!("remy-cc: daemon did not stop; restart aborted");
+            return Ok(ExitCode::from(2));
+        }
+    }
+    start_detached(home, clock)
+}
+
+fn logs(home: &Path, tail: Option<usize>, follow: bool) -> io::Result<ExitCode> {
+    use std::io::{Read, Seek, SeekFrom};
+    let path = home.join("log").join(logging::LOG_FILE);
+    if !path.is_file() {
+        eprintln!("remy-cc: no log file at {}", path.display());
+        return Ok(ExitCode::from(1));
+    }
+    let content = std::fs::read_to_string(&path)?;
+    let mut stdout = io::stdout().lock();
+    match tail {
+        Some(count) => {
+            let lines: Vec<&str> = content.lines().collect();
+            let start = lines.len().saturating_sub(count);
+            for line in &lines[start..] {
+                writeln!(stdout, "{line}")?;
+            }
+        }
+        None => stdout.write_all(content.as_bytes())?,
+    }
+    stdout.flush()?;
+    if !follow {
+        return Ok(ExitCode::SUCCESS);
+    }
+    let mut offset = content.len() as u64;
+    loop {
+        std::thread::sleep(Duration::from_millis(500));
+        let Ok(mut file) = std::fs::File::open(&path) else {
+            continue;
+        };
+        let length = file.metadata()?.len();
+        if length < offset {
+            offset = 0;
+        }
+        if length > offset {
+            file.seek(SeekFrom::Start(offset))?;
+            let mut appended = String::new();
+            file.read_to_string(&mut appended)?;
+            offset = length;
+            let mut stdout = io::stdout().lock();
+            stdout.write_all(appended.as_bytes())?;
+            stdout.flush()?;
+        }
+    }
 }
 
 fn stop(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {

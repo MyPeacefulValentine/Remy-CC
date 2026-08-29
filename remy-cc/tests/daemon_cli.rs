@@ -435,3 +435,55 @@ fn foreground_daemon_writes_json_log() {
     }
     assert!(saw_started, "daemon_started event missing");
 }
+
+#[test]
+fn restart_starts_a_stopped_daemon_and_replaces_a_running_one() {
+    let home = tempfile::tempdir().unwrap();
+
+    let first = run(home.path(), &["restart"]);
+    assert_eq!(exit_code(&first), 0, "restart must start when stopped");
+    assert!(wait_until(|| is_running(home.path())));
+    let first_pid = std::fs::read_to_string(home.path().join("run").join("daemon.pid"))
+        .expect("pid file")
+        .trim()
+        .to_string();
+
+    let second = run(home.path(), &["restart"]);
+    assert_eq!(
+        exit_code(&second),
+        0,
+        "restart must replace a running daemon"
+    );
+    assert!(wait_until(|| is_running(home.path())));
+    let second_pid = std::fs::read_to_string(home.path().join("run").join("daemon.pid"))
+        .expect("pid file")
+        .trim()
+        .to_string();
+    assert_ne!(first_pid, second_pid, "restart must spawn a new process");
+
+    let stopped = run(home.path(), &["stop"]);
+    assert_eq!(exit_code(&stopped), 0);
+}
+
+#[test]
+fn logs_prints_the_tail_and_reports_a_missing_file() {
+    let home = tempfile::tempdir().unwrap();
+    let missing = run(home.path(), &["logs"]);
+    assert_eq!(exit_code(&missing), 1);
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("no log file"));
+
+    let log_dir = home.path().join("log");
+    std::fs::create_dir_all(&log_dir).expect("log dir");
+    std::fs::write(log_dir.join("daemon.log"), "line-1\nline-2\nline-3\n").expect("log");
+
+    let full = run(home.path(), &["logs"]);
+    assert_eq!(exit_code(&full), 0);
+    assert_eq!(
+        String::from_utf8_lossy(&full.stdout),
+        "line-1\nline-2\nline-3\n"
+    );
+
+    let tail = run(home.path(), &["logs", "--tail", "2"]);
+    assert_eq!(exit_code(&tail), 0);
+    assert_eq!(String::from_utf8_lossy(&tail.stdout), "line-2\nline-3\n");
+}
