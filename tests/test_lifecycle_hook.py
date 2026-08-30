@@ -83,3 +83,92 @@ def test_run_struct_scan_skips_when_daemon_binary_is_missing(tmp_path, monkeypat
     monkeypatch.setattr(lifecycle, "find_daemon_binary", lambda: None)
     assert lifecycle.run_struct_scan(str(project)) is None
     assert "remy-cc binary not found" in capsys.readouterr().err
+
+
+def _load_config(project, values=None):
+    if values:
+        path = project / ".claude" / "remy-config.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "schema_version": "1.0.0",
+            "values": values,
+        }), encoding="utf-8")
+    else:
+        project.mkdir(parents=True, exist_ok=True)
+    return lifecycle.remy_config.load_config(str(project), strict=False)
+
+
+def test_start_daemon_invokes_binary_start(tmp_path, monkeypatch, capsys):
+    project = tmp_path / "project"
+    config = _load_config(project)
+    binary = tmp_path / "remy-cc.exe"
+    observed = {}
+
+    def run(args, **kwargs):
+        observed["args"] = args
+        observed["timeout"] = kwargs["timeout"]
+        return type("Result", (), {"returncode": 0, "stderr": b""})()
+
+    monkeypatch.setattr(lifecycle, "find_daemon_binary", lambda: str(binary))
+    monkeypatch.setattr(lifecycle.subprocess, "run", run)
+    assert lifecycle.start_daemon(config) == 0
+    assert observed["args"] == [str(binary), "start"]
+    assert observed["timeout"] == lifecycle._DAEMON_START_TIMEOUT
+    assert capsys.readouterr().err == ""
+
+
+def test_start_daemon_tolerates_already_running(tmp_path, monkeypatch, capsys):
+    project = tmp_path / "project"
+    config = _load_config(project)
+    monkeypatch.setattr(lifecycle, "find_daemon_binary", lambda: "remy-cc")
+    monkeypatch.setattr(
+        lifecycle.subprocess, "run",
+        lambda *a, **k: type("Result", (), {"returncode": 1, "stderr": b"remy-cc: already running"})(),
+    )
+    assert lifecycle.start_daemon(config) == 1
+    assert capsys.readouterr().err == ""
+
+
+def test_start_daemon_disabled_skips_subprocess(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    config = _load_config(project, {"REMY_DAEMON_AUTOSTART": "false"})
+    calls = []
+    monkeypatch.setattr(lifecycle, "find_daemon_binary", lambda: "remy-cc")
+    monkeypatch.setattr(lifecycle.subprocess, "run", lambda *a, **k: calls.append(a))
+    assert lifecycle.start_daemon(config) is None
+    assert calls == []
+
+
+def test_start_daemon_skips_when_binary_missing(tmp_path, monkeypatch, capsys):
+    project = tmp_path / "project"
+    config = _load_config(project)
+    monkeypatch.setattr(lifecycle, "find_daemon_binary", lambda: None)
+    assert lifecycle.start_daemon(config) is None
+    assert "binary not found" in capsys.readouterr().err
+
+
+def test_start_daemon_reports_failure_exit_code(tmp_path, monkeypatch, capsys):
+    project = tmp_path / "project"
+    config = _load_config(project)
+    monkeypatch.setattr(lifecycle, "find_daemon_binary", lambda: "remy-cc")
+    monkeypatch.setattr(
+        lifecycle.subprocess, "run",
+        lambda *a, **k: type("Result", (), {"returncode": 2, "stderr": b"start timed out"})(),
+    )
+    assert lifecycle.start_daemon(config) == 2
+    err = capsys.readouterr().err
+    assert "[DaemonStart] Failed" in err
+    assert "start timed out" in err
+
+
+def test_start_daemon_survives_timeout(tmp_path, monkeypatch, capsys):
+    project = tmp_path / "project"
+    config = _load_config(project)
+    monkeypatch.setattr(lifecycle, "find_daemon_binary", lambda: "remy-cc")
+
+    def run(*args, **kwargs):
+        raise lifecycle.subprocess.TimeoutExpired(cmd="remy-cc start", timeout=15.0)
+
+    monkeypatch.setattr(lifecycle.subprocess, "run", run)
+    assert lifecycle.start_daemon(config) is None
+    assert "[DaemonStart] Unexpected error" in capsys.readouterr().err

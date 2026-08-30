@@ -194,6 +194,34 @@ def run_struct_scan(cwd):
         return 1
 
 
+_DAEMON_START_TIMEOUT = 15.0  # daemon readiness poll caps at START_WAIT=10s (main.rs), plus spawn margin
+
+
+def start_daemon(config):
+    """Idempotently start the resident daemon; an already-running instance returns 1 untouched."""
+    if not config.get_bool("REMY_DAEMON_AUTOSTART"):
+        return None
+    binary = find_daemon_binary()
+    if binary is None:
+        print("[DaemonStart] remy-cc binary not found; skipping daemon autostart "
+              "(reinstall Remy-CC or build remy-cc)", file=sys.stderr)
+        return None
+    try:
+        completed = subprocess.run(
+            [binary, "start"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=_DAEMON_START_TIMEOUT
+        )
+        if completed.returncode not in (0, 1):
+            print(f"[DaemonStart] Failed: {completed.stderr.decode('utf-8', errors='replace')}", file=sys.stderr)
+        return completed.returncode
+    except Exception as e:
+        print(f"[DaemonStart] Unexpected error: {e}", file=sys.stderr)
+        return None
+
+
 def update_tree(cwd, max_depth=None):
     """
     Executes the tree generation script.
@@ -258,6 +286,7 @@ def main():
 
             update_tree(cwd, max_depth=2)
             run_struct_scan(cwd)
+            start_daemon(config)
 
             if not resume_only:
                 generate_language_md(cwd)
