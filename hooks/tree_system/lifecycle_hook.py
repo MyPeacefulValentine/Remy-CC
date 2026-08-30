@@ -125,7 +125,7 @@ def generate_language_md(cwd=None):
     claude_home = os.path.join(os.path.expanduser("~"), ".claude")
     lang_path = os.path.join(claude_home, "language.md")
     try:
-        with open(lang_path, 'w', encoding='utf-8') as f:
+        with open(lang_path, 'w', encoding='utf-8', newline='\n') as f:
             f.write(directive + "\n")
     except Exception as e:
         print(f"[LifecycleHook] Failed to generate language.md: {e}", file=sys.stderr)

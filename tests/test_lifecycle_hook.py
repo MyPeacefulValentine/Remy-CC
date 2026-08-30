@@ -85,6 +85,17 @@ def test_run_struct_scan_skips_when_daemon_binary_is_missing(tmp_path, monkeypat
     assert "remy-cc binary not found" in capsys.readouterr().err
 
 
+def test_generate_language_md_writes_lf_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(lifecycle.os.path, "expanduser", lambda p: str(tmp_path) if p == "~" else p)
+    (tmp_path / ".claude").mkdir(parents=True, exist_ok=True)
+    project = tmp_path / "project"
+    project.mkdir()
+    lifecycle.generate_language_md(str(project))
+    raw = (tmp_path / ".claude" / "language.md").read_bytes()
+    assert raw == b"Always respond in English\n"
+    assert b"\r" not in raw
+
+
 def _load_config(project, values=None):
     if values:
         path = project / ".claude" / "remy-config.json"
