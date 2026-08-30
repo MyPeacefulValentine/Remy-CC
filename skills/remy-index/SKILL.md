@@ -48,6 +48,27 @@ You MUST execute the following steps strictly in order.
     - `2` (`partial`): report the incomplete stages, then continue to Phase 3 so any bootstrap confirmation marker is still handled.
     - `1` (`failed`): stop. Do not run injection; dirty paths remain queued for retry.
 
+### Phase 2.5: Symbol Summary Confirmation (Trigger: run.py stdout contains SYMBOL_PENDING_CONFIRMATION)
+
+After Phase 2, inspect the stdout produced by `run.py`:
+
+1.  **Search the captured stdout for the line `SYMBOL_PENDING_CONFIRMATION`.** This line is emitted only when the effective symbol mode is `ask` (`REMY_SYMBOL_SUMMARY_MODE=ask`, or downgraded from `auto` because the pending-symbol count exceeds `REMY_SYMBOL_AUTO_SIZE_GUARD`). When this line is present, run.py has skipped the symbol layer, the file/cluster bootstrap, and the propagation pass; the call graph is already up to date.
+2.  **If the line is absent**: Skip Phase 2.5 entirely.
+3.  **If the line is present**: Parse the `pending_symbols=X` field, then use `AskUserQuestion` in the language specified by the loaded `language.md` directive:
+    - Question (zh-CN): "检测到 {X} 个符号尚未生成 LLM 摘要。立即生成？（消耗 LLM tokens，随后自动继续 file/cluster 摘要与传播判定）"
+    - Question (en): "{X} symbol(s) lack LLM summaries. Generate now? (consumes LLM tokens; file/cluster summaries and propagation follow automatically)"
+    - Options:
+        - "Yes — generate now (推荐)" — proceed to step 4.
+        - "Skip this session" — proceed to step 5.
+        - "Disable symbol summaries permanently" — proceed to step 6.
+4.  **If user chose "Yes"**: Rerun the full pipeline, overriding the symbol mode to `auto`:
+    ```bash
+    python "~/.claude/skills/remy-index/run.py" --symbol-mode auto
+    ```
+    Wait for completion (the incremental structural scan is cheap; pending symbols resume automatically), then re-enter Phase 3 with the new stdout.
+5.  **If user chose "Skip"**: Output a single notice: "Skipped. Summaries stay pending; run `/remy-index` again later to resume." Then continue to Phase 4 (the graph is usable without summaries).
+6.  **If user chose "Disable permanently"**: Output the command for the user to apply manually: "Set `REMY_SYMBOL_SUMMARY_MODE=never` through `remy-cc config --path <project>`." Then continue to Phase 4.
+
 ### Phase 3: Hierarchical Bootstrap Confirmation (Trigger: run.py stdout contains BOOTSTRAP_PENDING_CONFIRMATION)
 
 After Phase 2, inspect the stdout produced by `run.py` and decide whether to ask the user about generating file/cluster summaries:
@@ -114,6 +135,8 @@ variables override files for the current process tree.
     - `ASK`: Prompt user for confirmation before injection.
     - `NEVER`: Only generate files, do not inject.
 - `REMY_LOGIC_INDEX_FILTER_SMALL`: Skip LLM summarization for small (< 3 lines) functions without docstrings. (Default: `false`)
+- `REMY_SYMBOL_SUMMARY_MODE`: Symbol-layer summary mode. `auto` runs unattended; `ask` emits `SYMBOL_PENDING_CONFIRMATION` for Phase 2.5; `never` keeps a graph-only index (summaries stay pending, file/cluster bootstrap and propagation are skipped while symbols are pending). (Default: `auto`)
+- `REMY_SYMBOL_AUTO_SIZE_GUARD`: Pending-symbol count above which `auto` downgrades to `ask`. (Default: `300`)
 
 ## Output
 

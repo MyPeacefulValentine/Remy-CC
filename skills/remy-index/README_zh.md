@@ -174,6 +174,10 @@ python "~/.claude/skills/remy-index/run.py"
 3. 为无文档的符号生成 LLM 摘要
 4. 将结果保存到 `.claude/logic_index.db`（缓存）和 `.claude/logic_index.db`（输出）
 
+### Phase 2.5: 符号摘要确认（条件触发）
+
+若 `run.py` stdout 包含 `SYMBOL_PENDING_CONFIRMATION pending_symbols=N`，Skill 询问用户是否生成符号摘要，同意则以 `--symbol-mode auto` 全流程重跑。仅当生效的 `REMY_SYMBOL_SUMMARY_MODE` 为 `ask` 时触发（显式设置，或待摘要符号数超过 `REMY_SYMBOL_AUTO_SIZE_GUARD` 从 `auto` 降级）。符号层被跳过期间，file/cluster 摘要与传播判定同会话跳过；调用图本身完整且零 LLM 成本。该行缺失时跳过。
+
 ### Phase 3: 层级摘要引导确认（条件触发）
 
 若 `run.py` stdout 包含 `BOOTSTRAP_PENDING_CONFIRMATION`，Skill 通过 `--bootstrap-only --mode auto` 询问用户是否生成 file/cluster 摘要。仅当 `REMY_SUMMARY_BOOTSTRAP_MODE=ask` 时触发（显式设置或从 `auto` 降级）。该行缺失时跳过。
@@ -260,6 +264,8 @@ pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-typescript
 | `REMY_LLM_TLS_INSECURE` | `false` | 禁用LLM端点的TLS证书校验（不安全）；只允许用户配置或进程环境 |
 | `REMY_LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
 | `REMY_LOGIC_INDEX_FILTER_SMALL` | `false` | 跳过无文档小函数的LLM摘要 |
+| `REMY_SYMBOL_SUMMARY_MODE` | `auto` | 符号层摘要模式（`auto` / `ask` / `never`）；`never` 保持仅建图索引 |
+| `REMY_SYMBOL_AUTO_SIZE_GUARD` | `300` | 待摘要符号数超过该值时 `auto` 降级为 `ask` |
 | `REMY_LANG` | `en` | Remy 界面与注入视图语言（`en` / `zh-CN`）；摘要以英文生成 |
 | `REMY_STRUCT_SCAN_TIMEOUT` | `60` | 生命周期结构扫描超时秒数 |
 
@@ -327,7 +333,7 @@ LLM通道仅使用OpenAI兼容的Chat Completions协议。Anthropic将其OpenAI�
 检查`REMY_LLM_API_KEY`是否正确，`REMY_LLM_MODEL`在服务端是否可用。
 
 ### Q: 中断后会丢失进度吗？
-不会。`try...finally` 保护机制确保已生成的摘要保存到 `.claude/logic_index.db`。
+已完成文件批的摘要在批完成时即写入 `.claude/logic_index.db`，中断只丢失未完成批；重跑时按 pending 状态自动续传，不重复调用已完成的摘要。
 
 ### Q: C/C++/TypeScript 调用图未提取？
 安装 `tree-sitter` 包。调用图提取需要 AST 精度，正则模式无法提供。Python 调用图使用标准库 `ast`，无需 tree-sitter。

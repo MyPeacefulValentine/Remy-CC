@@ -154,6 +154,25 @@ def open_semantic_connection(db_path):
     return connection
 
 
+VALID_SYMBOL_MODES = ("auto", "ask", "never")
+
+
+def resolve_symbol_mode(config, pending_count, override=None):
+    """Resolve the symbol-layer summary mode (auto/ask/never).
+
+    ``auto`` downgrades to ``ask`` when the pending-symbol count exceeds
+    ``REMY_SYMBOL_AUTO_SIZE_GUARD``, mirroring bootstrap.resolve_mode.
+    """
+    requested = override or config.get("REMY_SYMBOL_SUMMARY_MODE", "auto")
+    if requested not in VALID_SYMBOL_MODES:
+        requested = "auto"
+    if requested == "auto":
+        guard = config.get_int("REMY_SYMBOL_AUTO_SIZE_GUARD")
+        if pending_count > guard:
+            return "ask"
+    return requested
+
+
 class LogicIndexer:
     def __init__(self, root_dir):
         self.root_dir = os.path.abspath(root_dir)
@@ -165,6 +184,8 @@ class LogicIndexer:
         self.db = None
         self.dirty_nodes = []
         self.summary_errors = []
+        self.symbol_mode_override = None
+        self.persisted_count = 0
 
         self._registry = build_default_registry()
 
@@ -231,10 +252,13 @@ class LogicIndexer:
 
         Delegates to summarizer.write_summary_version so the parent counter
         bump runs uniformly. Accepts iterable of (summary_text, file_path,
-        symbol_name).
+        symbol_name). Returns the number of rows actually written; a node
+        whose write fails is recorded in summary_errors without discarding
+        the rest of the batch. Raises RuntimeError when the summarizer
+        module itself is unavailable.
         """
         if not self.db or not updates:
-            return
+            return 0
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
             from summarizer import write_summary_version
@@ -243,10 +267,19 @@ class LogicIndexer:
                 f"summarizer unavailable; summary projection cannot be updated: {exc}"
             ) from exc
 
+        written = 0
         for summary_text, file_path, sym_name in updates:
             node_ref = f"{file_path}::{sym_name}"
             payload = {"short": summary_text, "full": None}
-            write_summary_version(self.db, "symbol", node_ref, payload, "ok")
+            try:
+                write_summary_version(self.db, "symbol", node_ref, payload, "ok")
+            except Exception as exc:
+                self.summary_errors.append(
+                    StageError("symbol_summary", f"persist failed: {exc}", node_ref)
+                )
+                continue
+            written += 1
+        return written
 
     def _run_hierarchical_bootstrap(self, mode_override=None):
         """Run file/cluster summary bootstrap.
@@ -304,6 +337,8 @@ class LogicIndexer:
             print(f"File {file_path} too large for batch. Falling back to atomic mode.")
             for symbol, segment in items:
                 self._run_atomic_task(symbol, segment, context_summaries, parser)
+                status = "ok" if symbol.get("summary") else "FAILED"
+                print(f"  atomic {file_path}::{symbol['name']} {status}", flush=True)
             return
 
         target_names = [item[0]['name'] for item in items]
@@ -335,6 +370,8 @@ class LogicIndexer:
             print(f"Batch failed for {file_path} ({str(e)}). Switching to atomic mode...")
             for symbol, segment in items:
                 self._run_atomic_task(symbol, segment, context_summaries, parser)
+                status = "ok" if symbol.get("summary") else "FAILED"
+                print(f"  atomic {file_path}::{symbol['name']} {status}", flush=True)
         except Exception as e:
             message = f"Error parsing batch response for {file_path}: {e}"
             print(message)
@@ -390,16 +427,30 @@ class LogicIndexer:
                 ctx_summary = "\n".join(dep_list)
             batch_args.append((fp, items, ctx_summary, parser_map[fp]))
 
+        harvested = set()
+
+        def persist_batch(future, future_map):
+            fp, items, _ctx, _parser = future_map[future]
+            updates = [
+                (sym["summary"], fp, sym["name"])
+                for sym, _segment in items
+                if sym.get("summary")
+            ]
+            if updates:
+                self.persisted_count += self._persist_symbol_summaries(updates)
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = [executor.submit(self._worker_task, *args) for args in batch_args]
+            future_map = {
+                executor.submit(self._worker_task, *args): args for args in batch_args
+            }
             try:
-                for future in concurrent.futures.as_completed(futures):
+                for future in concurrent.futures.as_completed(future_map):
                     if self.llm_client.circuit_open:
                         executor.shutdown(wait=False, cancel_futures=True)
                         break
+                    harvested.add(future)
                     try:
                         future.result()
-                        print(".", end="", flush=True)
                     except FatalError as e:
                         print(f"\n{e}")
                         self.summary_errors.append(StageError("symbol_summary", str(e)))
@@ -409,13 +460,36 @@ class LogicIndexer:
                         message = f"Error processing file batch: {e}"
                         print(message)
                         self.summary_errors.append(StageError("symbol_summary", message))
+                        continue
+                    try:
+                        persist_batch(future, future_map)
+                    except RuntimeError as e:
+                        print(f"\n{e}")
+                        self.summary_errors.append(StageError("symbol_summary", str(e)))
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        break
+                    print(".", end="", flush=True)
             except KeyboardInterrupt:
                 print("\nInterrupted by user. Shutting down...")
                 executor.shutdown(wait=False, cancel_futures=True)
                 raise
 
+        for future in future_map:
+            if future in harvested or future.cancelled() or not future.done():
+                continue
+            try:
+                future.result()
+            except Exception:
+                continue
+            try:
+                persist_batch(future, future_map)
+            except RuntimeError as exc:
+                self.summary_errors.append(StageError("symbol_summary", str(exc)))
+                break
+
     def run(self):
         print("Scanning codebase...")
+        self.persisted_count = 0
         errors = []
         scan_result = None
         symbol_requested = 0
@@ -469,34 +543,41 @@ class LogicIndexer:
                     else:
                         errors.append(StageError("symbol_summary", "Canonical source segment unavailable", f"{path}::{sym_name}"))
 
+            symbol_skipped = False
             if self.dirty_nodes:
                 if not self.llm_client.api_key:
                     message = "REMY_LLM_API_KEY not found; symbol summaries remain pending."
                     print(f"Warning: {message}")
                     errors.append(StageError("symbol_summary", message))
                 else:
-                    print(f"Symbol layer: dispatching {len(self.dirty_nodes)} segment(s) to LLM (max_workers={self.max_workers})...", flush=True)
-                    self.process_llm_queue()
-                    errors.extend(self.summary_errors)
-
-                    updates = [
-                        (sym["summary"], path, sym["name"])
-                        for path, sym, _segment, _parser in self.dirty_nodes
-                        if sym.get("summary")
-                    ]
-                    if updates:
-                        self._persist_symbol_summaries(updates)
-                    symbol_completed = len(updates)
-                    if symbol_completed < symbol_requested:
-                        errors.append(StageError(
-                            "symbol_summary",
-                            f"Completed {symbol_completed} of {symbol_requested} requested summaries",
-                        ))
-                    print(f"\nSymbol layer: persisted {len(updates)} summaries.", flush=True)
+                    symbol_mode = resolve_symbol_mode(
+                        self.config, symbol_requested, self.symbol_mode_override
+                    )
+                    if symbol_mode == "auto":
+                        print(f"Symbol layer: dispatching {len(self.dirty_nodes)} segment(s) to LLM (max_workers={self.max_workers})...", flush=True)
+                        self.process_llm_queue()
+                        errors.extend(self.summary_errors)
+                        symbol_completed = self.persisted_count
+                        if symbol_completed < symbol_requested:
+                            errors.append(StageError(
+                                "symbol_summary",
+                                f"Completed {symbol_completed} of {symbol_requested} requested summaries",
+                            ))
+                        print(f"\nSymbol layer: persisted {symbol_completed} summaries.", flush=True)
+                    else:
+                        symbol_skipped = True
+                        if symbol_mode == "ask":
+                            print(f"SYMBOL_PENDING_CONFIRMATION pending_symbols={symbol_requested}", flush=True)
+                        else:
+                            print(f"Symbol layer: mode=never; {symbol_requested} summaries remain pending.", flush=True)
             else:
                 print("Symbol layer: no dirty symbols, skipping LLM phase.", flush=True)
 
-            bootstrap_result = self._run_hierarchical_bootstrap()
+            if symbol_skipped:
+                bootstrap_result = None
+                print("Skipping file/cluster bootstrap and propagation: symbol summaries remain pending.", flush=True)
+            else:
+                bootstrap_result = self._run_hierarchical_bootstrap()
             if bootstrap_result:
                 file_requested = bootstrap_result.get("file_requested", 0)
                 file_completed = bootstrap_result.get("file_done", 0)
@@ -516,15 +597,16 @@ class LogicIndexer:
                         "Auto bootstrap could not run without REMY_LLM_API_KEY",
                     ))
 
-            propagation_result = propagation.run_propagation_pass(self.db, self.llm_client)
-            if self.llm_client.api_key and not self.llm_client.circuit_open:
-                if propagation_result is None:
-                    errors.append(StageError("propagation", "Propagation pass did not complete"))
-                elif propagation_result.get("errors", 0):
-                    errors.append(StageError(
-                        "propagation",
-                        f"{propagation_result['errors']} propagation operation(s) failed",
-                    ))
+            if not symbol_skipped:
+                propagation_result = propagation.run_propagation_pass(self.db, self.llm_client)
+                if self.llm_client.api_key and not self.llm_client.circuit_open:
+                    if propagation_result is None:
+                        errors.append(StageError("propagation", "Propagation pass did not complete"))
+                    elif propagation_result.get("errors", 0):
+                        errors.append(StageError(
+                            "propagation",
+                            f"{propagation_result['errors']} propagation operation(s) failed",
+                        ))
 
             if scan_result.status == RunStatus.PARTIAL or errors:
                 status = RunStatus.PARTIAL
@@ -573,9 +655,12 @@ if __name__ == "__main__":
                     help="Skip symbol-layer LLM; trigger only file/cluster bootstrap.")
     ap.add_argument("--mode", choices=["auto", "ask", "never"], default=None,
                     help="Override REMY_SUMMARY_BOOTSTRAP_MODE for this invocation.")
+    ap.add_argument("--symbol-mode", choices=["auto", "ask", "never"], default=None,
+                    help="Override REMY_SYMBOL_SUMMARY_MODE for this invocation.")
     cli_args = ap.parse_args()
 
     indexer = LogicIndexer(os.getcwd())
+    indexer.symbol_mode_override = cli_args.symbol_mode
     if cli_args.bootstrap_only:
         db_path = str(indexer.config.get("REMY_LOGIC_INDEX_DB_PATH"))
         try:

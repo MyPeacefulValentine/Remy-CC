@@ -169,6 +169,10 @@ On first run (no existing `.claude/logic_index.db`), a full codebase scan is per
 3. Generates LLM summaries for symbols without documentation
 4. Saves results to `.claude/logic_index.db` (cache) and `.claude/logic_index.db` (output)
 
+### Phase 2.5: Symbol Summary Confirmation (Conditional)
+
+If `run.py` stdout contains `SYMBOL_PENDING_CONFIRMATION pending_symbols=N`, the skill asks whether to generate symbol summaries via a full rerun with `--symbol-mode auto`. Triggered only when the effective `REMY_SYMBOL_SUMMARY_MODE` is `ask` (explicit, or downgraded from `auto` because the pending-symbol count exceeds `REMY_SYMBOL_AUTO_SIZE_GUARD`). While symbols are skipped, the file/cluster bootstrap and the propagation pass are skipped too; the call graph itself is complete and zero-cost. Absent line → skipped.
+
 ### Phase 3: Hierarchical Bootstrap Confirmation (Conditional)
 
 If `run.py` stdout contains `BOOTSTRAP_PENDING_CONFIRMATION`, the skill asks whether to generate file/cluster summaries via `--bootstrap-only --mode auto`. Triggered only when `REMY_SUMMARY_BOOTSTRAP_MODE=ask` (explicit or downgraded from `auto`). Absent line → skipped.
@@ -255,6 +259,8 @@ variables with the same `REMY_*` names override both files for that process tree
 | `REMY_LLM_TLS_INSECURE` | `false` | Disable TLS certificate verification for the LLM endpoint (insecure); user configuration or process environment only |
 | `REMY_LOGIC_INDEX_AUTO_INJECT` | `ALWAYS` | `ALWAYS` / `ASK` / `NEVER` |
 | `REMY_LOGIC_INDEX_FILTER_SMALL` | `false` | Skip LLM summarization for small functions without docstrings |
+| `REMY_SYMBOL_SUMMARY_MODE` | `auto` | Symbol-layer summary mode (`auto` / `ask` / `never`); `never` keeps a graph-only index |
+| `REMY_SYMBOL_AUTO_SIZE_GUARD` | `300` | Pending-symbol count above which `auto` downgrades to `ask` |
 | `REMY_LANG` | `en` | Remy interface and injected-view language (`en` / `zh-CN`); summaries are generated in English |
 | `REMY_STRUCT_SCAN_TIMEOUT` | `60` | Lifecycle structural scan timeout in seconds |
 
@@ -325,7 +331,7 @@ Set `REMY_LLM_MAX_WORKERS` to `1` (serial mode), or request a higher quota.
 Check that `REMY_LLM_API_KEY` is correct and `REMY_LLM_MODEL` is available on the service.
 
 ### Q: Will progress be lost if interrupted?
-No. The `try...finally` protection mechanism ensures generated summaries are saved to `.claude/logic_index.db`.
+Summaries of completed file batches are written to `.claude/logic_index.db` as each batch finishes; an interruption only loses unfinished batches. Rerunning resumes from the pending state without re-calling completed summaries.
 
 ### Q: C/C++/TypeScript call graph not extracted?
 Install `tree-sitter` packages. Call graph extraction requires AST precision that regex mode cannot provide. Python call graph works without tree-sitter (uses stdlib `ast`).

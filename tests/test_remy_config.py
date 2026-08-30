@@ -51,7 +51,7 @@ def test_registry_owns_llm_defaults(config_home):
 def test_registry_ui_metadata_contract(config_home):
     _ = config_home
     registry = remy_config.registry_for_ui()
-    assert len(registry) == 59
+    assert len(registry) == 61
     group_ids = [group["id"] for group in remy_config.GROUPS]
     assert group_ids == ["llm_api", "index_generation", "injection", "mcp", "summary", "timeline", "system"]
     counts = {group_id: 0 for group_id in group_ids}
@@ -62,7 +62,7 @@ def test_registry_ui_metadata_contract(config_home):
         "index_generation": 12,
         "injection": 8,
         "mcp": 9,
-        "summary": 11,
+        "summary": 13,
         "timeline": 2,
         "system": 9,
     }
@@ -123,6 +123,7 @@ def test_registry_ui_metadata_contract(config_home):
             "REMY_FORCE_RECOMPUTE_THRESHOLD_BACKUP",
             "REMY_FORCE_RECOMPUTE_INTERVAL_DAYS", "REMY_SUMMARY_BOOTSTRAP_MODE",
             "REMY_BOOTSTRAP_AUTO_SIZE_GUARD",
+            "REMY_SYMBOL_SUMMARY_MODE", "REMY_SYMBOL_AUTO_SIZE_GUARD",
         ],
         "timeline": ["REMY_TIMELINE_INJECT_MODE", "REMY_TIMELINE_INJECT_VALUE"],
         "system": [
