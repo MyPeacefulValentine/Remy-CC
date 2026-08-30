@@ -7,10 +7,10 @@ You must output your analysis in the following **five** Markdown tables in this 
 *   **Goal**: Eliminate ALL "TBD" (To Be Determined). Convert options to hard constraints.
 *   **Strict Rule**: If technical details (timeouts, retries, specific libraries) are not locked, the plan is **REJECTED**.
 
-| Decision Point | Options | Final Constraint | Rationale |
-| :--- | :--- | :--- | :--- |
-| *Example: Timeout* | *Default / 30s / 60s* | ***Fixed: 15s connect, 30s read*** | *Avoid resource exhaustion* |
-| *Example: Library* | *Json / Orjson* | ***Fixed: Standard json*** | *Avoid new dependencies* |
+| Decision Point | Grade | Options | Final Constraint | Rationale |
+| :--- | :--- | :--- | :--- | :--- |
+| *Example: Timeout* | *[Implementation]* | *Default / 30s / 60s* | ***Fixed: 15s connect, 30s read*** | *Avoid resource exhaustion* |
+| *Example: Library* | *[Architectural] criterion 1: consumers = API layer, CLI* | *Json / Orjson* | ***Fixed: Standard json*** | *Avoid new dependencies; correction cost: synchronized replacement at all serialization call sites* |
 
 ### 🧪 Table 2: Property-Based Testing Spec
 

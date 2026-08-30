@@ -17,11 +17,11 @@ A **reuse scan** is performed: for any planned new function or utility, the proj
 
 ### Phase 2: Requirement Restatement Gate
 
-Skipped when the task text already contains both explicit target files/symbols and verifiable acceptance criteria (a spec-complete task emits `Restatement skipped: spec-complete`; bug fixes with an error log or repro steps count as spec-complete). Otherwise the AI restates its understanding in prose — **Goal / Motivation / Out-of-scope** — and asks for confirmation via a two-option `AskUserQuestion`. Deviations are merged via free text and the restatement loops until confirmed.
+Skipped when the task text already contains both explicit target files/symbols and verifiable acceptance criteria (a spec-complete task emits `Restatement skipped: spec-complete`; bug fixes with an error log or repro steps count as spec-complete). Otherwise the AI embeds its restated understanding — **Goal / Motivation / Out-of-scope** — inside a two-option `AskUserQuestion` for confirmation (the host does not reliably render assistant text emitted before a tool call). Deviations are merged via free text and the restatement loops until confirmed.
 
 ### Phase 3: Ambiguity Elimination Loop
 
-The AI scans for ambiguities using a mandatory 5-category checklist (Interface Contract, Resource & Dependency, Behavioral Boundary, Execution Order, Change Boundary). If multiple technical paths exist, the AI **must** pause and use `AskUserQuestion` to ask the user — each question must include exactly one recommended option with a 1-sentence reason. Questions with inter-dependencies are presented sequentially rather than batched.
+The AI scans for ambiguities using a mandatory 5-category checklist (Interface Contract, Resource & Dependency, Behavioral Boundary, Execution Order, Change Boundary). If multiple technical paths exist, the AI **must** pause and use `AskUserQuestion` to ask the user — each question must include exactly one recommended option with a 1-sentence reason. Each decision point is graded Implementation or Architectural against observable criteria (contract consumers ≥ 2, correction requires migration or cross-module sync, constrains later decisions); Architectural points switch the recommendation standard from minimal change to data-structure/contract/invariant-first, and every option must state its future correction cost. Questions with inter-dependencies are presented sequentially rather than batched.
 
 Upon receiving an answer, the AI searches for related code and performs **cross-constraint validation** against all previously locked decisions before proceeding. If a contradiction is found, the conflicting prior decision is invalidated and re-presented. This loop repeats until all "TBD" items are converted to "Fixed" constraints.
 
@@ -33,7 +33,7 @@ Assumptions are presented in batches via `AskUserQuestion`. User rejections trig
 
 ### Phase 4.2: Scenario Confirmation Gate
 
-Triggered when locked decisions include contract-change / scope-refactor level modifications or new user-visible behavior; otherwise skipped with `Scenario confirmation skipped: no interface/behavior change`. The AI emits the main success scenario in prose using use-case format (Preconditions → Trigger → Main flow → Postconditions) plus extension scenarios (`condition → expected behavior`), then asks for confirmation via a two-option `AskUserQuestion`. Wording-level deviations loop freely; a decision-level deviation re-enters the Phase 3 loop at most once, tracked by an independent `_scenario_pass` counter.
+Triggered when locked decisions include contract-change / scope-refactor level modifications or new user-visible behavior; otherwise skipped with `Scenario confirmation skipped: no interface/behavior change`. The AI presents one `AskUserQuestion` call with two questions — the main success scenario in use-case format (Preconditions → Trigger → Main flow → Postconditions) and the extension scenarios (`condition → expected behavior`) — each carrying its narrative in the question field with Confirm/Deviation options. Wording-level deviations loop freely; a decision-level deviation re-enters the Phase 3 loop at most once, tracked by an independent `_scenario_pass` counter.
 
 ### Phase 4.3: Plan-Code Alignment Check
 

@@ -12,6 +12,7 @@
         "required": ["ambiguity", "options", "fixed_constraint", "rationale"],
         "properties": {
           "ambiguity": { "type": "string", "description": "决策点/模糊项" },
+          "grade": { "type": "string", "description": "决策分级（可选）：实现级/架构级（en: Implementation/Architectural）；架构级须附判据引用，参见 SKILL.md Phase 3 的 Decision Grade Reference" },
           "options": { "type": "string", "description": "可选方案" },
           "fixed_constraint": { "type": "string", "description": "最终锁定约束" },
           "rationale": { "type": "string", "description": "锁定理由" }

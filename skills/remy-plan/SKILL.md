@@ -94,18 +94,18 @@ Skipping without this declaration is a protocol violation.
 
 ### 2.2 Restate
 
-Output the restatement as prose (NOT inside `AskUserQuestion`), in the language selected by the loaded `language.md` directive, structured as three sections:
+Compose the restatement in the language selected by the loaded `language.md` directive, structured as three sections:
 *   **Goal**: what will be changed, in one or two sentences.
 *   **Motivation**: why the user wants this, as understood from the task text and context.
 *   **Out-of-scope**: what this task will NOT do.
 
 ### 2.3 Confirm
 
-Use `AskUserQuestion` with exactly two options:
+Use `AskUserQuestion` with the full three-section restatement embedded in the `question` field (the host does not reliably render assistant text emitted before a tool call in the same turn, so the restatement MUST live inside the question itself), with exactly two options:
 *   "确认 (Confirm)" — the understanding is correct; proceed to **Phase 3**.
 *   "有偏差 (Deviation)" — the user supplies corrections via free text.
 
-On Deviation: merge the correction into the understanding, re-run any saturation reads the correction requires, then re-emit the restatement (2.2) and ask again. Loop until confirmed. No re-entry counter applies here — restatement iterations are wording-level and carry no plan state.
+On Deviation: merge the correction into the understanding, re-run any saturation reads the correction requires, then re-ask with the revised restatement embedded (2.2 → 2.3). Loop until confirmed. No re-entry counter applies here — restatement iterations are wording-level and carry no plan state.
 
 ## Phase 3: Ambiguity Elimination Loop (Loop-Until-Saturated)
 
@@ -131,6 +131,16 @@ When the loaded `language.md` directive selects Chinese, output the 中文 label
     *   **Adjudication dependency** (a cheap task can refute the premise of expensive ones): run the cheapest falsifier first; prune dependents whose premise is refuted.
     *   Independent low-cost direct observations run first (parallel where tools allow); experimental observations run in ascending cost order.
 
+**Decision Grade Reference** (used by Phase 3.1 tagging and the Phase 3.3 Decision Grade Switch):
+
+*   **Grades** — `[实现级]` / `[Implementation]`: the decision is local and revisable later at similar cost. `[架构级]` / `[Architectural]`: the decision satisfies AT LEAST ONE criterion below. When the loaded `language.md` directive selects Chinese, output the 中文 label; otherwise output the English label (mechanism identical to the Scope Tag Reference).
+*   **Architectural criteria** (any one suffices):
+    1.  The decision's product is a contract consumed by ≥ 2 other components (schema, IPC protocol, public interface, file format).
+    2.  Correcting the decision later requires data migration or synchronized cross-module modification.
+    3.  The decision constrains the option space of subsequent decisions (later decisions will stack on top of it).
+*   **Evidence Binding (MUST)**: an architectural tag MUST cite each matched criterion with its factual basis (e.g., "criterion 1: consumers = hooks, MCP"). A tag whose facts cannot be cited is downgraded to implementation grade.
+*   **Default**: when no criterion can be adjudicated from available evidence, the grade defaults to implementation (conservative direction, consistent with Prohibited Pattern 6).
+
 ### 3.1 Scan
 
 Identify current architectural decision points based on *saturated* context. You MUST explicitly check each of the following 5 categories and mark each as either "ambiguity identified" or "N/A (no decision needed)":
@@ -143,13 +153,13 @@ Identify current architectural decision points based on *saturated* context. You
 **MANDATORY FORMAT** — Output the scan result as a fenced block BEFORE any `AskUserQuestion` call:
 ```
 **Ambiguity Scan:**
-1. Interface Contract — ambiguity identified [D]: <brief description>
-2. Resource & Dependency — ambiguity identified [O]: <brief description>
+1. Interface Contract — ambiguity identified [D][架构级]: <brief description>（判据 1：消费者=X、Y）
+2. Resource & Dependency — ambiguity identified [O][实现级]: <brief description>
 3. Behavioral Boundary — N/A (no decision needed)
-4. Execution Order — ambiguity identified [O+D]: <brief description>
+4. Execution Order — ambiguity identified [O+D][实现级]: <brief description>
 5. Change Boundary — N/A (no decision needed)
 ```
-Skipping this output block is a protocol violation. Each identified ambiguity MUST carry an `[O]` / `[D]` / `[O+D]` tag per the **Observation Task Reference**; omitting the tag is a protocol violation.
+Skipping this output block is a protocol violation. Each identified ambiguity MUST carry an `[O]` / `[D]` / `[O+D]` tag per the **Observation Task Reference**; omitting the tag is a protocol violation. Each identified ambiguity MUST also carry a grade tag per the **Decision Grade Reference**; an architectural tag without its criterion citations is downgraded to implementation grade, and omitting the grade tag is a protocol violation.
 
 ### 3.2 Check
 
@@ -176,6 +186,8 @@ Use `AskUserQuestion` to resolve *current layer* ambiguities.
 *   **Recommendation (MUST)**: Every question MUST have exactly 1 recommended option. Append `（推荐）` to the recommended label and include a 1-sentence reason in its description. Omitting the recommendation is a protocol violation.
 *   **Scope Tagging (MUST)**: For each candidate option proposing a code change, prefix its description with a scope tag from the **Scope Tag Reference** table (output label per `REMY_LANG`).
 *   **Prohibited Pattern Cross-Check (MUST)**: Before marking an option as recommended, verify it does NOT trigger Prohibited Modification Patterns 1 (Symptom-Driven / Whack-a-Mole), 3 (Technical Debt / Overfitting), or 6 (Over-Engineering) from `output-styles/system-architect.md` §2.3. If `[补丁]` / `[Boundary-Wrap]` is recommended over a `[局部修复]` / `[Source-Modify]` alternative, the 1-sentence reason MUST cite one of: (a) bug source resides in third-party / read-only code, (b) the boundary IS the actual responsibility boundary, or (c) Source-Modify would trigger Prohibited Pattern 6 (Over-Engineering).
+*   **Planned-Evolution Cross-Check (MUST)**: Before marking an option as recommended, check whether an authoritative written plan registers a follow-up need that the current decision touches. If it does, an option that reserves the seam the plan names (interface, parameter, data shape) MAY be recommended over the minimal-change alternative, and its 1-sentence reason MUST cite the plan anchor. Futures not registered in a plan remain governed by YAGNI (see the Planned-Evolution Exception under Minimal Change, `output-styles/system-architect.md` §2.2).
+*   **Decision Grade Switch (MUST)**: For a decision point graded implementation, the recommendation defaults to the minimal-change option (subject to the cross-checks above). For a decision point graded architectural, the recommendation standard switches to: define state transitions, data owners, failure paths, and executable invariants before choosing an implementation — data structures over control flow; AND every option's description MUST state its future correction cost. Omitting the correction-cost statement on an architectural decision point is a protocol violation. This switch is independent of the Planned-Evolution Cross-Check; when both apply, the recommendation reason cites both the criterion facts and the plan anchor.
 
 ### 3.4 Saturate (Again) — ACTION REQUIRED
 
@@ -251,16 +263,16 @@ Synthesizes the locked decisions into an end-to-end behavioral narrative for use
     ```
     Skipping without this declaration is a protocol violation.
 
-2.  **Emit Scenario**: Output as prose (NOT inside `AskUserQuestion`), in the language selected by the loaded `language.md` directive:
+2.  **Compose Scenario**, in the language selected by the loaded `language.md` directive:
     *   **Main success scenario** (use-case format): Preconditions → Trigger → Main flow (numbered steps) → Postconditions.
     *   **Extensions**: each alternative/exception scenario listed as one `condition → expected behavior` item.
 
-3.  **Confirm**: Use `AskUserQuestion` with exactly two options:
-    *   "确认 (Confirm)" — the narrative matches the intent; proceed to **Phase 4.3**.
-    *   "有偏差 (Deviation)" — the user supplies corrections via free text.
+3.  **Confirm**: Use ONE `AskUserQuestion` call with TWO questions — question 1 carries the full main success scenario in its `question` field, question 2 carries the full extensions list in its `question` field (the host does not reliably render assistant text emitted before a tool call in the same turn, so the narrative MUST live inside the questions). Each question offers exactly two options:
+    *   "确认 (Confirm)" — the narrative matches the intent; when BOTH questions are confirmed, proceed to **Phase 4.3**.
+    *   "有偏差 (Deviation)" — the user supplies corrections via free text; a Deviation answer on either question enters step 4 routing.
 
 4.  **Deviation Routing**: Classify the correction:
-    *   **Wording-level** (the narrative misdescribes an already-locked decision): fix the narrative, re-emit (step 2), and ask again. Loops freely.
+    *   **Wording-level** (the narrative misdescribes an already-locked decision): fix the narrative, recompose (step 2), and re-ask (step 3). Loops freely.
     *   **Decision-level** (a locked decision itself is wrong): governed by an independent counter `_scenario_pass` (initial 0; do NOT reuse `_manifest_pass`). If `_scenario_pass == 0`: set it to 1, convert the correction into a new ambiguity, and return to the **Phase 3** loop. After that loop exits, Phase 4.1 is skipped (`_manifest_pass >= 1`) and flow reaches this gate again for re-presentation. If `_scenario_pass >= 1`: a second decision-level re-entry is prohibited — apply a wording-level correction if possible, otherwise HALT and report the unresolvable conflict.
 
 ### 4.3 Plan-Code Alignment Check
