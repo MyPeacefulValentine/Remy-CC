@@ -1,6 +1,7 @@
 import contextlib
 import importlib.util
 import json
+import os
 import re
 import shutil
 import socket
@@ -282,7 +283,7 @@ def test_get_registry_exposes_ui_metadata(ui_home):
         status, payload, _ = _request(port, "GET", "/api/config")
     assert status == 200
     registry = payload["registry"]
-    assert len(registry) == 61
+    assert len(registry) == 62
     assert [group["id"] for group in payload["groups"]] == [
         "llm_api", "index_generation", "injection", "mcp", "summary", "timeline", "system",
     ]
@@ -459,12 +460,13 @@ def test_html_nonce_csp_and_dynamic_headers(ui_home):
     assert "Cache-Control" not in logo_headers
 
 
-def test_no_heartbeat_timeout_shutdown(ui_home):
+def test_direct_run_arm_has_no_idle_watchdog(ui_home):
     _ = ui_home
-    assert not hasattr(config_ui, "_watchdog_should_shutdown")
-    assert not hasattr(config_ui, "_heartbeat_watchdog")
-    assert not hasattr(config_ui, "HEARTBEAT_TIMEOUT")
-    assert not hasattr(config_ui, "STARTUP_GRACE")
+    assert config_ui._managed_state is None
+    with _server() as port:
+        status, payload, _ = _request(port, "GET", "/api/heartbeat")
+    assert status == 200 and payload == {"status": "ok"}
+    assert config_ui._managed_state is None
     config_ui.ConfigHandler._begin_request()
     assert config_ui.ConfigHandler._active_request_count() == 1
     config_ui.ConfigHandler._end_request()
@@ -812,3 +814,167 @@ def test_html_security_and_control_contract():
     assert 'if(e.key==="Escape"&&searchRaw){e.preventDefault();clearSearch()}' in html_text
     assert 'payload.remove_keys=removeKeys' in html_text
     assert 'delete pendingRemovals[id.slice(2)]' in html_text
+
+
+def test_html_heartbeat_failure_mask_contract():
+    html_text = (REMY_SRC / "config_ui.html").read_text(encoding="utf-8")
+    assert "var HEARTBEAT_FAILURE_LIMIT=3;" in html_text
+    assert "function showServiceEnded()" in html_text
+    assert "serviceEnded=true;" in html_text
+    assert 'wasDirty?t("serviceEndedDirty"):t("serviceEnded")' in html_text
+    assert "if(heartbeatFailures>=HEARTBEAT_FAILURE_LIMIT)showServiceEnded();" in html_text
+    assert "heartbeatFailures=0;return" in html_text
+    assert 'var restartPending=response.body.restart_pending||[];' in html_text
+    assert 'showStatus("success",t("restartPending")(restartPending.join(", ")))' in html_text
+
+
+def test_save_reports_restart_pending_fields(ui_home):
+    _ = ui_home
+    with _server() as port:
+        status, payload, _ = _request(port, "POST", "/api/save", {
+            "values": {"REMY_LANG": "zh-CN", "REMY_MCP_RESULT_LIMIT": "30"},
+        })
+    assert status == 200 and payload["status"] == "ok"
+    assert payload["restart_pending"] == ["REMY_LANG"]
+
+
+def test_save_reset_mode_reports_empty_restart_pending(ui_home):
+    _ = ui_home
+    with _server() as port:
+        status, payload, _ = _request(port, "POST", "/api/save", {
+            "values": {}, "clear_secrets": [], "reset_mode": "all",
+        })
+    assert status == 200 and payload["status"] == "ok"
+    assert payload["restart_pending"] == []
+
+
+def test_managed_state_heartbeat_refresh_and_idle_threshold(ui_home, monkeypatch):
+    _ = ui_home
+    state = config_ui._ManagedState(idle_timeout=120)
+    monkeypatch.setattr(config_ui, "_managed_state", state)
+    with state.lock:
+        state.last_heartbeat -= 1000.0
+    baseline = state.last_heartbeat
+    with _server() as port:
+        status, payload, _ = _request(port, "GET", "/api/heartbeat")
+    assert status == 200 and payload == {"status": "ok"}
+    assert state.last_heartbeat > baseline
+
+    class FakeServer:
+        def __init__(self):
+            self.shutdown_calls = 0
+
+        def shutdown(self):
+            self.shutdown_calls += 1
+
+    server = FakeServer()
+    sleeps = []
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        with state.lock:
+            state.last_heartbeat -= state.idle_timeout
+
+    monkeypatch.setattr(config_ui.time, "sleep", fake_sleep)
+    config_ui._watch_idle(state, server)
+    assert sleeps == [config_ui.IDLE_POLL_INTERVAL]
+    for thread in threading.enumerate():
+        if thread is not threading.current_thread():
+            thread.join(2)
+    assert server.shutdown_calls == 1
+
+
+def test_managed_idle_timeout_reads_config(ui_home):
+    _write(ui_home / ".claude" / "remy-config.json", {"REMY_CONFIG_UI_IDLE_TIMEOUT": "300"})
+    assert config_ui._managed_idle_timeout() == 300
+
+
+def test_managed_idle_timeout_defaults_to_never_without_config(ui_home):
+    _ = ui_home
+    assert config_ui._managed_idle_timeout() == 0
+
+
+def test_zero_idle_timeout_starts_no_idle_watchdog(ui_home, monkeypatch):
+    _ = ui_home
+    started_targets = []
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            _ = args, daemon
+            started_targets.append(target)
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr(config_ui.threading, "Thread", FakeThread)
+    state = config_ui._ManagedState(idle_timeout=0)
+    config_ui._start_managed_watchdogs(state, server=object())
+    assert started_targets == [config_ui._watch_stdin_eof]
+
+
+def test_managed_arm_reports_port_token_pid_and_exits_on_stdin_eof(ui_home, tmp_path):
+    home = ui_home
+    env = dict(os.environ)
+    env["HOME"] = str(home)
+    env["USERPROFILE"] = str(home)
+    for key in remy_config.FIELD_SPECS:
+        env.pop(key, None)
+    process = subprocess.Popen(
+        [sys.executable, str(REMY_SRC / "config_ui.py"), "--managed"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        cwd=str(tmp_path),
+    )
+    try:
+        assert process.stdout is not None and process.stdin is not None
+        line = process.stdout.readline().decode("utf-8").strip()
+        report = json.loads(line)
+        assert set(report) == {"port", "token", "pid"}
+        assert isinstance(report["port"], int) and 1 <= report["port"] <= 65535
+        assert isinstance(report["token"], str) and len(report["token"]) >= 22
+        assert report["pid"] == process.pid
+        connection = HTTPConnection("127.0.0.1", report["port"], timeout=5)
+        connection.request("GET", "/api/heartbeat")
+        response = connection.getresponse()
+        assert response.status == 200
+        response.read()
+        connection.close()
+        process.stdin.close()
+        assert process.wait(timeout=10) is not None
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(5)
+
+
+def test_managed_arm_direct_run_prints_banner_not_json(ui_home, monkeypatch):
+    _ = ui_home
+    monkeypatch.setattr(config_ui.webbrowser, "open", lambda url: True)
+    started = {}
+
+    class FakeHttpServer:
+        def __init__(self, address, handler):
+            _ = handler
+            self.server_address = (address[0], 54321)
+
+        def serve_forever(self):
+            started["served"] = True
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            started["closed"] = True
+
+    monkeypatch.setattr(config_ui.http.server, "ThreadingHTTPServer", FakeHttpServer)
+    timers = []
+    monkeypatch.setattr(config_ui.threading, "Timer", lambda delay, fn: timers.append((delay, fn)) or _FakeTimer())
+    config_ui.main()
+    assert started == {"served": True, "closed": True}
+    assert len(timers) == 1
+    assert config_ui._managed_state is None
+
+
+class _FakeTimer:
+    def start(self):
+        return None

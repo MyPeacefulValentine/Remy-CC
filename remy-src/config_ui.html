@@ -211,6 +211,9 @@ var TEXT={
       modalExitMsg:"Current settings have unsaved changes. Save before exiting?",
       modalExitSave:"Save & Exit",modalExitDiscard:"Discard",modalExitCancel:"Cancel",
       closed:"Server closed. You may close this tab.",
+      serviceEnded:"The service has ended. Run remy-cc config to reopen.",
+      serviceEndedDirty:"The service has ended. Unsaved changes in this page were NOT saved. Run remy-cc config to reopen.",
+      restartPending:function(keys){return "Saved. Changes take effect later (see each field's timing): "+keys},
       environmentNote:"A process environment value currently overrides file values.",
       testConnection:"Test Connection",testingConnection:"Testing configured LLM endpoint",testSuccess:"Connection succeeded",testHttp:"HTTP",testMs:"ms",
       test_missing_config:"API key or model is not configured.",test_invalid_url:"The endpoint URL is invalid.",test_connection:"Connection failed.",test_tls:"TLS verification failed.",test_timeout:"Connection timed out.",test_auth:"Authentication failed.",test_rate_limit:"The service rate limit was reached.",test_not_found:"The endpoint or model does not exist.",test_server:"The service returned a server error.",test_invalid_response:"The service returned an invalid response.",test_too_large:"The service response exceeded the size limit.",test_busy:"A connection test is already running.",test_redirect:"The endpoint returned a redirect.",test_request_rejected:"The service rejected the request.",
@@ -256,6 +259,9 @@ var TEXT={
       modalExitMsg:"当前设置已修改但未保存。是否先保存再退出？",
       modalExitSave:"保存并退出",modalExitDiscard:"放弃修改",modalExitCancel:"取消",
       closed:"服务已关闭，可关闭此标签页。",
+      serviceEnded:"服务已结束。重新运行 remy-cc config 可再次打开。",
+      serviceEndedDirty:"服务已结束，本页未保存的修改未能保存。重新运行 remy-cc config 可再次打开。",
+      restartPending:function(keys){return "已保存。以下变更稍后生效（见各字段生效时机）: "+keys},
       environmentNote:"进程环境值当前覆盖文件中的值。",
       testConnection:"测试连接",testingConnection:"正在连接配置的LLM端点",testSuccess:"连接成功",testHttp:"HTTP",testMs:"毫秒",
       test_missing_config:"API密钥或模型未配置。",test_invalid_url:"API端点格式无效。",test_connection:"连接失败。",test_tls:"TLS证书校验失败。",test_timeout:"连接超时。",test_auth:"鉴权失败。",test_rate_limit:"服务请求频率受限。",test_not_found:"端点或模型不存在。",test_server:"服务端返回错误。",test_invalid_response:"服务返回格式无效。",test_too_large:"服务响应超过大小限制。",test_busy:"已有连接测试正在执行。",test_redirect:"端点返回重定向。",test_request_rejected:"服务拒绝了请求。",
@@ -1150,9 +1156,12 @@ function save(resetMode){
     .then(function(r){return r.json().then(function(body){return {ok:r.ok,body:body}})})
     .then(function(response){
       if(!response.ok||response.body.status!=="ok")throw new Error(response.body.message||("HTTP "+response.body.status));
+      var restartPending=response.body.restart_pending||[];
       setSaveState("refreshing");
       return loadConfig(true,false).then(function(){
-        applySaveOutcome(true,true);showStatus("success",resetMode==="none"?t("saved"):(resetMode==="non_secret"?t("resetDone"):t("clearDone")));
+        applySaveOutcome(true,true);
+        if(resetMode==="none"&&restartPending.length>0)showStatus("success",t("restartPending")(restartPending.join(", ")));
+        else showStatus("success",resetMode==="none"?t("saved"):(resetMode==="non_secret"?t("resetDone"):t("clearDone")));
         return true;
       }).catch(function(e){
         applySaveOutcome(true,false);showStatus("error",t("refreshFailed")+" "+e.message);return false;
@@ -1198,6 +1207,7 @@ function exitUI(){
 }
 
 function doShutdown(){
+  serviceEnded=true;
   postJson("/api/shutdown",{}).catch(function(){});
   dirty=false;
   var ov=document.getElementById("modal-ov");
@@ -1310,7 +1320,34 @@ document.addEventListener("keydown",function(e){
 window.addEventListener("beforeunload",function(e){
   if(dirty){e.preventDefault();e.returnValue=""}
 });
-function sendHeartbeat(){fetch("/api/heartbeat").catch(function(){})}
+var heartbeatFailures=0;
+var HEARTBEAT_FAILURE_LIMIT=3;
+var serviceEnded=false;
+function showServiceEnded(){
+  if(serviceEnded)return;
+  serviceEnded=true;
+  var wasDirty=dirty;
+  dirty=false;
+  var ov=document.getElementById("modal-ov");
+  var box=document.getElementById("modal-box");
+  document.getElementById("modal-title").textContent="";
+  document.getElementById("modal-msg").textContent="";
+  document.getElementById("modal-btns").innerHTML="";
+  box.querySelector("h2").textContent=wasDirty?t("serviceEndedDirty"):t("serviceEnded");
+  box.querySelector("p").textContent="";
+  ov.classList.add("show");
+  ov.onclick=null;
+}
+function sendHeartbeat(){
+  fetch("/api/heartbeat").then(function(r){
+    if(r.ok){heartbeatFailures=0;return}
+    heartbeatFailures+=1;
+    if(heartbeatFailures>=HEARTBEAT_FAILURE_LIMIT)showServiceEnded();
+  }).catch(function(){
+    heartbeatFailures+=1;
+    if(heartbeatFailures>=HEARTBEAT_FAILURE_LIMIT)showServiceEnded();
+  });
+}
 setInterval(sendHeartbeat,2000);
 init();
 })();

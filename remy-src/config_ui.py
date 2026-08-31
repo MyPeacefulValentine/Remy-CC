@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import hmac
 import html
 import http.server
@@ -23,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import remy_config
 
 HEARTBEAT_INTERVAL = 2
+IDLE_POLL_INTERVAL = 5
 LLM_TEST_TIMEOUT = 15
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_RESPONSE_BYTES = 1024 * 1024
@@ -342,6 +344,9 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
             return None
 
     def do_GET(self):
+        if self.path == "/api/heartbeat" and _managed_state is not None:
+            with _managed_state.lock:
+                _managed_state.last_heartbeat = time.monotonic()
         if self.path == "/":
             if self.html_path and self.html_path.exists():
                 self._send_html(self.html_path.read_text(encoding="utf-8"))
@@ -478,7 +483,12 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
                     [sys.executable, str(patch_script), "--claude-home", str(claude_home), "--lang", lang],
                     check=False,
                 )
-        self._send_json({"status": "ok"})
+        restart_pending = sorted(
+            key for key in updates
+            if key in remy_config.FIELD_SPECS
+            and remy_config.FIELD_SPECS[key].restart_scope != "immediate"
+        ) if reset_mode == "none" else []
+        self._send_json({"status": "ok", "restart_pending": restart_pending})
 
     def _test_llm(self, data):
         if self.mode != "global":
@@ -553,7 +563,51 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
         self._send_json({"status": "error", "message": "not_found"}, 404)
 
 
-def main(mode="global", target_path=None):
+class _ManagedState:
+    """Managed-arm runtime state: heartbeat clock and shutdown trigger."""
+
+    def __init__(self, idle_timeout):
+        self.lock = threading.Lock()
+        self.last_heartbeat = time.monotonic()
+        self.idle_timeout = idle_timeout
+
+
+_managed_state: Optional[_ManagedState] = None
+
+
+def _managed_idle_timeout():
+    snapshot = remy_config.load_config(None, strict=False)
+    value = snapshot.get("REMY_CONFIG_UI_IDLE_TIMEOUT", 0)
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _watch_stdin_eof(server):
+    try:
+        while sys.stdin.buffer.read(1):
+            pass
+    except (OSError, ValueError):
+        pass
+    threading.Thread(target=server.shutdown, daemon=True).start()
+
+
+def _watch_idle(state, server):
+    while True:
+        time.sleep(IDLE_POLL_INTERVAL)
+        with state.lock:
+            idle_for = time.monotonic() - state.last_heartbeat
+        if idle_for >= state.idle_timeout:
+            threading.Thread(target=server.shutdown, daemon=True).start()
+            return
+
+
+def _start_managed_watchdogs(state, server):
+    threading.Thread(target=_watch_stdin_eof, args=(server,), daemon=True).start()
+    if state.idle_timeout > 0:
+        threading.Thread(target=_watch_idle, args=(state, server), daemon=True).start()
+
+
+def main(mode="global", target_path=None, managed=False):
+    global _managed_state
     ConfigHandler.html_path = Path(__file__).resolve().parent / "config_ui.html"
     ConfigHandler.mode = mode
     if mode == "project" and target_path:
@@ -584,22 +638,38 @@ def main(mode="global", target_path=None):
     url = ConfigHandler.expected_origin
     acquire_lock(url, mode, target_path)
 
-    label = "Global" if mode == "global" else "Project"
-    print("Remy Config UI ({}): {}".format(label, url))
-    print("  Target: " + str(ConfigHandler.target_path or remy_config.user_config_path()))
-    if platform.system() == "Windows":
-        print("  Security: Windows file access depends on inherited user-directory ACLs.")
-    print("Press the page Exit button or Ctrl+C to stop.\n")
-
-    threading.Timer(0.3, lambda: webbrowser.open(url)).start()
+    if managed:
+        _managed_state = _ManagedState(_managed_idle_timeout())
+        _start_managed_watchdogs(_managed_state, server)
+        report = json.dumps({"port": port, "token": ConfigHandler.session_token, "pid": os.getpid()})
+        print(report, flush=True)
+    else:
+        label = "Global" if mode == "global" else "Project"
+        print("Remy Config UI ({}): {}".format(label, url))
+        print("  Target: " + str(ConfigHandler.target_path or remy_config.user_config_path()))
+        if platform.system() == "Windows":
+            print("  Security: Windows file access depends on inherited user-directory ACLs.")
+        print("Press the page Exit button or Ctrl+C to stop.\n")
+        threading.Timer(0.3, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopped.")
+        if not managed:
+            print("\nStopped.")
     finally:
         release_lock()
         server.server_close()
+        _managed_state = None
+
+
+def _parse_args(argv):
+    parser = argparse.ArgumentParser(prog="config_ui")
+    parser.add_argument("--managed", action="store_true")
+    parser.add_argument("--mode", choices=["global", "project"], default="global")
+    parser.add_argument("--target", default=None)
+    return parser.parse_args(argv)
 
 
 if __name__ == "__main__":
-    main()
+    args = _parse_args(sys.argv[1:])
+    main(mode=args.mode, target_path=args.target, managed=args.managed)
