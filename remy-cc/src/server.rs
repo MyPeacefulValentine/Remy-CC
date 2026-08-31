@@ -13,6 +13,7 @@ use crate::logging::JsonLogger;
 use crate::protocol::{Request, Response, ScannerStatus, MAX_LINE_BYTES, PROTOCOL_VERSION};
 use crate::scheduler::SchedulerHandle;
 use crate::state::{ListJobs, StateError, SubmitJob, STATE_SCHEMA_VERSION};
+use crate::ui_host::{OpenOutcome, UiHost};
 
 pub const PORT_FILE: &str = "daemon.port";
 pub const TOKEN_FILE: &str = "daemon.token";
@@ -26,6 +27,7 @@ pub fn serve(
     logger: &JsonLogger,
     scheduler: &SchedulerHandle,
     scanner: ScannerStatus,
+    ui_host: &UiHost,
 ) -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
@@ -46,7 +48,15 @@ pub fn serve(
 
     loop {
         let (stream, _) = listener.accept()?;
-        match handle_connection(&stream, &token, daemon_version, logger, scheduler, &scanner)? {
+        match handle_connection(
+            &stream,
+            &token,
+            daemon_version,
+            logger,
+            scheduler,
+            &scanner,
+            ui_host,
+        )? {
             ConnectionOutcome::Continue => {}
             ConnectionOutcome::Shutdown => {
                 logger.log("info", "ipc_shutdown_requested", serde_json::Value::Null)?;
@@ -68,6 +78,7 @@ fn handle_connection(
     logger: &JsonLogger,
     scheduler: &SchedulerHandle,
     scanner: &ScannerStatus,
+    ui_host: &UiHost,
 ) -> io::Result<ConnectionOutcome> {
     let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
@@ -251,11 +262,38 @@ fn handle_connection(
                         active_jobs,
                         recent_errors,
                         scanner: scanner.clone(),
+                        ui: ui_host.status(),
                     },
                 ),
                 Err(error) if error.is_fatal() => return Err(io::Error::other(error)),
                 Err(error) => write_response(&mut writer, &state_error_response(error)),
             },
+            Request::OpenConfigUi { mode, target, .. } => {
+                match ui_host.open(&mode, target.as_deref()) {
+                    OpenOutcome::Ready { url, token, .. } => {
+                        write_response(&mut writer, &Response::ConfigUi { url, token });
+                    }
+                    OpenOutcome::Conflict {
+                        mode,
+                        target,
+                        pid,
+                        port,
+                    } => write_response(
+                        &mut writer,
+                        &Response::error(
+                            "ui_conflict",
+                            format!(
+                                "config UI already running with mode={mode} target={} (pid {pid}, port {port})",
+                                target.as_deref().unwrap_or("-")
+                            ),
+                        ),
+                    ),
+                    OpenOutcome::SpawnFailed { diagnostic } => write_response(
+                        &mut writer,
+                        &Response::error("ui_spawn_failed", diagnostic),
+                    ),
+                }
+            }
         }
     }
     Ok(ConnectionOutcome::Continue)
@@ -376,6 +414,15 @@ mod tests {
         }
     }
 
+    fn test_ui_host(dir: &Path) -> UiHost {
+        UiHost::new(
+            None,
+            dir.join("config_ui.py"),
+            crate::ui_host::DEFAULT_REPORT_TIMEOUT,
+            std::sync::Arc::new(test_logger(&dir.join("ui-log"))),
+        )
+    }
+
     fn request_line(value: serde_json::Value) -> String {
         let mut line = value.to_string();
         line.push('\n');
@@ -426,6 +473,7 @@ mod tests {
 
         let run_dir_clone = run_dir.clone();
         let scheduler_clone = scheduler.clone();
+        let ui_dir = dir.path().to_path_buf();
         let handle = std::thread::spawn(move || {
             serve(
                 &run_dir_clone,
@@ -433,6 +481,7 @@ mod tests {
                 &logger,
                 &scheduler_clone,
                 test_scanner_status(),
+                &test_ui_host(&ui_dir),
             )
             .unwrap();
         });
@@ -517,6 +566,7 @@ mod tests {
         let (scheduler, scheduler_thread) = crate::scheduler::start(state, clock()).unwrap();
         let run_dir_clone = run_dir.clone();
         let scheduler_clone = scheduler.clone();
+        let ui_dir = dir.path().to_path_buf();
         let handle = std::thread::spawn(move || {
             serve(
                 &run_dir_clone,
@@ -524,6 +574,7 @@ mod tests {
                 &logger,
                 &scheduler_clone,
                 test_scanner_status(),
+                &test_ui_host(&ui_dir),
             )
             .unwrap();
         });
@@ -569,6 +620,7 @@ mod tests {
         let (scheduler, scheduler_thread) = crate::scheduler::start(state, clock()).unwrap();
         let run_dir_clone = run_dir.clone();
         let scheduler_clone = scheduler.clone();
+        let ui_dir = dir.path().to_path_buf();
         let handle = std::thread::spawn(move || {
             serve(
                 &run_dir_clone,
@@ -576,6 +628,7 @@ mod tests {
                 &logger,
                 &scheduler_clone,
                 test_scanner_status(),
+                &test_ui_host(&ui_dir),
             )
             .unwrap();
         });

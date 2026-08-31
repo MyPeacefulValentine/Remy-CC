@@ -436,7 +436,7 @@ fn evaluate(status: ExitStatus, stdout: Captured, stderr: Captured) -> io::Resul
     }
 }
 
-fn has_exact_keys(value: &Value, expected: &[&str]) -> bool {
+pub(crate) fn has_exact_keys(value: &Value, expected: &[&str]) -> bool {
     let Some(object) = value.as_object() else {
         return false;
     };
@@ -474,7 +474,7 @@ fn valid_scan_result(result: &Value) -> bool {
         && valid_error_array(&result["errors"])
 }
 
-fn sanitize(message: &str) -> String {
+pub(crate) fn sanitize(message: &str) -> String {
     let mut output = message.to_string();
     if let Some(home) = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE")) {
         output = output.replace(&home.to_string_lossy().to_string(), "~");

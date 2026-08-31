@@ -21,6 +21,7 @@ mod scheduler;
 mod server;
 mod single_instance;
 mod state;
+mod ui_host;
 mod worker;
 
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
@@ -296,6 +297,22 @@ fn run_dir(home: &Path) -> PathBuf {
     home.join("run")
 }
 
+/// Deployed managed-arm script; a missing file is diagnosed at open time.
+fn ui_script_path() -> PathBuf {
+    install::resolve_roots()
+        .map(|roots| roots.claude_root.join("remy-src").join("config_ui.py"))
+        .unwrap_or_else(|_| PathBuf::from("config_ui.py"))
+}
+
+/// Report-timeout test seam; the 10s default is the packet-locked value.
+fn ui_report_timeout() -> Duration {
+    std::env::var("REMY_CC_UI_REPORT_TIMEOUT_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(ui_host::DEFAULT_REPORT_TIMEOUT)
+}
+
 fn run_foreground(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
     let run_dir = run_dir(home);
     match single_instance::acquire(&run_dir)? {
@@ -345,13 +362,28 @@ fn run_foreground(home: &Path, clock: &Arc<dyn Clock>) -> io::Result<ExitCode> {
                     )?;
                 }
             }
+            let ui_logger = Arc::new(JsonLogger::new(
+                &home.join("log"),
+                logging::DEFAULT_MAX_LOG_BYTES,
+                Arc::clone(clock),
+            )?);
+            let ui_host = ui_host::UiHost::new(
+                install::resolve_roots()
+                    .ok()
+                    .and_then(|roots| install::delegate::resolve_python(&roots.remy_root)),
+                ui_script_path(),
+                ui_report_timeout(),
+                ui_logger,
+            );
             server::serve(
                 &run_dir,
                 env!("CARGO_PKG_VERSION"),
                 &logger,
                 &scheduler,
                 scanner_status,
+                &ui_host,
             )?;
+            ui_host.shutdown();
             scheduler.shutdown();
             Ok(ExitCode::SUCCESS)
         }
@@ -403,6 +435,7 @@ fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
                     Vec::new(),
                     Vec::new(),
                     None,
+                    None,
                     Some(("not_running", "daemon is not running"))
                 )
             );
@@ -428,6 +461,7 @@ fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
                         active_jobs,
                         recent_errors,
                         scanner,
+                        ui,
                     }) => println!(
                         "{}",
                         status_json(
@@ -437,6 +471,7 @@ fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
                             active_jobs,
                             recent_errors,
                             Some(scanner),
+                            ui,
                             None
                         )
                     ),
@@ -448,6 +483,7 @@ fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
                             Some(daemon_version),
                             Vec::new(),
                             Vec::new(),
+                            None,
                             None,
                             Some(("invalid_response", "status response is invalid"))
                         )
@@ -471,6 +507,7 @@ fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
                         Vec::new(),
                         Vec::new(),
                         None,
+                        None,
                         Some(("ipc_unresponsive", "daemon IPC is unresponsive"))
                     )
                 );
@@ -485,6 +522,7 @@ fn status(home: &Path, json_output: bool) -> io::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn status_json(
     running: bool,
     ipc_responsive: bool,
@@ -492,6 +530,7 @@ fn status_json(
     active_jobs: Vec<state::Job>,
     recent_errors: Vec<state::Job>,
     scanner: Option<protocol::ScannerStatus>,
+    ui: Option<protocol::UiStatus>,
     diagnostic: Option<(&str, &str)>,
 ) -> serde_json::Value {
     json!({
@@ -503,6 +542,7 @@ fn status_json(
         "active_jobs": active_jobs,
         "recent_errors": recent_errors,
         "scanner": scanner,
+        "ui": ui,
         "diagnostic_error": diagnostic.map(|(kind, message)| json!({"kind": kind, "message": message})),
     })
 }

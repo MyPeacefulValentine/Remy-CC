@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 DAEMON_SOURCE = Path(__file__).resolve().parent.parent / "remy-cc"
-PROTOCOL_VERSION = 5
+PROTOCOL_VERSION = 6
 STATE_SCHEMA_VERSION = 2
 
 

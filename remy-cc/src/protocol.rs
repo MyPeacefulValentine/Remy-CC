@@ -3,13 +3,14 @@
 //! PROTOCOL_VERSION history: 1 (initial), 2 (persistent jobs),
 //! 3 (scheduling, job listing, and status snapshot),
 //! 4 (file-filtered job queries for hook clients),
-//! 5 (scanner provider fields on jobs and status, full_scan job type).
+//! 5 (scanner provider fields on jobs and status, full_scan job type),
+//! 6 (open_config_ui command, ui field group on status).
 
 use serde::{Deserialize, Serialize};
 
 use crate::state::{Job, JobPriority, JobStatus, PublishedProvider, STATE_SCHEMA_VERSION};
 
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 pub const MAX_LINE_BYTES: u64 = 65536;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -68,6 +69,13 @@ pub enum Request {
         state_schema_version: u32,
         token: String,
     },
+    OpenConfigUi {
+        protocol_version: u32,
+        state_schema_version: u32,
+        token: String,
+        mode: String,
+        target: Option<String>,
+    },
 }
 
 impl Request {
@@ -81,7 +89,8 @@ impl Request {
             | Self::GetJob { token, .. }
             | Self::CancelJob { token, .. }
             | Self::ListJobs { token, .. }
-            | Self::StatusSnapshot { token, .. } => token,
+            | Self::StatusSnapshot { token, .. }
+            | Self::OpenConfigUi { token, .. } => token,
         }
     }
 
@@ -116,6 +125,11 @@ impl Request {
                 protocol_version,
                 state_schema_version,
                 ..
+            }
+            | Self::OpenConfigUi {
+                protocol_version,
+                state_schema_version,
+                ..
             } => Some((*protocol_version, *state_schema_version)),
             Self::Hello { .. } | Self::Ping { .. } | Self::Shutdown { .. } => None,
         }
@@ -135,6 +149,16 @@ pub struct ScannerStatus {
     pub desired: String,
     pub published: Option<PublishedProvider>,
     pub diagnostic: Option<String>,
+}
+
+/// UI instance summary on status responses. Deliberately token-free: status
+/// output reaches terminals and logs.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct UiStatus {
+    pub pid: u32,
+    pub port: u16,
+    pub mode: String,
+    pub target: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -170,6 +194,11 @@ pub enum Response {
         active_jobs: Vec<Job>,
         recent_errors: Vec<Job>,
         scanner: ScannerStatus,
+        ui: Option<UiStatus>,
+    },
+    ConfigUi {
+        url: String,
+        token: String,
     },
     Error {
         code: String,
@@ -278,6 +307,13 @@ mod tests {
                 state_schema_version: STATE_SCHEMA_VERSION,
                 token: "token".to_string(),
             },
+            Request::OpenConfigUi {
+                protocol_version: PROTOCOL_VERSION,
+                state_schema_version: STATE_SCHEMA_VERSION,
+                token: "token".to_string(),
+                mode: "project".to_string(),
+                target: Some("/repo".to_string()),
+            },
         ];
         for request in requests {
             let json = serde_json::to_string(&request).unwrap();
@@ -326,6 +362,16 @@ mod tests {
                     }),
                     diagnostic: None,
                 },
+                ui: Some(UiStatus {
+                    pid: 4321,
+                    port: 45678,
+                    mode: "global".to_string(),
+                    target: None,
+                }),
+            },
+            Response::ConfigUi {
+                url: "http://127.0.0.1:45678".to_string(),
+                token: "ui-session-token".to_string(),
             },
             Response::error("not_found", "job missing"),
         ];

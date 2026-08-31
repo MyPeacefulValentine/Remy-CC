@@ -3,6 +3,8 @@
 //! Real sleeps below are bounded readiness polling (process synchronization),
 //! not time-behavior assertions; guideline §5.6 applies to the latter.
 
+use std::io::{BufRead, BufReader, Write};
+use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::thread::sleep;
@@ -10,6 +12,9 @@ use std::time::{Duration, Instant};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
+// Mirrored wire constants (integration tests cannot import bin-crate items).
+const PROTOCOL_VERSION: u32 = 6;
+const STATE_SCHEMA_VERSION: u32 = 2;
 
 fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_remy-cc")
@@ -51,14 +56,21 @@ struct ForegroundDaemon {
 
 impl ForegroundDaemon {
     fn spawn(home: &Path) -> Self {
-        let child = Command::new(bin())
+        Self::spawn_with_env(home, &[])
+    }
+
+    fn spawn_with_env(home: &Path, extra_env: &[(&str, &str)]) -> Self {
+        let mut command = Command::new(bin());
+        command
             .args(["start", "--foreground"])
             .env("REMY_CC_HOME", home)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn foreground daemon");
+            .stderr(Stdio::null());
+        for (key, value) in extra_env {
+            command.env(key, value);
+        }
+        let child = command.spawn().expect("spawn foreground daemon");
         let child_pid = child.id();
         let daemon = Self {
             child,
@@ -463,6 +475,233 @@ fn restart_starts_a_stopped_daemon_and_replaces_a_running_one() {
 
     let stopped = run(home.path(), &["stop"]);
     assert_eq!(exit_code(&stopped), 0);
+}
+
+fn python_on_path() -> Option<&'static str> {
+    for candidate in ["python", "python3"] {
+        let probe = Command::new(candidate)
+            .args([
+                "-c",
+                "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        if probe.map(|status| status.success()).unwrap_or(false) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// Fake managed arm: reports a fixed port and its own pid, then blocks on
+/// stdin until EOF (the packet-A lifecycle contract shape).
+const FAKE_UI_SCRIPT: &str = r#"
+import json, os, sys
+print(json.dumps({"port": 45678, "token": "secret-ui-token-for-grep", "pid": os.getpid()}), flush=True)
+sys.stdin.buffer.read()
+"#;
+
+/// Claude root holding the fake managed arm at the deployed location.
+fn write_fake_claude_root(home: &Path, script_body: &str) -> PathBuf {
+    let claude_root = home.join("claude");
+    let remy_src = claude_root.join("remy-src");
+    std::fs::create_dir_all(&remy_src).expect("remy-src dir");
+    std::fs::write(remy_src.join("config_ui.py"), script_body).expect("fake config_ui.py");
+    claude_root
+}
+
+fn ipc_request(home: &Path, request: &serde_json::Value) -> serde_json::Value {
+    let run_dir = home.join("run");
+    let port: u16 = std::fs::read_to_string(run_dir.join("daemon.port"))
+        .expect("port file")
+        .trim()
+        .parse()
+        .expect("port");
+    let stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    let mut writer = std::io::BufWriter::new(&stream);
+    writeln!(writer, "{request}").expect("send");
+    writer.flush().expect("flush");
+    let mut line = String::new();
+    BufReader::new(&stream).read_line(&mut line).expect("read");
+    serde_json::from_str(&line).expect("response JSON")
+}
+
+fn open_config_ui(home: &Path, mode: &str, target: Option<&str>) -> serde_json::Value {
+    let token = std::fs::read_to_string(home.join("run").join("daemon.token"))
+        .expect("token file")
+        .trim()
+        .to_string();
+    ipc_request(
+        home,
+        &serde_json::json!({
+            "cmd": "open_config_ui",
+            "protocol_version": PROTOCOL_VERSION,
+            "state_schema_version": STATE_SCHEMA_VERSION,
+            "token": token,
+            "mode": mode,
+            "target": target,
+        }),
+    )
+}
+
+fn read_daemon_log(home: &Path) -> String {
+    let mut content = String::new();
+    for name in ["daemon.log", "daemon.log.1"] {
+        if let Ok(part) = std::fs::read_to_string(home.join("log").join(name)) {
+            content.push_str(&part);
+        }
+    }
+    content
+}
+
+#[test]
+fn open_config_ui_is_idempotent_conflicts_and_never_logs_the_token() {
+    let Some(_python) = python_on_path() else {
+        return;
+    };
+    let home = tempfile::tempdir().unwrap();
+    let claude_root = write_fake_claude_root(home.path(), FAKE_UI_SCRIPT);
+    let mut daemon = ForegroundDaemon::spawn_with_env(
+        home.path(),
+        &[("CLAUDE_CONFIG_DIR", claude_root.to_str().unwrap())],
+    );
+
+    let first = open_config_ui(home.path(), "global", None);
+    assert_eq!(first["type"], "config_ui", "response: {first}");
+    assert_eq!(first["url"], "http://127.0.0.1:45678");
+    assert_eq!(first["token"], "secret-ui-token-for-grep");
+
+    let second = open_config_ui(home.path(), "global", None);
+    assert_eq!(second["type"], "config_ui");
+    assert_eq!(second["url"], first["url"]);
+
+    let conflict = open_config_ui(home.path(), "project", Some("/repo"));
+    assert_eq!(conflict["type"], "error");
+    assert_eq!(conflict["code"], "ui_conflict");
+    assert!(
+        conflict["message"]
+            .as_str()
+            .unwrap()
+            .contains("mode=global"),
+        "message: {}",
+        conflict["message"]
+    );
+
+    let status = run(home.path(), &["status", "--json"]);
+    let payload: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&status.stdout).trim()).unwrap();
+    assert_eq!(payload["ui"]["port"], 45678);
+    assert_eq!(payload["ui"]["mode"], "global");
+    assert!(payload["ui"].get("token").is_none());
+
+    daemon.kill();
+    let log = read_daemon_log(home.path());
+    assert!(log.contains("config_ui_started"), "log: {log}");
+    assert!(
+        !log.contains("secret-ui-token-for-grep"),
+        "UI session token leaked into the daemon log"
+    );
+    let stdout = String::from_utf8_lossy(&status.stdout);
+    assert!(!log.is_empty() && !stdout.contains("secret-ui-token-for-grep"));
+}
+
+#[test]
+fn config_ui_child_exits_on_daemon_stop_via_stdin_eof() {
+    let Some(_python) = python_on_path() else {
+        return;
+    };
+    let home = tempfile::tempdir().unwrap();
+    let marker = home.path().join("ui-exited.marker");
+    let script = format!(
+        r#"
+import json, os, sys, atexit
+atexit.register(lambda: open({marker:?}, "w").close())
+print(json.dumps({{"port": 45678, "token": "t", "pid": os.getpid()}}), flush=True)
+sys.stdin.buffer.read()
+"#,
+        marker = marker.to_str().unwrap()
+    );
+    let claude_root = write_fake_claude_root(home.path(), &script);
+    let _daemon = ForegroundDaemon::spawn_with_env(
+        home.path(),
+        &[("CLAUDE_CONFIG_DIR", claude_root.to_str().unwrap())],
+    );
+
+    let opened = open_config_ui(home.path(), "global", None);
+    assert_eq!(opened["type"], "config_ui");
+
+    let stopped = run(home.path(), &["stop"]);
+    assert_eq!(exit_code(&stopped), 0);
+    assert!(
+        wait_until(|| marker.exists()),
+        "managed child did not exit on daemon stop"
+    );
+}
+
+#[test]
+fn config_ui_report_timeout_kills_child_and_reports_spawn_failed() {
+    let Some(_python) = python_on_path() else {
+        return;
+    };
+    let home = tempfile::tempdir().unwrap();
+    let claude_root = write_fake_claude_root(
+        home.path(),
+        "import sys\nsys.stderr.write('starting slowly')\nsys.stderr.flush()\nsys.stdin.buffer.read()\n",
+    );
+    let _daemon = ForegroundDaemon::spawn_with_env(
+        home.path(),
+        &[
+            ("CLAUDE_CONFIG_DIR", claude_root.to_str().unwrap()),
+            ("REMY_CC_UI_REPORT_TIMEOUT_SECS", "1"),
+        ],
+    );
+
+    let response = open_config_ui(home.path(), "global", None);
+    assert_eq!(response["type"], "error", "response: {response}");
+    assert_eq!(response["code"], "ui_spawn_failed");
+    assert!(
+        response["message"]
+            .as_str()
+            .unwrap()
+            .contains("did not report"),
+        "message: {}",
+        response["message"]
+    );
+
+    let status = run(home.path(), &["status", "--json"]);
+    let payload: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&status.stdout).trim()).unwrap();
+    assert!(payload["ui"].is_null(), "ui slot must be empty: {payload}");
+}
+
+#[test]
+fn config_ui_exit_without_report_surfaces_stderr_tail() {
+    let Some(_python) = python_on_path() else {
+        return;
+    };
+    let home = tempfile::tempdir().unwrap();
+    let claude_root = write_fake_claude_root(
+        home.path(),
+        "import sys\nprint('Error: Another config UI instance is running.', file=sys.stderr)\nsys.exit(1)\n",
+    );
+    let _daemon = ForegroundDaemon::spawn_with_env(
+        home.path(),
+        &[("CLAUDE_CONFIG_DIR", claude_root.to_str().unwrap())],
+    );
+
+    let response = open_config_ui(home.path(), "global", None);
+    assert_eq!(response["type"], "error");
+    assert_eq!(response["code"], "ui_spawn_failed");
+    assert!(
+        response["message"]
+            .as_str()
+            .unwrap()
+            .contains("Another config UI instance"),
+        "message: {}",
+        response["message"]
+    );
 }
 
 #[test]
