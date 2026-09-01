@@ -255,7 +255,7 @@ remy-cc install --lang zh-CN     # 简体中文
 | `remy-cc update` | 从最新 GitHub release 自更新：sha256 校验强制且失败硬拒绝；gh CLI 可用时机会性验证 provenance attestation；在用映像经 rename-and-replace 替换，daemon 原本运行时自动重启 |
 | `remy-cc verify` / `remy-cc uninstall [--yes] [--purge-state]` | v4 manifest 哈希对账与按 manifest 精确卸载（默认保留项目数据、用户 settings 条目与引擎状态） |
 | `remy-cc restart` / `remy-cc logs [--tail N] [--follow]` | systemctl 语义的 daemon 重启（未运行时等于 start）；daemon 日志读取 |
-| `remy-cc config` / `remy-cc summary-rebuild\|summary-audit\|summary-vacuum` | 委派部署侧 Python CLI 执行（Python 3.10+ 为运行前置） |
+| `remy-cc summary-rebuild\|summary-audit\|summary-vacuum` | 委派部署侧 Python CLI 执行（Python 3.10+ 为运行前置） |
 
 ### 命令与配置
 
@@ -263,9 +263,9 @@ remy-cc install --lang zh-CN     # 简体中文
 
 | 命令 | 说明 |
 | :--- | :--- |
-| `remy-cc config` | 打开用户Remy配置编辑器，编辑`~/.claude/remy-config.json` |
-| `remy-cc config --path <路径>` | 打开项目Remy配置编辑器，编辑`<路径>/.claude/remy-config.json` |
-| `remy-cc start\|stop\|restart\|status [--json]` | 控制常驻 daemon；`status --json` 报告作业与扫描器 provider 状态（`desired`/`published`/`diagnostic`） |
+| `remy-cc config` | 打开 daemon 托管的用户配置编辑器，编辑`~/.claude/remy-config.json`：按需启动 daemon，打印页面 URL（仅终端下另开浏览器），重复调用返回同一运行中页面（幂等）。托管 UI 子进程随 daemon 停止而退出（stdin EOF 生命周期）；`REMY_CONFIG_UI_IDLE_TIMEOUT`（秒，默认 0=永不）可选启用空闲退出 |
+| `remy-cc config --path <路径>` | 同上，打开项目配置编辑器，编辑`<路径>/.claude/remy-config.json`；与运行中编辑器的 mode/target 不同时报告冲突 |
+| `remy-cc start\|stop\|restart\|status [--json]` | 控制常驻 daemon；`status --json` 报告作业、扫描器 provider 状态（`desired`/`published`/`diagnostic`）与托管配置 UI 实例（`ui`：pid/port/mode/target，不含 token，无实例时为 `null`） |
 | `remy-cc logs [--tail N] [--follow]` | 读取 daemon 日志 |
 | `remy-cc scan --root <目录> --db <路径> [...]` | 扫描源码树生成逻辑索引数据库 |
 | `remy-cc -V` | 显示二进制版本 |

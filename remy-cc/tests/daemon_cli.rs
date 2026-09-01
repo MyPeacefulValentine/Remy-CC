@@ -705,6 +705,67 @@ fn config_ui_exit_without_report_surfaces_stderr_tail() {
 }
 
 #[test]
+fn config_command_prints_the_url_only_and_is_idempotent() {
+    let Some(_python) = python_on_path() else {
+        return;
+    };
+    let home = tempfile::tempdir().unwrap();
+    let claude_root = write_fake_claude_root(home.path(), FAKE_UI_SCRIPT);
+    let _daemon = ForegroundDaemon::spawn_with_env(
+        home.path(),
+        &[("CLAUDE_CONFIG_DIR", claude_root.to_str().unwrap())],
+    );
+
+    let first = run(home.path(), &["config"]);
+    assert_eq!(
+        exit_code(&first),
+        0,
+        "stderr: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&first.stdout);
+    assert_eq!(stdout.trim(), "http://127.0.0.1:45678");
+    assert!(
+        !stdout.contains("secret-ui-token-for-grep"),
+        "UI session token leaked to the config stdout"
+    );
+
+    let second = run(home.path(), &["config"]);
+    assert_eq!(exit_code(&second), 0);
+    assert_eq!(
+        String::from_utf8_lossy(&second.stdout).trim(),
+        "http://127.0.0.1:45678"
+    );
+
+    let conflict = run(
+        home.path(),
+        &["config", "--path", home.path().to_str().unwrap()],
+    );
+    assert_eq!(exit_code(&conflict), 2);
+    assert!(
+        String::from_utf8_lossy(&conflict.stderr).contains("ui_conflict"),
+        "stderr: {}",
+        String::from_utf8_lossy(&conflict.stderr)
+    );
+}
+
+#[test]
+fn config_command_rejects_a_missing_project_path() {
+    let home = tempfile::tempdir().unwrap();
+    let missing = home.path().join("no-such-dir");
+    let output = run(
+        home.path(),
+        &["config", "--path", missing.to_str().unwrap()],
+    );
+    assert_eq!(exit_code(&output), 2);
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("directory not found"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn logs_prints_the_tail_and_reports_a_missing_file() {
     let home = tempfile::tempdir().unwrap();
     let missing = run(home.path(), &["logs"]);

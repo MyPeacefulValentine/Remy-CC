@@ -255,7 +255,7 @@ Since v2.0.0 the `remy-cc` binary is the only installer (`install.py` is retired
 | `remy-cc update` | Self-update from the latest GitHub release: sha256 verification is mandatory and hard-rejects; provenance attestation is verified opportunistically when the gh CLI is present; the running image is replaced via rename-and-replace and the daemon is restarted when one was running |
 | `remy-cc verify` / `remy-cc uninstall [--yes] [--purge-state]` | v4 manifest hash reconciliation and precise removal (project data, user settings entries, and engine state are preserved by default) |
 | `remy-cc restart` / `remy-cc logs [--tail N] [--follow]` | systemctl-style daemon restart (equals start when stopped); daemon log access |
-| `remy-cc config` / `remy-cc summary-rebuild\|summary-audit\|summary-vacuum` | Delegated to the deployed Python CLI (Python 3.10+ is a runtime prerequisite) |
+| `remy-cc summary-rebuild\|summary-audit\|summary-vacuum` | Delegated to the deployed Python CLI (Python 3.10+ is a runtime prerequisite) |
 
 ### CLI & Configuration
 
@@ -263,9 +263,9 @@ After installation, the `remy-cc` command is available system-wide:
 
 | Command | Description |
 | :--- | :--- |
-| `remy-cc config` | Open the user Remy settings editor for `~/.claude/remy-config.json` |
-| `remy-cc config --path <path>` | Open the project Remy settings editor for `<path>/.claude/remy-config.json` |
-| `remy-cc start\|stop\|restart\|status [--json]` | Control the resident daemon; `status --json` reports jobs plus the scanner provider state (`desired`/`published`/`diagnostic`) |
+| `remy-cc config` | Open the daemon-hosted user settings editor for `~/.claude/remy-config.json`: the daemon is started on demand, the page URL is printed (a browser opens only in a terminal), and repeated calls return the same running page (idempotent). The managed UI subprocess stays up until the daemon stops (stdin-EOF lifecycle); `REMY_CONFIG_UI_IDLE_TIMEOUT` (seconds, default 0 = never) adds an optional idle exit |
+| `remy-cc config --path <path>` | Same, for the project settings editor of `<path>/.claude/remy-config.json`; a running editor with a different mode or target is reported as a conflict |
+| `remy-cc start\|stop\|restart\|status [--json]` | Control the resident daemon; `status --json` reports jobs plus the scanner provider state (`desired`/`published`/`diagnostic`) and the hosted config UI instance (`ui`: pid/port/mode/target, token-free, `null` when none) |
 | `remy-cc logs [--tail N] [--follow]` | Print the daemon log |
 | `remy-cc scan --root <dir> --db <path> [...]` | Scan a source tree into a logic index database |
 | `remy-cc -V` | Print the binary version |

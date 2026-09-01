@@ -117,10 +117,12 @@ enum DaemonCommand {
         #[arg(long)]
         yes: bool,
     },
-    /// Open the configuration UI (delegated to the deployed Python CLI)
+    /// Open the daemon-hosted configuration UI (the daemon is started on
+    /// demand; the page URL is printed, a browser opens only in a terminal)
     Config {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
+        /// Project root directory (opens the project-level editor)
+        #[arg(long)]
+        path: Option<PathBuf>,
     },
     /// Recompute hierarchical summaries (delegated to the deployed Python CLI)
     SummaryRebuild {
@@ -198,9 +200,6 @@ fn main() -> ExitCode {
         DaemonCommand::Uninstall { purge_state, yes } => {
             return install::run_uninstall(purge_state, yes);
         }
-        DaemonCommand::Config { args } => {
-            return install::delegate::run_delegated("config", &args);
-        }
         DaemonCommand::SummaryRebuild { args } => {
             return install::delegate::run_delegated("summary-rebuild", &args);
         }
@@ -257,6 +256,7 @@ fn main() -> ExitCode {
         DaemonCommand::Restart => restart(&home, &clock),
         DaemonCommand::Logs { tail, follow } => logs(&home, tail, follow),
         DaemonCommand::Status { json } => status(&home, json),
+        DaemonCommand::Config { path } => open_config(&home, &clock, path.as_deref()),
         DaemonCommand::Hook { .. }
         | DaemonCommand::Scan { .. }
         | DaemonCommand::Mcp
@@ -264,7 +264,6 @@ fn main() -> ExitCode {
         | DaemonCommand::Verify
         | DaemonCommand::Update
         | DaemonCommand::Uninstall { .. }
-        | DaemonCommand::Config { .. }
         | DaemonCommand::SummaryRebuild { .. }
         | DaemonCommand::SummaryAudit { .. }
         | DaemonCommand::SummaryVacuum { .. } => {
@@ -545,6 +544,88 @@ fn status_json(
         "ui": ui,
         "diagnostic_error": diagnostic.map(|(kind, message)| json!({"kind": kind, "message": message})),
     })
+}
+
+/// Daemon-hosted config UI: start the daemon on demand, request an
+/// idempotent open over IPC, print the page URL. The session token in the
+/// response is never printed — the served HTML carries it (B1 red line).
+fn open_config(home: &Path, clock: &Arc<dyn Clock>, path: Option<&Path>) -> io::Result<ExitCode> {
+    let target = match path {
+        Some(dir) => match std::fs::canonicalize(dir) {
+            Ok(canonical) => Some(canonical.to_string_lossy().into_owned()),
+            Err(_) => {
+                eprintln!("remy-cc config: directory not found: {}", dir.display());
+                return Ok(ExitCode::from(2));
+            }
+        },
+        None => None,
+    };
+    let mode = if target.is_some() {
+        "project"
+    } else {
+        "global"
+    };
+
+    let run_dir = run_dir(home);
+    if !single_instance::is_held(&run_dir)? {
+        let start_outcome = start_detached(home, clock)?;
+        if !single_instance::is_held(&run_dir)? {
+            return Ok(start_outcome);
+        }
+    }
+
+    let request = protocol::Request::OpenConfigUi {
+        protocol_version: protocol::PROTOCOL_VERSION,
+        state_schema_version: state::STATE_SCHEMA_VERSION,
+        token: server::read_token(&run_dir).unwrap_or_default(),
+        mode: mode.to_string(),
+        target,
+    };
+    match ipc_roundtrip(&run_dir, &request) {
+        Some(protocol::Response::ConfigUi { url, .. }) => {
+            println!("{url}");
+            open_browser_if_terminal(&url);
+            Ok(ExitCode::SUCCESS)
+        }
+        Some(protocol::Response::Error { code, message }) => {
+            eprintln!("remy-cc config: {code}: {message}");
+            if code == "incompatible_protocol" || code == "incompatible_state_schema" {
+                eprintln!(
+                    "remy-cc config: the running daemon predates this binary; run remy-cc restart"
+                );
+            }
+            Ok(ExitCode::from(2))
+        }
+        Some(_) => {
+            eprintln!("remy-cc config: unexpected response type");
+            Ok(ExitCode::from(2))
+        }
+        None => {
+            eprintln!("remy-cc config: daemon IPC is unresponsive");
+            Ok(ExitCode::from(2))
+        }
+    }
+}
+
+/// Opens the platform browser only when stdout is a terminal; scripted
+/// callers get the printed URL alone. A launch failure is a warning, not an
+/// error — the URL is already printed.
+fn open_browser_if_terminal(url: &str) {
+    use std::io::IsTerminal;
+    if !std::io::stdout().is_terminal() {
+        return;
+    }
+    #[cfg(target_os = "windows")]
+    let result = std::process::Command::new("cmd")
+        .args(["/c", "start", "", url])
+        .spawn();
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let result = std::process::Command::new("xdg-open").arg(url).spawn();
+    if let Err(error) = result {
+        eprintln!("remy-cc config: cannot open a browser: {error}");
+    }
 }
 
 /// systemctl semantics: a running daemon is stopped first; a stopped one
