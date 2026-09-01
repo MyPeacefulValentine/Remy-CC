@@ -646,10 +646,12 @@ fn config_ui_report_timeout_kills_child_and_reports_spawn_failed() {
         return;
     };
     let home = tempfile::tempdir().unwrap();
-    let claude_root = write_fake_claude_root(
-        home.path(),
-        "import sys\nsys.stderr.write('starting slowly')\nsys.stderr.flush()\nsys.stdin.buffer.read()\n",
+    let pid_file = home.path().join("ui-child.pid");
+    let script = format!(
+        "import os, pathlib, sys, time\npathlib.Path({pid_file:?}).write_text(str(os.getpid()))\nsys.stderr.write('starting slowly')\nsys.stderr.flush()\nwhile True:\n    time.sleep(0.1)\n",
+        pid_file = pid_file.to_str().unwrap()
     );
+    let claude_root = write_fake_claude_root(home.path(), &script);
     let _daemon = ForegroundDaemon::spawn_with_env(
         home.path(),
         &[
@@ -674,6 +676,35 @@ fn config_ui_report_timeout_kills_child_and_reports_spawn_failed() {
     let payload: serde_json::Value =
         serde_json::from_str(String::from_utf8_lossy(&status.stdout).trim()).unwrap();
     assert!(payload["ui"].is_null(), "ui slot must be empty: {payload}");
+
+    let pid: u32 = std::fs::read_to_string(&pid_file)
+        .expect("child wrote its pid before the timeout")
+        .trim()
+        .parse()
+        .expect("pid");
+    assert!(
+        wait_until(|| !pid_is_alive(pid)),
+        "timed-out UI child {pid} was not killed"
+    );
+}
+
+fn pid_is_alive(pid: u32) -> bool {
+    #[cfg(windows)]
+    {
+        let output = Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output()
+            .expect("tasklist");
+        String::from_utf8_lossy(&output.stdout).contains(&format!(" {pid} "))
+    }
+    #[cfg(unix)]
+    {
+        Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
 }
 
 #[test]

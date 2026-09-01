@@ -25,6 +25,7 @@ import remy_config
 
 HEARTBEAT_INTERVAL = 2
 IDLE_POLL_INTERVAL = 5
+IDLE_TIMEOUT_FLOOR = 15
 LLM_TEST_TIMEOUT = 15
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_RESPONSE_BYTES = 1024 * 1024
@@ -61,16 +62,19 @@ def _is_pid_alive(pid):
         return False
 
 
-def acquire_lock(url, mode, target):
+def acquire_lock(url, mode, target, managed=False):
+    # The managed arm reserves stdout for the single JSON report line, so
+    # conflict details must go to stderr to reach the daemon's stderr tail.
+    out = sys.stderr if managed else sys.stdout
     if LOCK_FILE.exists():
         try:
             data = json.loads(LOCK_FILE.read_text(encoding="utf-8"))
             if _is_pid_alive(data.get("pid", -1)):
-                print("Error: Another config UI instance is running.")
-                print("  URL:    " + data.get("url", "unknown"))
-                print("  Mode:   " + data.get("mode", "unknown"))
+                print("Error: Another config UI instance is running.", file=out)
+                print("  URL:    " + data.get("url", "unknown"), file=out)
+                print("  Mode:   " + data.get("mode", "unknown"), file=out)
                 if data.get("target"):
-                    print("  Target: " + data["target"])
+                    print("  Target: " + data["target"], file=out)
                 sys.exit(1)
         except (json.JSONDecodeError, OSError):
             pass
@@ -578,7 +582,11 @@ _managed_state: Optional[_ManagedState] = None
 def _managed_idle_timeout():
     snapshot = remy_config.load_config(None, strict=False)
     value = snapshot.get("REMY_CONFIG_UI_IDLE_TIMEOUT", 0)
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        return 0
+    # An active page heartbeats every 2s and the idle watchdog polls every
+    # 5s; a timeout below the floor would shut down a live session.
+    return max(value, IDLE_TIMEOUT_FLOOR)
 
 
 def _watch_stdin_eof(server):
@@ -636,7 +644,7 @@ def main(mode="global", target_path=None, managed=False):
     with ConfigHandler.activity_lock:
         ConfigHandler.active_requests = 0
     url = ConfigHandler.expected_origin
-    acquire_lock(url, mode, target_path)
+    acquire_lock(url, mode, target_path, managed=managed)
 
     if managed:
         _managed_state = _ManagedState(_managed_idle_timeout())

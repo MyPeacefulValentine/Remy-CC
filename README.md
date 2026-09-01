@@ -263,7 +263,7 @@ After installation, the `remy-cc` command is available system-wide:
 
 | Command | Description |
 | :--- | :--- |
-| `remy-cc config` | Open the daemon-hosted user settings editor for `~/.claude/remy-config.json`: the daemon is started on demand, the page URL is printed (a browser opens only in a terminal), and repeated calls return the same running page (idempotent). The managed UI subprocess stays up until the daemon stops (stdin-EOF lifecycle); `REMY_CONFIG_UI_IDLE_TIMEOUT` (seconds, default 0 = never) adds an optional idle exit |
+| `remy-cc config` | Open the daemon-hosted user settings editor for `~/.claude/remy-config.json`: the daemon is started on demand, the page URL is printed (a browser opens only in a terminal), and repeated calls return the same running page (idempotent). The managed UI subprocess stays up until the daemon stops (stdin-EOF lifecycle); `REMY_CONFIG_UI_IDLE_TIMEOUT` (seconds, default 0 = never; positive values below 15 are raised to that floor) adds an optional idle exit |
 | `remy-cc config --path <path>` | Same, for the project settings editor of `<path>/.claude/remy-config.json`; a running editor with a different mode or target is reported as a conflict |
 | `remy-cc start\|stop\|restart\|status [--json]` | Control the resident daemon; `status --json` reports jobs plus the scanner provider state (`desired`/`published`/`diagnostic`) and the hosted config UI instance (`ui`: pid/port/mode/target, token-free, `null` when none) |
 | `remy-cc logs [--tail N] [--follow]` | Print the daemon log |

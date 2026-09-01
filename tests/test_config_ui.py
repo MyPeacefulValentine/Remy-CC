@@ -9,6 +9,7 @@ import ssl
 import subprocess
 import sys
 import threading
+import time
 import urllib.error
 from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -460,12 +461,38 @@ def test_html_nonce_csp_and_dynamic_headers(ui_home):
     assert "Cache-Control" not in logo_headers
 
 
-def test_direct_run_arm_has_no_idle_watchdog(ui_home):
+def test_direct_run_arm_has_no_idle_watchdog(ui_home, tmp_path, monkeypatch):
     _ = ui_home
-    assert config_ui._managed_state is None
-    with _server() as port:
-        status, payload, _ = _request(port, "GET", "/api/heartbeat")
-    assert status == 200 and payload == {"status": "ok"}
+    monkeypatch.setattr(config_ui, "LOCK_FILE", tmp_path / "lock.json")
+    monkeypatch.setattr(config_ui.webbrowser, "open", lambda url: True)
+    started_targets = []
+
+    class RecordingThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            _ = args, daemon
+            started_targets.append(target)
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr(config_ui.threading, "Thread", RecordingThread)
+    monkeypatch.setattr(config_ui.threading, "Timer", lambda delay, fn: _FakeTimer())
+
+    class FakeHttpServer:
+        def __init__(self, address, handler):
+            _ = handler
+            self.server_address = (address[0], 54321)
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            return None
+
+    monkeypatch.setattr(config_ui.http.server, "ThreadingHTTPServer", FakeHttpServer)
+    config_ui.main()
+    assert config_ui._watch_idle not in started_targets
+    assert config_ui._watch_stdin_eof not in started_targets
     assert config_ui._managed_state is None
     config_ui.ConfigHandler._begin_request()
     assert config_ui.ConfigHandler._active_request_count() == 1
@@ -873,11 +900,13 @@ def test_managed_state_heartbeat_refresh_and_idle_threshold(ui_home, monkeypatch
     def fake_sleep(seconds):
         sleeps.append(seconds)
         with state.lock:
-            state.last_heartbeat -= state.idle_timeout
+            state.last_heartbeat = time.monotonic()
+            if len(sleeps) >= 2:
+                state.last_heartbeat -= state.idle_timeout
 
     monkeypatch.setattr(config_ui.time, "sleep", fake_sleep)
     config_ui._watch_idle(state, server)
-    assert sleeps == [config_ui.IDLE_POLL_INTERVAL]
+    assert sleeps == [config_ui.IDLE_POLL_INTERVAL, config_ui.IDLE_POLL_INTERVAL]
     for thread in threading.enumerate():
         if thread is not threading.current_thread():
             thread.join(2)
@@ -892,6 +921,33 @@ def test_managed_idle_timeout_reads_config(ui_home):
 def test_managed_idle_timeout_defaults_to_never_without_config(ui_home):
     _ = ui_home
     assert config_ui._managed_idle_timeout() == 0
+
+
+def test_managed_idle_timeout_below_floor_is_raised_to_floor(ui_home):
+    _write(ui_home / ".claude" / "remy-config.json", {"REMY_CONFIG_UI_IDLE_TIMEOUT": "1"})
+    assert config_ui._managed_idle_timeout() == config_ui.IDLE_TIMEOUT_FLOOR
+
+
+def test_acquire_lock_conflict_goes_to_stderr_only_in_managed_mode(ui_home, tmp_path, monkeypatch, capsys):
+    _ = ui_home
+    lock_file = tmp_path / "lock.json"
+    lock_file.write_text(
+        json.dumps({"pid": os.getpid(), "url": "http://127.0.0.1:1", "mode": "global", "target": ""}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_ui, "LOCK_FILE", lock_file)
+
+    with pytest.raises(SystemExit):
+        config_ui.acquire_lock("http://127.0.0.1:2", "global", None, managed=True)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Another config UI instance is running." in captured.err
+
+    with pytest.raises(SystemExit):
+        config_ui.acquire_lock("http://127.0.0.1:2", "global", None)
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "Another config UI instance is running." in captured.out
 
 
 def test_zero_idle_timeout_starts_no_idle_watchdog(ui_home, monkeypatch):
@@ -942,15 +998,17 @@ def test_managed_arm_reports_port_token_pid_and_exits_on_stdin_eof(ui_home, tmp_
         response.read()
         connection.close()
         process.stdin.close()
-        assert process.wait(timeout=10) is not None
+        assert process.wait(timeout=10) == 0
+        assert process.stderr is not None and process.stderr.read() == b""
     finally:
         if process.poll() is None:
             process.kill()
             process.wait(5)
 
 
-def test_managed_arm_direct_run_prints_banner_not_json(ui_home, monkeypatch):
+def test_managed_arm_direct_run_prints_banner_not_json(ui_home, tmp_path, monkeypatch, capsys):
     _ = ui_home
+    monkeypatch.setattr(config_ui, "LOCK_FILE", tmp_path / "lock.json")
     monkeypatch.setattr(config_ui.webbrowser, "open", lambda url: True)
     started = {}
 
@@ -961,6 +1019,7 @@ def test_managed_arm_direct_run_prints_banner_not_json(ui_home, monkeypatch):
 
         def serve_forever(self):
             started["served"] = True
+            started["state_during_serve"] = config_ui._managed_state
             raise KeyboardInterrupt
 
         def server_close(self):
@@ -970,9 +1029,15 @@ def test_managed_arm_direct_run_prints_banner_not_json(ui_home, monkeypatch):
     timers = []
     monkeypatch.setattr(config_ui.threading, "Timer", lambda delay, fn: timers.append((delay, fn)) or _FakeTimer())
     config_ui.main()
-    assert started == {"served": True, "closed": True}
+    assert started["served"] and started["closed"]
+    assert started["state_during_serve"] is None
     assert len(timers) == 1
-    assert config_ui._managed_state is None
+    captured = capsys.readouterr()
+    first_line = captured.out.splitlines()[0]
+    assert first_line.startswith("Remy Config UI (Global):")
+    with pytest.raises(ValueError):
+        json.loads(first_line)
+    assert '"token"' not in captured.out
 
 
 class _FakeTimer:

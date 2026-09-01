@@ -552,7 +552,11 @@ fn status_json(
 fn open_config(home: &Path, clock: &Arc<dyn Clock>, path: Option<&Path>) -> io::Result<ExitCode> {
     let target = match path {
         Some(dir) => match std::fs::canonicalize(dir) {
-            Ok(canonical) => Some(canonical.to_string_lossy().into_owned()),
+            Ok(canonical) if canonical.is_dir() => Some(canonical.to_string_lossy().into_owned()),
+            Ok(_) => {
+                eprintln!("remy-cc config: not a directory: {}", dir.display());
+                return Ok(ExitCode::from(2));
+            }
             Err(_) => {
                 eprintln!("remy-cc config: directory not found: {}", dir.display());
                 return Ok(ExitCode::from(2));
@@ -568,9 +572,12 @@ fn open_config(home: &Path, clock: &Arc<dyn Clock>, path: Option<&Path>) -> io::
 
     let run_dir = run_dir(home);
     if !single_instance::is_held(&run_dir)? {
-        let start_outcome = start_detached(home, clock)?;
+        let _ = start_detached(home, clock)?;
         if !single_instance::is_held(&run_dir)? {
-            return Ok(start_outcome);
+            // start_detached already printed its own diagnostic on failure;
+            // a success followed by an unheld lock is a crash-on-boot.
+            eprintln!("remy-cc config: daemon is not running after start; check remy-cc logs");
+            return Ok(ExitCode::from(2));
         }
     }
 
@@ -601,7 +608,9 @@ fn open_config(home: &Path, clock: &Arc<dyn Clock>, path: Option<&Path>) -> io::
             Ok(ExitCode::from(2))
         }
         None => {
-            eprintln!("remy-cc config: daemon IPC is unresponsive");
+            eprintln!(
+                "remy-cc config: daemon IPC is unresponsive; retrying is safe (open is idempotent)"
+            );
             Ok(ExitCode::from(2))
         }
     }

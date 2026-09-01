@@ -278,6 +278,11 @@ impl UiHost {
             let _ = child.wait();
             return Err("report line port/pid are out of range".to_string());
         };
+        if token.is_empty() {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("report line token is empty".to_string());
+        }
 
         pump_stderr(stderr, token.to_string(), Arc::clone(&self.logger));
 
@@ -463,11 +468,18 @@ sys.stdin.buffer.read()
             return;
         };
         let dir = tempfile::tempdir().unwrap();
-        let script = write_fake_ui(dir.path(), "import sys\nsys.stdin.buffer.read()\n");
+        let pid_file = dir.path().join("child.pid");
+        let body = format!(
+            "import os, pathlib, time\npathlib.Path({pid_file:?}).write_text(str(os.getpid()))\nwhile True:\n    time.sleep(0.1)\n",
+            pid_file = pid_file.to_str().unwrap()
+        );
+        let script = write_fake_ui(dir.path(), &body);
+        // 1s keeps the timeout short while leaving the interpreter enough
+        // startup room to write the pid file before the kill fires.
         let host = UiHost::new(
             Some(python),
             script,
-            Duration::from_millis(300),
+            Duration::from_secs(1),
             test_logger(&dir.path().join("log")),
         );
         match host.open("global", None) {
@@ -477,6 +489,31 @@ sys.stdin.buffer.read()
             _ => panic!("expected SpawnFailed"),
         }
         assert!(host.status().is_none());
+        let pid: u32 = std::fs::read_to_string(&pid_file)
+            .expect("child wrote its pid before the timeout")
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(!pid_is_alive(pid), "child {pid} survived the timeout kill");
+    }
+
+    fn pid_is_alive(pid: u32) -> bool {
+        #[cfg(windows)]
+        {
+            let output = std::process::Command::new("tasklist")
+                .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+                .output()
+                .expect("tasklist");
+            String::from_utf8_lossy(&output.stdout).contains(&format!(" {pid} "))
+        }
+        #[cfg(unix)]
+        {
+            std::process::Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false)
+        }
     }
 
     #[test]
@@ -554,6 +591,10 @@ sys.stdin.buffer.read()
             (
                 "import json\nprint(json.dumps({'port': 99999999, 'token': 't', 'pid': 2}), flush=True)\nimport sys\nsys.stdin.buffer.read()\n",
                 "out of range",
+            ),
+            (
+                "import json\nprint(json.dumps({'port': 1, 'token': '', 'pid': 2}), flush=True)\nimport sys\nsys.stdin.buffer.read()\n",
+                "token is empty",
             ),
         ];
         for (body, needle) in cases {

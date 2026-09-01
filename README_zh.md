@@ -263,7 +263,7 @@ remy-cc install --lang zh-CN     # 简体中文
 
 | 命令 | 说明 |
 | :--- | :--- |
-| `remy-cc config` | 打开 daemon 托管的用户配置编辑器，编辑`~/.claude/remy-config.json`：按需启动 daemon，打印页面 URL（仅终端下另开浏览器），重复调用返回同一运行中页面（幂等）。托管 UI 子进程随 daemon 停止而退出（stdin EOF 生命周期）；`REMY_CONFIG_UI_IDLE_TIMEOUT`（秒，默认 0=永不）可选启用空闲退出 |
+| `remy-cc config` | 打开 daemon 托管的用户配置编辑器，编辑`~/.claude/remy-config.json`：按需启动 daemon，打印页面 URL（仅终端下另开浏览器），重复调用返回同一运行中页面（幂等）。托管 UI 子进程随 daemon 停止而退出（stdin EOF 生命周期）；`REMY_CONFIG_UI_IDLE_TIMEOUT`（秒，默认 0=永不；正值低于 15 时提升到该下限）可选启用空闲退出 |
 | `remy-cc config --path <路径>` | 同上，打开项目配置编辑器，编辑`<路径>/.claude/remy-config.json`；与运行中编辑器的 mode/target 不同时报告冲突 |
 | `remy-cc start\|stop\|restart\|status [--json]` | 控制常驻 daemon；`status --json` 报告作业、扫描器 provider 状态（`desired`/`published`/`diagnostic`）与托管配置 UI 实例（`ui`：pid/port/mode/target，不含 token，无实例时为 `null`） |
 | `remy-cc logs [--tail N] [--follow]` | 读取 daemon 日志 |

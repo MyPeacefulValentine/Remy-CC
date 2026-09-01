@@ -269,6 +269,21 @@ fn handle_connection(
                 Err(error) => write_response(&mut writer, &state_error_response(error)),
             },
             Request::OpenConfigUi { mode, target, .. } => {
+                let combination_valid = match mode.as_str() {
+                    "global" => target.is_none(),
+                    "project" => target.is_some(),
+                    _ => false,
+                };
+                if !combination_valid {
+                    write_response(
+                        &mut writer,
+                        &Response::error(
+                            "invalid_request",
+                            "mode must be \"global\" without target or \"project\" with target",
+                        ),
+                    );
+                    continue;
+                }
                 match ui_host.open(&mode, target.as_deref()) {
                     OpenOutcome::Ready { url, token, .. } => {
                         write_response(&mut writer, &Response::ConfigUi { url, token });
@@ -546,6 +561,36 @@ mod tests {
             cancelled["job"]["status"],
             JobStatus::CancelRequested.as_db()
         );
+
+        let project_without_target = roundtrip(
+            &stream,
+            &request_line(serde_json::json!({
+                "cmd": "open_config_ui", "protocol_version": PROTOCOL_VERSION,
+                "state_schema_version": STATE_SCHEMA_VERSION, "token": token,
+                "mode": "project", "target": null,
+            })),
+        );
+        assert_eq!(project_without_target["code"], "invalid_request");
+
+        let global_with_target = roundtrip(
+            &stream,
+            &request_line(serde_json::json!({
+                "cmd": "open_config_ui", "protocol_version": PROTOCOL_VERSION,
+                "state_schema_version": STATE_SCHEMA_VERSION, "token": token,
+                "mode": "global", "target": "/repo",
+            })),
+        );
+        assert_eq!(global_with_target["code"], "invalid_request");
+
+        let unknown_mode = roundtrip(
+            &stream,
+            &request_line(serde_json::json!({
+                "cmd": "open_config_ui", "protocol_version": PROTOCOL_VERSION,
+                "state_schema_version": STATE_SCHEMA_VERSION, "token": token,
+                "mode": "other", "target": null,
+            })),
+        );
+        assert_eq!(unknown_mode["code"], "invalid_request");
 
         let shutdown = roundtrip(
             &stream,
