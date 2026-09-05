@@ -229,6 +229,77 @@ pub(crate) fn print_config_guidance(language: &str) {
     }
 }
 
+/// One `[y/N]` line; only an explicit `y`/`Y` accepts — empty input, EOF,
+/// and anything else refuse (the uninstall-confirmation semantics).
+pub(crate) fn confirm_yn(prompt: &str) -> bool {
+    print!("{prompt} [y/N]: ");
+    let _ = std::io::stdout().flush();
+    read_stdin_line().is_some_and(|line| line.eq_ignore_ascii_case("y"))
+}
+
+/// The unmanaged-conflict list with per-path detail, on stdout.
+pub(crate) fn print_conflicts(conflicts: &[crate::install::ops::UnmanagedConflict], language: &str) {
+    if language == "zh-CN" {
+        println!("以下文件已存在且内容与将要部署的版本不同（非本安装器所有）：");
+    } else {
+        println!("These files exist with content different from what would be deployed (not owned by this installer):");
+    }
+    for conflict in conflicts {
+        println!("  [!] {}/{}", conflict.root, conflict.path);
+    }
+}
+
+/// The pre-cleanup announcement for a detected legacy installation.
+pub(crate) fn print_legacy_plan(plan: &crate::install::legacy::LegacyPlan, language: &str) {
+    if language == "zh-CN" {
+        println!(
+            "检测到旧版 Remy-CC 安装（版本 {}，清单 {}）。",
+            plan.old_version,
+            plan.manifest_path.display()
+        );
+        println!("  将删除 {} 个与旧安装记录逐字节一致的文件；", plan.deletable.len());
+        println!("  保留 {} 个无法核验的条目：", plan.retained.len());
+    } else {
+        println!(
+            "Detected a legacy Remy-CC installation (version {}, manifest {}).",
+            plan.old_version,
+            plan.manifest_path.display()
+        );
+        println!(
+            "  {} file(s) byte-identical to the old install records will be deleted;",
+            plan.deletable.len()
+        );
+        println!("  {} entrie(s) cannot be verified and will be kept:", plan.retained.len());
+    }
+    for target in &plan.deletable {
+        println!("    [-] {}", target.display());
+    }
+    for entry in &plan.retained {
+        println!("    [=] {} — {}", entry.path, entry.reason.describe(language));
+    }
+}
+
+/// The safe-exit guidance after a refused prompt or a non-interactive run.
+pub(crate) fn print_conflict_guidance(legacy_manifest: Option<&Path>, language: &str) {
+    if language == "zh-CN" {
+        println!("未修改任何文件。请检查上列路径：确认属于旧版 Remy-CC 或您自建的内容后，");
+        println!("移走或备份这些文件，再重新运行 remy-cc install。");
+        if let Some(path) = legacy_manifest {
+            println!("旧版安装清单位于 {}，可据其核对旧部署文件。", path.display());
+        }
+    } else {
+        println!("No files were modified. Review the paths above: once you have confirmed");
+        println!("they belong to an old Remy-CC install or to your own content, move or back");
+        println!("them up, then rerun remy-cc install.");
+        if let Some(path) = legacy_manifest {
+            println!(
+                "The legacy install manifest at {} lists what the old installer deployed.",
+                path.display()
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

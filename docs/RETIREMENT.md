@@ -171,6 +171,19 @@ operational mitigation is obsolete.
 - daemon state schema v1→v2 migration and the installer's legacy manifest
   translation layer (`facade._parse_legacy_manifest`) remain until the v2.0.0
   release audit rules on the legacy-install population (H8-B2/B6).
+- **v1/v2 legacy-manifest read-back exception (2026-09-04)**: the v1/v2-era
+  `.installer_manifest.json` record shapes (v1: absolute paths, no
+  `schema_version`; v2: `schema_version: 2`, POSIX paths relative to the
+  Claude home) stay readable in one place — `remy-cc/src/install/legacy.rs`,
+  scoped to the `remy-cc install` conflict-resolution branch. Reason: v2-era
+  installations carry no migratable manifest under `~/.remy-cc/install/`, so
+  the preflight ownership check reports their deployed files as unmanaged
+  conflicts; the legacy manifest is the only structured evidence for a
+  user-approved cleanup (delete only byte-identical records; retain and
+  report everything else). The module is read-only toward the manifest
+  itself (renamed to `.bak` after a cleanup, never fed into the v4
+  contract). Exit condition: delete the module when the v2-era install
+  population is ruled extinct at a future release audit.
 
 ## 3. Deleted components: evidence
 

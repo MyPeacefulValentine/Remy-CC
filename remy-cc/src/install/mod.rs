@@ -8,6 +8,7 @@ use std::process::ExitCode;
 pub(crate) mod delegate;
 pub(crate) mod embedded;
 pub(crate) mod interact;
+pub(crate) mod legacy;
 pub(crate) mod lock;
 pub(crate) mod manifest;
 pub(crate) mod ops;
@@ -139,7 +140,7 @@ pub(crate) fn run_install(language: Option<String>, non_interactive: bool) -> Ex
             return ExitCode::from(2);
         }
     };
-    let params = ops::InstallParams {
+    let mut params = ops::InstallParams {
         claude_root: roots.claude_root.clone(),
         remy_root: roots.remy_root.clone(),
         language: language.clone(),
@@ -147,8 +148,18 @@ pub(crate) fn run_install(language: Option<String>, non_interactive: bool) -> Ex
         source_binary,
         python: pyprobe::probe(),
         artifact_sha256: None,
+        approved_overwrites: Vec::new(),
     };
-    match ops::install(&params) {
+    let mut result = ops::install(&params);
+    if let Err(error) = &result {
+        if !error.conflicts.is_empty() {
+            match resolve_conflicts(&mut params, error.conflicts.clone(), non_interactive) {
+                ConflictOutcome::Retry => result = ops::install(&params),
+                ConflictOutcome::Refused => return ExitCode::from(1),
+            }
+        }
+    }
+    match result {
         Ok(report) => {
             println!(
                 "remy-cc install: committed ({} file(s) written)",
@@ -167,31 +178,139 @@ pub(crate) fn run_install(language: Option<String>, non_interactive: bool) -> Ex
             }
         }
         Err(error) => {
+            if !error.conflicts.is_empty() {
+                interact::print_conflicts(&error.conflicts, &params.language);
+                let legacy_manifest = params.claude_root.join(ops::LEGACY_MANIFEST_NAME);
+                interact::print_conflict_guidance(
+                    legacy_manifest.is_file().then_some(legacy_manifest.as_path()),
+                    &params.language,
+                );
+            }
             eprintln!("remy-cc install: {error}");
             ExitCode::from(1)
         }
     }
 }
 
+enum ConflictOutcome {
+    /// The preflight state changed (legacy cleanup ran, or overwrites were
+    /// approved); rerun the install.
+    Retry,
+    /// The user refused, or the run is non-interactive: the caller prints
+    /// the conflict report and exits.
+    Refused,
+}
+
+/// The interactive conflict-resolution ladder: an approved legacy-manifest
+/// cleanup first (when one is detected), then per-conflict overwrite
+/// approval with a `.bak` backup. Every refusal — and every non-interactive
+/// run — resolves to `Refused` with zero disk modification here.
+fn resolve_conflicts(
+    params: &mut ops::InstallParams,
+    conflicts: Vec<ops::UnmanagedConflict>,
+    non_interactive: bool,
+) -> ConflictOutcome {
+    use std::io::IsTerminal;
+    if non_interactive || !std::io::stdin().is_terminal() {
+        return ConflictOutcome::Refused;
+    }
+    let language = params.language.clone();
+    let mut advanced = false;
+    match legacy::inspect(&params.claude_root) {
+        Ok(Some(plan)) => {
+            interact::print_legacy_plan(&plan, &language);
+            let prompt = if language == "zh-CN" {
+                "按上述预告清理旧版安装？"
+            } else {
+                "Clean up the legacy installation as announced?"
+            };
+            if interact::confirm_yn(prompt) {
+                match legacy::execute(&plan, &params.claude_root, &params.remy_root) {
+                    Ok((deleted, warnings)) => {
+                        println!(
+                            "remy-cc install: legacy cleanup removed {} file(s)",
+                            deleted.len()
+                        );
+                        for warning in &warnings {
+                            println!("  [!] {warning}");
+                        }
+                        advanced = true;
+                    }
+                    Err(error) => {
+                        eprintln!("remy-cc install: legacy cleanup failed: {error}");
+                        return ConflictOutcome::Refused;
+                    }
+                }
+            } else {
+                return ConflictOutcome::Refused;
+            }
+        }
+        Ok(None) => {}
+        Err(error) => println!("  [!] {}; the legacy manifest was left untouched", error.message),
+    }
+
+    let remaining = if advanced {
+        // Re-run the preflight against the cleaned tree; anything but a
+        // fresh conflict list (success, or a different error) goes back to
+        // the normal result path.
+        match ops::install(params) {
+            Err(error) if !error.conflicts.is_empty() => error.conflicts,
+            _ => return ConflictOutcome::Retry,
+        }
+    } else {
+        conflicts
+    };
+
+    interact::print_conflicts(&remaining, &language);
+    let prompt = if language == "zh-CN" {
+        "将上列文件备份为 .bak 后用本安装器的版本覆盖？"
+    } else {
+        "Back these files up as .bak and overwrite them with this installer's versions?"
+    };
+    if !interact::confirm_yn(prompt) {
+        return ConflictOutcome::Refused;
+    }
+    params.approved_overwrites = remaining
+        .into_iter()
+        .map(|conflict| ops::ApprovedOverwrite {
+            root: conflict.root,
+            path: conflict.path,
+            sha256: conflict.disk_sha256,
+        })
+        .collect();
+    ConflictOutcome::Retry
+}
+
 /// Error taxonomy inherited from the retired v3 installer: `metadata` means
 /// managed metadata lacks required structure, `runtime` means a precondition
 /// or ownership check failed. The constructors keep that classification in
-/// the source; the error itself carries only the message.
+/// the source; the error carries the message plus, for the preflight
+/// ownership check, the full unmanaged-conflict list (empty otherwise).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct InstallError {
     pub(crate) message: String,
+    pub(crate) conflicts: Vec<ops::UnmanagedConflict>,
 }
 
 impl InstallError {
     pub(crate) fn metadata(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            conflicts: Vec::new(),
         }
     }
 
     pub(crate) fn runtime(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            conflicts: Vec::new(),
+        }
+    }
+
+    pub(crate) fn unmanaged_conflicts(conflicts: Vec<ops::UnmanagedConflict>) -> Self {
+        Self {
+            message: "an unmanaged target has different content".to_string(),
+            conflicts,
         }
     }
 }

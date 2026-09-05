@@ -41,6 +41,27 @@ pub(crate) struct InstallParams {
     pub(crate) source_binary: PathBuf,
     pub(crate) python: Result<RuntimeDescriptor, InstallError>,
     pub(crate) artifact_sha256: Option<String>,
+    pub(crate) approved_overwrites: Vec<ApprovedOverwrite>,
+}
+
+/// An unmanaged on-disk file that differs from the planned deployment
+/// content. Carried on the preflight error so the caller can present the
+/// full list instead of a bare message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UnmanagedConflict {
+    pub(crate) root: String,
+    pub(crate) path: String,
+    pub(crate) disk_sha256: String,
+}
+
+/// A conflict the user approved for overwrite. `sha256` is the disk hash
+/// observed at the preflight that produced the conflict; a mismatch on the
+/// next run means the file changed in between and the overwrite is refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ApprovedOverwrite {
+    pub(crate) root: String,
+    pub(crate) path: String,
+    pub(crate) sha256: String,
 }
 
 #[derive(Debug, Default)]
@@ -113,6 +134,8 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
         .unwrap_or_default();
 
     let mut writes: Vec<bool> = Vec::with_capacity(planned.len());
+    let mut backup_first: Vec<bool> = Vec::with_capacity(planned.len());
+    let mut conflicts: Vec<UnmanagedConflict> = Vec::new();
     for file in &planned {
         let target = root_dir(params, file.root).join(&file.path);
         let disk = if target.is_file() {
@@ -121,7 +144,8 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
             None
         };
         let old = old_records.remove(&(file.root.to_string(), file.path.clone()));
-        writes.push(match (&disk, &old) {
+        let mut backup = false;
+        let write = match (&disk, &old) {
             (None, _) => true,
             (Some(disk), _) if *disk == file.digest => false,
             (Some(disk), Some(old)) if *disk == old.sha256 => true,
@@ -130,12 +154,38 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
                     "a managed target changed after preflight",
                 ))
             }
-            (Some(_), None) => {
-                return Err(InstallError::runtime(
-                    "an unmanaged target has different content",
-                ))
+            (Some(disk), None) => {
+                let approved = params
+                    .approved_overwrites
+                    .iter()
+                    .find(|approved| approved.root == file.root && approved.path == file.path);
+                match approved {
+                    Some(approved) if approved.sha256 == *disk => {
+                        backup = true;
+                        true
+                    }
+                    Some(_) => {
+                        return Err(InstallError::runtime(format!(
+                            "an approved target changed after preflight: {}/{}",
+                            file.root, file.path
+                        )))
+                    }
+                    None => {
+                        conflicts.push(UnmanagedConflict {
+                            root: file.root.to_string(),
+                            path: file.path.clone(),
+                            disk_sha256: disk.clone(),
+                        });
+                        false
+                    }
+                }
             }
-        });
+        };
+        writes.push(write);
+        backup_first.push(backup);
+    }
+    if !conflicts.is_empty() {
+        return Err(InstallError::unmanaged_conflicts(conflicts));
     }
 
     let mut obsolete: Vec<PathBuf> = Vec::new();
@@ -176,11 +226,16 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
         || storage::sha256_file(&settings_path).map_err(io_error)?
             != storage::sha256_hex(&settings_bytes);
 
-    for (file, write) in planned.iter().zip(&writes) {
+    for ((file, write), backup) in planned.iter().zip(&writes).zip(&backup_first) {
         if !*write {
             continue;
         }
         let target = root_dir(params, file.root).join(&file.path);
+        if *backup {
+            let bak = PathBuf::from(format!("{}.bak", target.display()));
+            fs::copy(&target, &bak).map_err(io_error)?;
+            report.changed.push(format!("{}/{}.bak", file.root, file.path));
+        }
         match &file.payload {
             Payload::Bytes(bytes) => {
                 staged_write(&target, bytes, file.executable, false, &pending).map_err(io_error)?
@@ -698,7 +753,14 @@ fn manifest_payload_equal(old: &Manifest, new: &Manifest) -> bool {
 fn post_commit(params: &InstallParams, pending: &PendingDeletes, report: &mut InstallReport) {
     let legacy = params.claude_root.join(LEGACY_MANIFEST_NAME);
     if legacy.is_file() {
-        remove_or_defer(&legacy, pending, &mut report.warnings);
+        // Renamed, not deleted: after a legacy-plan cleanup with retained
+        // entries the old manifest is the user's only reconciliation record.
+        let bak = params
+            .claude_root
+            .join(format!("{LEGACY_MANIFEST_NAME}.bak"));
+        if fs::rename(&legacy, &bak).is_err() {
+            remove_or_defer(&legacy, pending, &mut report.warnings);
+        }
     }
     let v3_transaction = params
         .remy_root
@@ -813,6 +875,7 @@ mod tests {
                 source_binary: source,
                 python: Err(InstallError::runtime("Python interpreter probe failed")),
                 artifact_sha256: None,
+                approved_overwrites: Vec::new(),
             },
             _dir: dir,
         }
@@ -964,10 +1027,90 @@ mod tests {
         fs::write(&target, b"user data").expect("write");
         let error = install(&env.params).expect_err("unmanaged");
         assert_eq!(error.message, "an unmanaged target has different content");
+        assert_eq!(
+            error.conflicts,
+            vec![UnmanagedConflict {
+                root: "claude".to_string(),
+                path: "CLAUDE.md".to_string(),
+                disk_sha256: storage::sha256_hex(b"user data"),
+            }]
+        );
         assert_eq!(fs::read(&target).expect("read"), b"user data");
         assert!(manifest::load(&env.params.remy_root)
             .expect("load")
             .is_none());
+    }
+
+    #[test]
+    fn preflight_collects_every_conflict_and_modifies_nothing() {
+        let env = setup("en");
+        for (path, content) in [("CLAUDE.md", "a"), ("style.md", "b"), ("tools_ref.md", "c")] {
+            let target = env.params.claude_root.join(path);
+            fs::create_dir_all(target.parent().unwrap()).expect("dirs");
+            fs::write(&target, content).expect("write");
+        }
+        let before = tree_snapshot(&env.params.claude_root);
+        let error = install(&env.params).expect_err("conflicts");
+        let mut paths: Vec<&str> = error
+            .conflicts
+            .iter()
+            .map(|conflict| conflict.path.as_str())
+            .collect();
+        paths.sort_unstable();
+        assert_eq!(paths, vec!["CLAUDE.md", "style.md", "tools_ref.md"]);
+        assert_eq!(before, tree_snapshot(&env.params.claude_root));
+    }
+
+    #[test]
+    fn approved_overwrites_back_up_then_deploy() {
+        let mut env = setup("en");
+        let target = env.params.claude_root.join("CLAUDE.md");
+        fs::create_dir_all(target.parent().unwrap()).expect("dirs");
+        fs::write(&target, b"user data").expect("write");
+        let error = install(&env.params).expect_err("conflicts");
+        env.params.approved_overwrites = error
+            .conflicts
+            .into_iter()
+            .map(|conflict| ApprovedOverwrite {
+                root: conflict.root,
+                path: conflict.path,
+                sha256: conflict.disk_sha256,
+            })
+            .collect();
+        install(&env.params).expect("approved install");
+        let bak = env.params.claude_root.join("CLAUDE.md.bak");
+        assert_eq!(fs::read(&bak).expect("backup"), b"user data");
+        assert_ne!(fs::read(&target).expect("deployed"), b"user data");
+        assert!(manifest::load(&env.params.remy_root)
+            .expect("load")
+            .is_some());
+    }
+
+    #[test]
+    fn approved_overwrite_with_drifted_hash_aborts() {
+        let mut env = setup("en");
+        let target = env.params.claude_root.join("CLAUDE.md");
+        fs::create_dir_all(target.parent().unwrap()).expect("dirs");
+        fs::write(&target, b"user data").expect("write");
+        let error = install(&env.params).expect_err("conflicts");
+        env.params.approved_overwrites = error
+            .conflicts
+            .into_iter()
+            .map(|conflict| ApprovedOverwrite {
+                root: conflict.root,
+                path: conflict.path,
+                sha256: conflict.disk_sha256,
+            })
+            .collect();
+        fs::write(&target, b"changed in between").expect("drift");
+        let error = install(&env.params).expect_err("drift rejected");
+        assert!(
+            error.message.contains("an approved target changed after preflight"),
+            "message: {}",
+            error.message
+        );
+        assert_eq!(fs::read(&target).expect("read"), b"changed in between");
+        assert!(!env.params.claude_root.join("CLAUDE.md.bak").exists());
     }
 
     #[test]
@@ -1043,13 +1186,18 @@ mod tests {
     }
 
     #[test]
-    fn legacy_v2_manifest_is_deleted_post_commit() {
+    fn legacy_v2_manifest_is_renamed_to_bak_post_commit() {
         let env = setup("en");
         let legacy = env.params.claude_root.join(LEGACY_MANIFEST_NAME);
         fs::create_dir_all(legacy.parent().unwrap()).expect("dirs");
         fs::write(&legacy, b"{}").expect("legacy");
         install(&env.params).expect("install");
         assert!(!legacy.exists());
+        let bak = env
+            .params
+            .claude_root
+            .join(format!("{LEGACY_MANIFEST_NAME}.bak"));
+        assert_eq!(fs::read(&bak).expect("bak"), b"{}");
     }
 
     #[test]

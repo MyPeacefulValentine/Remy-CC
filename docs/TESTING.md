@@ -818,6 +818,29 @@ rename-aside deferral of the running image with a later pending sweep, v3
 manifest migration (shim and pre-rename binary removed), and
 `--purge-state`.
 
+### Install conflict resolution (2026-09-04 batch)
+
+The preflight ownership check collects the full unmanaged-conflict list on
+`InstallError.conflicts` instead of failing at the first hit. Unit surface
+(in `ops` and the new `legacy` module, same crate test run): multi-conflict
+collection with a zero-modification guarantee on the error path; approved
+overwrites writing a byte-identical `.bak` before deployment; refusal of an
+approved overwrite whose disk hash drifted between runs; the legacy
+`.installer_manifest.json` hash gate (byte-identical records deletable;
+hash-mismatch / no-hash / outside-claude-root / `..` / missing records
+retained with reasons); v1 absolute and v2 relative path shapes; corrupt or
+unshaped legacy manifests erroring without touching disk; execute() pruning
+emptied directories, dropping settings.json hook entries that reference a
+deleted script (emptied events removed), and renaming the manifest to
+`.bak`; post-commit renaming (not deleting) a leftover legacy manifest.
+Manual acceptance scenarios (E1-E8): refuse prompt 1 / refuse prompt 2
+(zero modification, full report, exit 1), conflicts without a legacy
+manifest (prompt 2 only), corrupt legacy manifest (warn, prompt 2 path),
+`--non-interactive` or non-TTY stdin (report and exit 1, no prompts),
+between-run drift abort, identical-content adoption (no prompt, unchanged),
+and a v3/v4 upgrade with a leftover legacy manifest (renamed to `.bak`
+post-commit).
+
 ## Boundaries
 
 Committed tests use synthetic source or the fixed MulanPSL-2.0 TEE fixture, temporary directories, and temporary SQLite databases. They do not require an LLM API key or network access. P0.3 compares normalized full and incremental states. P0.4 adds fixed-revision symbols and relationships, repeated full-scan idempotency, handler rename/delete comparisons, parser-backend reporting, and local full-project measurement commands. P0.5 moves the structural implementation into `schema.py`, `symbol_names.py`, `migrations.py`, and `scanner.py`; `struct_scan.py` remains the stable CLI/import entry point. P0.6 rejects scalar and byte arrays before emitting positional registration facts, rejects numeric and expression handler values, preserves Unicode word identifiers, reports pattern types and sources, and checks the three known image arrays in the fixed full project. The fixed project has no known function-pointer struct table that omits inner aggregate braces; that C form remains outside the verified parser contract. Migration tests import without parser modules, while the full suite, Pyright, compatibility exports, both fixture backends, and the three fixed full-project scans verify the current behavior.

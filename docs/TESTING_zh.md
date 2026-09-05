@@ -697,6 +697,23 @@ pending-deletes v1 互操作（`pending`）、安装锁（`lock`）、规范化 
 用户配置、引擎状态）、在用映像 rename-aside 延迟删除与后续 pending
 清扫、v3 manifest 迁移（shim 与旧名二进制经差集删除）、`--purge-state`。
 
+### 安装冲突处理（2026-09-04 批次）
+
+预检所有权检查不再于首个冲突处失败，而是把完整非托管冲突清单收集到
+`InstallError.conflicts`。单测面（`ops` 与新增 `legacy` 模块，随 crate
+测试运行）：多冲突收集且错误路径零磁盘修改；批准覆盖先写字节一致的
+`.bak` 再部署；批准条目两次运行间哈希漂移即拒绝；旧
+`.installer_manifest.json` 哈希门槛（字节一致的记录可删；哈希不匹配/
+缺哈希/域外/含 `..`/文件缺失的记录保留并附原因）；v1 绝对路径与 v2
+相对路径双形态；损坏或键集不符的旧清单报错且不触磁盘；execute() 清理
+删空目录、移除 settings.json 中引用被删脚本的 hook 条目（清空的事件
+一并移除）并把旧清单改名 `.bak`；post-commit 对残留旧清单改名（不再
+删除）。手动验收场景（E1-E8）：拒绝提问 1 / 拒绝提问 2（零修改、
+完整列报、exit 1）、无旧清单仅冲突（只出提问 2）、损坏旧清单（警告后
+走提问 2 路径）、`--non-interactive` 或非 TTY stdin（无提问、列报后
+exit 1）、两次运行间漂移中止、同内容认领（无提问、行为不变）、v3/v4
+升级伴随旧清单残留（post-commit 改名 `.bak`）。
+
 ## 边界
 
 已提交测试使用合成源码或固定的MulanPSL-2.0 TEE fixture、临时目录和临时SQLite数据库，不需要LLM API key或网络。P0.3比较全量与增量扫描的规范化状态。P0.4增加固定版本符号和关系、重复全量幂等性、handler重命名/删除比较、解析后端报告及本地完整项目测量命令。P0.5将结构扫描实现拆分到`schema.py`、`symbol_names.py`、`migrations.py`和`scanner.py`，`struct_scan.py`继续作为稳定CLI和导入入口。P0.6在生成位置注册事实前拒绝普通标量和字节数组，拒绝数值与表达式handler，保留Unicode单词标识符，报告pattern类型与来源，并检查固定完整项目中的三个已知图片数组。固定项目没有发现省略内层聚合花括号的已知函数指针结构体表，该C形式不属于当前已验证的解析契约。migration测试验证导入时不加载parser模块；完整测试、Pyright、兼容再导出、两种fixture后端和三次固定完整项目扫描验证当前行为。

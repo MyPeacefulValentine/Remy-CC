@@ -243,6 +243,8 @@ The installer:
 - Runs with idempotent-rerun semantics: no journal, recovery direction is forward — rerunning the installer after an interruption converges to the same state
 - Prompts for language and PATH registration in interactive mode and points at `remy-cc config` for API configuration; `--non-interactive` skips prompts and falls back to the deployed configuration
 
+**Upgrading from a v1.x installation (pre-2.0, install.py era):** when the preflight finds files it does not own — deployments of the old installer, or your own files sharing a managed path — the installer lists every conflicting path instead of overwriting. If the old install manifest (`~/.claude/.installer_manifest.json`) is present and readable, it offers to clean up the legacy installation first: files byte-identical to the old records are deleted (stale `settings.json` hook entries pointing at removed scripts go with them), anything unverifiable is kept and reported, and the old manifest is renamed to `.bak`. Remaining conflicts can then be backed up as `.bak` and overwritten — each step asks `[y/N]` and defaults to No; refusing exits with the full list and guidance, changing nothing. Non-interactive runs never modify conflicting files: they report and exit.
+
 Uninstall accepts `--purge-state` to remove `~/.remy-cc/` engine state while preserving every project index.
 
 ### Binary command surface
