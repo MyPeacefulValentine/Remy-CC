@@ -831,12 +831,25 @@ def test_html_security_and_control_contract():
     assert html_text.index('id="exit-btn"') < html_text.index('<div id="config-page">')
     assert 'id="search-input"' in html_text
     assert 'id="group-nav"' in html_text
-    assert 'id="group-select"' in html_text
+    assert 'id="group-select"' not in html_text
+    assert 'id="expand-all-btn"' not in html_text
     assert 'class="actionbar" id="actionbar"' in html_text
-    assert '.actionbar{position:sticky' in html_text
-    assert '@media(max-width:900px){.group-nav{display:none}#group-select{display:block}}' in html_text
-    assert 'header.setAttribute("aria-expanded"' in html_text
-    assert 'header.setAttribute("aria-controls",bodyId)' in html_text
+    assert '.actionbar{position:fixed' in html_text
+    assert '.group-nav{width:clamp(220px,18vw,280px);flex-shrink:0;position:fixed' in html_text
+    assert '@media(max-width:900px){.group-nav{display:none;position:fixed' in html_text
+    assert 'id="drawer-btn" aria-expanded="false" aria-controls="group-nav"' in html_text
+    assert 'id="modal-ov" aria-hidden="true"' in html_text
+    assert 'role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-msg"' in html_text
+    assert 'id="status" role="status" aria-live="polite" aria-atomic="true"' in html_text
+    assert 'id="dirty-count" aria-live="polite" aria-atomic="true"' in html_text
+    assert 'el.setAttribute("role",type==="error"?"alert":"status")' in html_text
+    assert 'toggleEl.setAttribute("role","switch")' in html_text
+    assert 'title.className="card-title"' not in html_text
+    assert 'commonParams:' not in html_text
+    assert 'btn.setAttribute("role","combobox")' in html_text
+    assert 'list.setAttribute("role","listbox")' in html_text
+    assert 'input.className="sel-native"' in html_text
+    assert 'unitEl.className="unit"' in html_text
     assert 'lbl.htmlFor="p-"+param.key' in html_text
     assert 'if(e.key==="Escape"&&searchRaw){e.preventDefault();clearSearch()}' in html_text
     assert 'payload.remove_keys=removeKeys' in html_text

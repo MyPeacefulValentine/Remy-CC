@@ -234,7 +234,9 @@ pub(crate) fn install(params: &InstallParams) -> Result<InstallReport, InstallEr
         if *backup {
             let bak = PathBuf::from(format!("{}.bak", target.display()));
             fs::copy(&target, &bak).map_err(io_error)?;
-            report.changed.push(format!("{}/{}.bak", file.root, file.path));
+            report
+                .changed
+                .push(format!("{}/{}.bak", file.root, file.path));
         }
         match &file.payload {
             Payload::Bytes(bytes) => {
@@ -1105,7 +1107,9 @@ mod tests {
         fs::write(&target, b"changed in between").expect("drift");
         let error = install(&env.params).expect_err("drift rejected");
         assert!(
-            error.message.contains("an approved target changed after preflight"),
+            error
+                .message
+                .contains("an approved target changed after preflight"),
             "message: {}",
             error.message
         );
