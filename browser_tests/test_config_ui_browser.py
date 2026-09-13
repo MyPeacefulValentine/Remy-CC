@@ -380,6 +380,7 @@ def test_custom_select_layers_above_next_field(page: Page, app_servers):
     field = page.locator('.param[data-key="REMY_PERMISSION_GATE"]')
     button = field.locator(".sel-btn")
     button.click()
+    page.wait_for_timeout(250)
     listbox = field.locator(".sel-list")
     next_field = page.locator('.param[data-key="REMY_PERMISSION_GATE"] + .param')
     list_box = listbox.bounding_box()
