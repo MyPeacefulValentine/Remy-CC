@@ -238,7 +238,10 @@ pub(crate) fn confirm_yn(prompt: &str) -> bool {
 }
 
 /// The unmanaged-conflict list with per-path detail, on stdout.
-pub(crate) fn print_conflicts(conflicts: &[crate::install::ops::UnmanagedConflict], language: &str) {
+pub(crate) fn print_conflicts(
+    conflicts: &[crate::install::ops::UnmanagedConflict],
+    language: &str,
+) {
     if language == "zh-CN" {
         println!("以下文件已存在且内容与将要部署的版本不同（非本安装器所有）：");
     } else {
@@ -257,7 +260,10 @@ pub(crate) fn print_legacy_plan(plan: &crate::install::legacy::LegacyPlan, langu
             plan.old_version,
             plan.manifest_path.display()
         );
-        println!("  将删除 {} 个与旧安装记录逐字节一致的文件；", plan.deletable.len());
+        println!(
+            "  将删除 {} 个与旧安装记录逐字节一致的文件；",
+            plan.deletable.len()
+        );
         println!("  保留 {} 个无法核验的条目：", plan.retained.len());
     } else {
         println!(
@@ -269,13 +275,20 @@ pub(crate) fn print_legacy_plan(plan: &crate::install::legacy::LegacyPlan, langu
             "  {} file(s) byte-identical to the old install records will be deleted;",
             plan.deletable.len()
         );
-        println!("  {} entrie(s) cannot be verified and will be kept:", plan.retained.len());
+        println!(
+            "  {} entrie(s) cannot be verified and will be kept:",
+            plan.retained.len()
+        );
     }
     for target in &plan.deletable {
         println!("    [-] {}", target.display());
     }
     for entry in &plan.retained {
-        println!("    [=] {} — {}", entry.path, entry.reason.describe(language));
+        println!(
+            "    [=] {} — {}",
+            entry.path,
+            entry.reason.describe(language)
+        );
     }
 }
 
@@ -285,7 +298,10 @@ pub(crate) fn print_conflict_guidance(legacy_manifest: Option<&Path>, language: 
         println!("未修改任何文件。请检查上列路径：确认属于旧版 Remy-CC 或您自建的内容后，");
         println!("移走或备份这些文件，再重新运行 remy-cc install。");
         if let Some(path) = legacy_manifest {
-            println!("旧版安装清单位于 {}，可据其核对旧部署文件。", path.display());
+            println!(
+                "旧版安装清单位于 {}，可据其核对旧部署文件。",
+                path.display()
+            );
         }
     } else {
         println!("No files were modified. Review the paths above: once you have confirmed");

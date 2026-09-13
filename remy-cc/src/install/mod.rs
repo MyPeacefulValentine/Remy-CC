@@ -182,7 +182,9 @@ pub(crate) fn run_install(language: Option<String>, non_interactive: bool) -> Ex
                 interact::print_conflicts(&error.conflicts, &params.language);
                 let legacy_manifest = params.claude_root.join(ops::LEGACY_MANIFEST_NAME);
                 interact::print_conflict_guidance(
-                    legacy_manifest.is_file().then_some(legacy_manifest.as_path()),
+                    legacy_manifest
+                        .is_file()
+                        .then_some(legacy_manifest.as_path()),
                     &params.language,
                 );
             }
@@ -246,7 +248,10 @@ fn resolve_conflicts(
             }
         }
         Ok(None) => {}
-        Err(error) => println!("  [!] {}; the legacy manifest was left untouched", error.message),
+        Err(error) => println!(
+            "  [!] {}; the legacy manifest was left untouched",
+            error.message
+        ),
     }
 
     let remaining = if advanced {

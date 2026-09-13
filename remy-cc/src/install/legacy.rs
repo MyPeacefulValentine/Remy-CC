@@ -212,7 +212,11 @@ pub(crate) fn execute(
 /// the just-deleted script file names (a registration pointing at a deleted
 /// script fails on every session). Separator-normalized match, the
 /// `is_legacy_default` technique. Unreadable settings only warn.
-fn remove_dead_hook_entries(claude_root: &Path, deleted_scripts: &[String], warnings: &mut Vec<String>) {
+fn remove_dead_hook_entries(
+    claude_root: &Path,
+    deleted_scripts: &[String],
+    warnings: &mut Vec<String>,
+) {
     if deleted_scripts.is_empty() {
         return;
     }
@@ -228,7 +232,8 @@ fn remove_dead_hook_entries(claude_root: &Path, deleted_scripts: &[String], warn
         return;
     }
     let Ok(mut document) = storage::load_json(&settings_path) else {
-        warnings.push("settings.json is unreadable; stale hook entries were not cleaned".to_string());
+        warnings
+            .push("settings.json is unreadable; stale hook entries were not cleaned".to_string());
         return;
     };
     let Some(hooks) = document.get_mut("hooks").and_then(Value::as_object_mut) else {
@@ -251,7 +256,9 @@ fn remove_dead_hook_entries(claude_root: &Path, deleted_scripts: &[String], warn
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .replace('\\', "/");
-                !script_names.iter().any(|name| command.contains(name.as_str()))
+                !script_names
+                    .iter()
+                    .any(|name| command.contains(name.as_str()))
             });
             changed |= list.len() != before;
         }
@@ -332,7 +339,13 @@ mod tests {
         assert!(inspect(dir.path()).is_err());
         write_manifest(dir.path(), &json!({"files": []}));
         assert!(inspect(dir.path()).is_err(), "missing version key");
-        assert!(path.is_file() || dir.path().join(super::super::ops::LEGACY_MANIFEST_NAME).is_file());
+        assert!(
+            path.is_file()
+                || dir
+                    .path()
+                    .join(super::super::ops::LEGACY_MANIFEST_NAME)
+                    .is_file()
+        );
     }
 
     #[test]
@@ -418,8 +431,13 @@ mod tests {
         assert_eq!(deleted, vec![claude.join("hooks/tree_system/dead_hook.py")]);
         assert!(!claude.join("hooks/tree_system").exists(), "pruned");
         assert!(claude.join("hooks/user_hook.py").is_file());
-        assert_eq!(storage::sha256_file(&claude.join("hooks/user_hook.py")).expect("hash"), kept);
-        assert!(!claude.join(super::super::ops::LEGACY_MANIFEST_NAME).exists());
+        assert_eq!(
+            storage::sha256_file(&claude.join("hooks/user_hook.py")).expect("hash"),
+            kept
+        );
+        assert!(!claude
+            .join(super::super::ops::LEGACY_MANIFEST_NAME)
+            .exists());
         assert!(claude
             .join(format!("{}.bak", super::super::ops::LEGACY_MANIFEST_NAME))
             .is_file());
@@ -428,7 +446,13 @@ mod tests {
             .as_array()
             .expect("list");
         assert_eq!(pre.len(), 1);
-        assert!(pre[0]["command"].as_str().expect("cmd").contains("user_hook.py"));
-        assert!(settings["hooks"].get("PostToolUse").is_none(), "emptied event removed");
+        assert!(pre[0]["command"]
+            .as_str()
+            .expect("cmd")
+            .contains("user_hook.py"));
+        assert!(
+            settings["hooks"].get("PostToolUse").is_none(),
+            "emptied event removed"
+        );
     }
 }
