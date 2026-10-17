@@ -32,8 +32,8 @@ STRUCT_SCAN = INDEX_DIR / "struct_scan.py"
 @pytest.fixture
 def daemon_home(tmp_path):
     home = tmp_path / "home"
-    result = run_daemon(home, ["start"])
     try:
+        result = run_daemon(home, ["start"])
         assert result.returncode == 0, result.stderr
         yield home
     finally:

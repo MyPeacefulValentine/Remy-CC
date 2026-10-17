@@ -47,20 +47,49 @@ def daemon_env(home):
     }
 
 
-def run_daemon(home, args, timeout=10, *, input_data=None, extra_env=None):
+# The start CLI's own 10s readiness wait begins after the platform launcher exits.
+START_COMMAND_TIMEOUT = 30
+COMMAND_TIMEOUT = 10
+
+
+def daemon_diagnostics(home):
+    home = Path(home)
+    details = {"home": str(home), "token_present": (home / "run" / "daemon.token").exists()}
+    for relative in ("run/daemon.pid", "run/daemon.port", "log/daemon.log", "log/daemon.log.1"):
+        try:
+            data = (home / relative).read_bytes()
+            details[relative] = {"tail": data[-8192:].decode("utf-8", "replace"),
+                                 "truncated": len(data) > 8192}
+        except OSError as error:
+            details[relative] = {"error": str(error)}
+    return json.dumps(details, ensure_ascii=False, sort_keys=True)
+
+
+def run_daemon(home, args, timeout=None, *, input_data=None, extra_env=None):
     environment = daemon_env(home)
     if extra_env:
         environment.update(extra_env)
-    return subprocess.run(
-        [str(daemon_bin())] + list(args),
-        env=environment,
-        input=input_data,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=timeout,
-    )
+    args = list(args)
+    starting = bool(args) and args[0] == "start"
+    if timeout is None:
+        timeout = START_COMMAND_TIMEOUT if starting else COMMAND_TIMEOUT
+    try:
+        result = subprocess.run(
+            [str(daemon_bin())] + args,
+            env=environment,
+            input=input_data,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        print("Daemon command timeout diagnostics: " + daemon_diagnostics(home), file=sys.stderr)
+        raise
+    if starting and result.returncode not in (0, 1):
+        print("Daemon startup failure diagnostics: " + daemon_diagnostics(home), file=sys.stderr)
+    return result
 
 
 def is_running(home):
@@ -122,8 +151,8 @@ def force_cleanup(home):
 
 @contextlib.contextmanager
 def started_daemon(home):
-    result = run_daemon(home, ["start"])
     try:
+        result = run_daemon(home, ["start"])
         yield result
     finally:
         force_cleanup(home)
