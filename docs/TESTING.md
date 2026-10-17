@@ -850,6 +850,14 @@ between-run drift abort, identical-content adoption (no prompt, unchanged),
 and a v3/v4 upgrade with a leftover legacy manifest (renamed to `.bak`
 post-commit).
 
+## Daemon startup test diagnostics
+
+The integration helper gives `start` a 30-second end-to-end process deadline. Other commands retain 10 seconds, and explicit caller deadlines remain unchanged. The production CLI's own 10-second readiness timer begins only after its platform launcher returns; the test deadline includes that launch overhead and does not change the production timeout or turn a nonzero exit into success.
+
+A timeout prints bounded tails of the isolated daemon's PID, port, and log files before re-raising the original exception. Token content is not read. Nonzero startup errors other than the expected already-running result also print diagnostics. Both the shared context manager and IPC fixture attempt cleanup even when startup raises before yielding.
+
+The Rust CI job uses a dedicated pytest base directory and uploads only `log/daemon.log*` on failure for seven days, not endpoint tokens or state databases. `tests/test_daemon_test_support.py` checks the budgets, explicit overrides, preserved failure results, diagnostic bounds, and cleanup paths. These changes improve observation of a slow or failed startup; a passing retry alone does not establish which startup stage caused an earlier timeout.
+
 ## Boundaries
 
 Committed tests use synthetic source or the fixed MulanPSL-2.0 TEE fixture, temporary directories, and temporary SQLite databases. They do not require an LLM API key or network access. P0.3 compares normalized full and incremental states. P0.4 adds fixed-revision symbols and relationships, repeated full-scan idempotency, handler rename/delete comparisons, parser-backend reporting, and local full-project measurement commands. P0.5 moves the structural implementation into `schema.py`, `symbol_names.py`, `migrations.py`, and `scanner.py`; `struct_scan.py` remains the stable CLI/import entry point. P0.6 rejects scalar and byte arrays before emitting positional registration facts, rejects numeric and expression handler values, preserves Unicode word identifiers, reports pattern types and sources, and checks the three known image arrays in the fixed full project. The fixed project has no known function-pointer struct table that omits inner aggregate braces; that C form remains outside the verified parser contract. Migration tests import without parser modules, while the full suite, Pyright, compatibility exports, both fixture backends, and the three fixed full-project scans verify the current behavior.
