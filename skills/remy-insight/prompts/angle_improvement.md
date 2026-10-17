@@ -31,11 +31,12 @@ Return a strict JSON object matching the `agent_finding.json` schema:
     {
       "id": "F-001",
       "dimension": "improvement",
-      "severity": "observation|concern|issue",
+      "severity": "concern",
       "target": {"file": "path/to/file", "symbol": "name", "layer": "layer_name"},
       "claim": "one-sentence description of the improvement",
       "evidence": "specific code reference showing the current state",
-      "confidence": 2-5
+      "evidence_state": "inference",
+      "evidence_basis": []
     }
   ],
   "summary": "overall assessment of improvement opportunities"
@@ -45,6 +46,8 @@ Return a strict JSON object matching the `agent_finding.json` schema:
 ## Constraints
 
 - Maximum 15 findings
+- Use the shared evidence semantics: `verified` = established within cited scope; `inference` = supported but still dependent on stated premises; `unknown` = unexamined, insufficient, or conflicting evidence; `refuted` = counterevidence within a stated scope. Source inspection does not establish runtime behavior.
+- `evidence_basis` optionally lists acquired material types in the configured language; it does not list planned checks. Keep citations and limitations in `evidence`. Do not output numeric confidence.
 - Each finding MUST propose a specific, actionable change — not a vague suggestion
 - Severity: `issue` = measurable negative impact now, `concern` = likely to cause problems as the codebase grows, `observation` = optional enhancement
 - Do NOT propose rewrites for the sake of stylistic preference

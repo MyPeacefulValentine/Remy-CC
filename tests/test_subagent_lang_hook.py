@@ -26,6 +26,9 @@ import remy_config
 def isolated_remy_user_config(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
+    config_dir = tmp_path / ".claude"
+    config_dir.mkdir()
+    (config_dir / "remy-config.json").write_text(json.dumps({"schema_version": "1.0.0", "values": {}}), encoding="utf-8")
     monkeypatch.setattr(remy_config.Path, "home", classmethod(lambda _cls: home))
     monkeypatch.delenv("REMY_LANG", raising=False)
     with remy_config._CACHE_LOCK:
@@ -47,6 +50,8 @@ def _run_hook(stdin_bytes, home, extra_env=None):
         input=stdin_bytes, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         env=env, timeout=60,
     )
+    if not proc.stdout.strip():
+        assert "subagent_lang_hook:" in proc.stderr.decode("utf-8", "replace")
     return proc.returncode, proc.stdout.decode("utf-8", "replace").strip()
 
 
@@ -86,5 +91,20 @@ class TestMainIO:
     @pytest.mark.parametrize("stdin_bytes", [b"", b"not json at all"])
     def test_malformed_stdin_fails_open(self, tmp_path, stdin_bytes):
         rc, out = _run_hook(stdin_bytes, tmp_path / "home")
+        assert rc == 0
+        assert out == ""
+
+    def test_nested_event_cwd_uses_project_language(self, tmp_path):
+        config = tmp_path / ".claude" / "remy-config.json"
+        config.write_text(json.dumps({"schema_version": "1.0.0", "values": {"REMY_LANG": "zh-CN"}}), encoding="utf-8")
+        nested = tmp_path / "sub"
+        nested.mkdir()
+        rc, out = _run_hook(_payload(nested), tmp_path / "home")
+        assert rc == 0
+        assert "Chinese-simplified" in json.loads(out)["hookSpecificOutput"]["additionalContext"]
+
+    @pytest.mark.parametrize("cwd", [None, "", ".", 7])
+    def test_invalid_cwd_has_no_context(self, tmp_path, cwd):
+        rc, out = _run_hook(json.dumps({"cwd": cwd}).encode("utf-8"), tmp_path / "home")
         assert rc == 0
         assert out == ""

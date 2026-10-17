@@ -8,7 +8,7 @@
 {% for f in findings %}
 #### {{ f.id }}: {{ f.claim }}
 
-- **Severity**: {{ f.severity }} | **Confidence**: {{ f.confidence }}/5
+- **Severity**: {{ f.severity }} | **Evidence state**: {{ f | evidence_label }}
 - **Target**: `{{ f.target.file }}`{% if f.target.symbol %} → `{{ f.target.symbol }}`{% endif %}{% if f.target.layer %} ({{ f.target.layer }}){% endif %}
 
 - **Evidence**: {{ f.evidence }}
@@ -21,7 +21,7 @@
 > **Significance**: {{ f.significance }}
 {% endif %}
 {% if f.verified_status and f.verified_status != 'not_verified' %}
-- **Verification**: {{ f.verified_status }}{% if f.vote_detail %} ({{ f.vote_detail }}){% endif %}
+- **Adversarial review**: {{ f.verified_status }}{% if f.vote_detail %} ({{ f.vote_detail }}){% endif %}
 
 {% endif %}
 {% if f.cross_refs %}

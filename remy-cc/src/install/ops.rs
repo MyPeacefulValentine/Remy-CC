@@ -1010,6 +1010,141 @@ mod tests {
     }
 
     #[test]
+    fn rules_install_matches_archive_and_manifest() {
+        let env = setup("en");
+        install(&env.params).expect("install");
+        let Some(LoadedManifest::Current(manifest)) =
+            manifest::load(&env.params.remy_root).expect("manifest")
+        else {
+            panic!("expected current manifest");
+        };
+        for path in ["rules/communication.md", "rules/reasoning-and-decisions.md"] {
+            let expected = embedded::entry_bytes(path).expect("archive").expect("rule");
+            assert_eq!(
+                fs::read(env.params.claude_root.join(path)).expect("rule"),
+                expected
+            );
+            let record = manifest
+                .files
+                .iter()
+                .find(|file| file.root == "claude" && file.path == path)
+                .expect("record");
+            assert_eq!(record.sha256, storage::sha256_hex(&expected));
+            assert_eq!(record.role, "claude_protocol");
+        }
+    }
+
+    #[test]
+    fn v4_without_rules_upgrades_rules_and_shared_text() {
+        let env = setup("en");
+        install(&env.params).expect("seed");
+        let Some(LoadedManifest::Current(mut prior)) =
+            manifest::load(&env.params.remy_root).expect("manifest")
+        else {
+            panic!("expected current manifest");
+        };
+        for path in ["rules/communication.md", "rules/reasoning-and-decisions.md"] {
+            fs::remove_file(env.params.claude_root.join(path)).expect("old surface");
+        }
+        prior.files.retain(|file| !file.path.starts_with("rules/"));
+        let old_style = b"previous shared rules";
+        fs::write(env.params.claude_root.join("style.md"), old_style).expect("old style");
+        prior
+            .files
+            .iter_mut()
+            .find(|file| file.root == "claude" && file.path == "style.md")
+            .expect("style record")
+            .sha256 = storage::sha256_hex(old_style);
+        prior.write(&env.params.remy_root).expect("old v4");
+        install(&env.params).expect("upgrade");
+        for path in [
+            "style.md",
+            "rules/communication.md",
+            "rules/reasoning-and-decisions.md",
+        ] {
+            assert_eq!(
+                fs::read(env.params.claude_root.join(path)).expect("deployed"),
+                embedded::entry_bytes(path)
+                    .expect("archive")
+                    .expect("entry")
+            );
+        }
+        let before = tree_snapshot(&env.params.claude_root);
+        assert!(install(&env.params).expect("repeat").changed.is_empty());
+        assert_eq!(before, tree_snapshot(&env.params.claude_root));
+    }
+
+    #[test]
+    fn rules_conflicts_preserve_user_content() {
+        let env = setup("en");
+        let target = env.params.claude_root.join("rules/communication.md");
+        fs::create_dir_all(target.parent().expect("parent")).expect("dirs");
+        fs::write(&target, b"user rule").expect("user rule");
+        let before = tree_snapshot(&env.params.claude_root);
+        let error = install(&env.params).expect_err("conflict");
+        assert!(error
+            .conflicts
+            .iter()
+            .any(|item| item.path == "rules/communication.md"));
+        assert_eq!(before, tree_snapshot(&env.params.claude_root));
+        assert!(manifest::load(&env.params.remy_root)
+            .expect("manifest")
+            .is_none());
+    }
+
+    #[test]
+    fn changed_owned_rule_rejects_reinstall() {
+        let env = setup("en");
+        install(&env.params).expect("install");
+        let target = env.params.claude_root.join("rules/communication.md");
+        fs::write(&target, b"user edited rule").expect("edit");
+        assert!(install(&env.params).is_err());
+        assert_eq!(fs::read(target).expect("preserved"), b"user edited rule");
+    }
+
+    #[test]
+    fn rules_verify_reports_missing_and_drift() {
+        let env = setup("en");
+        install(&env.params).expect("install");
+        fs::remove_file(env.params.claude_root.join("rules/communication.md"))
+            .expect("remove fixture");
+        fs::write(
+            env.params
+                .claude_root
+                .join("rules/reasoning-and-decisions.md"),
+            b"drift",
+        )
+        .expect("drift");
+        let warnings = verify(&env.params.claude_root, &env.params.remy_root);
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("rules/communication.md")));
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("rules/reasoning-and-decisions.md")));
+    }
+
+    #[test]
+    fn rules_uninstall_preserves_user_rules() {
+        let env = setup("en");
+        install(&env.params).expect("install");
+        let user = env.params.claude_root.join("rules/user.md");
+        fs::write(&user, b"user rule").expect("user");
+        uninstall(&env.params.claude_root, &env.params.remy_root, false).expect("uninstall");
+        assert_eq!(fs::read(user).expect("preserved"), b"user rule");
+        assert!(!env
+            .params
+            .claude_root
+            .join("rules/communication.md")
+            .exists());
+        assert!(!env
+            .params
+            .claude_root
+            .join("rules/reasoning-and-decisions.md")
+            .exists());
+    }
+
+    #[test]
     fn rerun_is_idempotent_including_the_manifest() {
         let env = setup("en");
         install(&env.params).expect("first");

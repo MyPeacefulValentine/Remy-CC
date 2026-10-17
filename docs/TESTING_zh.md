@@ -8,7 +8,7 @@ Remy-CC 支持 Python 3.10 及以上版本。使用以下命令安装固定版�
 python -m pip install -r requirements-dev.txt
 ```
 
-该文件包含pytest、Pyright以及`tests/test_freshness.py`所需的MCP SDK。
+该文件固定pytest、Pyright、`tests/test_freshness.py`所需的MCP SDK，以及insight契约与双渲染测试直接使用的jsonschema和Jinja2。
 
 使用以下命令安装可选的高精度解析器包：
 
@@ -372,9 +372,8 @@ python tests/tee_project_canary.py /path/to/tee_tee_os_framework --backend regex
 
 ## PreToolUse 门禁
 
-`hooks/pre_tool_guard.py`决定每次Write / Edit / Bash / PowerShell / Agent调用是
-放行、改写还是拒绝。在本组测试之前它没有任何行为覆盖：唯一的引用是
-`test_install_manifest.py`断言其路径出现在安装清单中。
+`hooks/pre_tool_guard.py`保留工具输入，只输出部分任务包拒绝、项目外写入询问、
+general-purpose 代理询问和辅助上下文，不执行环境准备，不主动批准辅助操作。
 
 ```
 python -m pytest Remy-CC/tests/test_pre_tool_guard.py -v
@@ -386,35 +385,40 @@ python -m pytest Remy-CC/tests/test_pre_tool_guard.py -v
 `remy-config.json`。断言只针对`permissionDecision`、`updatedInput`和
 `additionalContext`，不针对消息文本，因此在两种语言下都成立。
 
-覆盖的16条`main()`分支：Bash命令含与不含已有编码/miniforge标记；PowerShell含与不
-含Python命令；Plan agent的语言注入；Explore与general-purpose的确认门；未知agent类
-型静默落空；Write / Edit / NotebookEdit在证据未确认时拒绝；Write在证据确认后放行；
-项目内绝对路径改写为相对路径；项目外绝对路径请求确认；Read / Glob / Grep不受该门约
-束；kebab-case的三种结果（新文件拒绝、只有snake变体存在时改写、两者都存在时询问）；
-Edit的软提醒；lock文件警告；无任何路径的载荷静默退出；stdin非法JSON时fails open并
-写stderr。packet门另覆盖`.claude/temp_task/`豁免（相对路径、绝对路径、新建文件，
-以及`temp_task`之外的`.claude/`路径仍被门禁约束）和结构不合规packet对项目文件写入
-的拒绝。
+覆盖 Bash/PowerShell 输入保持、无隐式环境执行、无辅助 allow、代理上下文及保留的
+general-purpose ask；Write/Edit/NotebookEdit 继续接受任务包检查。绝对与相对目标使用
+相同包含性判断，包括 ../、Windows 跨盘与大小写，以及平台允许创建时的符号链接。
+Notebook 目标和文件名不重定向到其他文件。
 
-此前四个缺陷以`xfail(strict=True)`用例记录。三个已修复，一个裁定为有意设计；四个
-用例现均为正式回归测试：
+任务包兼容语义保持：标记或文件缺失及 I/O 失败通过检查；结构错误、缺引用、
+suspected/stale 证据拒绝。通过检查不等于批准；temp_task 整改豁免不独立授权写入。
+Shell 不进入任务包验证，也不由此钩子批准。一个受阻引用影响整改目录外的写操作，
+这不是逐目标文件的范围白名单。
 
-| 用例 | 处置 |
-| :--- | :--- |
-| `test_does_not_reinject_when_encoding_already_set` | 已修复。`inject_bash_env`跳过任何携带注入preamble标记（`.env_setup.sh`）的命令，且仅在命令未设置编码时追加export。手写含编码的命令仍获得一次mamba preamble。 |
-| `test_evidence_entry_missing_id_is_rejected` | 已修复。`validate_packet`显式校验结构并fail closed：非法JSON、根非对象、`evidence`/`proposed_changes`非list、条目非dict、`id`缺失或非字符串、`evidence_refs`非list、引用非字符串均拒绝并附整改提示。仅I/O错误仍放行。 |
-| `test_writing_to_the_active_packet_is_permitted` | 已修复。`main()`将`.claude/temp_task/`下的写入目标豁免于证据门禁，因此门禁自己要求的整改——把证据提升为`confirmed`或修复损坏的packet——始终可用Edit/Write执行。该豁免与上述fail-closed改动在同一提交落地；单独落地任何一个都会死锁或保持静默绕过。 |
-| `test_bash_bypasses_packet_validation_by_design`（由`test_bash_is_subject_to_packet_validation`改名） | 不修复——裁定为有意设计。shell命令无法静态判定读写，且技能协议依赖Bash向`.claude/temp_task/`写入。理由记录在该用例的docstring中，用例断言`allow`。 |
+这些测试验证脚本行为，不证明实际 Claude Code 权限流程、长上下文遵循或外部效果
+去重。模板整工具 allow 规则未变。
 
-`test_validation_is_not_scoped_to_a_file_path`继续记录门禁的全局性：
-`proposed_changes`中任何一处未确认引用会阻塞`.claude/temp_task/`之外全部文件的编
-辑。按文件收窄需要packet schema不具备的change到file映射。
+### 提示契约与行为案例
 
-断言强度在树的临时副本上经变异检验：四个原始变异（删除suspected/stale检查、删除
-`inject_bash_env`中的Python判断、把`has_kebab_case`扩大到整个路径、把
-`path_is_contained`的`commonpath`比较换成字符串前缀）各自只破坏一条断言；四个修复
-后变异（移除temp_task豁免、恢复吞掉结构错误、删除export前置条件、删除preamble标记
-跳过）在72用例全绿基线上分别破坏3、2、1、2条对应断言。
+`tests/test_prompt_contracts.py`检查四种证据状态、输出风格元数据、授权范围、共享协议
+引用及双语短提醒。独立 `rules/` 检查观察失败、混合问题拆分、排除前提、独立验收及
+高影响操作信息。Rust 在临时安装根中核对规则字节、manifest 哈希、旧 v4 缺规则升级、
+冲突、缺失/漂移诊断及卸载保留用户规则，不执行真实部署。
+`docs/PROMPT_BEHAVIOR_CASES.md`定义尚未执行的模型对照案例；
+文本检查通过不证明模型遵循或权限提示频率。
+
+共享标记迁移还检查已有依据／当前查证方式的按需属性、plan 的非数值路由与遗留阻塞、debug/CI 诊断、未改变的 packet 字段，以及提醒中使用四种符号但不要求逐句标注的约束。`tests/test_insight_contract.py` 使用 JSON Schema 验证新 finding，覆盖新旧输入、五种 Jinja 章节和默认回退，并在临时目录用合成数据执行 CLI。旧评分不提高证据状态，对抗投票与证据状态分开。该测试不修复或验证 insight 既有投票门槛与代理预算调度。
+
+`tests/test_permission_gate.py` 还覆盖用户与工作区计划目录中的 Markdown 修改规则、相邻路径、非 Markdown 文件、其他工具、路径穿越与符号链接越界，以及 PermissionRequest 返回值；不因此允许其他源代码或 shell 操作。
+
+不加载无关索引 conftest 的定向检查：
+
+```text
+python -B -m pytest Remy-CC/tests/test_prompt_contracts.py Remy-CC/tests/test_insight_contract.py Remy-CC/tests/test_permission_gate.py Remy-CC/tests/test_pre_tool_guard.py --noconftest -p no:cacheprovider -q
+cargo test --offline --manifest-path Remy-CC/remy-cc/Cargo.toml install::embedded::tests::prompt_entries_match_current_source_bytes
+```
+
+insight 测试需要现有 JSON Schema validator 和 Jinja2；只测默认回退不代表双路径通过。归档测试比对共享规则、受影响技能、诊断模板、insight schema/renderer、权限 hook 与提醒的源字节，不执行安装。
 
 ### hook与安装器模块覆盖
 
@@ -431,7 +435,8 @@ python -m pytest Remy-CC/tests/test_enforcer_hook.py Remy-CC/tests/test_patch_de
 `tests/test_enforcer_hook.py`把hook复制到临时目录以控制reminder文件集合：
 `REMY_LANG=zh-CN`选择`reminder_prompt_zh.md`，`en`（或未设置语言）选择英文文件，
 primary缺失时回退到另一语言，两个文件都缺失时返回文档化的默认串，读取文本被
-strip。`remy-src`通过`PYTHONPATH`提供。
+strip。事件 cwd 用于项目配置，输出为 UserPromptSubmit/SessionStart 的结构化
+additionalContext；无效输入只输出诊断，不注入上下文。`remy-src`通过`PYTHONPATH`提供。
 
 `tests/test_patch_descriptions.py`在进程内覆盖`patch()`：`description:`行只在前
 `MAX_FRONTMATTER_LINES`行内被改写，请求语言回退到`en`，行未变化时不写文件（用只读
@@ -696,6 +701,10 @@ pending-deletes v1 互操作（`pending`）、安装锁（`lock`）、规范化 
 部署件 daemon start/restart/logs/stop、默认卸载保留语义（项目数据、
 用户配置、引擎状态）、在用映像 rename-aside 延迟删除与后续 pending
 清扫、v3 manifest 迁移（shim 与旧名二进制经差集删除）、`--purge-state`。
+
+### 隔离的 release 二进制安装检查
+
+`tests/release_install_probe.py --binary <候选文件>` 检查真实二进制，不只调用 Rust 安装函数。它创建新的临时 home，重定向 HOME/USERPROFILE/CLAUDE_CONFIG_DIR/REMY_CC_HOME，从独立工作目录仅调用 `install --non-interactive --lang en`、`verify` 和 `--version`。检查部署二进制与规则字节、manifest 哈希、合成用户 settings/rules/MCP 内容保留，以及重复安装的内容幂等性。非交互安装不注册 PATH；检查不启动 Claude 或 daemon。Test CI 对 Linux musl 和 Windows release 构建执行该脚本。这些目录设置隔离已知安装路径，不是约束任意可执行程序行为的操作系统沙箱。
 
 ### 安装冲突处理（2026-09-04 批次）
 

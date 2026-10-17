@@ -26,22 +26,24 @@ You MUST output the diagnosis using the following structure. Fill each section w
 
 ## 3. Hypothesis Log (假设日志)
 
-| # | Hypothesis | Confidence | Probe | Result | Verdict |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | <suspected cause> | Level N | <what was checked> | <observed result> | Confirmed / Refuted / Inconclusive |
+Use `style.md`'s shared evidence state and optional acquired-basis attribute for each hypothesis. Keep concrete citations, scope, and unresolved premises in the Result; do not fill an attribute with a planned test. The verdict below is a diagnostic workflow value, not a replacement for the evidence state.
 
-## 4. Root Cause (主因)
+| # | Hypothesis | Evidence state | Probe | Result | Verdict |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 | <candidate explanation> | <shared state, with acquired basis if useful> | <permitted check or reason not run> | <observation, citation, scope and remaining gap> | Confirmed / Refuted / Inconclusive |
+
+## 4. Failure Mechanism (故障机制)
 
 **Status**: `confirmed` / `inconclusive`
 
-**Statement**: <One-paragraph description of the identified root cause, citing evidence IDs>
+**Statement**: <Supported explanation and scope, or the unresolved question; cite evidence IDs without inventing missing links>
 
-**Evidence Chain**:
-```
-[Symptom] <what was observed>
-  -> [Mechanism] <how the failure propagates>
-    -> [Root Cause] <where the defect originates>
-```
+**Observation and explanation**:
+- Observation: <what was checked and observed; apply its own evidence state>.
+- Explanation: <why it may explain the symptom; keep inference and assumptions explicit>.
+- Missing evidence: <what would resolve the remaining uncertainty, or state that this bounded explanation is established>.
+
+The hypothesis log records the diagnostic sequence: symptom, candidate explanation, check, result. If a causal chain is supported, describe cause → intermediate mechanism → symptom and bind evidence to each material link. Do not treat the order of investigation as a proven causal chain.
 
 ## 5. Proposed Fix (建议修复)
 

@@ -1,11 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-SubagentStart hook that injects the configured response language into every
-subagent's context via hookSpecificOutput.additionalContext. Replaces the
-former style.md rule that required the model to append a language directive
-to each Agent prompt by hand. Fail-open: on any error the hook exits 0 with
-empty stdout and the subagent starts without the directive.
+SubagentStart language context for the event working directory.
+The hook supplies text, not an approval or a guarantee of language compliance.
+Input or runtime errors produce a diagnostic and no decision.
 """
 
 import json
@@ -26,9 +24,10 @@ LANGUAGE_NAMES = {
 
 
 def build_directive(cwd):
-    lang = str(remy_config.load_config(cwd, strict=False).get("REMY_LANG", "en"))
+    root = remy_config.discover_project_root(cwd)
+    lang = str(remy_config.load_config(root or cwd, strict=False).get("REMY_LANG", "en"))
     language = LANGUAGE_NAMES.get(lang, LANGUAGE_NAMES["en"])
-    return "IMPORTANT: Output final response in %s." % language
+    return "Respond in %s." % language
 
 
 def main():
@@ -44,7 +43,11 @@ def main():
             sys.exit(0)
 
         input_data = json.load(sys.stdin)
-        cwd = input_data.get("cwd", os.getcwd())
+        if not isinstance(input_data, dict):
+            raise ValueError("hook input must be an object")
+        cwd = input_data.get("cwd")
+        if not isinstance(cwd, str) or not cwd or not os.path.isabs(cwd) or not os.path.isdir(cwd):
+            raise ValueError("cwd must name an existing absolute directory")
 
         print(json.dumps({
             "hookSpecificOutput": {
@@ -56,7 +59,8 @@ def main():
 
     except SystemExit:
         raise
-    except Exception:
+    except Exception as error:
+        print(f"subagent_lang_hook: {error}", file=sys.stderr)
         sys.exit(0)
 
 

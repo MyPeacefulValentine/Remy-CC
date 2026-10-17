@@ -233,7 +233,8 @@ Phase 3.1 prepares the context variables. Phase 3.2 constructs and invokes a sin
    - Inject relevant source code excerpts (from Phase 3.1)
    - Inject mode-specific context (focus target, document content for compare)
    - Append language instruction: findings must use REMY_LANG for `claim` and `evidence` fields
-4. Collect all prompt strings into a data structure to be passed as `args` to the Workflow.
+4. Append the shared evidence contract to every section prompt, including inline `doc_consistency`: produce `evidence_state` as `verified`, `inference`, `unknown`, or `refuted`; put citations, scope, and unresolved premises in `evidence`. Optional `evidence_basis` contains only acquired material labels in the configured language, not planned checks. These correspond to `style.md`'s shared states and optional `[state｜basis]` display. Do not produce numeric cognitive confidence; severity remains independent.
+5. Collect all prompt strings into a data structure to be passed as `args` to the Workflow.
 
 **Workflow invocation**: Call `Workflow` with the following script template. Replace `{PLACEHOLDERS}` with the actual values computed above.
 
@@ -463,6 +464,8 @@ The Workflow returns a structured JavaScript object. The main session processes 
    - `analysisAgentCount` — number of analysis agents used
    - `adversarialAgentCount` — number of adversarial agents used
 
+3. **Check evidence before reporting**: Recheck the sources supporting decision-relevant claims and preserve their scope. `verified_status` and `vote_detail` record adversarial review, not the shared evidence state. An `upheld` vote does not establish `verified`, and a vote does not supply missing counterevidence. Reconcile conflicting claims against actual observations; if the conflict remains unresolved, record `unknown` and explain it in `evidence`. Do not upgrade a state because agents agree or a summary repeats it.
+
 ### 4.2 Findings JSON Dump
 
 1. Ensure directory: `mkdir -p ".claude/temp_insight"` (or PowerShell equivalent)
@@ -504,6 +507,8 @@ python "~/.claude/skills/remy-insight/render.py" \
 4. Renders each section via its Jinja2 template (or fallback string renderer)
 5. For the `innovation` section: renders `mechanism` and `significance` fields as expanded blocks
 6. Assembles the full report via `_base.md.j2`
+
+The new finding schemas require `evidence_state` and reject the retired numeric `confidence` field. They describe new agent findings and report context, not the entire flat CLI input. The renderer accepts older JSON for display only: an old score remains an explicitly unreviewed legacy record, never an automatic mapping to a shared verified state. Invalid explicit states are diagnosed; existing Markdown reports are not rewritten. Both Jinja and fallback use the same evidence-label formatter.
 
 **Do NOT hand-assemble the report in the conversation.** Always use `render.py`.
 

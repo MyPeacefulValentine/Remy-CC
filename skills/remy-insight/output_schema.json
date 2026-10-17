@@ -75,7 +75,8 @@
   "$defs": {
     "finding": {
       "type": "object",
-      "required": ["id", "dimension", "severity", "target", "claim", "evidence", "confidence"],
+      "required": ["id", "dimension", "severity", "target", "claim", "evidence", "evidence_state"],
+      "additionalProperties": false,
       "properties": {
         "id": {
           "type": "string",
@@ -106,11 +107,16 @@
           "type": "string",
           "description": "Code reference or logical derivation in REMY_LANG"
         },
-        "confidence": {
-          "type": "integer",
-          "minimum": 2,
-          "maximum": 5,
-          "description": "Epistemic confidence level (2=speculation, 5=verified)"
+        "evidence_state": {
+          "type": "string",
+          "enum": ["verified", "inference", "unknown", "refuted"],
+          "description": "Shared evidence state: verified within cited scope; inference with supporting evidence and unresolved premises; unknown for missing or conflicting evidence; refuted by cited counterevidence. Source inspection is not runtime verification."
+        },
+        "evidence_basis": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "pattern": "^(?=.*\\S)[^\\[\\]｜|\\r\\n]+$(?![\\s\\S])"},
+          "description": "Optional short labels for material actually obtained and used, in REMY_LANG, such as source code or runtime. Omit or leave empty when not useful; never list planned checks. Citations and limitations belong in evidence."
         },
         "mechanism": {
           "type": "string",

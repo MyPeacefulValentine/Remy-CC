@@ -50,6 +50,10 @@ Deep repository analysis with multi-agent parallel perspectives.
 
 Reports are saved to `.claude/temp_insight/insight_{timestamp}.md`.
 
+New findings use `evidence_state` (`verified`, `inference`, `unknown`, `refuted`) and optional `evidence_basis` labels for material actually obtained. Reports display the shared marker, adding the basis only when supplied; citations and scope remain in `evidence`. Severity and adversarial-review verdicts remain separate and do not establish an evidence state by voting.
+
+The renderer can still display older JSON containing numeric `confidence`, but labels it as an unreviewed legacy record rather than converting a score into verified evidence. New schemas reject that old field. Invalid explicit states are reported, and existing Markdown reports are not migrated. Jinja and fallback share the same formatter.
+
 ## Configuration
 
 | Variable | Default | Description |

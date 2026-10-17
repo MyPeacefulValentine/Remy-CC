@@ -22,11 +22,11 @@ Before generating any files, you MUST perform a deep audit of the work done.
 1.  **Identify Scope**:
     *   Review `git log` to identify all commits since the last milestone.
     *   If no commits exist, include staged changes (`git diff --staged`).
-2.  **Recursive Audit (Anti-Hallucination)**:
-    *   **Trace**: For every modified file, identify its upstream callers and downstream dependencies.
-    *   **Read**: Verify the *source definitions* of changed functions — NEVER infer a definition solely from its usage (principle layer: `~/.claude/skills/remy-plan/saturation_protocol.md`).
-    *   **Verify**: Confirm you understand the *exact* technical logic, not just the intent.
-    *   **Constraint**: Do NOT proceed until you can explain the "Ripple Effects" and "Systemic Impact" for every change.
+2.  **Task-Scoped Audit**:
+    *   **Trace**: Inspect callers and dependencies relevant to the reported changes.
+    *   **Read**: Verify definitions that support technical claims; do not infer implementation from usage. Procedure: `~/.claude/skills/remy-plan/saturation_protocol.md`.
+    *   **Boundary**: Distinguish inspected behavior, actual test results, and unverified effects. Record missing evidence instead of claiming every impact is known.
+    *   **Document type**: A milestone preserves experiment and decision history; updates to current guides replace superseded content rather than reproducing that history.
 
 ### Phase 2: Documentation Generation
 1.  **Generate Draft**: Use `python "~/.claude/skills/remy-milestone/generate_draft.py"` to create a draft file and update the timeline.

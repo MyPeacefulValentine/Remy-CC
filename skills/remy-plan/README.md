@@ -8,10 +8,10 @@ remy-plan is a **zero-code** architecture audit protocol. It forces the AI to co
 
 The AI first checks whether `.claude/logic_index.db` exists:
 
-- **Available**: Runs `impact.py` on the target files to produce a bidirectional impact report — upstream (who calls this code) and downstream (what this code calls), with cross-layer warnings. All files at Upstream Depth 1 and Downstream Depth 1 are force-read. Cross-layer impacts are flagged for Table 3 audit.
+- **Available**: Runs `impact.py` on the target files to produce a bidirectional impact report — upstream (who calls this code) and downstream (what this code calls), with cross-layer warnings. Definitions are read where they can change the current decision, using needed source ranges instead of a fixed all-file requirement. Cross-layer impacts are flagged for Table 3 audit.
 - **Unavailable**: Prompts the user to run `/remy-index` or falls back to manual grep/glob-based exploration.
 
-In both paths, the AI must read all relevant source code definitions. Guessing or planning based on incomplete information is prohibited.
+Both paths inspect definitions that affect the proposal and identify unresolved assumptions. Missing information is reported with its scope instead of claiming all dependencies are understood.
 
 A **reuse scan** is performed: for any planned new function or utility, the project is searched for existing implementations with similar names or purposes. If a reusable function exists, the plan references it rather than proposing new code.
 
@@ -27,9 +27,9 @@ Upon receiving an answer, the AI searches for related code and performs **cross-
 
 ### Phase 4.1: Assumption Manifest & Scenario Probes
 
-After the loop exits, the AI generates a list of ALL implicit assumptions (implementation-level and behavioral-level) not already in Table 1. Each assumption includes a confidence level and category. Assumptions with confidence ≤ Level 4 trigger concrete scenario probes — the AI constructs a specific execution scenario to help the user judge whether the assumption is correct.
+After the loop exits, factual assumptions use the shared `[✓]` / `[~]` / `[?]` / `[×]` evidence states, optionally with an acquired basis such as `[~｜source code]`. User choices use `[User decision]`, separately from evidence. `[Fact question]` may carry the current inspection/experiment method when useful; an existing method column is not duplicated. Technical questions use read-only evidence first; temporary probes require authorization and never run in native Plan mode.
 
-Assumptions are presented in batches via `AskUserQuestion`. User rejections trigger a one-time re-entry into the Phase 3 loop to resolve the new ambiguity. A second re-entry is prohibited.
+Questions are batched by dependency and proposal impact, not confidence rank. Unavailable or inconclusive observations retain their evidence gap; a user's choice cannot verify a technical assertion. Refutation or rejection returns relevant premises and decisions to Phase 3. The one-pass guard limits full manifest generation, not the review of carried unresolved items. Blockers must be resolved or removed by an explicit scope decision before the plan proceeds.
 
 ### Phase 4.2: Scenario Confirmation Gate
 
@@ -84,7 +84,7 @@ remy-plan is the first stage of a three-skill pipeline:
                             (three-way verification: plan vs. changelog vs. code)
 ```
 
-Skipping `/remy-plan` means `/remy-patch` runs without boundary constraints and `/remy-audit` degrades to two-way verification.
+Without an evidence packet, `/remy-patch` still follows the user-approved scope and native permissions; packet-specific checks are unavailable and `/remy-audit` uses two-way verification. Native Plan is separate and does not generate a packet automatically. Packet presence itself is not execution authorization.
 
 ## When to Use
 

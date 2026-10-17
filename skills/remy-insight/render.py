@@ -23,6 +23,38 @@ TEMPLATES_DIR = os.path.join(SKILL_DIR, "templates")
 SCHEMAS_DIR = os.path.join(SKILL_DIR, "schemas")
 
 DIMENSIONS_WITH_MECHANISM = frozenset(("innovation",))
+EVIDENCE_MARKERS = {
+    "verified": "✓",
+    "inference": "~",
+    "unknown": "?",
+    "refuted": "×",
+}
+
+
+def evidence_label(finding):
+    """Format declared evidence without inferring it from legacy scores or votes."""
+    if "evidence_state" not in finding:
+        if "confidence" in finding:
+            legacy = finding["confidence"]
+            if type(legacy) is not int or not 2 <= legacy <= 5:
+                raise ValueError("Invalid legacy confidence; expected an integer from 2 to 5")
+            return f"[?] (legacy confidence={legacy}; not rechecked under the evidence-state contract)"
+        return "[?] (evidence state missing)"
+
+    state = finding["evidence_state"]
+    if not isinstance(state, str) or state not in EVIDENCE_MARKERS:
+        raise ValueError(f"Invalid evidence_state: {state!r}")
+    basis = finding.get("evidence_basis", [])
+    if not isinstance(basis, list) or any(
+        not isinstance(label, str) or not label.strip()
+        or any(char in label for char in "[]｜|\r\n")
+        for label in basis
+    ):
+        raise ValueError("evidence_basis must contain nonempty single-line labels without bracket delimiters")
+    if len(set(basis)) != len(basis):
+        raise ValueError("evidence_basis labels must be unique")
+    suffix = "｜" + "+".join(basis) if basis else ""
+    return f"[{EVIDENCE_MARKERS[state]}{suffix}]"
 
 
 def load_schema(name="agent_finding"):
@@ -43,6 +75,7 @@ def _render_jinja2(template_name, context):
         trim_blocks=True,
         lstrip_blocks=True,
     )
+    env.filters["evidence_label"] = evidence_label
     template = env.get_template(template_name)
     return template.render(**context)
 
@@ -157,7 +190,7 @@ def _render_finding_base(f, lines):
     if target.get("layer"):
         target_str += f" ({target['layer']})"
     lines.append(f"- **Severity**: {f.get('severity', '')} "
-                 f"| **Confidence**: {f.get('confidence', '')}/5")
+                 f"| **Evidence state**: {evidence_label(f)}")
     lines.append(f"- **Target**: {target_str}")
     lines.append(f"- **Evidence**: {f.get('evidence', '')}")
 
@@ -178,7 +211,7 @@ def _render_finding_verification(f, lines):
     if vs and vs != "not_verified":
         vd = f.get("vote_detail", "")
         detail = f" ({vd})" if vd else ""
-        lines.append(f"- **Verification**: {vs}{detail}")
+        lines.append(f"- **Adversarial review**: {vs}{detail}")
     xrefs = f.get("cross_refs", [])
     if xrefs:
         lines.append(f"- **See also**: {', '.join(xrefs)}")

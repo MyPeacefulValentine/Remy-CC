@@ -988,8 +988,16 @@ def test_managed_arm_reports_port_token_pid_and_exits_on_stdin_eof(ui_home, tmp_
     env["USERPROFILE"] = str(home)
     for key in remy_config.FIELD_SPECS:
         env.pop(key, None)
+    # A Windows venv launcher can have a different PID from its Python worker.
+    worker = (
+        "import os, runpy, sys; "
+        "print(os.getpid(), flush=True); "
+        "script = sys.argv[1]; sys.argv = sys.argv[1:]; "
+        "sys.path.insert(0, os.path.dirname(script)); "
+        "runpy.run_path(script, run_name='__main__')"
+    )
     process = subprocess.Popen(
-        [sys.executable, str(REMY_SRC / "config_ui.py"), "--managed"],
+        [sys.executable, "-c", worker, str(REMY_SRC / "config_ui.py"), "--managed"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -998,12 +1006,14 @@ def test_managed_arm_reports_port_token_pid_and_exits_on_stdin_eof(ui_home, tmp_
     )
     try:
         assert process.stdout is not None and process.stdin is not None
+        worker_pid = int(process.stdout.readline().decode("utf-8").strip())
+        assert worker_pid > 0
         line = process.stdout.readline().decode("utf-8").strip()
         report = json.loads(line)
         assert set(report) == {"port", "token", "pid"}
         assert isinstance(report["port"], int) and 1 <= report["port"] <= 65535
         assert isinstance(report["token"], str) and len(report["token"]) >= 22
-        assert report["pid"] == process.pid
+        assert report["pid"] == worker_pid
         connection = HTTPConnection("127.0.0.1", report["port"], timeout=5)
         connection.request("GET", "/api/heartbeat")
         response = connection.getresponse()
@@ -1014,9 +1024,14 @@ def test_managed_arm_reports_port_token_pid_and_exits_on_stdin_eof(ui_home, tmp_
         assert process.wait(timeout=10) == 0
         assert process.stderr is not None and process.stderr.read() == b""
     finally:
+        if process.stdin is not None and not process.stdin.closed:
+            process.stdin.close()
         if process.poll() is None:
-            process.kill()
-            process.wait(5)
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(5)
 
 
 def test_managed_arm_direct_run_prints_banner_not_json(ui_home, tmp_path, monkeypatch, capsys):
