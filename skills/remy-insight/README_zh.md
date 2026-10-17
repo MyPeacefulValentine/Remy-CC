@@ -50,6 +50,10 @@
 
 报告保存至 `.claude/temp_insight/insight_{timestamp}.md`。
 
+新 finding 使用 `evidence_state`（`verified`、`inference`、`unknown`、`refuted`），可选 `evidence_basis` 记录实际取得的材料类型。报告显示共享证据标记，有依据属性时才附加，例如 `[~｜源码+实测]`；出处和适用范围保留在 `evidence`。严重性和对抗审查 verdict 单独保留，投票不核实事实。
+
+渲染器仍能显示含数值 `confidence` 的旧 JSON，但将其标为尚未按新规则复核的旧记录，不把分数换算为已验证。新 schema 拒绝旧字段，显式状态非法时报告错误；不迁移已有 Markdown 报告。Jinja 与默认回退共用证据标记格式化逻辑。
+
 ## 配置
 
 | 变量 | 默认值 | 说明 |

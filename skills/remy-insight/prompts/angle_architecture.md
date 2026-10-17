@@ -30,11 +30,12 @@ Return a strict JSON object matching the `agent_finding.json` schema:
     {
       "id": "F-001",
       "dimension": "architecture",
-      "severity": "observation|concern|issue",
+      "severity": "concern",
       "target": {"file": "path/to/file", "symbol": "name", "layer": "layer_name"},
       "claim": "one-sentence conclusion",
       "evidence": "code reference or logical derivation",
-      "confidence": 2-5
+      "evidence_state": "inference",
+      "evidence_basis": []
     }
   ],
   "summary": "overall architecture quality conclusion"
@@ -46,6 +47,7 @@ Return a strict JSON object matching the `agent_finding.json` schema:
 - Maximum 15 findings
 - Each finding MUST cite a specific file and symbol (not vague generalities)
 - Severity: `issue` = structural flaw with concrete negative consequences, `concern` = potential risk, `observation` = neutral architectural note
-- Confidence: 5 = verified via code path, 4 = strong inference, 3 = uncertain, 2 = speculation
+- Use the shared evidence semantics: `verified` = established within cited scope; `inference` = supported but still dependent on stated premises; `unknown` = unexamined, insufficient, or conflicting evidence; `refuted` = counterevidence within a stated scope. Source inspection does not establish runtime behavior.
+- `evidence_basis` optionally lists acquired material types in the configured language; it does not list planned checks. Keep citations and limitations in `evidence`. Do not output numeric confidence.
 - Do NOT report stylistic preferences (naming, formatting) — focus on structural properties
 - Output ONLY the JSON object, no surrounding text

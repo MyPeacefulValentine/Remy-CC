@@ -8,7 +8,7 @@ Remy-CC supports Python 3.10 or newer. Install the pinned development tools with
 python -m pip install -r requirements-dev.txt
 ```
 
-This file includes pytest, Pyright, and the MCP SDK required by `tests/test_freshness.py`.
+This file pins pytest, Pyright, the MCP SDK required by `tests/test_freshness.py`, and the direct jsonschema/Jinja2 dependencies used by the insight contract and dual-renderer tests.
 
 Install the optional high-precision parser packages with:
 
@@ -481,10 +481,9 @@ The full-project command rejects non-Git directories and revisions other than th
 
 ## PreToolUse guard
 
-`hooks/pre_tool_guard.py` decides whether each Write / Edit / Bash / PowerShell /
-Agent call is allowed, rewritten, or denied. It had no behavioural coverage until
-this suite: the only prior reference was `test_install_manifest.py` asserting that
-its path appears in the install manifest.
+`hooks/pre_tool_guard.py` preserves tool inputs and emits selected packet denials,
+outside-project write requests, general-purpose agent requests, and auxiliary
+context. It does not execute environment setup or approve auxiliary operations.
 
 ```
 python -m pytest Remy-CC/tests/test_pre_tool_guard.py -v
@@ -498,45 +497,49 @@ environment overrides `HOME` / `USERPROFILE` to a temporary directory and sets
 Assertions target `permissionDecision`, `updatedInput` and `additionalContext`
 only — never message wording — so they hold under either language.
 
-Sixteen `main()` branches are covered: Bash with and without an existing
-encoding/miniforge marker; PowerShell with and without a Python command; the Plan
-agent language injection; the Explore / general-purpose confirmation gate; an
-unknown agent type falling through silently; Write / Edit / NotebookEdit denial on
-unconfirmed evidence; Write allowed on confirmed evidence; an absolute path inside
-the project rewritten to relative; an absolute path outside the project asking for
-confirmation; Read / Glob / Grep exempt from that gate; the three kebab-case
-outcomes (deny on a new file, redirect when only the snake variant exists, ask when
-both exist); the Edit soft reminder; the lock-file warning; a payload without any
-path exiting silently; and malformed stdin failing open with a stderr note.
-The packet gate additionally covers the `.claude/temp_task/` exemption (a
-relative path, an absolute path, a new file, and a `.claude/` path outside
-`temp_task` remaining gated) and a structurally invalid packet denying writes
-to project files.
+Coverage includes unchanged Bash/PowerShell inputs, absence of implicit environment
+execution and auxiliary `allow`, Plan/Explore/other-agent context, the retained
+general-purpose `ask`, and packet denial for Write/Edit/NotebookEdit. Absolute and
+relative targets share the same containment check, including `../`, Windows drives
+and casing, and symlink escapes where the platform permits creating links. Notebook
+targets and filenames are never redirected to another file.
 
-Four defects were originally recorded here as `xfail(strict=True)` cases.
-Three are fixed and one was ruled intentional; all four are regular regression
-tests now:
+Packet compatibility is explicit: absent markers/files and I/O failures pass the
+packet check; malformed structures, missing references, and suspected/stale evidence
+deny. A passing packet check is not an approval. The `.claude/temp_task/` remediation
+exemption skips that check but does not independently authorize writes. Shell commands
+are not classified by the packet validator and receive no approval from this hook.
+One blocked reference affects file writes outside the remediation directory; this is
+not a target-file scope allowlist.
 
-| Case | Resolution |
-| :--- | :--- |
-| `test_does_not_reinject_when_encoding_already_set` | Fixed. `inject_bash_env` skips any command carrying the injected preamble marker (`.env_setup.sh`) and adds the encoding export only when the command does not already set it. A command that sets the encoding manually still receives the mamba preamble once. |
-| `test_evidence_entry_missing_id_is_rejected` | Fixed. `validate_packet` validates structure explicitly and fails closed: invalid JSON, a non-object root, non-list `evidence`/`proposed_changes`, a non-dict entry, a missing or non-string `id`, non-list `evidence_refs`, and a non-string ref all deny with a remediation hint. Only I/O errors still fail open. |
-| `test_writing_to_the_active_packet_is_permitted` | Fixed. `main()` exempts write targets under `.claude/temp_task/` from the evidence gate, so the remediation the gate demands — promoting evidence to `confirmed` or repairing a malformed packet — is always executable with Edit/Write. This exemption and the fail-closed change above landed together; either alone would deadlock or stay silently bypassable. |
-| `test_bash_bypasses_packet_validation_by_design` (renamed from `test_bash_is_subject_to_packet_validation`) | Not fixed — ruled intentional. A shell command cannot be statically classified as read or write, and skill protocols write into `.claude/temp_task/` through Bash. The rationale is recorded in the case's docstring, and the bypass is asserted as an `allow`. |
+These tests exercise script behavior, not the actual Claude Code permission pipeline,
+long-context compliance, or external-effect deduplication. Whole-tool template allow
+rules remain unchanged.
 
-`test_validation_is_not_scoped_to_a_file_path` still records that the gate is
-global: one unconfirmed reference anywhere in `proposed_changes` blocks edits
-to every file outside `.claude/temp_task/`. Narrowing per file would require a
-change-to-file mapping that the packet schema does not carry.
+### Prompt contracts and behavior cases
 
-Assertion strength was checked by mutation in a temporary copy of the tree:
-the four original mutations (dropping the suspected/stale check, dropping the
-Python detection in `inject_bash_env`, widening `has_kebab_case` to the whole
-path, and replacing the `commonpath` check in `path_is_contained` with a
-string prefix) each broke exactly one assertion. Four post-fix mutations
-(removing the temp_task exemption, swallowing structural errors again,
-dropping the export precondition, and dropping the preamble-marker skip) broke
-3, 2, 1 and 2 corresponding assertions against a green 72-case baseline.
+`tests/test_prompt_contracts.py` checks the four evidence states, output-style
+frontmatter, scoped authorization, shared procedure references, and short bilingual
+reminders. The independent `rules/` files additionally check observation failure,
+mixed-question handling, exclusion premises, independent acceptance, and high-impact
+operation information. Rust tests verify archive bytes, manifest hashes, upgrades
+from a v4 surface without rules, conflicts, missing/drift diagnostics and preservation
+of user-owned rules during uninstall, all in temporary install roots.
+`docs/PROMPT_BEHAVIOR_CASES.md` defines unexecuted model-comparison cases;
+passing text checks does not prove model compliance or permission-prompt frequency.
+
+The shared-marker migration additionally checks optional acquired-basis and investigation-method attributes, plan's nonnumeric routing and carried blockers, debug/CI diagnosis output, unchanged packet fields, and reminders that name the four markers without requiring every sentence to be tagged. `tests/test_insight_contract.py` validates new finding schemas with JSON Schema, checks current and legacy inputs, exercises all five Jinja sections and fallback rendering, and invokes the CLI on synthetic temporary data. Legacy confidence never upgrades evidence, and adversarial votes remain distinct from the evidence state. These tests do not fix or validate insight's existing vote thresholds or agent-budget scheduling.
+
+`tests/test_permission_gate.py` also checks the plan-Markdown-only rule for the home and workspace plan directories, neighboring paths, non-Markdown files, other tools, traversal and symlink escapes, and the PermissionRequest response. It does not grant permissions to general source files or shell commands.
+
+Targeted checks without the unrelated index conftest:
+
+```text
+python -B -m pytest Remy-CC/tests/test_prompt_contracts.py Remy-CC/tests/test_insight_contract.py Remy-CC/tests/test_permission_gate.py Remy-CC/tests/test_pre_tool_guard.py --noconftest -p no:cacheprovider -q
+cargo test --offline --manifest-path Remy-CC/remy-cc/Cargo.toml install::embedded::tests::prompt_entries_match_current_source_bytes
+```
+
+The insight tests require the existing JSON Schema validator and Jinja2; testing fallback alone is not evidence that both paths pass. The archive test compares source bytes for shared rules, affected skills, diagnosis templates, insight schemas/renderer, the permission hook, and reminders; it does not install them.
 
 ### Hook and installer module coverage
 
@@ -556,7 +559,9 @@ control the reminder file set: `REMY_LANG=zh-CN` selects
 `reminder_prompt_zh.md`, `en` (or an unset language) selects the English file,
 a missing primary falls back to the other language, the documented default
 string is returned when both files are absent, and the loaded text is
-stripped. `remy-src` is supplied through `PYTHONPATH`.
+stripped. Event `cwd` selects project configuration; output is structured
+`additionalContext` for UserPromptSubmit or SessionStart. Invalid event input
+produces a diagnostic without context. `remy-src` is supplied through `PYTHONPATH`.
 
 `tests/test_patch_descriptions.py` covers `patch()` in-process: the
 `description:` line is rewritten only within the first `MAX_FRONTMATTER_LINES`
@@ -817,6 +822,10 @@ default-uninstall preservation (project data, user config, engine state),
 rename-aside deferral of the running image with a later pending sweep, v3
 manifest migration (shim and pre-rename binary removed), and
 `--purge-state`.
+
+### Isolated release-binary installation
+
+`tests/release_install_probe.py --binary <candidate>` checks the real binary rather than calling the Rust install functions directly. It creates a fresh temporary home, redirects HOME/USERPROFILE/CLAUDE_CONFIG_DIR/REMY_CC_HOME, and invokes only `install --non-interactive --lang en`, `verify`, and `--version` from a separate work directory. It checks deployed binary and rule bytes against the candidate/source, manifest hashes, preserved synthetic user settings/rules/MCP entries, and content-idempotent reinstallation. Non-interactive installation skips PATH registration; the probe neither starts Claude nor starts a daemon. Test CI invokes it for the Linux musl and Windows release builds. The roots isolate the application's known installation paths, not arbitrary executable behavior at an OS sandbox boundary.
 
 ### Install conflict resolution (2026-09-04 batch)
 

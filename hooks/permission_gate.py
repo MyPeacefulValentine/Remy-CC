@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 PermissionRequest hook that auto-approves Edit/Write/Read prompts and
-Grep/Glob search prompts targeting three classes of model-managed artifacts:
+Grep/Glob search prompts targeting selected model-managed artifacts:
 
 1. Project-level .claude/ system artifacts (temp_* directories, history/,
    generated tree and index files). Settings files are never approved: paths
@@ -24,17 +24,20 @@ Grep/Glob search prompts targeting three classes of model-managed artifacts:
    prompting so deployed copies stay manifest-true. Files at the ~/.claude/
    root (settings, credentials, CLAUDE.md) are outside the three
    directories and never match.
+5. Markdown plan files under ~/.claude/plans/ or the current workspace's
+   plans/ directory for Edit/Write only. Resolved targets must remain inside
+   the named directory; this does not grant access to settings or shell tools.
 
-On any miss, disabled gate, or internal error the hook exits 0 with empty
-stdout, which Claude Code treats as "no decision" and falls back to the
-normal permission prompt (fail-open). Exit code 2 would deny the permission
-and is never used.
+On a miss, disabled gate, or internal error the hook exits 0 with empty
+stdout: no decision. Native permissions and other extensions determine whether
+approval is needed; this hook does not guarantee a prompt or establish semantic
+authorization. It never emits a denial.
 
-Normative reference: the Exemptions list in style.md §1.2 (Authorization Gate
-owner). This hook is the mechanism-layer counterpart of that list; the three
-target classes above are approved uniformly for Edit, Write, Read, Grep, and
-Glob prompts, and settings-class paths always fall through to the normal
-prompt. Grep/Glob carry the target in tool_input "path" (optional; absent
+The path categories below provide selected automatic permission decisions.
+They are separate from the user-approved scope described in style.md. Settings
+prefixes are excluded from project artifact approval; no-decision behavior
+still leaves native rules and other extensions in control. Grep/Glob carry the
+target in tool_input "path" (optional; absent
 means no decision), and their directory targets follow the same containment
 rules as file targets.
 """
@@ -122,6 +125,22 @@ def _decide_temp(target):
     return None
 
 
+def _decide_plans(cwd, target, tool_name):
+    """Allow plan Markdown edits without granting other file or shell access."""
+    if tool_name not in ("Edit", "Write") or not target.lower().endswith(".md"):
+        return None
+    target = os.path.normcase(os.path.realpath(target))
+    roots = (
+        os.path.join(os.path.realpath(os.path.expanduser("~")), ".claude", "plans"),
+        os.path.join(os.path.realpath(cwd), "plans"),
+    )
+    for root in roots:
+        root = os.path.normcase(root)
+        if target != root and _contains(root, target):
+            return "allow"
+    return None
+
+
 def _decide_suite(target, read_only):
     """Allow read-only tools on suite-deployed artifacts under ~/.claude/
     (SUITE_READONLY_DIRS); ~/.claude/ root files never match."""
@@ -138,7 +157,7 @@ def decide(cwd, tool_name, file_path):
     """Classify one permission request.
 
     Returns "allow" or a "skip:<reason>" marker. Only "allow" emits a
-    decision; every skip falls back to the normal permission prompt.
+    decision; every skip produces no decision for the native permission flow.
     """
     if tool_name not in ALLOWED_TOOLS:
         return "skip:tool"
@@ -148,6 +167,9 @@ def decide(cwd, tool_name, file_path):
     claude_dir = os.path.realpath(os.path.join(cwd, ".claude"))
     target = file_path if os.path.isabs(file_path) else os.path.join(cwd, file_path)
     target = os.path.realpath(target)
+
+    if _decide_plans(cwd, target, tool_name) == "allow":
+        return "allow"
 
     if not _contains(claude_dir, target):
         if _decide_memory(target, allow_dir=tool_name in SEARCH_TOOLS) == "allow":

@@ -43,7 +43,7 @@ Use `AskUserQuestion` to collect:
 
 ### 0.2 Test Command Mode
 
-1. Execute the test command via `Bash` (or `PowerShell` on Windows).
+1. Check the current mode and authorization before running the existing test command via `Bash` (or `PowerShell` on Windows). If execution is not permitted, use available error output or report the missing observation; do not run a probe in native Plan mode.
 2. Capture exit code, stdout, stderr.
 3. If exit code = 0: report "Test passes. No failure to diagnose." → HALT.
 4. Record full error output as the **Symptom Record**.
@@ -108,22 +108,22 @@ For each file in the Suspect Set:
 
 ## Phase 2: Hypothesis Loop
 
-**Goal**: Iteratively form and test hypotheses until root cause is identified or circuit breaker triggers.
+**Goal**: Iteratively form and test hypotheses until supported failure mechanism is identified or circuit breaker triggers.
 
 Initialize: `_hypothesis_count = 0`
 
 ### 2.1 Form Hypothesis
 
 Based on available evidence (Symptom Record, suspect code, Change History, Dependency Map), state:
-- **Hypothesis**: One sentence describing the suspected root cause.
-- **Confidence**: Level 2–5 (from epistemic calibration).
-- **Probe Design**: A specific, read-only action to confirm or refute.
+- **Hypothesis**: One sentence describing a possible failure mechanism and the observation it explains.
+- **Evidence state**: Use `style.md`'s shared `[✓]`, `[~]`, `[?]`, or `[×]` for the specific claim. A proposed explanation usually remains `[~]` with supporting evidence or `[?]` when evidence is insufficient. Add an acquired-basis attribute only when useful, such as `[~｜源码+实测]`; state citations, scope, and unresolved premises separately.
+- **Probe Design**: Identify the next permitted observation that could distinguish the hypothesis from alternatives. Question types and optional investigation methods follow `rules/reasoning-and-decisions.md`; a method label does not authorize a test or script.
 
 ### 2.2 Execute Probe
 
-Probes follow the Observation Task Protocol (`output-styles/system-architect.md` §4.1). Debug-specific extension: re-running existing tests is allowed (the test runner may touch its own cache directories).
+Probes follow the Observation Task Protocol (`output-styles/system-architect.md` §4.1). Debug-specific extension: re-running existing tests is allowed only within applicable authorization and an execution-permitting mode (the test runner may touch its own cache directories). Native Plan mode does not execute probes. Creating a temporary script is not permitted by this extension.
 
-Allowed probe types (read-only + test execution):
+Allowed probe types within those boundaries (read-only + existing test execution):
 - `Read` a specific code region
 - `Grep` for a pattern
 - `Bash`/`PowerShell`: re-run a test, print environment variables, `git blame`, `git log`, execute diagnostic one-liners
@@ -131,9 +131,11 @@ Allowed probe types (read-only + test execution):
 
 ### 2.3 Evaluate Result
 
-- **Confirmed** (evidence supports hypothesis): Record as **Root Cause Candidate**. Proceed to Phase 3.
-- **Refuted** (evidence contradicts hypothesis): Record in **Exclusion Log**. Increment `_hypothesis_count`.
-- **Inconclusive** (evidence neither confirms nor refutes): Gather additional evidence. Do NOT increment counter.
+- **Confirmed**: Only when evidence establishes the proposed mechanism within its stated scope, record `[✓]` with that scope as the **Failure Mechanism Candidate** and proceed to Phase 3. A verified observation does not by itself verify its causal explanation.
+- **Refuted**: Mark the hypothesis `[×]`, cite the counterevidence and examined scope, record it in the **Exclusion Log**, and increment `_hypothesis_count`.
+- **Inconclusive**: Keep the supported `[~]` or unresolved `[?]`, record partial evidence and missing links, and do not increment the counter. Gather more evidence only when a relevant permitted check can add information. Do not confirm the remaining hypothesis merely because other candidates were excluded unless the candidate set and exclusions justify that conclusion.
+
+If access, authorization, or mode blocks further observation, or further attempts add no evidence, stop the autonomous loop under `skills/remy-plan/halt_protocol.md`. Provide the available diagnosis as `inconclusive`; increasing the hypothesis budget does not lift these boundaries. Preserve existing verdict and diagnosis status values separately from the evidence markers.
 
 ### 2.4 Circuit Breaker Check
 
@@ -152,13 +154,15 @@ If `_hypothesis_count >= DEBUG_MAX_HYPOTHESES` (a retry-budget-exhausted halt pe
 
 Return to 2.1 with updated evidence context.
 
-**Phase 2 Exit**: Either a Root Cause Candidate is confirmed, or user chose to output current diagnosis.
+**Phase 2 Exit**: A Failure Mechanism Candidate is confirmed, the user chose the current diagnosis, or the loop stopped with an inconclusive result under the boundaries above. The report preserves that distinction.
 
 ---
 
 ## Phase 3: Diagnosis Report
 
 **Goal**: Produce a structured, readable diagnosis report.
+
+Before writing a report or entering Phase 4, check applicable authorization and mode. If writes are not permitted, present the available diagnosis and its limitations in the conversation and stop; do not write a report, packet, or active pointer, and do not advertise a packet that was not created.
 
 1. `Read` the template: `skills/remy-debug/diagnosis_template.md`.
 2. Fill in all sections with collected evidence.
@@ -202,7 +206,7 @@ Return to 2.1 with updated evidence context.
         "file_type": "source",
         "path": "<repo-relative path>",
         "range": {"start": 1, "end": 50},
-        "why": "<why this evidence is relevant to the root cause>",
+        "why": "<why this evidence is relevant to the supported failure mechanism>",
         "status": "confirmed",
         "confidence": 0.9,
         "excerpt": "<verbatim text from that range>"
@@ -211,7 +215,7 @@ Return to 2.1 with updated evidence context.
     "proposed_changes": [
       {
         "id": "C-001",
-        "description": "<fix description derived from root cause>",
+        "description": "<fix description derived from supported failure mechanism>",
         "evidence_refs": ["E-001"]
       }
     ]
@@ -231,7 +235,7 @@ Return to 2.1 with updated evidence context.
 
 After writing the report and packet:
 
-1. Print the diagnosis summary (root cause or inconclusive status).
+1. Print the diagnosis summary (supported failure mechanism or inconclusive status).
 2. Print: `📦 Report: debug_{TIMESTAMP}.md | Packet: debug_{TIMESTAMP}.json`
 3. Print: `执行修复: /remy-patch debug_{TIMESTAMP}.json` (only if mode = "write").
 4. **STOP**. Do NOT apply any code changes.

@@ -20,11 +20,11 @@ Parses stack traces or greps error keywords to identify suspect files. Runs impa
 
 ### Phase 2: Hypothesis Loop
 
-1. Form a hypothesis based on evidence
-2. Design an observation-task probe (read-only Bash, grep, targeted Read; re-running existing tests allowed)
-3. Execute probe and record result
-4. Confirm or refute hypothesis
-5. Repeat until root cause is identified or circuit breaker triggers (`DEBUG_MAX_HYPOTHESES`, default: 3)
+1. Form a hypothesis using shared evidence states; include acquired basis only when useful, such as `[~｜source code]`.
+2. Choose permitted read-only inspection or an existing test; test execution requires current authorization and an execution-permitting mode. This does not permit creating temporary scripts.
+3. Record the observation, checked scope, and any unresolved causal premise separately.
+4. Confirm, refute, or retain an inconclusive hypothesis; keep workflow verdicts separate from evidence markers.
+5. Stop when a bounded mechanism is established, the circuit breaker triggers (`DEBUG_MAX_HYPOTHESES`, default: 3), access or authorization blocks progress, or further attempts add no evidence. The latter cases preserve an inconclusive diagnosis.
 
 ### Phase 3: Diagnosis Report
 

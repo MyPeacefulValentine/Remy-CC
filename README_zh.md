@@ -27,12 +27,12 @@
 
 Remy 针对这些局限，在 Claude Code 之上添加了一层**自动化执行机制**和**结构化工作流**。此外，它还能够提取项目的**文件结构、语义索引和调用关系**，持久化地**记录开发历史**，并将它们注入到 Claude Code 的上下文中，以实现持续的上下文感知和依赖追踪。**具体而言，Remy 提供以下能力：**
 
-- **行为规则回顾** — 行为规则在每条用户消息时重新注入，在长对话中持续生效，而非逐渐衰减直至失效。
+- **行为提醒** — 用户消息与压缩后注入简短规则。可验证的是上下文投递；长上下文遵循效果需要单独行为验证。
 - **依赖感知的代码修改** — 语义逻辑索引记录了函数级调用图数据（Python AST、C/C++/TypeScript/Rust tree-sitter），并提取类继承关系、合成动态分派边。系统在修改代码前能够追踪上游调用者和下游依赖。摘要按 symbol/file/cluster 三层组织，子节点变更通过 LLM 判定是否级联到父层。
 - **自动化上下文维护** — 项目文件树、语义代码索引和会话历史通过生命周期钩子自动更新。文档注入器同步维护`CLAUDE.md`中的引用。结构索引继续以`struct_scan.py`作为稳定CLI和导入入口，schema、migration和scanner职责由独立模块承担。
 - **可组合的验证流水线** — 架构预审 → 代码修改 → 测试验证 → 变更日志 → 上下文回退 → 三方一致性审计，通过 `.claude/temp_task/` 中的 JSON 任务包串联。每个步骤相互独立，按任务复杂度选用。
 - **跨会话记忆** — 里程碑系统将结构化历史报告写入时间线索引。新会话加载过滤视图，在不占满上下文窗口的前提下提供连续性。
-- **环境一致性** — Shell 编码、路径格式、Conda/Mamba 激活和文件命名规范在每次工具调用时统一执行，不受运行平台影响。
+- **项目特定执行** — 保留工具输入和文件目标，命名与环境准备遵循项目指令；全局钩子不执行环境脚本或激活 Conda/Mamba。
 
 <p align="center">
   <img src="remy-assets/banner_preview.png" width="700" alt="Remy 启动横幅">
@@ -51,30 +51,37 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 整个系统由四个协作层构成：
 
 - **系统提示词**（`CLAUDE.md`、`style.md`、输出风格定义）规定了工程原则、沟通约束和禁止行为，构成会话启动时加载的静态行为基线。
-- **运行时钩子**（hooks）在 Claude Code 事件上自动触发——每次工具调用前、每条用户消息发送时、以及会话生命周期的关键节点。它们负责重新注入行为规则以对抗指令衰减、规范路径和 Shell 环境、在文件读取时追加调用者/被调用者上下文，以及保持项目文件树快照的时效性。钩子是持续执行的约束层，无需用户介入。
+- **运行时钩子**（hooks）在 Claude Code 事件上自动触发——每次工具调用前、每条用户消息发送时、以及会话生命周期的关键节点。它们按事件上下文注入短提醒，检查部分任务包、路径和代理条件，在读取时追加调用关系并维护项目快照。辅助钩子不批准调用；运行时检查与模型遵循的文字规则具有不同边界。
 - **MCP 服务器**（`remy-cc mcp`，由 Rust 二进制承载；Python oracle 保留在 `remy-src/index_mcp_server.py` 供开发期差分测试）是基于 stdio 的 Model Context Protocol 服务器，会话启动时自动拉起。暴露 13 个代码智能查询 tool（`query_symbol`、`query_symbol_summary`、`query_file_summary`、`query_callers`、`query_callees`、`query_impact`、`query_patterns`、`query_search`、`query_flow`、`query_cluster_summary`、`query_cluster_files`、`query_navigate`、`query_dependencies`），使 Claude 可直接访问语义代码图，无需启动子进程。注入系统固定使用 MCP Minimal 视图：集群概览加 MCP 工具指引，详情按需查询。
 - **技能**（skills）是需要手动调用的斜杠命令（`/remy-plan`、`/remy-patch`、`/remy-audit` 等），用于执行结构化的多步骤开发任务。每个技能都定义了明确的输入、输出和停止条件。
 
-这四层之间存在设计上的耦合。钩子负责维护技能所依赖的上下文——文件树、语义代码索引、会话历史都通过生命周期事件自动更新。MCP 服务器与钩子共享 SQLite 数据库（`logic_index.db`，WAL 模式并发读）。反过来，技能产出的工件（任务包、变更日志、审计报告）也会被钩子在工具调用时校验。例如，`/remy-plan` 写入的任务包会约束 `/remy-patch` 允许编辑的文件范围，而 `pre_tool_guard` 钩子在每次 `Edit` 调用时执行这一边界检查。
+这四层之间存在设计上的耦合。钩子负责维护技能所依赖的上下文——文件树、语义代码索引、会话历史都通过生命周期事件自动更新。MCP 服务器与钩子共享 SQLite 数据库（`logic_index.db`，WAL 模式并发读）。反过来，技能产出的工件（任务包、变更日志、审计报告）也会被钩子在工具调用时校验。例如，`/remy-patch` 按任务包变更提案限制自身流程范围，而 `pre_tool_guard` 只检查部分证据引用，不执行逐文件授权白名单。原生 Markdown 计划不会自动转换为任务包。现有整工具 allow 规则保留；任务包存在或权限允许均不证明用户已授权。
 
 ### Prompts（静态规则）
 
 | 文件 | 内容 |
 | :--- | :--- |
 | `CLAUDE.md` | 协议入口。引用其它提示词文件，声明反幻觉规则，列出核心 Skills 清单，注入动态上下文（项目树、逻辑索引、时间线） |
-| `style.md` | 行为基线。定义角色定位、5 级置信度分层、沟通协议，统一工具调用策略 |
+| `style.md` | 共享授权、四种证据状态符号、主张范围及现状文档更新规则 |
+| `rules/communication.md` | 表达类别、点名词限制及引用和技术语境例外 |
+| `rules/reasoning-and-decisions.md` | 结构化问前观察、推理检查及独立验收边界 |
 | `tools_ref.md` | 技术执行参考。文件操作流程、Git 工作流、文档同步规则、GitHub CLI 约束 |
-| `output-styles/system-architect.md` | 输出风格定义。设定系统架构师角色、工程哲学（SOLID/KISS/DRY/YAGNI）、禁用词汇表、结构化输出模板 |
+| `output-styles/system-architect.md` | 按任务范围组织工程解释和审查；在完整系统提示中保留内置编码指导 |
+
+仓内 `rules/` 是安装输入，不是当前工作区的自动加载目录。重新构建的安装器将文件
+部署到 `~/.claude/rules/`，由原生机制无条件加载，不另加 `@` 导入。部署时同步规则
+与共享正文，不仅复制 `style.md`。拆文件不减少加载总量，也不证明行为等价；safe mode
+等加载限制仍适用，实际会话遵循需单独验证。
 
 ### Hooks（自动执行）
 
 | Hook | 触发时机 | 功能 |
 | :--- | :--- | :--- |
 | 协议注入 | 每次用户消息；压缩后会话重建 | 注入简要规则，对抗长对话中的指令衰减与压缩后的约束丢失 |
-| 工具前置防护 | 每次工具调用前 | 将绝对路径转换为相对路径；为 Shell 命令注入 Conda/Mamba 激活和 UTF-8 编码；检查 snake_case 文件命名；cwd 漂移时提醒模型恢复会话根 |
+| 工具前置检查 | 部分工具调用前 | 保留输入，检查任务包引用、项目外写目标及 general-purpose 代理启动；提醒 cwd 差异，不自动换目录；辅助上下文不批准调用 |
 | 逻辑富化 | Read/Grep/Glob 执行前 | 消费脏文件条目进行增量重解析；追加目标文件的调用者/被调用者关系和架构层信息（需要逻辑索引） |
 | 脏文件追踪 | Edit/Write 执行后 | 记录被修改的文件路径，供下次 Read 时增量更新逻辑索引 |
-| 权限闸门 | Edit/Write/Read 及 Grep/Glob 权限决策时 | 自动放行针对项目级 `.claude/` 系统工件（temp 目录、history、生成的树与索引文件）、`~/.claude/projects/<slug>/memory/` 下的项目记忆文件（搜索工具可指向 memory 目录本身）及系统临时目录内文件的 Edit/Write/Read 与 Grep/Glob（搜索）弹窗；对 `~/.claude/` 下套件部署工件（skills/output-styles/hooks）额外放行只读工具；settings 类文件照常弹窗；可用 `REMY_PERMISSION_GATE` 关闭 |
+| 权限闸门 | Edit/Write/Read 及 Grep/Glob 权限决策时 | 自动放行针对项目级 `.claude/` 系统工件（temp 目录、history、生成的树与索引文件）、`~/.claude/projects/<slug>/memory/` 下的项目记忆文件（搜索工具可指向 memory 目录本身）及系统临时目录内文件的 Edit/Write/Read 与 Grep/Glob（搜索）弹窗；对 `~/.claude/` 下套件部署工件（skills/output-styles/hooks）额外放行只读工具；项目 settings 前缀不由此钩子自动批准，是否询问仍由原生规则和其他扩展决定；可用 `REMY_PERMISSION_GATE` 关闭 |
 | 生命周期管理 | 会话启动/结束、上下文压缩前 | 重新生成项目树快照和语言指令文件；触发全量结构扫描以刷新符号行号和调用图；会话启动时幂等拉起常驻 daemon（已运行实例不受影响；可用 `REMY_DAEMON_AUTOSTART` 关闭）；记录会话根锚点，cwd 漂移时保持 `.claude/` 工件位置不变 |
 | 子代理语言注入 | 子代理启动时 | 向每个子代理的上下文注入配置的响应语言指令 |
 | CWD 防护 | 工作目录变化时 | cwd 偏离锚定会话根时向用户发终端提醒；工件写入始终锚定会话根 |
@@ -127,6 +134,12 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | `/remy-reposcout` | 在沙盒临时目录中检查 GitHub 仓库 | [📖](skills/remy-reposcout/README_zh.md) |
 | `/remy-insight` | 多智能体仓库深度分析——支持全局、聚焦和对照模式，可配置分析深度 | [📖](skills/remy-insight/README_zh.md) |
 | `/remy-ci` | CI/CD 失败日志分析——编译、链接、测试、sanitizer、QEMU、风格、静态分析、构建配置 | [📖](skills/remy-ci/README_zh.md) |
+
+### 共享输出标记
+
+影响判断的陈述使用 `[✓]`、`[~]`、`[?]`、`[×]`，需要区分已有依据时可写为 `[~｜源码+实测]`。问题主类仍为文字 `[事实问题]`、`[用户决定]`；当前只读查证或实验验证方式仅在有助于区分时附加，表格已有方法列时不重复。plan、debug、CI 诊断及 insight 报告使用这套共享语义。insight 新 finding schema 使用 `evidence_state`；旧 JSON 可以重渲染，但保留未按新规则复核的说明，不把数字评分转为已验证。
+
+`~/.claude/plans/` 与当前工作区 `plans/` 中的 Markdown 计划文件修改，可由权限 hook 按限定路径自动批准。这条规则不增加其他文件类型或 shell 的权限，仍须符合当前模式和授权范围。
 
 ### 开发与测试
 
@@ -207,7 +220,7 @@ Remy 不追求全自动化或多智能体协作；非只读类技能需要用户
 | Claude Code CLI ≥ 2.1.139 | 事件 Hooks 和 Skill 调用 |
 | Python 3.10+ | Hook 脚本、技能与被委派的 config/summary 命令（运行前置，非安装前置） |
 | OpenAI 兼容的 LLM API | `/remy-index` 的语义摘要生成 |
-| Conda 或 Mamba（可选） | 存在时自动注入到 Shell 环境 |
+| Conda 或 Mamba（可选） | 按项目环境指令使用，不由全局钩子自动初始化 |
 | `gh` CLI（可选） | `/remy-reposcout` 和 `/remy-ci` GitHub Actions 模式依赖 |
 | tree-sitter Python 包（可选） | C/C++/TypeScript 的高精度解析与调用图提取；Rust 解析必需该依赖（无回退） |
 

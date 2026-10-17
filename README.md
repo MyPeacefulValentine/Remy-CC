@@ -27,12 +27,12 @@ In large projects — especially when using less capable models — Claude Code 
 
 Remy addresses these limitations by adding a layer of **automated enforcement** and **structured workflows** on top of Claude Code. It also extracts project **file structure, semantic indexes, and call relationships**, persistently **records development history**, and injects them into Claude Code's context to enable continuous context awareness and dependency tracking. **Specifically, Remy provides:**
 
-- **Behavioral rule review** — Behavioral rules are re-injected on every user message, surviving across long conversations instead of silently decaying.
+- **Behavioral reminders** — Short rules are injected on user messages and after compaction. Injection is observable; improved long-context compliance requires separate behavioral validation.
 - **Dependency-aware code changes** — A semantic logic index with function-level call graph data (Python AST, C/C++/TypeScript/Rust tree-sitter) lets the system trace upstream callers and downstream dependencies before code is modified. The index extracts class inheritance and synthesizes dynamic dispatch edges. Summaries are organized in three layers — symbol, file, and cluster — with child changes propagated to parents only when an LLM judges the change semantically meaningful at the upper layer.
 - **Automated context maintenance** — The project file tree, semantic code index, and session history update themselves through lifecycle hooks. `CLAUDE.md` references are kept in sync by the document injector. The structural index keeps `struct_scan.py` as its stable CLI/import entry point, with schema, migration, and scanner responsibilities in separate modules.
 - **Composable verification pipeline** — Architecture review → code modification → test verification → changelog → context rewind → three-way auditing, chained through JSON task packets in `.claude/temp_task/`. Each step is independent; use what fits the task complexity.
 - **Cross-session memory** — The milestone system writes structured history reports to a timeline index. New sessions load a filtered view, providing continuity without flooding the context window.
-- **Environment normalization** — Shell encoding, path formatting, Conda/Mamba activation, and file naming conventions are enforced consistently on every tool call, regardless of platform.
+- **Project-specific execution** — Tool inputs and file targets are preserved. Naming and runtime setup follow project instructions; the global hook does not run environment scripts or activate Conda/Mamba.
 
 <p align="center">
   <img src="remy-assets/banner_preview.png" width="700" alt="Remy startup banner">
@@ -51,30 +51,39 @@ Remy does not pursue full automation or multi-agent orchestration. Non-read-only
 The system is built on four coordinated layers:
 
 - **System prompts** (`CLAUDE.md`, `style.md`, output styles) define engineering principles, communication constraints, and prohibited behaviors. They form the static behavioral baseline, loaded at session start.
-- **Runtime hooks** fire automatically on Claude Code events — before every tool call, on every user message, and at session lifecycle boundaries. They re-inject behavioral rules to counteract instruction decay, normalize paths and shell environments, enrich file reads with caller/callee context from the logic index, and keep the project tree snapshot current. Hooks are the continuous enforcement layer: they run without user intervention.
+- **Runtime hooks** fire automatically on Claude Code events — before every tool call, on every user message, and at session lifecycle boundaries. They inject short reminders using event context, check selected packet/path/agent conditions, enrich file reads, and maintain project snapshots. Auxiliary hooks do not approve tool calls; runtime enforcement and model-followed instructions have different boundaries.
 - **MCP server** (`remy-cc mcp`, hosted by the Rust binary; the Python oracle lives at `remy-src/index_mcp_server.py` for development-time differential testing) is a stdio-based Model Context Protocol server launched automatically at session start. It exposes 13 code intelligence query tools (`query_symbol`, `query_symbol_summary`, `query_file_summary`, `query_callers`, `query_callees`, `query_impact`, `query_patterns`, `query_search`, `query_flow`, `query_cluster_summary`, `query_cluster_files`, `query_navigate`, `query_dependencies`), giving Claude direct access to the semantic code graph without subprocess overhead. The injection system uses the MCP Minimal view: a cluster overview plus MCP tool usage hints, with details queried on demand.
 - **Skills** are slash commands (`/remy-plan`, `/remy-patch`, `/remy-audit`, etc.) that you invoke manually to execute structured, multi-step development tasks. Each skill defines its own workflow with explicit inputs, outputs, and stop conditions.
 
-These layers are coupled by design. Hooks maintain the context that skills depend on — file tree, semantic code index, and session history are all updated automatically through lifecycle events. The MCP server and hooks share the SQLite database (`logic_index.db`) with WAL-mode concurrency. Skills produce artifacts (task packets, changelogs, audit reports) that hooks validate at tool-call time. For example, `/remy-plan` writes a task packet that constrains which files `/remy-patch` is allowed to edit, and `pre_tool_guard` enforces that boundary on every `Edit` call.
+These layers are coupled by design. Hooks maintain the context that skills depend on — file tree, semantic code index, and session history are all updated automatically through lifecycle events. The MCP server and hooks share the SQLite database (`logic_index.db`) with WAL-mode concurrency. Skills produce artifacts (task packets, changelogs, audit reports) that hooks validate at tool-call time. For example, `/remy-patch` uses a packet's proposed changes as its workflow scope, while `pre_tool_guard` checks selected evidence references, not a per-file authorization allowlist. Native Markdown plans do not automatically become packets. Existing whole-tool allow rules remain; neither packet presence nor permission allowance proves user authorization.
 
 ### Prompts (Static Rules)
 
 | File | Content |
 | :--- | :--- |
 | `CLAUDE.md` | Protocol entry point. References other prompt files, declares anti-hallucination rules, lists core skills manifest, injects dynamic context (project tree, logic index, timeline) |
-| `style.md` | Behavioral baseline. Defines role positioning, 5-level epistemic calibration, communication protocol, unified tool invocation strategy |
+| `style.md` | Shared authorization, four evidence-state markers, scoped claims and current-state document rules |
+| `rules/communication.md` | Wording categories, named-expression restrictions and quotation/technical-context exceptions |
+| `rules/reasoning-and-decisions.md` | Structured Question Gate, reasoning checks and independent acceptance boundaries |
 | `tools_ref.md` | Technical execution reference. File operation procedures, Git workflow, doc sync rules, GitHub CLI constraints |
-| `output-styles/system-architect.md` | Output style definition. Sets system architect role, engineering philosophy (SOLID/KISS/DRY/YAGNI), prohibited vocabulary, structured output templates |
+| `output-styles/system-architect.md` | Task-scoped engineering explanations and review guidance; retains built-in coding instructions in the full system prompt |
+
+The repository `rules/` directory is install input. A rebuilt installer places its
+Markdown files in `~/.claude/rules/` for unconditional native loading; no additional
+`@` import is used. Install rules and shared text together, not `style.md` alone.
+Splitting files does not reduce loaded context or establish behavioral equivalence.
+Loading restrictions such as safe mode still apply; actual session compliance needs
+separate verification.
 
 ### Hooks (Automated)
 
 | Hook | Trigger | Function |
 | :--- | :--- | :--- |
 | Protocol Enforcer | Every user message; session restart after compaction | Re-injects concise rules to counteract instruction decay in long conversations and after context compaction |
-| Pre-Tool Guard | Before each tool use | Converts absolute paths to relative; injects Conda/Mamba activation and UTF-8 encoding into shell commands; enforces snake_case file naming; reminds the model to return to the session root after cwd drift |
+| Pre-Tool Guard | Before selected tool calls | Preserves input; checks packet references, outside-project write targets and general-purpose agent requests; reports cwd drift without automatically changing directories; auxiliary context does not approve calls |
 | Logic Enrichment | Before Read/Grep/Glob | Consumes dirty file entries for incremental re-parsing; appends caller/callee relationships and architecture layer for the target file (requires logic index) |
 | Dirty File Tracker | After Edit/Write | Records modified file paths for incremental logic index updates on the next Read |
-| Permission Gate | On Edit/Write/Read and Grep/Glob permission prompts | Auto-approves Edit/Write/Read and Grep/Glob (search) prompts targeting project-level `.claude/` system artifacts (temp dirs, history, generated trees and indexes), per-project auto-memory files under `~/.claude/projects/<slug>/memory/` (search may target the memory directory itself), and files inside the system temporary directory; read-only tools are additionally approved for suite-deployed files under `~/.claude/` skills/output-styles/hooks; settings files always prompt; disable via `REMY_PERMISSION_GATE` |
+| Permission Gate | On Edit/Write/Read and Grep/Glob permission prompts | Auto-approves Edit/Write/Read and Grep/Glob (search) prompts targeting project-level `.claude/` system artifacts (temp dirs, history, generated trees and indexes), per-project auto-memory files under `~/.claude/projects/<slug>/memory/` (search may target the memory directory itself), and files inside the system temporary directory; read-only tools are additionally approved for suite-deployed files under `~/.claude/` skills/output-styles/hooks; project settings prefixes receive no automatic approval from this hook; native rules and other extensions still determine prompting; disable via `REMY_PERMISSION_GATE` |
 | Lifecycle Manager | Session start/end, pre-compaction | Regenerates the project tree snapshot and language directive; triggers full structural scan to refresh symbol line numbers and call graph; idempotently starts the resident daemon at session start (an already-running instance is left untouched; disable via `REMY_DAEMON_AUTOSTART`); records the session root anchor that keeps `.claude/` artifacts in place when the cwd drifts |
 | Subagent Language Injector | On subagent start | Injects the configured response language directive into every subagent's context |
 | Cwd Guard | On working-directory change | Notifies the user when the cwd drifts away from the anchored session root; artifact writes stay anchored regardless |
@@ -127,6 +136,12 @@ Skills with `disable-model-invocation: true` must be invoked manually. Each defi
 | `/remy-reposcout` | Inspect a GitHub repository in a sandboxed temporary directory | [📖](skills/remy-reposcout/README.md) |
 | `/remy-insight` | Deep multi-agent repository analysis — global, focus, and compare modes with configurable depth | [📖](skills/remy-insight/README.md) |
 | `/remy-ci` | Analyze CI/CD failure logs — compile, link, test, sanitizer, QEMU, style, static analysis, build config | [📖](skills/remy-ci/README.md) |
+
+### Shared output annotations
+
+Decision-relevant claims use `[✓]`, `[~]`, `[?]`, or `[×]`, with an optional acquired-basis attribute such as `[~｜source code+runtime]`. Question types remain the full-word `[Fact question]` and `[User decision]`; a current inspection/experiment method is added only when useful, without duplicating table columns. Plan, debug, CI diagnosis, and insight reports use these shared semantics. Insight's new finding schemas use `evidence_state`; its renderer keeps explicitly unreviewed legacy JSON display compatibility, not numeric-to-verified conversion.
+
+Plan Markdown edits under `~/.claude/plans/` and the current workspace's `plans/` are eligible for the permission hook's narrow automatic approval. Other file types and shell operations gain no permission from that rule; existing mode and authorization boundaries still apply.
 
 ### Development and testing
 
@@ -207,7 +222,7 @@ For small, low-risk changes, steps 3–6 can be skipped.
 | Claude Code CLI ≥ 2.1.139 | Event hooks and skill invocation |
 | Python 3.10+ | Hook scripts, skills, and the delegated config/summary commands (runtime prerequisite, not an install prerequisite) |
 | OpenAI-compatible LLM API | Semantic summarization for `/remy-index` |
-| Conda or Mamba (optional) | Auto-injected into shell environment when present |
+| Conda or Mamba (optional) | Use through project-specific environment instructions; not automatically initialized by the global hook |
 | `gh` CLI (optional) | Required by `/remy-reposcout` and `/remy-ci` GitHub Actions mode |
 | tree-sitter Python packages (optional) | Higher-precision C/C++/TypeScript parsing, Rust parsing (required, no fallback), and call graph extraction |
 

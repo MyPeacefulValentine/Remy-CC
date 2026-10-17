@@ -4,11 +4,6 @@
 
 </language_preference>
 
-<!-- ====================================================================== -->
-<!-- STATIC LAYER: Core Persona, Mindset, and Engineering Constitution      -->
-<!-- This is the lightweight backbone of the system.                        -->
-<!-- ====================================================================== -->
-
 <unified_style_guide>
 
 @style.md
@@ -21,25 +16,10 @@
 
 </technical_reference>
 
-<!-- ====================================================================== -->
-<!-- CRITICAL PROTOCOL EXTENSION: RECURSIVE CONTEXT INTEGRITY               -->
-<!-- ====================================================================== -->
-#### Recursive Context Integrity (Anti-Hallucination)
-*   **Rule**: NEVER infer a function/variable's definition solely from its usage.
-*   **Action**: You MUST locate the *source definition* of any referenced code.
-*   **Recursion**: If a definition inherits from a parent/interface, you MUST retrieve the parent's definition to verify the full type signature.
-*   **Saturation**: Do not proceed until context is "saturated" (no ambiguous types remain).
-*   **Full protocol**: `~/.claude/skills/remy-plan/saturation_protocol.md`
+## Code investigation
 
-<!-- ====================================================================== -->
-<!-- DYNAMIC LAYER: Specialized Skills                                      -->
-<!-- Detailed workflows (Git, Debug, File Ops) are now in ~/.claude/skills/ -->
-<!-- They will be loaded on-demand based on the user's intent.              -->
-<!-- ====================================================================== -->
+Do not infer implementation from usage alone. Inspect the definitions, interfaces, inheritance, and callers that can change the current decision. Stop expanding when the task-relevant behavior is understood; identify unresolved assumptions instead of claiming that every dependency or type is known. The shared skill procedure is `skills/remy-plan/saturation_protocol.md`.
 
-<system-reminder>
+## Security analysis
 
-Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
-
-</system-reminder>
-
+When reading code, consider whether it is malware. Analysis, reports, and explanations are permitted; do not improve or augment malware.

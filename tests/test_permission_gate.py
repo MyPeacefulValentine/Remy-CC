@@ -299,6 +299,12 @@ class TestSuiteDecide:
         target = self.claude_home / "skills" / "remy-plan"
         assert gate.decide(str(tmp_path), tool, str(target)) == "allow"
 
+    @pytest.mark.parametrize("tool", ["Read", "Grep", "Glob", "Edit", "Write"])
+    @pytest.mark.parametrize("relative", ["rules", "rules/communication.md"])
+    def test_rules_do_not_expand_suite_autoapproval(self, tmp_path, tool, relative):
+        target = self.claude_home / relative
+        assert gate.decide(str(tmp_path), tool, str(target)) == "skip:outside"
+
     @pytest.mark.parametrize("tool", ["Edit", "Write"])
     def test_suite_file_write_skipped(self, tmp_path, tool):
         target = self.claude_home / "skills" / "remy-plan" / "SKILL.md"
@@ -316,6 +322,68 @@ class TestSuiteDecide:
     def test_other_tools_still_skipped(self, tmp_path):
         target = self.claude_home / "skills" / "remy-plan" / "SKILL.md"
         assert gate.decide(str(tmp_path), "Bash", str(target)) == "skip:tool"
+
+
+class TestPlanPermissions:
+    @pytest.fixture(autouse=True)
+    def home(self, tmp_path, monkeypatch):
+        home = tmp_path / "plan_home"
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        return home
+
+    @pytest.mark.parametrize("tool", ["Edit", "Write"])
+    @pytest.mark.parametrize("relative", ["plan.md", "nested/plan.MD"])
+    def test_plan_markdown_allowed(self, tmp_path, home, tool, relative):
+        for root in (home / ".claude" / "plans", tmp_path / "plans"):
+            assert gate.decide(str(tmp_path), tool, str(root / relative)) == "allow"
+        assert gate.decide(str(tmp_path), tool, "plans/new_plan.md") == "allow"
+
+    @pytest.mark.parametrize("relative", [
+        "plans/script.py", "plans/settings.json", "plans/../outside.md",
+        "plans_other/plan.md", "src/plan.md", "plans",
+    ])
+    def test_other_workspace_paths_not_granted(self, tmp_path, relative):
+        assert gate.decide(str(tmp_path), "Write", relative) != "allow"
+
+    @pytest.mark.parametrize("tool", ["Read", "Grep", "Glob", "NotebookEdit", "Bash"])
+    def test_plan_rule_does_not_grant_other_tools(self, tmp_path, home, tool):
+        target = home / ".claude" / "plans" / "plan.md"
+        assert gate.decide(str(tmp_path), tool, str(target)) != "allow"
+
+    def test_home_traversal_not_granted(self, tmp_path, home):
+        target = home / ".claude" / "plans" / ".." / "settings.json"
+        assert gate.decide(str(tmp_path), "Edit", str(target)) != "allow"
+
+    def test_symlink_escape_not_granted(self, tmp_path, home):
+        plans = home / ".claude" / "plans"
+        plans.mkdir(parents=True)
+        outside = home / "outside.md"
+        outside.write_text("original", encoding="utf-8")
+        link = plans / "linked.md"
+        try:
+            link.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks unavailable")
+        assert gate.decide(str(tmp_path), "Edit", str(link)) != "allow"
+
+    def test_plan_root_symlink_not_granted(self, tmp_path, home):
+        outside = home / "outside"
+        outside.mkdir()
+        (home / ".claude").mkdir()
+        plans = home / ".claude" / "plans"
+        try:
+            plans.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks unavailable")
+        assert gate.decide(str(tmp_path), "Write", str(plans / "plan.md")) != "allow"
+
+    def test_plan_permission_hook_output(self, tmp_path, home):
+        target = home / ".claude" / "plans" / "plan.md"
+        rc, out = _run_hook(_payload(tmp_path, "Write", str(target)), home)
+        assert rc == 0
+        assert json.loads(out) == gate.ALLOW_DECISION
 
 
 class TestGateEnabled:

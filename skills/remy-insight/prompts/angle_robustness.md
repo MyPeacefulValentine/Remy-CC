@@ -32,11 +32,12 @@ Return a strict JSON object matching the `agent_finding.json` schema:
     {
       "id": "F-001",
       "dimension": "robustness",
-      "severity": "observation|concern|issue",
+      "severity": "concern",
       "target": {"file": "path/to/file", "symbol": "name", "layer": "layer_name"},
       "claim": "one-sentence description of the vulnerability or weakness",
       "evidence": "specific code reference showing the vulnerable pattern",
-      "confidence": 2-5
+      "evidence_state": "inference",
+      "evidence_basis": []
     }
   ],
   "summary": "overall robustness and security posture assessment"
@@ -47,7 +48,8 @@ Return a strict JSON object matching the `agent_finding.json` schema:
 
 - Maximum 15 findings
 - Severity: `issue` = exploitable vulnerability or guaranteed failure under specific conditions, `concern` = weakness that could be triggered under stress, `observation` = defensive improvement
-- Confidence 5 requires demonstrating a concrete trigger path in the code
+- Use the shared evidence semantics: `verified` = established within cited scope; `inference` = supported but still dependent on stated premises; `unknown` = unexamined, insufficient, or conflicting evidence; `refuted` = counterevidence within a stated scope. Source inspection does not establish runtime behavior.
+- `evidence_basis` optionally lists acquired material types in the configured language; it does not list planned checks. Keep citations and limitations in `evidence`. Do not output numeric confidence.
 - Do NOT report theoretical vulnerabilities without a plausible trigger scenario
 - Do NOT flag intentional trade-offs (e.g., skipping validation in internal-only functions) unless the call graph shows external callers
 - Output ONLY the JSON object, no surrounding text

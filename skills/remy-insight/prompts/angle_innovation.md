@@ -32,13 +32,14 @@ Return a strict JSON object matching the `agent_finding.json` schema:
     {
       "id": "F-001",
       "dimension": "innovation",
-      "severity": "observation|concern|issue",
+      "severity": "observation",
       "target": {"file": "path/to/file", "symbol": "name", "layer": "layer_name"},
       "claim": "one-sentence description of the innovation or technique",
       "evidence": "code reference showing the implementation",
       "mechanism": "2-5 sentences explaining HOW this technique works at implementation level, including data flow, key transformations, and algorithmic steps",
       "significance": "1-3 sentences comparing against conventional approaches and stating what constraint or problem is addressed",
-      "confidence": 2-5
+      "evidence_state": "inference",
+      "evidence_basis": []
     }
   ],
   "summary": "overall assessment of technical novelty and design quality"
@@ -52,7 +53,8 @@ Return a strict JSON object matching the `agent_finding.json` schema:
 - Most findings should be `observation` severity (neutral identification of a technique)
 - Use `concern` only if an innovative approach introduces actual risk (e.g., clever but fragile optimization)
 - Use `issue` only if an attempted innovation is fundamentally flawed
-- Confidence: 5 = verified working mechanism, 4 = sound approach but untested at scale, 3 = interesting but unclear benefit
+- Use the shared evidence semantics: `verified` = established within cited scope; `inference` = supported but still dependent on stated premises; `unknown` = unexamined, insufficient, or conflicting evidence; `refuted` = counterevidence within a stated scope. Source inspection does not establish runtime behavior.
+- `evidence_basis` optionally lists acquired material types in the configured language; it does not list planned checks. Keep citations and limitations in `evidence`. Do not output numeric confidence.
 - `mechanism` and `significance` fields are REQUIRED for every finding — do not leave them empty
 - Do NOT inflate the significance of standard library usage or common patterns
 - Do NOT evaluate aesthetic preferences — focus on engineering properties

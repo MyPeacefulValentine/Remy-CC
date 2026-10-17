@@ -66,11 +66,11 @@ Although strict schema validation is disabled, you MUST internally structure you
     -   If file does not exist: HALT. Report error. Do NOT proceed.
 2.  **Extract constraints**: parse `evidence_packet.proposed_changes[]` as the authoritative change scope.
     -   MUST NOT make changes outside the described scope.
-    -   For any `evidence[]` item with `status: "suspected"`: re-read the referenced `path` and `range` and confirm before proceeding. After confirming, `Edit` the packet file to promote that item's `status` to `"confirmed"` — the PreToolUse guard exempts writes under `.claude/temp_task/`, so this edit is always permitted. Status semantics and state machine: `~/.claude/skills/remy-plan/evidence_record.md`.
+    -   For any `evidence[]` item with `status: "suspected"`: re-read the referenced `path` and `range` and confirm before proceeding. After confirming, `Edit` the packet file to promote that item's `status` to `"confirmed"` — the PreToolUse packet check exempts that directory for remediation, but this does not independently authorize editing. Do not relabel evidence merely to pass a check. Status semantics and state machine: `~/.claude/skills/remy-plan/evidence_record.md`.
 3.  Proceed to Phase 1.
 
 **If NO argument provided:**
--   If `.claude/temp_task/.active_packet` exists: run `Bash("rm -f '.claude/temp_task/.active_packet'")` to clear stale state.
+-   If `.claude/temp_task/.active_packet` exists, inspect its task association. Do not delete it merely because no packet argument was provided. Request confirmation before clearing state outside the approved plan; do not remove a marker to bypass an active rejection.
 -   Proceed directly to Phase 1.
 
 **Phase 1: Discovery & Tracing (Mandatory)**
@@ -79,7 +79,7 @@ Although strict schema validation is disabled, you MUST internally structure you
     *   **EXISTS**: Run `Bash("python \"~/.claude/skills/remy-index/impact.py\" <target_file_1> <target_file_2> ...")` with the files targeted for modification. Use the output as the definitive dependency list. If exit code = 2 (no call graph data), fall through to the manual path below.
     *   **MCP alternative**: If `remy-index` MCP server is active, `query_impact` / `query_callers` tools provide equivalent data without subprocess overhead.
     *   **MISSING or exit 2**: Use `grep` or `glob` to locate all files that import or call the `target_files`.
-    *   **Read**: For every file at Upstream Depth 1 and Downstream Depth 1 in the impact output (or all grep-discovered files in the manual path), apply the **Precision-Read Rule**: offset-based `Read` per listed line range when the file exceeds `PRECISION_READ_THRESHOLD` lines (default: 500), merging adjacent ranges within 10 lines; otherwise read the entire file. Full rule: `~/.claude/skills/remy-plan/saturation_protocol.md`.
+    *   **Read**: Inspect definitions in the impact or search results that can change this implementation. Prefer needed line ranges for large files (`PRECISION_READ_THRESHOLD`, default 500); expand to surrounding or whole-file context only when needed. Record blocking unknowns. Procedure: `~/.claude/skills/remy-plan/saturation_protocol.md`.
 2.  **Verify Signatures**: Read the definitions of any external functions you intend to use — NEVER infer a definition solely from its usage (principle layer: `~/.claude/skills/remy-plan/saturation_protocol.md`).
 
 **Phase 2: Framework Compliance Check (Conditional)**
@@ -168,14 +168,7 @@ Repeat sub-steps 3.1–3.4 for each file in the modification set.
 
 ### 4.3 Failure Handling
 
-If tests fail:
-1.  **Report**: Print the failing test names, error messages, and triage conclusion (test defect vs. implementation defect).
-2.  **Ask**: Use `AskUserQuestion` to present options:
-    -   "Apply fix to implementation" — attempt to fix the regression.
-    -   "Revert changes" — undo the edits made in Phase 3 (use `Edit` to restore original content).
-    -   "Ignore and continue" — accept the failure (user takes responsibility).
-3.  **If user chooses fix**: Apply fix, re-run tests. If still failing after 2 attempts, HALT and report (retry-budget-exhausted halt; trigger classes and post-halt sequence: `~/.claude/skills/remy-plan/halt_protocol.md`).
-4.  **If user chooses revert**: Restore original file content from Pre-Read state.
+If tests fail, capture the failed checks and diagnose implementation, test, or environment defects. Repair ordinary recoverable failures within the approved scope and rerun affected checks without requesting approval for each failure. Do not impose a universal two-attempt limit. Stop when attempts add no evidence, effects are unknown, or repair crosses an authorization boundary. Ask before an unapproved rollback, scope expansion, or accepting a failing check. Shared procedure: `~/.claude/skills/remy-plan/halt_protocol.md`.
 
 ### 4.4 No Tests Available
 

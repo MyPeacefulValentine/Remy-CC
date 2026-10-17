@@ -29,9 +29,11 @@
 
 {impact_section}
 
-## 6. Root Cause Assessment
+## 6. Failure Mechanism Assessment
 
-| # | Hypothesis | Confidence | Evidence |
+Use the shared evidence states from `style.md`, optionally with an acquired-basis attribute. State the checked scope and unresolved premises in Evidence; a verified observation need not establish its proposed explanation.
+
+| # | Hypothesis | Evidence state | Evidence |
 | :--- | :--- | :--- | :--- |
 {root_cause_rows}
 

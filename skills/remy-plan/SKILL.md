@@ -12,7 +12,7 @@ This skill enforces a rigorous **Zero-Decision** pre-implementation review. It f
 
 ## Overview
 
-**Goal**: Eliminate ALL ambiguity and architectural risk before a single line of code is written.
+**Goal**: Resolve ambiguities that affect the proposed change and record remaining assumptions and risks. This skill produces a separate evidence packet; a request for native Plan mode does not invoke this workflow or authorize implementation.
 
 **Flow**:
 
@@ -28,7 +28,7 @@ Phase 1 (Context Saturation)
 
 ## Phase 1: Context Saturation
 
-**Saturation Principles** (apply to Phase 1.2 and Phase 1.3): obtain the *source definition* of every dependency involved — NEVER infer a definition solely from its usage, and recurse through parent/interface definitions for full signatures; assuming implementation details without evidence is FORBIDDEN. Full protocol: `skills/remy-plan/saturation_protocol.md`.
+**Investigation Principles** (Phase 1.2 and 1.3): inspect definitions, interfaces, inheritance, and dependencies that can affect the current decision; do not infer implementation solely from usage. Identify unresolved assumptions instead of claiming every dependency is known. Shared procedure: `skills/remy-plan/saturation_protocol.md`.
 
 ### 1.1 Infrastructure Check
 
@@ -54,24 +54,23 @@ Execute the following four sub-tasks in order:
     *   If exit code = 2 (no call graph data): fall through to **Phase 1.3**.
     *   Otherwise: record the output as the **Impact Report**.
 
-2.  **Forced Read**: For every file listed at Upstream Depth 1 and Downstream Depth 1 in the Impact Report:
-    *   Apply the **Precision-Read Rule**: offset-based `Read` per listed line range when the file exceeds `PRECISION_READ_THRESHOLD` lines (default: 500), merging adjacent ranges within 10 lines; otherwise read the entire file. Full rule: `skills/remy-plan/saturation_protocol.md`.
-    *   For Depth 2+, read only files directly relevant to the planned change.
-    *   **Exit Condition**: All Upstream Depth 1 and Downstream Depth 1 functions have been read. Context is saturated for the call chain dimension.
+2.  **Targeted Read**: Use the Impact Report to choose definitions that can affect the planned change, at any relevant depth.
+    *   Prefer listed line ranges for large files (`PRECISION_READ_THRESHOLD`, default 500); read surrounding definitions or the full file only when needed. Procedure: `skills/remy-plan/saturation_protocol.md`.
+    *   **Exit Condition**: Decision-relevant interfaces and effects are understood, or remaining blocking questions are reported. An impact list is a search aid, not a requirement to read every listed function.
 
 3.  **Cross-Layer Risk Flag**: If the Impact Report shows `⚠ Cross-layer impact`, record the affected layers. You MUST add a "Cross-layer interface compatibility" check item to Table 3 during the audit phase.
 
 4.  **Supplementary Actions** (still mandatory):
-    1.  Apply all **Saturation Principles** listed above.
+    1.  Apply the **Investigation Principles** listed above.
     2.  **Reuse Scan**: For any planned new function or utility, `Grep` the project for existing implementations with similar names or purposes. If a reusable function exists, the plan MUST reference it (Modify/extend) rather than proposing a new one.
-    3.  **Observation Task (Optional)**: When static analysis is insufficient to verify a technical claim, execute an observation task per `output-styles/system-architect.md` §4.1 (**Read-Only**, **Ephemeral** — system temp directory only, **Sandboxed** — no side-effects, no network, no package installation). Cite observation output as evidence in Table 1 or Table 3; observation results do NOT enter the Evidence Packet.
+    3.  **Observation Task (Optional)**: When static analysis is insufficient to verify a technical claim, execute an observation task per `output-styles/system-architect.md` §4.1 (read-only inspection first; temporary experiments only within explicitly authorized scope, with no production credentials, network or package installation; native Plan mode prohibits executing probes). Cite observation output as evidence in Table 1 or Table 3; observation results do NOT enter the Evidence Packet.
 
 After completing Phase 1.2, proceed to **Phase 2: Requirement Restatement Gate**.
 
 ### 1.3 Manual Saturation Fallback (no logic_index.db)
 
 Use this path when `logic_index.db` is unavailable or contains no call graph data.
-1.  Apply all **Saturation Principles** listed above.
+1.  Apply the **Investigation Principles** listed above.
 2.  **Action**: Use `Read`, `Grep`, or `Glob` to saturate your context.
 
 After completing Phase 1.3, proceed to **Phase 2: Requirement Restatement Gate**.
@@ -109,7 +108,7 @@ On Deviation: merge the correction into the understanding, re-run any saturation
 
 ## Phase 3: Ambiguity Elimination Loop (Loop-Until-Saturated)
 
-You MUST execute the following loop until NO ambiguities remain.
+Execute the following loop until ambiguities that could change this proposal are resolved or explicitly reported as blockers; record unrelated unknowns without extending the loop.
 
 **Scope Tag Reference** (used by Phase 3.3 Recommendation and by Table 4):
 
@@ -124,8 +123,9 @@ When the loaded `language.md` directive selects Chinese, output the 中文 label
 
 **Observation Task Reference** (used by Phase 3.1 tagging and the Phase 3.3 Observation Gate):
 
-*   **Compact definitions** — `[O]`: an assertion about code, runtime behavior, documentation, or environment that can be settled by a side-effect-free observation (Read/Grep/MCP query, or a probe script confined to the system temp directory). `[D]`: a trade-off, scope, risk-acceptance, preference, or authorization decision that belongs to the user. `[O+D]`: split into an O part (observe first) and a D part (ask). Full protocol: `output-styles/system-architect.md` §4.1 (Observation Task Protocol).
-*   **Ordering method**: before executing the observations of an iteration, list them in a task table `# | Target assertion | Form (direct/experimental) | Depends on | Cost`, then schedule:
+*   **Question types** — Use `[事实问题]` / `[Fact question]` for assertions that can be checked against code, documentation, runtime, or environment evidence. Use `[用户决定]` / `[User decision]` for choices the user owns. Split mixed items into factual investigation and the dependent user decision. Use the configured language's full labels, defined in `rules/reasoning-and-decisions.md`; evidence states and acquired-basis attributes are defined separately in `style.md`.
+*   **Investigation method** — Read-only inspection and experimental validation describe the current step, not different question types. Use the shared optional method attribute only when useful in a list; do not repeat it when the task table already has a method column. A temporary script is not automatically read-only or authorized. Experiments must fit the current mode, approval, and Phase 1.2 probe constraints.
+*   **Ordering method**: before executing the observations of an iteration, list them in a task table `# | Target assertion | Method (read-only/experiment) | Depends on | Cost`, then schedule:
     *   **Evidence dependency** (task B interprets task A's output): topological serial order.
     *   **Fixture dependency** (tasks share a probe fixture): build the fixture once, run the group consecutively.
     *   **Adjudication dependency** (a cheap task can refute the premise of expensive ones): run the cheapest falsifier first; prune dependents whose premise is refuted.
@@ -139,7 +139,7 @@ When the loaded `language.md` directive selects Chinese, output the 中文 label
     2.  Correcting the decision later requires data migration or synchronized cross-module modification.
     3.  The decision constrains the option space of subsequent decisions (later decisions will stack on top of it).
 *   **Evidence Binding (MUST)**: an architectural tag MUST cite each matched criterion with its factual basis (e.g., "criterion 1: consumers = hooks, MCP"). A tag whose facts cannot be cited is downgraded to implementation grade.
-*   **Default**: when no criterion can be adjudicated from available evidence, the grade defaults to implementation (conservative direction, consistent with Prohibited Pattern 6).
+*   **Default**: when no criterion can be adjudicated from available evidence, the grade defaults to implementation; do not add architectural scope without supporting evidence.
 
 ### 3.1 Scan
 
@@ -153,13 +153,13 @@ Identify current architectural decision points based on *saturated* context. You
 **MANDATORY FORMAT** — Output the scan result as a fenced block BEFORE any `AskUserQuestion` call:
 ```
 **Ambiguity Scan:**
-1. Interface Contract — ambiguity identified [D][架构级]: <brief description>（判据 1：消费者=X、Y）
-2. Resource & Dependency — ambiguity identified [O][实现级]: <brief description>
+1. Interface Contract — ambiguity identified [用户决定][架构级]: <brief description>（判据 1：消费者=X、Y）
+2. Resource & Dependency — ambiguity identified [事实问题][实现级]: <brief description>
 3. Behavioral Boundary — N/A (no decision needed)
-4. Execution Order — ambiguity identified [O+D][实现级]: <brief description>
+4. Execution Order — [事实问题][实现级]: <fact to inspect>; then [用户决定][实现级]: <dependent choice>
 5. Change Boundary — N/A (no decision needed)
 ```
-Skipping this output block is a protocol violation. Each identified ambiguity MUST carry an `[O]` / `[D]` / `[O+D]` tag per the **Observation Task Reference**; omitting the tag is a protocol violation. Each identified ambiguity MUST also carry a grade tag per the **Decision Grade Reference**; an architectural tag without its criterion citations is downgraded to implementation grade, and omitting the grade tag is a protocol violation.
+Use the configured language's question labels in this grouped scan. Each identified item also carries a grade per the **Decision Grade Reference**; an architectural tag requires criterion citations. A mixed issue is split into related fact and choice items, not a third question type. Facts supporting a choice carry their own shared evidence state where needed; the choice itself is not an evidence state.
 
 ### 3.2 Check
 
@@ -170,7 +170,7 @@ Are there unresolved ambiguities?
 ### 3.3 Ask
 
 Use `AskUserQuestion` to resolve *current layer* ambiguities.
-*   **Observation Gate (MUST)**: Items tagged `[O]` (and the O part of `[O+D]`) MUST be resolved by observation tasks — ordered per the **Observation Task Reference** — before this step. An `[O]` item may enter `AskUserQuestion` ONLY if observation is infeasible (declare why in the question) or inconclusive (cite the partial result in the question). Presenting an unobserved `[O]` item is a protocol violation.
+*   **Observation Gate**: Attempt the relevant permitted observations for factual items before asking. If observation is infeasible, unauthorized, mode-prohibited, or inconclusive, state the reason, inspected scope, partial evidence, and missing information. Ask only for the evidence or user decision needed to proceed; do not ask the user to confirm a technical fact as a preference. Keep unresolved facts and their dependent choices visible, and stop before emitting an executable plan if they still block the proposal. Already applicable user decisions are not asked again.
 *   **Multi-Question Batching**: Present all currently visible ambiguities that have NO dependency between them. If question B's options depend on question A's answer, present A first; present B in the next iteration after A is resolved.
 *   **Pagination Loop (Mandatory)**: `AskUserQuestion` accepts at most 4 questions per call (`questions: maxItems=4`). If the count of independent ambiguities in this iteration exceeds 4, you MUST iterate:
     ```
@@ -183,17 +183,17 @@ Use `AskUserQuestion` to resolve *current layer* ambiguities.
     Exiting Phase 3.3 while `queue` is non-empty is a protocol violation.
 *   **Language**: Follow the loaded `language.md` directive.
 *   **Format**: Short header, reasonable options.
-*   **Recommendation (MUST)**: Every question MUST have exactly 1 recommended option. Append `（推荐）` to the recommended label and include a 1-sentence reason in its description. Omitting the recommendation is a protocol violation.
+*   **Recommendation**: For a user decision with actual alternatives, include one recommended option with `（推荐）` and a one-sentence reason. A request for missing factual evidence does not require a recommended answer; do not invent facts to fill an option.
 *   **Scope Tagging (MUST)**: For each candidate option proposing a code change, prefix its description with a scope tag from the **Scope Tag Reference** table (output label per `REMY_LANG`).
-*   **Prohibited Pattern Cross-Check (MUST)**: Before marking an option as recommended, verify it does NOT trigger Prohibited Modification Patterns 1 (Symptom-Driven / Whack-a-Mole), 3 (Technical Debt / Overfitting), or 6 (Over-Engineering) from `output-styles/system-architect.md` §2.3. If `[补丁]` / `[Boundary-Wrap]` is recommended over a `[局部修复]` / `[Source-Modify]` alternative, the 1-sentence reason MUST cite one of: (a) bug source resides in third-party / read-only code, (b) the boundary IS the actual responsibility boundary, or (c) Source-Modify would trigger Prohibited Pattern 6 (Over-Engineering).
-*   **Planned-Evolution Cross-Check (MUST)**: Before marking an option as recommended, check whether an authoritative written plan registers a follow-up need that the current decision touches. If it does, an option that reserves the seam the plan names (interface, parameter, data shape) MAY be recommended over the minimal-change alternative, and its 1-sentence reason MUST cite the plan anchor. Futures not registered in a plan remain governed by YAGNI (see the Planned-Evolution Exception under Minimal Change, `output-styles/system-architect.md` §2.2).
+*   **Prohibited Pattern Cross-Check (MUST)**: Before marking an option as recommended, check for symptom-only fixes, unsupported special cases, and unnecessary abstractions using the change-review guidance in `output-styles/system-architect.md` §2.3. If `[补丁]` / `[Boundary-Wrap]` is recommended over a `[局部修复]` / `[Source-Modify]` alternative, the 1-sentence reason MUST cite one of: (a) bug source resides in third-party / read-only code, (b) the boundary IS the actual responsibility boundary, or (c) Source-Modify would introduce an unnecessary abstraction or scope expansion.
+*   **Planned-Evolution Cross-Check (MUST)**: Before marking an option as recommended, check whether an authoritative written plan registers a follow-up need that the current decision touches. If it does, an option that reserves the seam the plan names (interface, parameter, data shape) MAY be recommended over the minimal-change alternative, and its 1-sentence reason MUST cite the plan anchor. Futures not registered in a plan remain governed by YAGNI (see the approved-follow-up interface guidance in `output-styles/system-architect.md` §2.2).
 *   **Decision Grade Switch (MUST)**: For a decision point graded implementation, the recommendation defaults to the minimal-change option (subject to the cross-checks above). For a decision point graded architectural, the recommendation standard switches to: define state transitions, data owners, failure paths, and executable invariants before choosing an implementation — data structures over control flow; AND every option's description MUST state its future correction cost. Omitting the correction-cost statement on an architectural decision point is a protocol violation. This switch is independent of the Planned-Evolution Cross-Check; when both apply, the recommendation reason cites both the criterion facts and the plan anchor.
 
 ### 3.4 Saturate (Again) — ACTION REQUIRED
 
 *   **Trigger**: Immediately upon receiving the user's choice.
 *   **Mandate**: You **MUST** invoke `Grep`/`Glob` targeting the specific keywords of the choice (e.g., if user selected "Redis", grep for "redis", "cache", "sentinel").
-*   **Read**: You **MUST** read any newly discovered configuration/utility files.
+*   **Read**: Inspect newly discovered definitions or configuration only when they can change the selected option; record other unknowns without expanding scope.
 *   **Cross-Constraint Validation**: Compare the newly locked decision against ALL previously locked decisions. If a logical contradiction exists (e.g., "use Redis" vs. prior "no new runtime dependencies"), mark the conflicting prior decision as `invalidated` and re-present it in the next loop iteration.
 *   **Observation Task (Optional)**: If the chosen option involves a verifiable technical claim (e.g., "library X supports feature Y"), an observation task (per `output-styles/system-architect.md` §4.1) may be used here to confirm feasibility before proceeding.
 *   **Blocker**: Do NOT proceed to **Phase 3.5** until these new tool outputs are visible in the context AND no contradictions remain unresolved.
@@ -208,50 +208,37 @@ Five sub-steps executed in order after the Phase 3 loop exits. Any sub-step may 
 
 ### 4.1 Assumption Manifest & Scenario Probes (Post-Loop Second Pass)
 
-This step targets **unknown unknowns** — assumptions Claude considers obvious but which may conflict with the user's intent. It runs ONCE after the Phase 3 loop exits. A re-entry counter (`_manifest_pass`) tracks executions; if `_manifest_pass >= 1`, skip this step entirely and proceed to Phase 4.2.
+This step checks implicit assumptions that could change the proposal. `_manifest_pass` limits full manifest generation to one pass. On re-entry, do not generate the full manifest again, but always recheck carried unresolved facts, refuted premises, and dependent decisions before proceeding to Phase 4.2. The counter never bypasses an unresolved blocker.
 
-1.  **Generate & Triage Manifest**: List ALL implicit assumptions (implementation-level and behavioral-level) NOT already locked in Table 1. Each MUST include a 1-sentence statement, a confidence level (Level 2–5), and a category (Interface / Resource / Behavior / Ordering / Boundary).
+1.  **Generate & Triage Manifest**: List decision-relevant assumptions not already locked in Table 1, with an Interface / Resource / Behavior / Ordering / Boundary category. Factual assertions use the shared evidence state from `style.md`, with an acquired-basis attribute only when useful. User choices use the configured language's user-decision label, not an evidence state. Split mixed entries before routing.
 
-    **MANDATORY FORMAT** — Output the manifest as a numbered list BEFORE any probe or `AskUserQuestion` call:
+    Output the numbered manifest before new observations or questions. These examples illustrate format only; use actual citations rather than treating placeholders as evidence:
     ```
     **Assumption Manifest:**
-    1. [Level 3 | Behavior] Redis 连接失败时 fallback 到本地缓存而非直接抛出异常。
-    2. [Level 4 | Interface] 缓存 key 使用 UTF-8 编码，不含二进制数据。
-    3. [Level 5 | Resource] 生产环境 Redis 版本 ≥ 6.0。
+    1. [用户决定] Behavior: Redis 连接失败时使用本地缓存，还是终止操作？
+    2. [~｜源码] Interface: 已检查路径使用 UTF-8；其他输入路径尚未核对。依据：<file:line>。
+    3. [✓｜规范] Resource: 已读取的部署清单指定 Redis 6.x。依据：<file:line and revision>；不代表生产实际版本已验证。
     ```
-    Each entry MUST include the `[Level N | Category]` prefix. Omitting the level number is a protocol violation.
+    Use equivalent full question labels and basis words for the configured language. Retain the underlying claim and scope when updating its state. Cross-check the manifest against locked decisions; explicit counterevidence uses `[×]`, while an unresolved evidence conflict uses `[?]` with the conflicting observations stated.
 
-    **Contradiction Detection**: Cross-check every assumption against every locked decision in Table 1. If a contradiction is found, route it directly to step 4 (re-entry) — do not present it for user confirmation.
+2.  **Observation Filter**: For unresolved factual assertions marked `[?]` or `[~]`, identify an allowed observation that could resolve them. Actual production peak load is a factual question; choosing the target capacity or fallback behavior is a user decision.
 
-2.  **Probe Filter (Mandatory for Probe-Feasible Assumptions)**: For each assumption with confidence ≤ Level 4, classify as **probe-feasible** or **probe-infeasible**:
-    *   **Probe-feasible**: The assumption asserts a technical fact testable by a self-contained script with no project-specific runtime state, no production credentials, and no destructive side-effects. Examples: "library X version Y exposes function Z", "encoding A maps to bytes B as documented".
-    *   **Probe-infeasible**: Intent / domain / business-rule assumptions. Examples: "user wants fallback over hard fail", "production peak is N RPS".
+    **Probe Constraints**: Read-only inspection comes first. Temporary experiments require explicit applicable authorization and an execution-permitting mode; no production credentials, network, package installation, or destructive effects. Native Plan mode prohibits executing probes. A probe must be self-contained and not depend on unavailable project-specific runtime state. Cite observation output in Table 1 or Table 3; probe results do NOT enter the Evidence Packet.
 
-    **Probe Constraints**: probes are observation tasks per `output-styles/system-architect.md` §4.1 (**Read-Only**, **Ephemeral** — system temp directory only, **Sandboxed** — no side-effects, no network, no package installation). Cite probe output as evidence in Table 1 or Table 3 — probe results do NOT enter the Evidence Packet.
+    - If evidence establishes the assertion, mark it `[✓]` only within its checked scope. Preserve the citation and remove it from the unresolved queue, not from the evidence record. Source inspection does not verify runtime behavior.
+    - If counterevidence refutes it, mark it `[×]`, retain the examined scope, and route changed premises and dependent decisions to step 4.
+    - If observation is unavailable, unauthorized, mode-prohibited, or inconclusive, retain `[?]` or the supported `[~]`. Record why, partial results, missing evidence, and whether the gap blocks this proposal. Route it to step 3 rather than dropping it.
+    - Route user choices to step 3 without trying to prove a preference.
 
-    For probe-feasible assumptions, an observation-task probe is **mandatory**. If the probe confirms, elevate the assumption to Level 5 and remove it from the manifest. If the probe refutes, convert it to a new ambiguity and route to Phase 3 re-entry. Probe-infeasible assumptions are retained for user confirmation in step 3.
+3.  **Scenario & Present**: Present remaining user decisions with concrete behavioral scenarios. Offer the proposed behavior and a meaningful alternative; do not re-ask choices already covered by applicable approval. For factual gaps, ask only for missing evidence or the authorization/scope decision needed to proceed, not for confirmation that an unverified assertion is true. Accepting a planning assumption does not change its evidence state.
 
-3.  **Scenario & Present (Pagination Loop — Mandatory)**: For each remaining probe-infeasible assumption with confidence ≤ Level 4, construct a concrete scenario illustrating the behavioral consequence (embed inline in the `AskUserQuestion` option description).
-
-    Use `AskUserQuestion` to present assumptions sorted by confidence (lowest first). `AskUserQuestion` accepts at most 4 questions per call (`questions: maxItems=4`); you MUST iterate until the queue is empty:
-    ```
-    queue = remaining_assumptions   # sorted by confidence ascending
-    while len(queue) > 0:
-        batch = queue[:4]
-        queue = queue[4:]
-        answers = AskUserQuestion(batch)
-        merge answers into state
-    ```
-    Exiting step 3 while `queue` is non-empty is a protocol violation.
-
-    Each item offers:
-    *   Option A: "确认该假设 (Confirm)" — assumption is correct.
-    *   Option B: The scenario-driven alternative (for Level ≤ 4) or "否决 (Reject)" (for Level 5).
-    *   User rejections or contradictions become new ambiguities.
+    Ask dependencies before dependents, and preserve manifest order among independent items; do not sort evidence states as confidence scores. Use at most 4 independent questions per `AskUserQuestion` call, merge answers, and recompute the remaining queue before the next batch. Do not exit while an actionable question remains queued.
 
 4.  **Re-entry Decision**:
-    *   If ALL assumptions are confirmed and no contradictions were detected: increment `_manifest_pass`, proceed to **Phase 4.2**.
-    *   If any assumption was rejected or a contradiction was detected: increment `_manifest_pass`, return to **Phase 3** loop to resolve the new ambiguities. After this re-entry, the loop will eventually exit again; since `_manifest_pass >= 1`, Phase 4.1 is skipped and flow proceeds directly to Phase 4.2.
+    - On rejection, refutation, or conflict with a locked decision, increment `_manifest_pass` and return to Phase 3 carrying unresolved facts and dependent choices.
+    - Proceed only when user choices are resolved and no factual gap blocks the proposal. An explicit scope revision may remove a dependency on an unknown fact; preserve the unknown and explain the revised boundary.
+    - If a blocker cannot be resolved within current access, authorization, or mode, stop and report it rather than claiming confirmation.
+    - On completion, increment `_manifest_pass` and proceed to Phase 4.2. Re-entry skips only full manifest generation; unresolved-item review remains required.
 
 ### 4.2 Scenario Confirmation Gate
 
@@ -273,7 +260,7 @@ Synthesizes the locked decisions into an end-to-end behavioral narrative for use
 
 4.  **Deviation Routing**: Classify the correction:
     *   **Wording-level** (the narrative misdescribes an already-locked decision): fix the narrative, recompose (step 2), and re-ask (step 3). Loops freely.
-    *   **Decision-level** (a locked decision itself is wrong): governed by an independent counter `_scenario_pass` (initial 0; do NOT reuse `_manifest_pass`). If `_scenario_pass == 0`: set it to 1, convert the correction into a new ambiguity, and return to the **Phase 3** loop. After that loop exits, Phase 4.1 is skipped (`_manifest_pass >= 1`) and flow reaches this gate again for re-presentation. If `_scenario_pass >= 1`: a second decision-level re-entry is prohibited — apply a wording-level correction if possible, otherwise HALT and report the unresolvable conflict.
+    *   **Decision-level** (a locked decision itself is wrong): governed by an independent counter `_scenario_pass` (initial 0; do NOT reuse `_manifest_pass`). If `_scenario_pass == 0`: set it to 1, convert the correction into a new ambiguity, and return to the **Phase 3** loop. After that loop exits, Phase 4.1 skips only full manifest generation (`_manifest_pass >= 1`); carried unresolved items must be reviewed and blockers resolved or removed by an explicit scope decision before this gate is re-presented. If `_scenario_pass >= 1`: a second decision-level re-entry is prohibited — apply a wording-level correction if possible, otherwise HALT and report the unresolvable conflict.
 
 ### 4.3 Plan-Code Alignment Check
 
@@ -320,7 +307,7 @@ Targets newly-created executable code: a new function or module without a curren
 
 ### 5.1 Load Template
 
-Only when Phase 4 completes (ZERO ambiguities, all pre-emit checks pass):
+When Phase 4 completes with decision-relevant ambiguities resolved and pre-emit checks satisfied, record any remaining nonblocking uncertainty:
 
 1.  **Action**: Load the template file matching `REMY_LANG`:
     *   `REMY_LANG=zh-CN` → `Read` `skills/remy-plan/audit_template_zh.md`
@@ -334,7 +321,7 @@ Emit the 5 Markdown tables per the loaded template, in the exact order specified
 
 ## Phase 6: Evidence Packet Generation (Mandatory)
 
-After generating the 5 analysis tables (Phase 5.2), you MUST produce and write an AgentTaskPacketLite JSON file before the stop prompt. This packet is the executable contract for `/remy-patch`.
+After generating the 5 analysis tables (Phase 5.2), produce and write an AgentTaskPacketLite JSON file before the stop prompt only when current authorization and mode permit it and no decision-relevant blocker remains. Otherwise stop with the plan and its limitations; do not write the packet or active pointer, and do not advertise an execution command for a nonexistent packet. This packet is the executable contract for `/remy-patch`.
 
 **Steps (execute in order):**
 
@@ -406,7 +393,7 @@ After generating the 5 analysis tables (Phase 5.2), you MUST produce and write a
 -   **Evidence Record (MUST)**: evidence[] lists only files ACTUALLY READ; excerpt is verbatim (no summaries); `confirmed` = read this session, `suspected` = inferred unread; every change's evidence_refs points to ≥1 `confirmed` entry; non-git repos use `"type": "filesystem"` without `"commit"`. Full definition: `skills/remy-plan/evidence_record.md`.
 -   `proposed_changes[].action`: Required; must match Table 4's `操作` column (Create / Modify / Delete).
 -   `proposed_changes[].caller_refs`: Required when `action == "Create"` and the target is executable code (function, class, module — not pure data / config / template files). Each entry MUST reference an existing-tree caller via `caller_file` + `caller_function` + `evidence_ref`. See Phase 4.5.
--   In the stop prompt (Phase 7), include: `📦 Packet: task_{TIMESTAMP}.json | 执行: /remy-patch task_{TIMESTAMP}.json`
+-   If the packet was written, include in the stop prompt (Phase 7): `📦 Packet: task_{TIMESTAMP}.json | 执行: /remy-patch task_{TIMESTAMP}.json`. Otherwise report why no packet was created, without an execution command.
 
 ## Phase 7: Explicit Stop Protocol (MANDATORY)
 

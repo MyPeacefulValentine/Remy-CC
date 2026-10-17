@@ -104,13 +104,15 @@ mod tests {
             "CLAUDE.md",
             "style.md",
             "tools_ref.md",
+            "rules/communication.md",
+            "rules/reasoning-and-decisions.md",
             "remy-src/cli.py",
             "remy-src/remy_config.py",
             SKILL_DESCRIPTIONS_ENTRY,
         ] {
             assert!(names.contains(marker), "missing: {marker}");
         }
-        for prefix in ["hooks/", "skills/", "output-styles/"] {
+        for prefix in ["hooks/", "skills/", "output-styles/", "rules/"] {
             assert!(
                 names.iter().any(|n| n.starts_with(prefix)),
                 "empty prefix: {prefix}"
@@ -159,10 +161,42 @@ mod tests {
             );
             expected.insert(file.to_string());
         }
-        for directory in ["hooks", "skills", "output-styles"] {
+        for directory in ["hooks", "skills", "output-styles", "rules"] {
             walk(&repo_root.join(directory), directory, &mut expected);
         }
         assert_eq!(expected, archive_names());
+    }
+
+    #[test]
+    fn prompt_entries_match_current_source_bytes() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repo root")
+            .to_path_buf();
+        for name in [
+            "style.md",
+            "skills/remy-plan/evidence_record.md",
+            "skills/remy-plan/SKILL.md",
+            "skills/remy-debug/SKILL.md",
+            "skills/remy-debug/diagnosis_template.md",
+            "skills/remy-ci/diagnosis_template.md",
+            "skills/remy-insight/SKILL.md",
+            "skills/remy-insight/schemas/agent_finding.json",
+            "skills/remy-insight/output_schema.json",
+            "skills/remy-insight/render.py",
+            "hooks/permission_gate.py",
+            "hooks/env_system/reminder_prompt_en.md",
+            "hooks/env_system/reminder_prompt_zh.md",
+            "output-styles/system-architect.md",
+            "rules/communication.md",
+            "rules/reasoning-and-decisions.md",
+        ] {
+            let source = std::fs::read(repo_root.join(name)).expect("read source");
+            let embedded = entry_bytes(name)
+                .expect("read archive")
+                .expect("prompt entry present");
+            assert_eq!(embedded, source, "embedded bytes differ: {name}");
+        }
     }
 
     fn walk(directory: &Path, prefix: &str, expected: &mut BTreeSet<String>) {

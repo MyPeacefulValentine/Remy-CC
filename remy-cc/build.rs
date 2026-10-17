@@ -16,7 +16,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Directories deployed verbatim under `~/.claude/`.
-const DEPLOY_DIRS: &[&str] = &["hooks", "skills", "output-styles"];
+const DEPLOY_DIRS: &[&str] = &["hooks", "skills", "output-styles", "rules"];
 
 /// Single files deployed under `~/.claude/`; source path equals destination
 /// path for every entry.

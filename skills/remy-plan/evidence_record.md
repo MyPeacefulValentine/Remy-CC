@@ -19,7 +19,7 @@ suspected --(re-read path+range, content matches)--> confirmed
 confirmed --(underlying file changed since excerpt)--> stale plan (remy-patch H2 hard interrupt)
 ```
 
-- **Promotion** (`remy-patch` Phase 0): for any `suspected` entry, re-read the referenced `path` and `range`, confirm the content, then edit the packet to promote `status` to `"confirmed"`. Writes under `.claude/temp_task/` are exempt from the guard, so the promotion edit is always permitted.
+- **Promotion** (`remy-patch` Phase 0): for any `suspected` entry, re-read the referenced `path` and `range` and verify the content before changing `status` to `"confirmed"`. The `.claude/temp_task/` exemption skips the PreToolUse packet-reference check for remediation; it does not grant user authorization or override native permissions or read-only modes. Edit only within an applicable approved scope; otherwise request authorization. Do not relabel evidence or remove an active marker merely to bypass a rejected operation.
 - **Staleness** (`remy-patch` H2): if the target's signature or structure has changed since the audit's `excerpt`, the plan is stale — hard interrupt, do not edit.
 
 ## Producer-Specific Extensions (defined in each SKILL.md, not here)
