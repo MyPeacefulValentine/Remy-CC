@@ -119,6 +119,8 @@ The context injection system always uses **MCP Minimal mode** — injecting only
 
 Skills with `disable-model-invocation: true` must be invoked manually. Each defines its own inputs, outputs, and stop conditions.
 
+Code-task strategy follows goals, contracts and responsibility rather than binary decision grades. `/remy-plan` retains its seven phases, five-category checklist, five tables and existing audit/packet JSON; optional task annotations do not replace visible confirmations or grant permission. `/remy-patch` preserves recovery material and behavioral decision logs. Test generation distinguishes characterization/conformance and missing-behavior failures from environment failures.
+
 | Command | Purpose | Doc (Link) |
 | :--- | :--- | :--- |
 | `/remy-plan` | Deep analysis and planning before writing code — 5-table audit with assumption manifest, scenario probes, and verification plan | [📖](skills/remy-plan/README.md) |

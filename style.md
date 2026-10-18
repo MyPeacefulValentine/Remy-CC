@@ -29,7 +29,7 @@ Use a compound marker only when the extra attribute helps distinguish the claims
 
 ## Rule locations
 
-`rules/communication.md` defines wording boundaries and presentation. `rules/reasoning-and-decisions.md` defines Question Gate and reasoning checks. Installation places both under `~/.claude/rules/` for native unconditional loading; they are not imported again here. The repository `rules/` directory is deployment input, not a project `.claude/rules/` directory. Distributing this file alone does not distribute those rules.
+`rules/communication.md` defines wording boundaries and presentation. `rules/reasoning-and-decisions.md` owns the Question Gate, reasoning checks, and goal/constraint/responsibility-driven code-task planning core. Task annotations are presentation aids, not evidence states or authorization; their format is defined in `rules/communication.md`. Installation places both under `~/.claude/rules/` for native unconditional loading; they are not imported again here. The repository `rules/` directory is deployment input, not a project `.claude/rules/` directory. Distributing this file alone does not distribute those rules.
 
 ## Authorization and execution
 

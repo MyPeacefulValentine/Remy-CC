@@ -72,12 +72,36 @@ def main():
     run(installed, ["verify"], env, work)
     manifest = read_json(remy / "install" / "manifest.json")
     assert manifest["schema_version"] == 4 and manifest["suite_version"] == expected
-    for relative in ("style.md", "rules/communication.md", "rules/reasoning-and-decisions.md"):
+    descriptions = read_json(ROOT / "skills" / "skill_descriptions.json")
+    checked = (
+        "style.md", "rules/communication.md", "rules/reasoning-and-decisions.md",
+        "skills/remy-plan/SKILL.md", "skills/remy-plan/output_schema.json",
+        "skills/remy-plan/audit_template_en.md", "skills/remy-plan/audit_template_zh.md",
+        "skills/remy-patch/SKILL.md", "skills/remy-testgen/SKILL.md",
+        "skills/remy-testgen/prompts/generate_behavioral.md",
+        "skills/remy-testgen/prompts/generate_boundary.md",
+        "skills/remy-testgen/prompts/generate_property.md",
+    )
+    for relative in checked:
         deployed = claude / relative
-        assert deployed.read_bytes() == (ROOT / relative).read_bytes(), relative
+        expected_bytes = (ROOT / relative).read_bytes()
+        if relative.endswith("/SKILL.md"):
+            skill = relative.split("/")[1]
+            lines = expected_bytes.decode("utf-8").splitlines(keepends=True)
+            for index, line in enumerate(lines):
+                if line.startswith("description:"):
+                    lines[index] = f"description: {descriptions[skill]['en']}\n"
+                    break
+            expected_bytes = "".join(lines).encode("utf-8")
+        assert deployed.read_bytes() == expected_bytes, relative
         record = next(item for item in manifest["files"]
                       if item["root"] == "claude" and item["path"] == relative)
-        assert record["sha256"] == digest(deployed) and record["role"] == "claude_protocol"
+        role = "claude_skill" if relative.startswith("skills/") else "claude_protocol"
+        assert record["sha256"] == digest(deployed) and record["role"] == role
+    for name in ("planning_contract.py", "planning_contract.schema.json", "planning_contract.md"):
+        relative = f"skills/remy-plan/{name}"
+        assert not (claude / relative).exists(), relative
+        assert not any(item["root"] == "claude" and item["path"] == relative for item in manifest["files"])
     settings = read_json(settings_path)
     assert settings["env"]["USER_SENTINEL"] == "keep"
     assert "Read(synthetic.txt)" in settings["permissions"]["allow"]

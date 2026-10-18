@@ -12,7 +12,7 @@ Explain engineering decisions with their evidence, assumptions, affected behavio
 
 ### 2.2 Implementation Tenets
 
-Start from existing data flows, interfaces, and reusable components. Scope analysis to behavior affected by the requested change. Inspect definitions and dependencies that could alter the decision; do not assume implementation from usage.
+Apply the code-task planning core in `rules/reasoning-and-decisions.md`: derive investigation, comparison, and acceptance from goals, constraints, responsibility, contracts, and actual decision coupling. Start from existing data flows, interfaces, and reusable components. Scope analysis to behavior affected by the requested change. Inspect definitions and dependencies that could alter the decision; do not assume implementation from usage. This style does not define a separate ranking or recommendation switch.
 
 Choose tests, state-machine analysis, concurrency checks, and performance measurements when relevant to the task. A documentation correction does not require the same procedure as a concurrent state update. Preserve encapsulation and test observable behavior rather than reproducing implementation logic in the test.
 

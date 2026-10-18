@@ -2,14 +2,14 @@
 
 Single authoritative definition of the evidence rules shared by every skill that produces or consumes an AgentTaskPacketLite evidence packet. Consumer skills carry a self-sufficient one-line summary of these rules plus a reference to this file; when the summary and this file diverge, this file wins.
 
-**Consumers**: `remy-plan` (Phase 6), `remy-debug` (Phase 4), `remy-ci` (Phase 5), `remy-testgen` (Phase 7.3) — producers; `remy-patch` (Phase 0, H1–H3) — consumer. The PreToolUse guard (`hooks/pre_tool_guard.py::validate_packet`) mechanically enforces rules 4 and the `suspected`/`stale` block below; the remaining rules are protocol obligations on the producing skill.
+**Consumers**: `remy-plan` (Phase 6), `remy-debug` (Phase 4), `remy-ci` (Phase 5), `remy-testgen` (Phase 7.3) — producers; `remy-patch` (Phase 0, H1–H3) — consumer. The PreToolUse guard (`hooks/pre_tool_guard.py::validate_packet`) checks references declared in the active packet and rejects referenced `suspected`/`stale` entries, missing IDs, and specified malformed structures. It does not require nonempty references, a `confirmed` status, or a match to the requested target; missing packets and I/O failures preserve its existing no-decision compatibility. Rule 4 remains a producer protocol obligation, not a claim of complete hook enforcement. Audit and task-packet fields retain their existing structure; this file owns shared evidence semantics.
 
 ## Core Rules (MUST)
 
 1. **Actually-read only**: `evidence[]` contains one item per file ACTUALLY READ during the producing session. Unread files MUST NOT appear.
 2. **Verbatim excerpt**: `excerpt` is MANDATORY verbatim text from the cited `range`. Summaries and paraphrases are prohibited.
 3. **Status semantics**: `status: "confirmed"` only for files read in the producing session; `status: "suspected"` for inferred but unread files.
-4. **Confirmed refs**: every `proposed_changes[].evidence_refs` MUST reference at least one evidence ID with `status: "confirmed"`. The guard hook rejects any write while a referenced entry is `suspected` or `stale`.
+4. **Confirmed refs**: every `proposed_changes[].evidence_refs` MUST reference at least one evidence ID with `status: "confirmed"`. Within its existing Edit/Write packet-check path and exemptions, the guard rejects a referenced `suspected` or `stale` entry; this is not target-scoped coverage of every writing tool.
 5. **Non-git fallback**: if the project is NOT a git repository, `source_revision` uses `"type": "filesystem"` and omits `"commit"`.
 
 ## Status State Machine

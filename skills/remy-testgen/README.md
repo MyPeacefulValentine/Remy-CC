@@ -10,8 +10,10 @@ Generate persistent unit tests for existing or stub code. Supports post-hoc test
 
 ### Modes
 
-- **Post-hoc** (default): Reads existing implementation and generates tests that validate current behavior. Tests are expected to PASS.
-- **TDD** (`--tdd`): Generates failing test skeletons from interface signatures or `/remy-plan` evidence packets. Tests are expected to FAIL (RED state).
+- **Post-hoc** (default): Distinguishes characterization of current behavior from conformance to explicit requirements. A failure may involve the implementation, generated test or environment; do not assume the implementation is correct or weaken an assertion just to pass.
+- **TDD** (`--tdd`): Uses specified interface behavior or the original `/remy-plan` packet. Only failures demonstrating missing required behavior establish RED; passing regression cases may coexist, while syntax/import/environment failures are not business RED.
+
+The existing packet, report fields, effort levels and coverage flow remain. Requirement sources, responsibility and unknowns reach the three agent prompts as text. TDD producers still update `.active_packet` after an authorized packet write; packet contents are not implementation permission.
 
 ### Effort Levels
 
@@ -48,7 +50,7 @@ Generate persistent unit tests for existing or stub code. Supports post-hoc test
 ## Output
 
 - **Test files**: Written to the project's test directory (auto-detected or user-specified).
-- **Report**: `.claude/temp_testgen/testgen_{timestamp}.md`
+- **Report**: `.claude/temp_testgen/testgen_{timestamp}.md`; the actual saved report also records test purpose, requirement sources, failure interpretation and unverified premises as narrative, without changing report JSON.
 - **Coverage report** (if supplement declined): `.claude/temp_testgen/coverage_{timestamp}.md`
 - **TDD packet** (TDD mode only): `.claude/temp_task/testgen_{timestamp}.json` — pass to `/remy-patch`.
 

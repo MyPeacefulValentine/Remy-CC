@@ -11,6 +11,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 MODULE_PATH = Path(__file__).resolve().parent.parent / "remy-src" / "patch_descriptions.py"
 spec = importlib.util.spec_from_file_location("patch_descriptions_tested", MODULE_PATH)
 assert spec and spec.loader
@@ -108,3 +110,22 @@ class TestWarnings:
         pd.patch(home, "en")
         assert "failed to read" in capsys.readouterr().err
         assert "description: old text\n" in _skill_md(home).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("language", ["en", "zh-CN"])
+@pytest.mark.parametrize("skill", ["remy-plan", "remy-patch", "remy-testgen"])
+def test_real_planning_descriptions_preserve_protocol_body(tmp_path, language, skill):
+    root = MODULE_PATH.parent.parent
+    descriptions = json.loads((root / "skills/skill_descriptions.json").read_text(encoding="utf-8"))
+    source = (root / "skills" / skill / "SKILL.md").read_text(encoding="utf-8")
+    expected = descriptions[skill][language]
+    assert isinstance(expected, str) and expected.strip()
+    home = _make_home(tmp_path, descriptions, source.splitlines(keepends=True), skill)
+    pd.patch(home, language)
+    actual = _skill_md(home, skill).read_text(encoding="utf-8")
+    assert actual.split("---", 2)[2] == source.split("---", 2)[2]
+    lines = actual.splitlines()
+    assert f"description: {expected}" in lines[:pd.MAX_FRONTMATTER_LINES]
+    before = _skill_md(home, skill).read_bytes()
+    pd.patch(home, language)
+    assert _skill_md(home, skill).read_bytes() == before

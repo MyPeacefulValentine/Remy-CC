@@ -9,6 +9,7 @@ You will receive:
 2. Contextual summary (callers, callees, type signatures if available)
 3. List of existing test names covering these symbols (may be empty)
 4. Mode indicator: `post-hoc` or `tdd`
+5. Actual requirements and contract sources, responsibility/preservation boundaries, test purpose (characterization or conformance), and unresolved premises. Preserve these in existing descriptions; do not invent new output fields or sources.
 
 ## Task
 
@@ -25,7 +26,7 @@ For each target function, identify **test cases that explore input boundaries an
 
 Focus on inputs that are **technically valid at the call site** (match the type signature or are commonly passed by callers) but may trigger incorrect behavior.
 
-In TDD mode: focus on what the interface SHOULD handle defensively based on the signature and docstring.
+In either mode, the actual input contract and responsibility owner determine the expected handling. A value accepted by a type signature does not alone require the callee to defend against it; the caller may own validation. Use the supplied requirements and sources, distinguish characterization from conformance, and preserve unresolved premises rather than inventing defensive behavior.
 
 ## Output Format
 

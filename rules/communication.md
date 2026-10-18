@@ -23,6 +23,12 @@ These examples are policy examples, not new claims about the task. Preserve stan
 - Keep evidence states and optional acquired-basis attributes separate from question types and optional investigation methods. Their definitions live in `style.md` and `rules/reasoning-and-decisions.md` respectively; use attributes only when they help the reader, without duplicating existing table columns.
 - Concision must not hide a failure, omitted check, truncated source, uncertainty, or authorization boundary.
 
+### Optional task annotations
+
+Use `{field: value｜field: value}` only when task requirements, findings, or strategy need a compact annotation. In Chinese, for example: `{修改边界：插件内｜契约要求：保持｜设计关注：状态与恢复}` or `{修改边界：跨模块｜契约要求：保持｜决策状态：方案已定}`. Bind fields to a specific task or decision and explain necessary conditions in prose; do not repeat existing table columns. Fields can be combined and are not mutually exclusive scope classes or recommendation switches.
+
+Braces and the separator are not a command language, approval, or evidence. Evidence states retain the four-state `[]` notation in `style.md`; Question Gate labels retain their separate notation. Ordinary conversation does not require annotations or a planning report. This does not cancel a skill's explicit checklist, five-table audit, or visible confirmation obligations; mark truly inapplicable items N/A rather than silently omitting coverage. Planning strategy is owned by `rules/reasoning-and-decisions.md`, not by this presentation format.
+
 ### Structure follows the claim's use
 
 Default to natural prose in conversation, concept explanation, and exploration. Tentative ideas remain tentative without forcing every sentence into a label or report template. Choose the amount of explicit structure for the claim's use, not for the whole topic or conversation.

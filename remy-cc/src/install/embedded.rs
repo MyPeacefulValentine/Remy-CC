@@ -121,6 +121,21 @@ mod tests {
     }
 
     #[test]
+    fn withdrawn_planning_prototype_is_not_deployed() {
+        let names = archive_names();
+        for path in [
+            "skills/remy-plan/planning_contract.py",
+            "skills/remy-plan/planning_contract.schema.json",
+            "skills/remy-plan/planning_contract.md",
+        ] {
+            assert!(
+                !names.contains(path),
+                "withdrawn prototype embedded: {path}"
+            );
+        }
+    }
+
+    #[test]
     fn ignore_rules_hold_in_archive() {
         for name in archive_names() {
             assert!(!name.contains("__pycache__"), "cache leaked: {name}");
@@ -177,6 +192,18 @@ mod tests {
             "style.md",
             "skills/remy-plan/evidence_record.md",
             "skills/remy-plan/SKILL.md",
+            "skills/remy-plan/audit_template_en.md",
+            "skills/remy-plan/audit_template_zh.md",
+            "skills/remy-plan/output_schema.json",
+            "skills/remy-plan/saturation_protocol.md",
+            "skills/remy-plan/halt_protocol.md",
+            "skills/remy-patch/SKILL.md",
+            "skills/remy-testgen/SKILL.md",
+            "skills/remy-testgen/prompts/generate_behavioral.md",
+            "skills/remy-testgen/prompts/generate_boundary.md",
+            "skills/remy-testgen/prompts/generate_property.md",
+            "skills/skill_descriptions.json",
+            "hooks/tree_system/banner_data.json",
             "skills/remy-debug/SKILL.md",
             "skills/remy-debug/diagnosis_template.md",
             "skills/remy-ci/diagnosis_template.md",

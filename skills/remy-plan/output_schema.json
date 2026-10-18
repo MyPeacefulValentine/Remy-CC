@@ -12,7 +12,7 @@
         "required": ["ambiguity", "options", "fixed_constraint", "rationale"],
         "properties": {
           "ambiguity": { "type": "string", "description": "决策点/模糊项" },
-          "grade": { "type": "string", "description": "决策分级（可选）：实现级/架构级（en: Implementation/Architectural）；架构级须附判据引用，参见 SKILL.md Phase 3 的 Decision Grade Reference" },
+          "grade": { "type": "string", "description": "历史输入兼容字段；新审计不生成此字段，不用于推荐策略。决定依据和实现边界写入现有 rationale/fixed_constraint。" },
           "options": { "type": "string", "description": "可选方案" },
           "fixed_constraint": { "type": "string", "description": "最终锁定约束" },
           "rationale": { "type": "string", "description": "锁定理由" }
@@ -69,7 +69,7 @@
           "location": { "type": "string", "description": "具体函数/行号" },
           "action": { "type": "string", "enum": ["Create", "Modify", "Delete"], "description": "操作类型" },
           "summary": { "type": "string", "description": "修改目的与内容简述" },
-          "scope_position": { "type": "string", "description": "修改层级：以 `[标签]` 开头（zh-CN：补丁/局部修复/接口变更/跨域重构；en：Boundary-Wrap/Source-Modify/Contract-Change/Scope-Refactor），后接 1 句话说明为何此修改位于此层级。参见 SKILL.md Phase 3 的 Scope Tag Reference 表" },
+          "scope_position": { "type": "string", "description": "实际修改位置、责任边界和契约要求；可用 {字段：值｜字段：值} 按需注记，不强制旧单选标签。字段和字符串类型保持兼容，参见 SKILL.md 的 Task Attribute Reference。" },
           "ripple_effect": { "type": "string", "description": "涟漪效应" },
           "caller_refs": {
             "type": "array",

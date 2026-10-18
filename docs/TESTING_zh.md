@@ -1,5 +1,15 @@
 # 测试
 
+## 任务策略与原结构回归
+
+`tests/test_prompt_contracts.py` 检查原五表 JSON 字段及旧输入兼容，并核对需求/场景可见确认、原计数预算、逐目标新鲜度、恢复材料、行为日志和生产者活动包更新义务。测试生成子模板区分现状刻画、要求符合性和缺失行为 RED，不修改场景/报告 JSON 或覆盖率预算。
+
+```text
+python -B -m pytest Remy-CC/tests/test_prompt_contracts.py Remy-CC/tests/test_planning_policy_cases.py Remy-CC/tests/test_patch_descriptions.py --noconftest -p no:cacheprovider -q
+```
+
+成对案例的离线测试只检查输入和评分结构，不执行模型或自动判断回答语义。隔离安装探针在新临时 HOME 检查实际技能/模板字节、语言描述替换、manifest 和用户文件保留，不覆盖开发者真实安装。被撤出的原型文件不得残留在嵌入档案中。程序测试、安装验证与模型行为结论须分别报告。
+
 ## 环境
 
 Remy-CC 支持 Python 3.10 及以上版本。使用以下命令安装固定版本的开发工具：

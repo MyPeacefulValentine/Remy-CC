@@ -518,6 +518,24 @@ rules remain unchanged.
 
 ### Prompt contracts and behavior cases
 
+Task-policy regression checks preserve the baseline five-table JSON fields and
+legacy inputs, including optional grade and extra fields. They also check visible
+requirement/scenario gates, manifest/scenario budgets, per-target freshness,
+recovery material, behavioral decision logs, and producer activity-pointer steps.
+The testgen prompts receive requirement sources and distinguish characterization,
+conformance and missing-behavior RED without changing scenario/report JSON or
+coverage budgets. `tests/test_planning_policy_cases.py` checks the twelve paired
+synthetic cases and their rubric; it is not a model runner or semantic grader.
+
+```text
+python -B -m pytest Remy-CC/tests/test_prompt_contracts.py Remy-CC/tests/test_planning_policy_cases.py Remy-CC/tests/test_patch_descriptions.py --noconftest -p no:cacheprovider -q
+```
+
+The release installation probe uses a separate temporary home and verifies the
+selected skill/template bytes after language-description replacement, manifest
+hashes and user-file preservation. It does not activate rules in the developer's
+real installation. Withdrawn prototype files must not remain in the archive.
+
 `tests/test_prompt_contracts.py` checks the four evidence states, output-style
 frontmatter, scoped authorization, shared procedure references, and short bilingual
 reminders. The independent `rules/` files additionally check observation failure,

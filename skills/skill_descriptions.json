@@ -1,11 +1,11 @@
 {
   "remy-plan": {
-    "en": "Audit architecture for risks, side effects, and ambiguities before writing code. Produces evidence packets for /remy-patch. Recommended for large or complex tasks.",
-    "zh-CN": "编码前审计架构，识别风险、副作用和歧义。为 /remy-patch 生成证据包。建议在大型或复杂任务规划时使用。"
+    "en": "Plan code changes using task-scoped strategy, five-table audits and the existing evidence-packet workflow.",
+    "zh-CN": "按任务边界与契约规划代码变更，保留五表审计和原证据包工作流。"
   },
   "remy-patch": {
-    "en": "Apply code modifications under engineering constraints. Accepts plan packets from /remy-plan as argument, or use standalone with a modification request.",
-    "zh-CN": "在工程约束下执行代码修改。可接受 /remy-plan 生成的计划文件为参数，也可独立附简要修改需求使用。"
+    "en": "Apply code changes with task-scoped strategy and recovery records. Accepts existing evidence packets or standalone requests.",
+    "zh-CN": "按任务策略修改代码并保留恢复与决定记录；接受原证据包或独立修改需求。"
   },
   "remy-inspect": {
     "en": "Discover and run tests after code modification. Supports multi-angle defect prediction and coverage analysis. Recommended after large-scale edits or accumulated working tree changes.",
@@ -48,8 +48,8 @@
     "zh-CN": "审查分支变更中的安全漏洞。多阶段：正则预扫描、并行 Agent 和误报过滤。"
   },
   "remy-testgen": {
-    "en": "Generate persistent unit tests for existing or stub code. Supports post-hoc testing (default) and TDD mode (--tdd). Multi-angle agent analysis at medium/high effort levels.",
-    "zh-CN": "为现有代码或桩代码生成持久化单元测试。支持后补测试（默认）和 TDD 模式（--tdd）。medium/high 级别使用多角度 Agent 并行分析。"
+    "en": "Generate persistent unit tests in post-hoc or TDD mode, distinguishing characterization from conformance and behavior failures from environment failures.",
+    "zh-CN": "生成后补或 TDD 单元测试，区分现状刻画与要求符合性，以及行为失败与环境失败。"
   },
   "remy-ci": {
     "en": "Analyze CI/CD failure logs (compile, link, test, sanitizer, QEMU, style, static analysis, build config). Supports GitHub Actions (gh CLI), local files, and pasted logs. Produces evidence packets for /remy-patch.",

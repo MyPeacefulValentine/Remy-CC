@@ -9,6 +9,7 @@ You will receive:
 2. Contextual summary (callers, callees, type signatures if available)
 3. List of existing test names covering these symbols (may be empty)
 4. Mode indicator: `post-hoc` or `tdd`
+5. Actual requirements and contract sources, responsibility/preservation boundaries, test purpose (characterization or conformance), and unresolved premises. Preserve these in existing descriptions; do not invent new output fields or sources.
 
 ## Task
 
@@ -20,7 +21,7 @@ For each target function, identify **test cases that verify the behavioral contr
 - **Invariant maintenance**: What properties hold true before and after the call?
 - **Exception contracts**: What exceptions are raised under what documented conditions?
 
-In TDD mode: derive contracts solely from signatures, docstrings, and type hints. In post-hoc mode: derive contracts from the actual implementation logic.
+For conformance tests in either mode, derive expectations from explicit requirements and inspected contracts; signatures, docstrings and implementation help locate behavior but are not automatically correct. For characterization tests, state that the assertion records observed or source-inferred current behavior, not proof of compliance. Preserve unknown premises and do not guess a missing oracle or weaken an assertion to match a defect. Use the existing description field for purpose and source.
 
 ## Output Format
 

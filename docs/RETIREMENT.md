@@ -335,3 +335,13 @@ Closure notes:
 - The `mcp` Python package lost its production consumer with the R4.1
   Python MCP deployment retirement; the Rust installer neither installs nor
   verifies it, and the README requirement row is removed in this batch.
+
+## 10. Task-planning policy compatibility
+
+Implementation/Architectural grades no longer drive new planning recommendations.
+The seven phases, five-category scan, five tables, review budgets and producer
+activity-pointer steps remain. The existing audit and task-packet JSON structures
+are retained: optional historical `grade` values remain readable, while new output
+uses actual task attributes in existing text fields such as `scope_position`.
+No new packet version, mandatory contract extension or production validator is
+introduced by this policy revision. Historical audit records are not rewritten.

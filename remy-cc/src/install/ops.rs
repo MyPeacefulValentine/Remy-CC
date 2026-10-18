@@ -969,44 +969,55 @@ mod tests {
 
     #[test]
     fn skill_descriptions_are_patched_for_the_selected_language() {
-        let env = setup("zh-CN");
-        install(&env.params).expect("install");
         let descriptions: Value = serde_json::from_slice(
             &embedded::entry_bytes(embedded::SKILL_DESCRIPTIONS_ENTRY)
                 .expect("archive")
                 .expect("descriptions"),
         )
         .expect("json");
-        let (skill, lang_map) = descriptions
-            .as_object()
-            .expect("object")
-            .iter()
-            .find(|(name, langs)| {
-                langs.get("zh-CN").and_then(Value::as_str).is_some()
-                    && env
-                        .params
-                        .claude_root
-                        .join("skills")
-                        .join(name.as_str())
-                        .join("SKILL.md")
-                        .is_file()
-            })
-            .expect("a patchable skill");
-        let expected = lang_map["zh-CN"].as_str().expect("zh text");
-        let skill_md = fs::read_to_string(
-            env.params
-                .claude_root
-                .join("skills")
-                .join(skill)
-                .join("SKILL.md"),
-        )
-        .expect("skill md");
-        let description_line = skill_md
-            .lines()
-            .take(DESCRIPTION_SCAN_LINES)
-            .find(|line| line.starts_with("description:"))
-            .expect("description line");
-        assert_eq!(description_line, format!("description: {expected}"));
+        for language in ["en", "zh-CN"] {
+            let env = setup(language);
+            install(&env.params).expect("install");
+            let Some(LoadedManifest::Current(manifest)) =
+                manifest::load(&env.params.remy_root).expect("manifest")
+            else {
+                panic!("expected current manifest");
+            };
+            for skill in ["remy-plan", "remy-patch", "remy-testgen"] {
+                let path = format!("skills/{skill}/SKILL.md");
+                let expected = descriptions[skill][language].as_str().expect("translation");
+                assert!(!expected.trim().is_empty());
+                let skill_md =
+                    fs::read_to_string(env.params.claude_root.join(&path)).expect("skill md");
+                let description_line = skill_md
+                    .lines()
+                    .take(DESCRIPTION_SCAN_LINES)
+                    .find(|line| line.starts_with("description:"))
+                    .expect("description line");
+                assert_eq!(description_line, format!("description: {expected}"));
+                let source = String::from_utf8(
+                    embedded::entry_bytes(&path)
+                        .expect("archive")
+                        .expect("skill"),
+                )
+                .expect("UTF-8 skill");
+                assert_eq!(
+                    skill_md.splitn(3, "---").nth(2).expect("installed body"),
+                    source.splitn(3, "---").nth(2).expect("source body"),
+                    "protocol body changed: {skill} {language}"
+                );
+                let record = manifest
+                    .files
+                    .iter()
+                    .find(|file| file.root == "claude" && file.path == path)
+                    .expect("skill record");
+                assert_eq!(record.role, "claude_skill");
+                assert_eq!(record.sha256, storage::sha256_hex(skill_md.as_bytes()));
+            }
+            let before = tree_snapshot(&env.params.claude_root);
+            install(&env.params).expect("repeat install");
+            assert_eq!(tree_snapshot(&env.params.claude_root), before);
+        }
     }
 
     #[test]

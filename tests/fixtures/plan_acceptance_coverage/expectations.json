@@ -1,0 +1,57 @@
+{
+  "version": "1.0.0",
+  "states": ["满足", "部分满足", "不满足"],
+  "common_required": [
+    {"id": "coverage", "source_refs": ["goal", "scenarios"], "text": "各案例要求的适用行为和保持项都有可观察预期及可执行或可设计的检查方法；不能仅列变更清单、兼容关键词或全部测试通过。受阻部分允许给条件检查，但须标清缺口。"},
+    {"id": "traceability", "source_refs": ["goal", "approval"], "text": "验收能回溯到给定要求、适用条件及批准变更；可用清楚文字或来源引用，不要求新ID、一义务一行或重复矩阵。合并检查仍可分辨各项预期。"},
+    {"id": "handoff", "source_refs": ["goal", "scenarios", "approval"], "text": "未写入的analysis/plan/assumptions交接保留各必需验收义务、条件和限制。允许明确引用同一输出的表五具体条目或完整表五，不强求逐字重复，但不能仅说做测试而丢失适用项。受阻案不能称可执行就绪。"},
+    {"id": "evidence_boundary", "source_refs": ["replay"], "text": "将来源和批准表述为合成输入，方法为计划而非实测；不伪造工具调用、检查通过或产包。可在合成前提内推理，但须保留实际执行未验证的边界。"},
+    {"id": "scope", "source_refs": ["approval"], "text": "验收和实施不扩张到未采用候选或范围外对象的修改；可以验证未修改消费者的受影响契约，不将其误判为编辑许可。既有批准不需要无依据地重新确认。"},
+    {"id": "presentation", "source_refs": ["replay"], "text": "使用所给语言的五表及仅analysis/plan/assumptions的未写入交接草案。受阻时可保留五表草稿并标出受阻项，不要求伪造Locked、生产packet或证据记录。不适用性质可以N/A，不以表二空缺免除普通行为验收。"}
+  ],
+  "common_forbidden": [
+    {"id": "fabricated_execution", "text": "声称实际Read、Ask、运行测试、写packet或切换活动指针，或给不存在packet的执行命令。"},
+    {"id": "scope_expansion", "text": "把范围外修改、未选候选的实现或与任务无关的机制作为完成本任务的强制条件。"},
+    {"id": "false_readiness", "text": "将影响方案或验收成立的未知标N/A、无根据改为非阻塞，或在该未知未解时宣称对应方案可执行就绪。"}
+  ],
+  "cases": [
+    {
+      "id": "A",
+      "required": [
+        {"id": "coexistence_reads", "source_refs": ["contract", "selection", "scenarios"], "text": "明确验证共存期旧、新客户端均读取格式1且条目标识和内容符合要求，不能只测试生成器格式。"},
+        {"id": "post_cutover_read", "source_refs": ["contract", "selection", "scenarios"], "text": "明确验证退出条件满足后，新客户端能够读取格式2且内容和标识保持。"},
+        {"id": "routing_and_gate", "source_refs": ["selection", "scenarios"], "text": "明确验证有旧客户端时禁止格式2发布，以及退出后旧客户端请求被拒绝／隔离而不是收到格式2；不强迫旧客户端支持格式2。"}
+      ],
+      "acceptable_variations": ["可用单一参数化兼容矩阵覆盖多种允许／禁止组合。", "不要求具体测试框架或全部笛卡尔组合。"]
+    },
+    {
+      "id": "B",
+      "required": [
+        {"id": "wording_and_preservation", "source_refs": ["goal", "contract", "scenarios"], "text": "验收新标题和说明，并分别保持显式锚点、链接目标及命令示例；同一文档差异检查可覆盖多项。"},
+        {"id": "skip_without_loss", "source_refs": ["approval", "scenarios"], "text": "沿给定批准／场景处理，不因无运行行为变化或跳过重复确认而省掉文档验收，也不要求重做全部场景批准。"},
+        {"id": "applicability", "source_refs": ["contract"], "text": "不为本案强制构造PBT、运行时恢复、迁移或状态机；这些项目可明确不适用，但文档保持项不可N/A。"}
+      ],
+      "acceptable_variations": ["静态链接检查、文档渲染检查或有具体预期的人工比对均可。", "可以引用上游批准而不重复主／异常确认。"]
+    },
+    {
+      "id": "C",
+      "required": [
+        {"id": "success_and_write_failure", "source_refs": ["goal", "scenarios"], "text": "验收成功后的新报告内容，以及临时写入失败时不调用替换、返回错误、旧目标和范围外文件保持。"},
+        {"id": "replacement_and_cleanup", "source_refs": ["goal", "scenarios", "replacement_guarantee"], "text": "验收替换失败时旧目标不变及返回错误；验收失败后清理失败仍保留主失败并附警告，不误报成功或删除旧目标。"},
+        {"id": "known_vs_unrelated", "source_refs": ["replacement_guarantee", "unrelated_unknown", "approval"], "text": "可依给定接口契约继续设计和文字交接，但不将该契约说成实测；日志展示未知不阻塞本任务，可以留作范围外或非阻塞未知。"}
+      ],
+      "acceptable_variations": ["故障注入、适配器测试替身及目标文件前后比对均可作为计划方法。", "可用同一检查覆盖错误结果、目标保持和无关文件保持。"]
+    },
+    {
+      "id": "D",
+      "required": [
+        {"id": "blocking_guarantee", "source_refs": ["replacement_guarantee", "goal", "approval"], "text": "明确替换失败时旧目标是否保持的能力未知会阻塞对应方案／交接，需查接口定义、实现、契约或受控实验；用户批准期望不能确认技术能力。"},
+        {"id": "conditional_acceptance", "source_refs": ["goal", "scenarios", "replacement_guarantee"], "text": "保留替换失败保持旧目标和清理失败处理的必要验收，可写成有前提的草稿但不能删去、标N/A或隐藏为非阻塞assumption。"},
+        {"id": "bounded_progress", "source_refs": ["scenarios", "unrelated_unknown", "selection"], "text": "仍可规划成功、临时写入失败等不依赖未知保证的部分；不因日志展示未知或一个受阻分支取消全部调查，也不擅自修改storage适配器。"}
+      ],
+      "acceptable_variations": ["可以拒绝可执行交接，同时给出明确标为受阻的五表和文字交接草稿。", "可提出受现有边界约束的后续选项，但不把它当已获准替代方案。"]
+    }
+  ],
+  "single_fact_pair": {"cases": ["C", "D"], "source": "replacement_guarantee"},
+  "adoption": "全部8个候选条件语言单元的适用必需项满足且无禁止表现；部分满足不通过。对照用于描述差异，不要求对照必须失败。判读不是自动语义验证。"
+}

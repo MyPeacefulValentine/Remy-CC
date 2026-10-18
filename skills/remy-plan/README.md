@@ -17,13 +17,13 @@ A **reuse scan** is performed: for any planned new function or utility, the proj
 
 ### Phase 2: Requirement Restatement Gate
 
-Skipped when the task text already contains both explicit target files/symbols and verifiable acceptance criteria (a spec-complete task emits `Restatement skipped: spec-complete`; bug fixes with an error log or repro steps count as spec-complete). Otherwise the AI embeds its restated understanding — **Goal / Motivation / Out-of-scope** — inside a two-option `AskUserQuestion` for confirmation (the host does not reliably render assistant text emitted before a tool call). Deviations are merged via free text and the restatement loops until confirmed.
+The visible checkpoint remains. Explicit targets, verifiable acceptance and task boundaries must be complete, either in the request or an applicable approval, before skipping with `Restatement skipped: spec-complete` and its basis. An error log alone is not enough. Otherwise **Goal / expressed Motivation / Out-of-scope** is embedded in a two-option `AskUserQuestion`; do not invent a motive. Deviations are merged and the restatement loops until confirmed.
 
 ### Phase 3: Ambiguity Elimination Loop
 
-The AI scans for ambiguities using a mandatory 5-category checklist (Interface Contract, Resource & Dependency, Behavioral Boundary, Execution Order, Change Boundary). If multiple technical paths exist, the AI **must** pause and use `AskUserQuestion` to ask the user — each question must include exactly one recommended option with a 1-sentence reason. Each decision point is graded Implementation or Architectural against observable criteria (contract consumers ≥ 2, correction requires migration or cross-module sync, constrains later decisions); Architectural points switch the recommendation standard from minimal change to data-structure/contract/invariant-first, and every option must state its future correction cost. Questions with inter-dependencies are presented sequentially rather than batched.
+The mandatory five-category checklist remains: Interface Contract, Resource & Dependency, Behavioral Boundary, Execution Order and Change Boundary. Each is addressed or marked N/A. User-owned alternatives are asked with a recommendation and its basis; dependent questions remain sequential. Recommendations follow goals, hard constraints, responsibility and actual decision coupling, not Implementation/Architectural grades or a default smallest diff. Optional `{field: value｜field: value}` annotations describe task attributes in the existing text fields.
 
-Upon receiving an answer, the AI searches for related code and performs **cross-constraint validation** against all previously locked decisions before proceeding. If a contradiction is found, the conflicting prior decision is invalidated and re-presented. This loop repeats until all "TBD" items are converted to "Fixed" constraints.
+After an answer, related code is searched and **cross-constraint validation** checks prior decisions. A contradiction is re-presented without silently invalidating a prior hard requirement. User decisions must be settled; implementation details may remain within explicit bounds that preserve the agreed behavior.
 
 ### Phase 4.1: Assumption Manifest & Scenario Probes
 
@@ -33,11 +33,11 @@ Questions are batched by dependency and proposal impact, not confidence rank. Un
 
 ### Phase 4.2: Scenario Confirmation Gate
 
-Triggered when locked decisions include contract-change / scope-refactor level modifications or new user-visible behavior; otherwise skipped with `Scenario confirmation skipped: no interface/behavior change`. The AI presents one `AskUserQuestion` call with two questions — the main success scenario in use-case format (Preconditions → Trigger → Main flow → Postconditions) and the extension scenarios (`condition → expected behavior`) — each carrying its narrative in the question field with Confirm/Deviation options. Wording-level deviations loop freely; a decision-level deviation re-enters the Phase 3 loop at most once, tracked by an independent `_scenario_pass` counter.
+Triggered by actual contract, responsibility, interaction or exception-behavior changes. Skip only for no such change or an approval covering the combined main and exception behavior, stating that basis. Confirm only new or changed portions not already covered. When both sections need confirmation, the AI presents one `AskUserQuestion` call with two questions; a fully approved section is cited as context rather than asked again. The sections remain distinct — the main success scenario in use-case format (Preconditions → Trigger → Main flow → Postconditions) and the extension scenarios (`condition → expected behavior`) — each carrying its narrative in the question field with Confirm/Deviation options. Wording-level deviations loop freely; a decision-level deviation re-enters the Phase 3 loop at most once, tracked by an independent `_scenario_pass` counter.
 
 ### Phase 4.3: Plan-Code Alignment Check
 
-Before generating the final tables, the AI re-reads target function signatures to confirm no concurrent external modifications invalidated the plan's assumptions. If a contradiction is detected, the ambiguity resolution loop is re-entered.
+Before generating the tables, the AI accounts for every target's freshness: relevant code definitions, document passages or existing integration points for new files. A clearly identified still-current observation may be reused; otherwise the needed content is re-read. Contradictions return to the decision loop. This is not an optional filter over targets.
 
 Two further pre-emit checks (Phase 4.4 Schema Deletion Tree-Wide Scan and Phase 4.5 Orphan Creation Detection) run afterwards to guard against dead code and untracked delete impact.
 
@@ -47,21 +47,21 @@ Once Phase 4 completes, the AI loads the template selected by the loaded `langua
 
 | Table | Purpose |
 | :--- | :--- |
-| Ambiguity Resolution Matrix | Records all decision points and their locked solutions. Any unlocked ambiguity rejects the plan. |
-| PBT Property Specification | Defines mathematical invariants (idempotency, reversibility, etc.) to guide test case design. |
+| Ambiguity Resolution Matrix | Settles user decisions and records explicit implementation bounds; unresolved user-owned choices block handoff. |
+| PBT Property Specification | Records supported properties with domains and premises; show N/A and use an empty array when none applies. Ordinary behavior checks stay in the verification table. |
 | Logic & Contract Audit | Checks data-flow consistency, complexity (Big-O), concurrency risks, and system side effects. |
 | Physical Change Simulation | Lists every file, function, and operation type to be modified, with ripple effect estimates. |
-| Verification Plan | Defines how to verify the implementation end-to-end after execution, with rollback conditions. |
+| Verification Plan | Maps goals, preserved contracts and selected-scenario branches to observable checks and back to their requirements, conditions and changes; includes failure handling. Reused approval does not remove coverage. |
 
 ### Phase 6: Evidence Packet Generation
 
-After the 5 tables, the AI writes an `AgentTaskPacketLite` JSON file to `.claude/temp_task/task_{TIMESTAMP}.json`. This packet contains:
+After the 5 tables, when authorization, mode and absence of blockers permit it, the AI writes an `AgentTaskPacketLite` JSON file to `.claude/temp_task/task_{TIMESTAMP}.json`. The existing `analysis` and `plan[]` text fields retain acceptance methods, expected results, applicable conditions and failure handling; a required acceptance gap cannot be hidden as a nonblocking assumption. This packet contains:
 
 - **Evidence chain**: Verbatim excerpts from every file read during the audit.
 - **Proposed changes**: File-level operations mapped to evidence references.
 - **Git revision**: Commit hash and timestamp for version tracking.
 
-The `.active_packet` pointer is updated to reference the new packet.
+After an authorized packet write, `.active_packet` is updated to reference it with task-association checks; it is not deleted to bypass a rejection. The original audit and packet JSON structures remain: strategy and implementation bounds use existing text fields, not a new validator or contract extension. Native Plan writes only its designated plan file; no actual packet means no activation or execution command.
 
 ### Phase 7: Mandatory Stop
 

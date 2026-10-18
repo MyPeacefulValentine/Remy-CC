@@ -1,6 +1,6 @@
 ---
 name: remy-plan
-description: Audit architecture for risks, side effects, and ambiguities before writing code. Produces evidence packets for /remy-patch. Recommended for large or complex tasks.
+description: Plan code changes using task-scoped strategy, five-table audits and the existing evidence-packet workflow.
 allowed-tools: Read, Grep, Glob, Bash, Write
 argument-hint: "[plan_summary (optional)]"
 disable-model-invocation: true
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 # Deep Plan Audit Protocol
 
-This skill enforces a rigorous **Zero-Decision** pre-implementation review. It follows a strict **Decision-First** logic: resolve ambiguities -> define invariants -> audit logic -> verify physical changes.
+This skill preserves visible pre-implementation checks: resolve user-owned decisions -> define applicable properties -> audit logic -> verify physical changes. Follow the task-planning core in `rules/reasoning-and-decisions.md`; optional task annotations follow `rules/communication.md`. User intent, contracts, scope, and acceptance must be settled. Implementation details may remain within explicit written bounds; this is not an unresolved user decision. Ordinary conversational brevity does not cancel this skill's five-category scan or five-table audit.
 
 ## Overview
 
@@ -85,17 +85,17 @@ Skip this gate when the task text contains BOTH:
 *   (a) explicit target files or symbols, AND
 *   (b) verifiable acceptance criteria.
 
-A bug-fix task accompanied by an error log or reproduction steps counts as spec-complete. When skipping, emit exactly one line before entering Phase 3:
+An applicable prior approval may supply both conditions, but an error log or reproduction alone does not establish the intended result. Do not skip merely because the agent believes it understands. When skipping, emit the following declaration and name the actual request or approval covering the targets, acceptance, and boundaries:
 ```
-Restatement skipped: spec-complete
+Restatement skipped: spec-complete — <request/approval basis and scope>
 ```
-Skipping without this declaration is a protocol violation.
+Skipping without this declaration and basis is a protocol violation.
 
 ### 2.2 Restate
 
 Compose the restatement in the language selected by the loaded `language.md` directive, structured as three sections:
 *   **Goal**: what will be changed, in one or two sentences.
-*   **Motivation**: why the user wants this, as understood from the task text and context.
+*   **Motivation**: the reason actually expressed by the user or a cited requirement; if none is given, say it is unspecified instead of inferring a motive.
 *   **Out-of-scope**: what this task will NOT do.
 
 ### 2.3 Confirm
@@ -110,16 +110,16 @@ On Deviation: merge the correction into the understanding, re-run any saturation
 
 Execute the following loop until ambiguities that could change this proposal are resolved or explicitly reported as blockers; record unrelated unknowns without extending the loop.
 
-**Scope Tag Reference** (used by Phase 3.3 Recommendation and by Table 4):
+**Task Attribute Reference** (used by Phase 3.3 Recommendation and Table 4):
 
-| English | 中文 | Definition |
+| Attribute | 中文 | Meaning |
 | :--- | :--- | :--- |
-| `[Boundary-Wrap]` | `[补丁]` | Modification site is OUTSIDE the function/class where the buggy state originates (e.g., call-site guard, try/except wrapper). |
-| `[Source-Modify]` | `[局部修复]` | Modification site is INSIDE the function/class where the buggy state originates. |
-| `[Contract-Change]` | `[接口变更]` | Modification alters a public signature, return type, exception type, or documented invariant. |
-| `[Scope-Refactor]` | `[跨域重构]` | Modification spans ≥ 2 components and re-assigns responsibility. |
+| Modification boundary | 修改边界 | The actual objects and responsibilities allowed to change; reading consumers does not authorize modifying them. |
+| Contract requirement | 契约要求 | Which consumers and observable behaviors must be preserved or may evolve, under which conditions. |
+| Design concern | 设计关注 | Evidence-supported state, recovery, compatibility, or coordination obligations. |
+| Decision status | 决策状态 | Whether semantics are already chosen, user decisions remain, or implementation freedom has explicit bounds. |
 
-When the loaded `language.md` directive selects Chinese, output the 中文 label; otherwise output the English label.
+Use the configured language. Optional notation such as `{修改边界：模块内｜契约要求：保持｜设计关注：状态与恢复}` combines independent attributes, not mutually exclusive grades. Bind it to a task or decision and explain the factual basis and limits. Keep the existing `scope_position` string field for this description; do not change the packet structure.
 
 **Observation Task Reference** (used by Phase 3.1 tagging and the Phase 3.3 Observation Gate):
 
@@ -131,15 +131,7 @@ When the loaded `language.md` directive selects Chinese, output the 中文 label
     *   **Adjudication dependency** (a cheap task can refute the premise of expensive ones): run the cheapest falsifier first; prune dependents whose premise is refuted.
     *   Independent low-cost direct observations run first (parallel where tools allow); experimental observations run in ascending cost order.
 
-**Decision Grade Reference** (used by Phase 3.1 tagging and the Phase 3.3 Decision Grade Switch):
-
-*   **Grades** — `[实现级]` / `[Implementation]`: the decision is local and revisable later at similar cost. `[架构级]` / `[Architectural]`: the decision satisfies AT LEAST ONE criterion below. When the loaded `language.md` directive selects Chinese, output the 中文 label; otherwise output the English label (mechanism identical to the Scope Tag Reference).
-*   **Architectural criteria** (any one suffices):
-    1.  The decision's product is a contract consumed by ≥ 2 other components (schema, IPC protocol, public interface, file format).
-    2.  Correcting the decision later requires data migration or synchronized cross-module modification.
-    3.  The decision constrains the option space of subsequent decisions (later decisions will stack on top of it).
-*   **Evidence Binding (MUST)**: an architectural tag MUST cite each matched criterion with its factual basis (e.g., "criterion 1: consumers = hooks, MCP"). A tag whose facts cannot be cited is downgraded to implementation grade.
-*   **Default**: when no criterion can be adjudicated from available evidence, the grade defaults to implementation; do not add architectural scope without supporting evidence.
+**Decision obligations**: Apply `rules/reasoning-and-decisions.md` rather than a binary grade. Distinguish settled mechanical propagation from choices affecting another owner's semantics, state, or feasible options. One module may need persistence/recovery analysis; several files may only require a settled rename. Unknowns retain their evidence state and affected decision; they do not default to a low-impact or minimal-change classification. Record user decisions and bounded implementation freedom in the existing `fixed_constraint` and `rationale` fields, not a new ID or status schema.
 
 ### 3.1 Scan
 
@@ -153,13 +145,13 @@ Identify current architectural decision points based on *saturated* context. You
 **MANDATORY FORMAT** — Output the scan result as a fenced block BEFORE any `AskUserQuestion` call:
 ```
 **Ambiguity Scan:**
-1. Interface Contract — ambiguity identified [用户决定][架构级]: <brief description>（判据 1：消费者=X、Y）
-2. Resource & Dependency — ambiguity identified [事实问题][实现级]: <brief description>
+1. Interface Contract — ambiguity identified [用户决定]: <brief description and affected consumers>
+2. Resource & Dependency — ambiguity identified [事实问题]: <brief description>
 3. Behavioral Boundary — N/A (no decision needed)
-4. Execution Order — [事实问题][实现级]: <fact to inspect>; then [用户决定][实现级]: <dependent choice>
+4. Execution Order — [事实问题]: <fact to inspect>; then [用户决定]: <dependent choice>
 5. Change Boundary — N/A (no decision needed)
 ```
-Use the configured language's question labels in this grouped scan. Each identified item also carries a grade per the **Decision Grade Reference**; an architectural tag requires criterion citations. A mixed issue is split into related fact and choice items, not a third question type. Facts supporting a choice carry their own shared evidence state where needed; the choice itself is not an evidence state.
+Use the configured language's question labels in this grouped scan. Explain relevant task attributes and their evidence without assigning a grade. All five categories remain visible; N/A means genuinely inapplicable, not unexamined. A mixed issue is split into related fact and choice items, not a third question type. Facts supporting a choice carry their own shared evidence state where needed; the choice itself is not an evidence state.
 
 ### 3.2 Check
 
@@ -184,17 +176,17 @@ Use `AskUserQuestion` to resolve *current layer* ambiguities.
 *   **Language**: Follow the loaded `language.md` directive.
 *   **Format**: Short header, reasonable options.
 *   **Recommendation**: For a user decision with actual alternatives, include one recommended option with `（推荐）` and a one-sentence reason. A request for missing factual evidence does not require a recommended answer; do not invent facts to fill an option.
-*   **Scope Tagging (MUST)**: For each candidate option proposing a code change, prefix its description with a scope tag from the **Scope Tag Reference** table (output label per `REMY_LANG`).
-*   **Prohibited Pattern Cross-Check (MUST)**: Before marking an option as recommended, check for symptom-only fixes, unsupported special cases, and unnecessary abstractions using the change-review guidance in `output-styles/system-architect.md` §2.3. If `[补丁]` / `[Boundary-Wrap]` is recommended over a `[局部修复]` / `[Source-Modify]` alternative, the 1-sentence reason MUST cite one of: (a) bug source resides in third-party / read-only code, (b) the boundary IS the actual responsibility boundary, or (c) Source-Modify would introduce an unnecessary abstraction or scope expansion.
+*   **Task Attributes (MUST)**: For each candidate proposing a code change, state its actual modification boundary and contract obligations using the **Task Attribute Reference**. Optional braces may summarize them; do not duplicate a table column or use an attribute as authorization.
+*   **Prohibited Pattern Cross-Check (MUST)**: Before recommending an option, check symptom-only fixes, unsupported special cases, and unnecessary abstractions using `output-styles/system-architect.md` §2.3. Justify a boundary guard or internal change from the actual responsibility owner, source availability, and approved contract rather than preferring one code location by its label.
 *   **Planned-Evolution Cross-Check (MUST)**: Before marking an option as recommended, check whether an authoritative written plan registers a follow-up need that the current decision touches. If it does, an option that reserves the seam the plan names (interface, parameter, data shape) MAY be recommended over the minimal-change alternative, and its 1-sentence reason MUST cite the plan anchor. Futures not registered in a plan remain governed by YAGNI (see the approved-follow-up interface guidance in `output-styles/system-architect.md` §2.2).
-*   **Decision Grade Switch (MUST)**: For a decision point graded implementation, the recommendation defaults to the minimal-change option (subject to the cross-checks above). For a decision point graded architectural, the recommendation standard switches to: define state transitions, data owners, failure paths, and executable invariants before choosing an implementation — data structures over control flow; AND every option's description MUST state its future correction cost. Omitting the correction-cost statement on an architectural decision point is a protocol violation. This switch is independent of the Planned-Evolution Cross-Check; when both apply, the recommendation reason cites both the criterion facts and the plan anchor.
+*   **Task-Driven Recommendation (MUST)**: Exclude options that violate the goal, hard constraints, or necessary responsibilities before comparing compatibility, correction cost, complexity, failure behavior, and change volume where relevant. Do not default to the smallest diff or to redesign. Analyze state transitions, owners, concurrency, persistence and recovery when affected behavior requires it, even inside one module; do not invent alternatives or state machines for settled mechanical work. Unknowns affecting the recommendation require observation or a conditional proposal, not a default downgrade. Record the strategy and bounded implementation freedom in Table 1 and the existing handoff text fields. The Planned-Evolution Cross-Check still applies, but coordination needed by the current goal requires no separate future plan.
 
 ### 3.4 Saturate (Again) — ACTION REQUIRED
 
 *   **Trigger**: Immediately upon receiving the user's choice.
 *   **Mandate**: You **MUST** invoke `Grep`/`Glob` targeting the specific keywords of the choice (e.g., if user selected "Redis", grep for "redis", "cache", "sentinel").
 *   **Read**: Inspect newly discovered definitions or configuration only when they can change the selected option; record other unknowns without expanding scope.
-*   **Cross-Constraint Validation**: Compare the newly locked decision against ALL previously locked decisions. If a logical contradiction exists (e.g., "use Redis" vs. prior "no new runtime dependencies"), mark the conflicting prior decision as `invalidated` and re-present it in the next loop iteration.
+*   **Cross-Constraint Validation**: Compare the newly locked decision against ALL previously locked decisions. If a logical contradiction exists (e.g., "use Redis" vs. prior "no new runtime dependencies"), record both requirements and re-present the conflict in the next loop iteration. A newer choice does not by itself invalidate a prior hard constraint; resolve which requirement the user intends to revise before continuing.
 *   **Observation Task (Optional)**: If the chosen option involves a verifiable technical claim (e.g., "library X supports feature Y"), an observation task (per `output-styles/system-architect.md` §4.1) may be used here to confirm feasibility before proceeding.
 *   **Blocker**: Do NOT proceed to **Phase 3.5** until these new tool outputs are visible in the context AND no contradictions remain unresolved.
 
@@ -244,9 +236,11 @@ This step checks implicit assumptions that could change the proposal. `_manifest
 
 Synthesizes the locked decisions into an end-to-end behavioral narrative for user validation. Individual decision confirmations (Phase 3, Phase 4.1) do not equal confirmation of their combined behavior — this gate closes that gap.
 
-1.  **Skip Predicate**: Skip this gate when NO locked decision is tagged `[Contract-Change]` / `[Scope-Refactor]` AND the change introduces no new user-visible behavior (new command, new interaction, new output format). When skipping, emit exactly one line before entering Phase 4.3:
+Carry the goal, preserved contracts and the selected approach's applicable main, alternative and exception conditions into the scenarios. Applicable conditions include branches that may occur, not only paths already observed. Reusing approval or skipping repeated confirmation does not remove these obligations or their acceptance checks; retain the covering scenario and its basis. Unselected alternatives do not require implementation or acceptance, but rejecting an alternative does not remove an otherwise applicable preservation requirement. Form the scenario content here without loading the Phase 5 template or schema early.
+
+1.  **Skip Predicate**: Evaluate actual changes to contracts, responsibilities, user-visible behavior and exception behavior, not a scope label. Skip only when there is no such change, or an applicable approval already covers the complete main and exception scenarios. State that basis and its scope when skipping; do not assume individually approved choices cover their combined behavior. Emit exactly one declaration before entering Phase 4.3:
     ```
-    Scenario confirmation skipped: no interface/behavior change
+    Scenario confirmation skipped: <no interface/behavior change, or covering approval and scope>
     ```
     Skipping without this declaration is a protocol violation.
 
@@ -254,8 +248,8 @@ Synthesizes the locked decisions into an end-to-end behavioral narrative for use
     *   **Main success scenario** (use-case format): Preconditions → Trigger → Main flow (numbered steps) → Postconditions.
     *   **Extensions**: each alternative/exception scenario listed as one `condition → expected behavior` item.
 
-3.  **Confirm**: Use ONE `AskUserQuestion` call with TWO questions — question 1 carries the full main success scenario in its `question` field, question 2 carries the full extensions list in its `question` field (the host does not reliably render assistant text emitted before a tool call in the same turn, so the narrative MUST live inside the questions). Each question offers exactly two options:
-    *   "确认 (Confirm)" — the narrative matches the intent; when BOTH questions are confirmed, proceed to **Phase 4.3**.
+3.  **Confirm**: Use ONE `AskUserQuestion` call with TWO questions when both sections contain uncovered changes — question 1 carries the full main success scenario in its `question` field, question 2 carries the full extensions list in its `question` field (the host does not reliably render assistant text emitted before a tool call in the same turn, so the narrative MUST live inside the questions). Identify already approved parts as context and ask only to confirm the new or changed, uncovered portions; keep main and exception confirmation distinct. If one entire section is already covered, cite its approval and include it as context in the remaining question instead of asking it again. Each question offers exactly two options:
+    *   "确认 (Confirm)" — the narrative matches the intent; when BOTH sections are covered by applicable approval or fresh confirmation, proceed to **Phase 4.3**.
     *   "有偏差 (Deviation)" — the user supplies corrections via free text; a Deviation answer on either question enters step 4 routing.
 
 4.  **Deviation Routing**: Classify the correction:
@@ -264,9 +258,9 @@ Synthesizes the locked decisions into an end-to-end behavioral narrative for use
 
 ### 4.3 Plan-Code Alignment Check
 
-Before emitting tables, Re-`Read` each future Table 4 target's current signature + first 5 lines. Reject if either:
-(a) signature changed since Phase 1.2 reads, or (b) current code contradicts Table 1 constraints — return to **Phase 3**.
-Otherwise proceed to **Phase 4.4**.
+Before emitting tables, account for the freshness of every future Table 4 target. Check the relevant current definition and behavior for code, the target passage for documents, and an existing integration point for Create entries. Reuse a clearly identified fresh observation only while it still covers the current target; otherwise Re-`Read` the needed range. Do not treat the first five lines as evidence for the rest of a function. Reject if either:
+(a) a relevant definition or behavior changed since the planning evidence, or (b) current content contradicts Table 1 constraints — return to **Phase 3**.
+Otherwise proceed to **Phase 4.4**. Every target must have a freshness account; this is not an optional relevance filter over the target list.
 
 ### 4.4 Schema Deletion Tree-Wide Scan (Mandatory)
 
@@ -319,9 +313,17 @@ When Phase 4 completes with decision-relevant ambiguities resolved and pre-emit 
 
 Emit the 5 Markdown tables per the loaded template, in the exact order specified. Each table MUST include 1 empty line before and after. Follow all Strict Rules stated in the template header.
 
+Before completing the tables, check acceptance coverage in both directions:
+- Map each goal, preservation requirement and applicable branch of the selected approach to a Table 5 check with a method and observable expected result. Reverse-check each check against its requirement, basis, applicable conditions and related Table 4 changes. Checking an unchanged consumer does not authorize modifying it.
+- One check may cover multiple obligations if their conditions and results remain distinguishable; use existing text fields, not an additional table or ID system. Do not require checks for unselected alternatives or demand support for version/data combinations outside the agreed contract; retain checks for required rejection or isolation of such combinations.
+- N/A means genuinely inapplicable with a reason, not unknown, unexamined or not yet executed. A check planned for execution after implementation is not a blocker merely because it has not run, nor is it a passing result. Unknowns that prevent defining acceptance or establishing proposal readiness remain blockers for the affected scope.
+- Fill a missing mapping directly when the underlying requirements and decisions are settled. If it exposes a new fact or user decision, use the existing routing, halt rules and budgets; do not add a confirmation loop. Excluding or deferring a required check needs an applicable user decision when it changes the acceptance scope.
+
 ## Phase 6: Evidence Packet Generation (Mandatory)
 
 After generating the 5 analysis tables (Phase 5.2), produce and write an AgentTaskPacketLite JSON file before the stop prompt only when current authorization and mode permit it and no decision-relevant blocker remains. Otherwise stop with the plan and its limitations; do not write the packet or active pointer, and do not advertise an execution command for a nonexistent packet. This packet is the executable contract for `/remy-patch`.
+
+Preserve the Table 5 acceptance methods, expected results, applicable conditions and failure handling in `sender_payload.plan[]`, with their requirements and selected-approach boundaries in `analysis`. Summarizing must not drop an applicable obligation or its coverage. References are sufficient only if the corresponding check content remains available in the handoff; a bare table reference is not a substitute for omitted content. Do not move an acceptance blocker into nonblocking `assumptions` or describe a planned check as already passed.
 
 **Steps (execute in order):**
 
@@ -340,9 +342,9 @@ After generating the 5 analysis tables (Phase 5.2), produce and write an AgentTa
     "read_only_until_evidence": true
   },
   "sender_payload": {
-    "plan": ["<step 1 from Table 4>", "<step 2>"],
-    "analysis": "<key constraints and risks distilled from Table 3>",
-    "assumptions": ["<any unresolved item from Table 1>"]
+    "plan": ["<step 1 from Table 4, dependencies and related Table 5 acceptance methods, expected results, applicable conditions and failure handling>", "<step 2 with its related acceptance checks>"],
+    "analysis": "<goal, hard constraints, preserved contracts, task attributes, strategy, user decisions and bounded implementation freedom from Tables 1/3/4/5>",
+    "assumptions": ["<remaining nonblocking uncertainty, affected scope and required follow-up>"]
   },
   "evidence_packet": {
     "source_revision": {
@@ -366,13 +368,13 @@ After generating the 5 analysis tables (Phase 5.2), produce and write an AgentTa
       {
         "id": "C-001",
         "action": "Modify",
-        "description": "<from Table 4 '简述' column>",
+        "description": "<Table 4 file path, location, action, summary, preserved behavior and applicable boundary>",
         "evidence_refs": ["E-001"]
       },
       {
         "id": "C-002",
         "action": "Create",
-        "description": "<from Table 4 '简述' column>",
+        "description": "<Table 4 file path, location, action, summary, preserved behavior and applicable boundary>",
         "evidence_refs": ["E-002"],
         "caller_refs": [
           {
@@ -387,7 +389,7 @@ After generating the 5 analysis tables (Phase 5.2), produce and write an AgentTa
 }
 ```
 
-5.  **Update .active_packet** (Bash): `rm -f ".claude/temp_task/.active_packet" && echo "task_{TIMESTAMP}.json" > ".claude/temp_task/.active_packet"`
+5.  **Update .active_packet**: After the packet was actually written, inspect any existing marker and its task association. Within applicable authorization, use the file-writing tool to set `.claude/temp_task/.active_packet` to `task_{TIMESTAMP}.json`. Preserve this producer activation step; do not delete a marker to bypass an existing rejection or activate a different task without resolving the conflict.
 
 **Strict Rules:**
 -   **Evidence Record (MUST)**: evidence[] lists only files ACTUALLY READ; excerpt is verbatim (no summaries); `confirmed` = read this session, `suspected` = inferred unread; every change's evidence_refs points to ≥1 `confirmed` entry; non-git repos use `"type": "filesystem"` without `"commit"`. Full definition: `skills/remy-plan/evidence_record.md`.

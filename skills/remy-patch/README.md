@@ -1,6 +1,6 @@
 # remy-patch (Engineered Code Modification)
 
-remy-patch applies code changes with dependency tracing, framework integrity checks, and incremental change enforcement. It operates in a "forked context" — the AI independently discovers the call chain and dependencies rather than relying on conversation memory.
+remy-patch applies code changes with dependency tracing, framework integrity checks and task-scoped strategy. It independently checks relevant definitions rather than treating conversation memory as source evidence. Adaptation follows the selected contract; configuration needs actual variability; an already approved overall change needs no repeated proof that incremental work is impossible.
 
 ## When to Use
 
@@ -35,13 +35,13 @@ For each file to be modified:
    - H2: Target function signature changed since audit (stale plan)
    - H3: Edit would violate a constraint in `sender_payload.analysis` (constraint conflict)
 
-   If any condition is true, a **hard interrupt** fires: the AI halts and presents the user with options to expand scope, abort with rollback, or ignore and continue.
-3. **Edit & Verify** — Apply the change and verify via post-read.
-4. **Soft Decision Log** (packet mode only) — Behavioral choices not covered by the packet are recorded to `.claude/temp_decisions/decisions_{PACKET_ID}.md`. No file is created if no undocumented decisions were made.
+   If a condition is true, stop the affected edit. Resolve scope changes with authorization, stale facts with renewed inspection, and requirement conflicts with a decision; there is no blanket ignore option. Preserve original content and owned edits, and check for concurrent changes before any authorized rollback.
+3. **Edit & Verify** — Apply the change, use the tool result and an appropriate diff/static check, and record the resulting state; do not re-read solely to prove tool success.
+4. **Behavior Decision Log** (packet mode only) — Actual behavior/resource/ordering/boundary choices retain `.claude/temp_decisions/decisions_{PACKET_ID}.md` records and their basis. New user-owned decisions are resolved before implementation; a log does not authorize them. Ordinary syntax choices need no log.
 
 ### Phase 4: Validation
 
-Runs relevant tests and repairs ordinary failures within approved scope before rerunning. Requests a decision for expanded scope, unknown effects, accepting failure, or an unapproved rollback.
+Runs relevant tests and the applicable acceptance checks carried in the original plan/analysis fields, including stated manual, compatibility and recovery checks. Each planned check is accounted for as executed, failed or not executed with a reason. Ordinary failures are repaired within approved scope before rerunning; expanded scope, unknown effects, accepting failure or unapproved rollback require a decision.
 
 ## Pipeline Integration
 

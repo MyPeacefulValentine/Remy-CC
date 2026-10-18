@@ -1,0 +1,98 @@
+{
+  "version": "1.0.0",
+  "replay": {
+    "entry": "Phase 5 boundary replay; Phase 6 text handoff only",
+    "languages": ["zh", "en"],
+    "policies": ["before", "after"],
+    "required_materials": ["skill", "template", "schema", "shared_rules", "protocol_dependencies", "scenario"],
+    "answer_limit": 16,
+    "review_limit": 2,
+    "tools_allowed": false,
+    "instructions": {
+      "zh": "这是合成任务的Phase 5入口重放，不是运行技能。完整技能及其依赖、模板和schema作为阶段输入提供，不是你刚刚调用Read取得的材料；不执行前序阶段。上游批准和来源都是案例设定，不代表真实工具授权或运行结果。检查该入口是否具备继续条件，不预设全部阻塞已解除。只给出五表审计及标为未写入的交接草稿，后者仅用analysis、plan、assumptions三个原字段。受阻时说明受影响范围和可继续部分，不把草稿称为可执行就绪。禁止调用任何工具、委派、写文件、产出完整packet、更新指针或给执行命令，不编造Read、Ask、测试、时间戳、commit或源码证据。按所给中文模板用简体中文作答。约4000汉字以内是长度提示，不可用省略号代替必要内容。",
+      "en": "This is a synthetic task replay at the Phase 5 boundary, not execution of the skill. The full skill, dependencies, template and schema are supplied stage inputs, not material you just obtained with Read; do not execute preceding phases. Upstream approvals and sources are case premises, not real tool authorization or runtime results. Check whether the entry is ready; do not assume all blockers are resolved. Provide the five audit tables and a clearly unwritten handoff draft using only the original analysis, plan and assumptions fields. If blocked, identify the affected scope and work that can continue; do not call the draft execution-ready. Do not call tools, delegate, write files, produce a complete packet, update pointers or give execution commands. Do not fabricate Read, Ask, tests, timestamps, commits or source evidence. Answer in English using the supplied English template. About 2500 words is a length guideline, not permission to omit necessary content."
+    }
+  },
+  "tasks": {
+    "manifest": {
+      "sources": {
+        "goal": {
+          "zh": "合成用户要求：将本地报告清单发布器从格式1分阶段切换到格式2，保持报告条目标识和内容；不上传、不迁移其他资料。",
+          "en": "Synthetic user requirement: switch a local report-manifest publisher from format 1 to format 2 in stages, preserving report entry identifiers and content; no upload or migration of other data."
+        },
+        "contract": {
+          "zh": "合成接口契约：旧客户端只读格式1，新客户端可读格式1和格式2。路由层可以拒绝已退出的旧客户端。支持边界已明确；它们是给定契约，不是本次运行验证。",
+          "en": "Synthetic interface contract: old clients read only format 1; new clients read formats 1 and 2. The routing layer can reject retired old clients. These support boundaries are specified contracts, not results of runtime verification in this session."
+        },
+        "selection": {
+          "zh": "合成已定方案：旧新客户端共存时仅发布格式1；旧客户端全部退出并由路由拒绝后才发布格式2。停机全量切换方案未采用。",
+          "en": "Synthetic selected approach: publish only format 1 while old and new clients coexist; publish format 2 only after all old clients have retired and routing rejects them. A stop-everything cutover was not selected."
+        },
+        "scenarios": {
+          "zh": "已定主场景：共存期旧、新客户端读取同一清单并看到相同条目标识和内容；退出条件满足后，新客户端读取格式2。异常场景：旧客户端尚未全部退出则禁止格式2发布；退出后的旧客户端请求被明确拒绝，不会拿到格式2。",
+          "en": "Settled main scenarios: during coexistence, old and new clients read the same manifest and see identical entry identifiers and content; after retirement conditions hold, new clients read format 2. Exceptions: format 2 publication is prevented while any old client remains; a retired old client's request is explicitly rejected and never receives format 2."
+        },
+        "approval": {
+          "zh": "合成批准覆盖上述组合场景及修改范围，无新增决定。只允许修改现有src/report_manifest.py的publish、src/client_routes.py的select_manifest及其现有测试；不改客户端代码。",
+          "en": "Synthetic approval covers the combined scenarios above and the change scope; no new decision remains. Only the existing publish in src/report_manifest.py, select_manifest in src/client_routes.py and their existing tests may change; client code is excluded."
+        }
+      }
+    },
+    "docs": {
+      "sources": {
+        "goal": {
+          "zh": "合成用户要求：把帮助页标题从“导出选项”改成“保存报告”，将说明句改为“保存一份本地报告副本”。",
+          "en": "Synthetic user requirement: change the help-page heading from 'Export options' to 'Save reports' and its explanatory sentence to 'Save a local copy of the report.'"
+        },
+        "contract": {
+          "zh": "必须原样保持显式锚点export-options、链接目标../cli/export.html和命令示例report export --local。标题不是自动锚点的来源，没有运行时代码、状态、协议或迁移变化。",
+          "en": "Preserve exactly the explicit anchor export-options, link target ../cli/export.html and command example report export --local. The heading does not generate the anchor. There is no runtime-code, state, protocol or migration change."
+        },
+        "scenarios": {
+          "zh": "已定场景：读者看到新标题和说明；旧书签定位到同一显式锚点；链接仍指向同一页面；命令示例逐字不变。没有新增异常行为。",
+          "en": "Settled scenarios: readers see the new heading and explanation; existing bookmarks resolve to the same explicit anchor; the link targets the same page; the command example is unchanged byte for byte. No new exception behavior is introduced."
+        },
+        "approval": {
+          "zh": "合成批准已覆盖全部文案、保持项和场景；仅修改现有docs/help.md中这两处文字及现有文档测试。已按无运行行为变化说明跳过重复场景确认。",
+          "en": "Synthetic approval covers all wording, preserved items and scenarios; only these two passages in existing docs/help.md and existing documentation tests may change. Repeated scenario confirmation has been skipped with the stated absence of runtime behavior changes."
+        }
+      }
+    },
+    "export": {
+      "sources": {
+        "goal": {
+          "zh": "合成用户要求：将现有本地报告导出改为先写临时文件、再调用storage.replace替换同名目标；成功时目标内容精确等于新报告；写入或替换失败时旧目标内容必须不变，其他文件始终不变。",
+          "en": "Synthetic user requirement: change an existing local report export to write a temporary file and then replace the same-named target with storage.replace. On success the target must exactly equal the new report; on write or replacement failure the old target content must be unchanged, and other files must always remain unchanged."
+        },
+        "selection": {
+          "zh": "已选临时写入后替换方案；拒绝同名文件、云端发布及历史归档方案未采用。允许修改现有src/report_export.py的export和相应现有测试，禁止修改storage适配器或扩大到其他文件系统。",
+          "en": "Temporary write followed by replacement is selected; rejecting existing names, cloud publication and historical archiving are not selected. Changes are allowed only to export in existing src/report_export.py and its existing tests, not to the storage adapter or other filesystems."
+        },
+        "scenarios": {
+          "zh": "主场景：临时写入完成，替换成功，返回成功且目标为新报告。异常：临时写入失败则不调用替换，返回错误，旧目标不变；替换失败则返回错误，旧目标不变；任一失败后尝试删除本次临时文件，若清理也失败则保留主失败并附清理警告，不能误报成功或删除旧目标。临时文件和无关文件边界已确定。",
+          "en": "Main scenario: temporary writing completes, replacement succeeds, success is returned and the target contains the new report. Exceptions: a temporary-write failure skips replacement, returns an error and preserves the old target; a replacement failure returns an error and preserves the old target. After either failure, attempt deletion of this operation's temporary file; if cleanup also fails, retain the primary failure and add a cleanup warning, never report success or delete the old target. Temporary-file and unrelated-file boundaries are settled."
+        },
+        "approval": {
+          "zh": "合成批准覆盖用户期望、组合场景及修改范围，但不代表技术能力已验证。若来源材料显示受阻，不能凭批准断言实现可行；可继续设计不依赖该事实的部分。",
+          "en": "Synthetic approval covers user expectations, combined scenarios and change scope, not verification of technical capability. If source material reveals a blocker, approval cannot establish implementation feasibility; planning independent of that fact may continue."
+        },
+        "unrelated_unknown": {
+          "zh": "日志查看器未来是否提供彩色展示尚未知；此查看器不在范围内，也不改变本次结构化错误和警告内容、接口行为或判定方法。",
+          "en": "Whether a future log viewer will display colors is unknown; that viewer is outside scope and does not affect this task's structured error or warning content, interface behavior or checks."
+        }
+      }
+    }
+  },
+  "cases": [
+    {"id": "A", "task": "manifest", "sources": {}},
+    {"id": "B", "task": "docs", "sources": {}},
+    {"id": "C", "task": "export", "sources": {"replacement_guarantee": {
+      "zh": "合成storage接口资料明确保证：storage.replace返回失败时，旧目标的字节保持不变。",
+      "en": "Synthetic storage interface documentation explicitly guarantees that when storage.replace returns failure, the old target's bytes remain unchanged."
+    }}},
+    {"id": "D", "task": "export", "sources": {"replacement_guarantee": {
+      "zh": "合成storage接口资料没有说明：storage.replace返回失败时，旧目标的字节是否保持不变。",
+      "en": "Synthetic storage interface documentation does not specify whether the old target's bytes remain unchanged when storage.replace returns failure."
+    }}}
+  ]
+}

@@ -1,6 +1,6 @@
 ---
 name: remy-testgen
-description: Generate persistent unit tests for existing or stub code. Supports post-hoc testing (default) and TDD mode (--tdd). Multi-angle agent analysis at medium/high effort levels.
+description: Generate persistent unit tests in post-hoc or TDD mode, distinguishing characterization from conformance and behavior failures from environment failures.
 allowed-tools: Read, Edit, Write, Grep, Glob, Bash, PowerShell, AskUserQuestion, Agent
 argument-hint: "[low|medium|high] [--tdd [packet_file]] [target_files_or_functions (optional)]"
 disable-model-invocation: true
@@ -10,8 +10,10 @@ disable-model-invocation: true
 
 Generate persistent unit tests and write them into the project's test directory. Supports two modes:
 
-- **Post-hoc** (default): Analyze existing implementation code and generate tests that validate current behavior.
-- **TDD** (`--tdd`): Generate failing test skeletons from interface signatures or plan packets, before implementation exists.
+- **Post-hoc** (default): Distinguish characterization of current behavior from conformance to explicit requirements or maintained contracts. Characterization does not establish that the implementation is correct.
+- **TDD** (`--tdd`): Generate checks for specified interface behavior before implementation exists; failures must demonstrate the missing behavior, not just a broken environment.
+
+Use the shared task-planning core in `rules/reasoning-and-decisions.md` without changing this skill's modes, coverage budget, report or packet structure. Carry goals, preservation requirements, responsibility boundaries and unknowns through the existing text fields. Test writes and subsequent implementation require their own applicable authorization.
 
 ## External Files
 
@@ -81,8 +83,8 @@ Generate persistent unit tests and write them into the project's test directory.
 
 **If `--tdd` with packet file:**
 1. `Read` the packet from `.claude/temp_task/{packet_file}`.
-2. Extract interface contracts from `sender_payload.plan[]` and `evidence_packet.proposed_changes[]`.
-3. Build `target_set` from the described interfaces.
+2. Extract interface contracts from `sender_payload.plan[]`, `sender_payload.analysis`, and `evidence_packet.proposed_changes[]`. Preserve task requirements, sources and unresolved premises; the packet is not proof of correctness or permission.
+3. Build `target_set` from the explicit interfaces and change declarations. Evidence paths do not authorize additional implementation or test targets; clarify missing requirements without changing the packet format.
 
 **If `--tdd` without packet file:**
 1. Read the target files.
@@ -141,7 +143,7 @@ For each symbol in `target_set`:
 
 ## 3. Phase 3: Test Case Design
 
-**Goal**: Design test cases for uncovered symbols.
+**Goal**: Design test cases for uncovered symbols. State whether a case characterizes current behavior or checks conformance to a requirement. Derive conformance expectations from the task or an inspected contract, not solely from possibly defective implementation. Keep the source and any unknown premise in the existing description fields.
 
 ### 3.1 Low Effort (Heuristic Generation)
 
@@ -168,7 +170,7 @@ For each agent, construct the Agent call:
 ```
 Agent({
   description: "remy-testgen: [angle name]",
-  prompt: "[prompt template content]\n\n---\n\n## Provided Context\n\n### Source\n```\n{source}\n```\n\n### Signatures\n{signatures}\n\n### Existing Tests\n{existing_test_names}\n\n### Caller/Callee Context\n{impact_summary}\n\n### Mode\n{post-hoc|tdd}"
+  prompt: "[prompt template content]\n\n---\n\n## Provided Context\n\n### Source\n```\n{source}\n```\n\n### Signatures\n{signatures}\n\n### Existing Tests\n{existing_test_names}\n\n### Caller/Callee Context\n{impact_summary}\n\n### Mode\n{post-hoc|tdd}\n\n### Requirements and Contract Sources\n{actual_task_requirements_and_sources}\n\n### Responsibility and Preservation Boundaries\n{responsibility_and_preserved_behavior}\n\n### Test Purpose and Unknowns\n{characterization_or_conformance_and_unresolved_premises}"
 })
 ```
 
@@ -279,7 +281,7 @@ In TDD mode, generated tests MUST:
 
 - Import the target module (even though functions are not yet implemented).
 - Assert on expected return values, exception types, or side effects as described in the interface contract.
-- Include a comment per test: `# Expected to FAIL until implementation is complete`.
+- For a test of explicitly missing behavior, include `# Expected to FAIL until implementation is complete` and identify that behavior. Do not attach this expectation to already satisfied regression cases; syntax, import and environment failures are not the intended RED.
 
 **Output**: Print the list of generated test files and their locations.
 
@@ -296,21 +298,16 @@ In TDD mode, generated tests MUST:
 
 ### 5.2 Post-hoc Mode: Expect PASS
 
-- If ALL tests pass: proceed to Phase 6.
-- If ANY test fails: report the failure. This indicates a defect in the generated test (the implementation is assumed correct in post-hoc mode).
-  - Use `AskUserQuestion`:
-    - "Fix the generated test" — edit the test file to correct the assertion.
-    - "Remove the failing test" — delete the specific test case.
-    - "Keep as-is" — user will fix manually.
+- If ALL tests pass: report the scope and whether this is characterization or requirement conformance, then proceed to Phase 6.
+- If ANY test fails: distinguish the requirement oracle, implementation, generated test and environment. Do not assume the implementation is correct, weaken an assertion merely to pass, or call a characterization test proof of requirements compliance.
+  - Repair ordinary generated-test defects within the approved scope and rerun; report implementation defects for `/remy-patch` without modifying implementation here.
+  - Ask for new scope, deletion, accepting an unresolved failure or other user-owned choices. Preserve the actual failure and unverified premises.
 
 ### 5.3 TDD Mode: Expect FAIL
 
-- If ALL tests fail: confirm RED state. Report: "All tests in RED state. Proceed to implement with `/remy-patch`."
-- If ANY test passes: this indicates the function is already implemented (not a true stub).
-  - Report which tests passed unexpectedly.
-  - Use `AskUserQuestion`:
-    - "Keep passing tests" — retain them as regression tests.
-    - "Remove passing tests" — they are not needed for TDD.
+- A failure establishes RED only for the required behavior it demonstrates is missing. Import, syntax or environment failures do not establish business-behavior RED.
+- Passing regression cases may coexist with missing behavior; they do not establish full implementation. Do not delete them merely to force all tests to fail.
+- Report which required behaviors are already satisfied, missing, failed for other reasons or unverified using the existing report text; keep the existing report schema and status values. Offer implementation only when the actual handoff and applicable authorization permit it.
 
 ---
 
@@ -373,7 +370,8 @@ LOOP:
 
 1. Ensure directory: `Bash("mkdir -p '.claude/temp_testgen'")`.
 2. Get timestamp: `Bash("date +\"%Y%m%d_%H%M%S\"")` → `{TIMESTAMP}`.
-3. Use `render.save_report()` to generate and persist the report to `.claude/temp_testgen/testgen_{TIMESTAMP}.md`.
+3. Use `render.save_report()` to generate and persist the report; use the actual path it returns, not a separately guessed filename.
+4. After each save or re-render, inspect that saved report and add or replace a `Verification interpretation` section in the configured language. Record characterization/conformance purpose, actual requirement sources, missing-behavior RED versus test/implementation/environment failures, passing regression cases and unverified premises. This is narrative in the same authorized Markdown report; the renderer's status table alone does not preserve these distinctions. Do not change report JSON or renderer/template interfaces.
 
 Populate the context dict:
 
@@ -419,8 +417,8 @@ In TDD mode, produce an evidence packet for `/remy-patch`:
   },
   "sender_payload": {
     "plan": ["Implement {symbol_1} to satisfy test_{name_1}", "..."],
-    "analysis": "Tests expect: {interface_contracts_summary}",
-    "assumptions": []
+    "analysis": "Tests expect: {interface_contracts_summary}; sources: {requirement_sources}; verification interpretation: {behavior_failures_other_failures_and_passing_regressions}",
+    "assumptions": ["{unverified premise and affected scope; omit this item when none}"]
   },
   "evidence_packet": {
     "source_revision": {
@@ -443,7 +441,7 @@ In TDD mode, produce an evidence packet for `/remy-patch`:
     "proposed_changes": [
       {
         "id": "C-001",
-        "description": "Implement {symbol} to pass {test_count} tests",
+        "description": "Modify {implementation_file_path} at {symbol} to satisfy {required_behavior} within {approved_boundary}",
         "evidence_refs": ["E-001"]
       }
     ]
@@ -454,7 +452,7 @@ In TDD mode, produce an evidence packet for `/remy-patch`:
 **Strict Rules:**
 - **Evidence Record (MUST)**: evidence[] lists only files ACTUALLY READ; excerpt is verbatim (no summaries); evidence_refs points to ≥1 `confirmed` entry; non-git repos use `"type": "filesystem"` without `"commit"`. Full definition: `~/.claude/skills/remy-plan/evidence_record.md`. Generated test files count as read by construction, hence `status: "confirmed"`, `confidence: 1.0`.
 
-3. Update `.active_packet`: `Bash("rm -f '.claude/temp_task/.active_packet' && echo 'testgen_{TIMESTAMP}.json' > '.claude/temp_task/.active_packet'")`.
+3. Update `.active_packet` after the packet was actually written: inspect any existing marker and task association, then use an authorized file write to set it to `testgen_{TIMESTAMP}.json`. Preserve this producer activation step; do not delete a marker to bypass a rejection. Packet writes and activation remain subject to applicable authorization and native mode; native Plan writes only its designated plan file.
 
 ---
 

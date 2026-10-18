@@ -11,9 +11,9 @@
   "box_width": 74,
   "skills": [
     {"name": "/remy-index",     "desc_zh": "LLM 语义索引生成",       "desc_en": "LLM semantic index",        "timing_zh": "仓库初始化或重大修改后",   "timing_en": "After repo init or major changes"},
-    {"name": "/remy-plan",      "desc_zh": "架构预审 → 证据包",      "desc_en": "Architecture pre-audit",     "timing_zh": "大型/复杂任务规划时",     "timing_en": "Before large/complex tasks"},
-    {"name": "/remy-patch",     "desc_zh": "工程约束下代码修改",      "desc_en": "Constrained code changes",   "timing_zh": "接收 plan 包或独立使用",  "timing_en": "With plan packet or standalone"},
-    {"name": "/remy-testgen",   "desc_zh": "生成持久化单元测试",      "desc_en": "Generate unit tests",        "timing_zh": "代码稳定后补测试",       "timing_en": "After code stabilizes"},
+    {"name": "/remy-plan",      "desc_zh": "任务策略 + 五表审计",     "desc_en": "Task strategy + five-table audit", "timing_zh": "需要明确决定与验收时", "timing_en": "Before decisions and acceptance"},
+    {"name": "/remy-patch",     "desc_zh": "代码修改 + 恢复与决定记录", "desc_en": "Code changes and recovery records", "timing_zh": "证据包或独立修改需求", "timing_en": "Evidence packet or request"},
+    {"name": "/remy-testgen",   "desc_zh": "现状刻画 / 要求符合性测试", "desc_en": "Characterization / conformance tests", "timing_zh": "后补测试或 TDD", "timing_en": "Post-hoc or TDD"},
     {"name": "/remy-inspect",   "desc_zh": "测试发现 + 缺陷预判",    "desc_en": "Test discovery + defects",   "timing_zh": "大规模编辑后",           "timing_en": "After large-scale edits"},
     {"name": "/remy-debug",     "desc_zh": "假设循环诊断 Bug",       "desc_en": "Hypothesis-loop diagnosis",  "timing_zh": "遇到难以定位的缺陷时",    "timing_en": "Hard-to-locate bugs"},
     {"name": "/remy-milestone", "desc_zh": "里程碑报告持久化",        "desc_en": "Persist milestone report",   "timing_zh": "compact 前或任务完成时",  "timing_en": "Before /compact or task end"},
